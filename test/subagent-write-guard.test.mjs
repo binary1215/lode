@@ -3,19 +3,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { initializeProject } from "../scripts/lib/lode-core.mjs";
-import { createNativeSessionHostBridge } from "../scripts/lib/session-native-host.mjs";
-import { SESSION_HOST_REQUEST_HELPER, createSessionHostRequestRegistry } from "../scripts/lib/session-host-request.mjs";
-import { observeNativeHook } from "../scripts/lib/native-session-observations.mjs";
+import { initializeProject } from "../scripts/lib/session/lode-core.mjs";
+import { createNativeSessionHostBridge } from "../scripts/lib/session/session-native-host.mjs";
+import { SESSION_HOST_REQUEST_HELPER, createSessionHostRequestRegistry } from "../scripts/lib/session/session-host-request.mjs";
+import { observeNativeHook } from "../scripts/lib/session/native-session-observations.mjs";
 import {
   SUBAGENT_STATE_WRITE_REJECTED,
   SUBAGENT_WRITE_GUARD_INVALID,
   diagnoseSubagentWriteGuard,
   subagentWriteGuardEnabled,
-} from "../scripts/lib/subagent-write-guard.mjs";
+} from "../scripts/lib/session/subagent-write-guard.mjs";
 import { dispatch, operationCatalogTools } from "../scripts/mcp-server.mjs";
-import { resolveOperation } from "../scripts/lib/lode-operation-contract.mjs";
-import { OPERATION_GROUPS } from "../scripts/lib/operation-groups.mjs";
+import { resolveOperation } from "../scripts/lib/core/lode-operation-contract.mjs";
+import { OPERATION_GROUPS } from "../scripts/lib/core/operation-groups.mjs";
 import { legacyOperationName } from "../compat/head/public-names.mjs";
 
 // Every effectful operation (deprecated names included) and every effectful action

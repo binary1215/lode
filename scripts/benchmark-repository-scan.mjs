@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { executeRepositoryScan } from "./lib/repository-scan.mjs";
+import { executeRepositoryScan } from "./lib/world/repository-scan.mjs";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const defaultRoot = path.resolve(scriptDirectory, "../benchmarks/repository-scan-v1/basic");

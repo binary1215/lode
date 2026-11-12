@@ -1,5 +1,5 @@
 import { worldSnapshotFile, graphSnapshotFile, readFixtureSnapshot, writeFixtureSnapshot } from "./helpers/snapshot-storage-fixture.mjs";
-import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
+import { relativeProjectArtifact } from "../scripts/lib/storage/project-storage-format.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { createHeadSession, withSessionRoute } from "../scripts/lib/session-routing.mjs";
+import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
 import {
   buildWorldModel,
   inspectWorldModel,
@@ -16,14 +16,14 @@ import {
   buildWorldTraversalEligibility,
   queryWorldModel,
   queryWorldTemporalGraph,
-} from "../scripts/lib/world-model.mjs";
-import { queryTemporalProvenanceGraph, buildTemporalProvenanceGraph } from "../scripts/lib/temporal-provenance.mjs";
-import { emptyProductModelDocument, normalizeProductModelDocument } from "../scripts/lib/product-model.mjs";
-import { initialOnboardingDocuments } from "../scripts/lib/onboarding-contract.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { queryGraphProjection } from "../scripts/lib/graph-projection-adapter.mjs";
-import { SOURCE_ANALYSIS_VERSION } from "../scripts/lib/source-analysis.mjs";
-import { writeRepositorySourceScope } from "../scripts/lib/repository-source-scope.mjs";
+} from "../scripts/lib/world/world-model.mjs";
+import { queryTemporalProvenanceGraph, buildTemporalProvenanceGraph } from "../scripts/lib/world/temporal-provenance.mjs";
+import { emptyProductModelDocument, normalizeProductModelDocument } from "../scripts/lib/world/product-model.mjs";
+import { initialOnboardingDocuments } from "../scripts/lib/session/onboarding-contract.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { queryGraphProjection } from "../scripts/lib/world/graph-projection-adapter.mjs";
+import { SOURCE_ANALYSIS_VERSION } from "../scripts/lib/world/source-analysis.mjs";
+import { writeRepositorySourceScope } from "../scripts/lib/world/repository-source-scope.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const canonical = (value) =>
@@ -184,7 +184,7 @@ function retainedStore(snapshot) {
 test("temporal verification scopes own immutable copies without trusting frozen lookalikes or closed scopes", async (t) => {
   const { root } = await fixture(t),
     snapshot = (await readWorldModelForDiscovery({ root })).snapshot;
-  const api = await import("../scripts/lib/temporal-provenance.mjs");
+  const api = await import("../scripts/lib/world/temporal-provenance.mjs");
   assert.equal(typeof api.createTemporalVerificationScope, "function");
   const scope = api.createTemporalVerificationScope(),
     nested = api.createTemporalVerificationScope();
@@ -262,7 +262,7 @@ test("temporal verification scopes own immutable copies without trusting frozen 
 test("project graph isolates retained adapter aliases before await and leaves returned projections mutable", async (t) => {
   const { root } = await fixture(t),
     snapshot = (await readWorldModelForDiscovery({ root })).snapshot;
-  const { queryProjectGraph } = await import("../scripts/lib/project-graph.mjs");
+  const { queryProjectGraph } = await import("../scripts/lib/world/project-graph.mjs");
   const store = retainedStore(snapshot),
     read = store.readSnapshot;
   store.readSnapshot = function (id) {
@@ -486,14 +486,14 @@ test("legacy 0.18 snapshots remain verified historical evidence without invented
   const projectionArgs = { storage, projectRoot: root, projectId: original.projectId, currentProductModelId: original.productModel.productModelId };
   const projections = {};
   for (const [key, module, loader] of [
-    ["onboardingProjection", "onboarding-projection", "loadOnboardingGraphProjection"],
-    ["productPolicyProjection", "product-policy-projection", "loadProductPolicyGraphProjection"],
-    ["featureMappingProjection", "feature-mapping-projection", "loadFeatureMappingProjection"],
-    ["changeSetProjection", "change-set-projection", "loadChangeSetProjection"],
-    ["documentChangeProjection", "document-change-projection", "loadDocumentChangeProjection"],
-    ["observationProjection", "observation-projection", "loadObservationProjection"],
-    ["productOperatingProjection", "product-operating-projection", "loadProductOperatingProjection"],
-    ["releaseObservationProjection", "release-observation-projection", "loadReleaseObservationProjection"],
+    ["onboardingProjection", "session/onboarding-projection", "loadOnboardingGraphProjection"],
+    ["productPolicyProjection", "world/product-policy-projection", "loadProductPolicyGraphProjection"],
+    ["featureMappingProjection", "world/feature-mapping-projection", "loadFeatureMappingProjection"],
+    ["changeSetProjection", "world/change-set-projection", "loadChangeSetProjection"],
+    ["documentChangeProjection", "world/document-change-projection", "loadDocumentChangeProjection"],
+    ["observationProjection", "world/observation-projection", "loadObservationProjection"],
+    ["productOperatingProjection", "world/product-operating-projection", "loadProductOperatingProjection"],
+    ["releaseObservationProjection", "distribution/release-observation-projection", "loadReleaseObservationProjection"],
   ])
     projections[key] = (await import(`../scripts/lib/${module}.mjs`))[loader](projectionArgs);
   legacy.temporalProvenanceGraph = buildTemporalProvenanceGraph({ ...original, ...projections, storage });

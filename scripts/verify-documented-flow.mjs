@@ -145,7 +145,7 @@ async function runVerifiedMcpSave(root) {
   // Host-local state lives outside the Project, as for an installed plugin.
   const hostRoot = fs.mkdtempSync(path.join(os.tmpdir(), "lode-documented-flow-host-"));
   const { dispatch } = await import("./mcp-server.mjs");
-  const { createNativeSessionHostBridge } = await import("./lib/session-native-host.mjs");
+  const { createNativeSessionHostBridge } = await import("./lib/session/session-native-host.mjs");
   const bridge = createNativeSessionHostBridge({
     runtime: "codex",
     // Only the Host state root: nothing from the ambient environment reaches it.

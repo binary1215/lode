@@ -8,10 +8,10 @@ import {
   syntheticNativeDatabase,
   nativeProfile,
 } from "./helpers/native-portability-fixture.mjs";
-import { requestNativeRegistration } from "../scripts/lib/native-registration-journal.mjs";
-import { prepareCodexNativeOffline } from "../scripts/lib/codex-native-offline.mjs";
-import { publishCodexNativeHistory } from "../scripts/lib/codex-native-publication.mjs";
-import { registerCodexNativeHistory } from "../scripts/lib/codex-native-registration.mjs";
+import { requestNativeRegistration } from "../scripts/lib/distribution/native-registration-journal.mjs";
+import { prepareCodexNativeOffline } from "../scripts/lib/distribution/codex-native-offline.mjs";
+import { publishCodexNativeHistory } from "../scripts/lib/distribution/codex-native-publication.mjs";
+import { registerCodexNativeHistory } from "../scripts/lib/distribution/codex-native-registration.mjs";
 const denied = async () => {
   throw Object.assign(Error("Synthetic rejected asynchronous authority callback"), {
     code: "SYNTHETIC_ASYNC_DENIAL",

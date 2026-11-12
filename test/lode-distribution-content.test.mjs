@@ -4,10 +4,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { verifyMarketplaceContent } from "../scripts/lib/marketplace-content.mjs";
-import { stageDistributionRelease } from "../scripts/lib/distribution-lifecycle.mjs";
-import { buildCodexMarketplaceSnapshot, verifyCodexMarketplaceSnapshot } from "../scripts/lib/codex-marketplace.mjs";
-import { buildClaudeMarketplaceSnapshot, verifyClaudeMarketplaceSnapshot } from "../scripts/lib/claude-marketplace.mjs";
+import { verifyMarketplaceContent } from "../scripts/lib/distribution/marketplace-content.mjs";
+import { stageDistributionRelease } from "../scripts/lib/distribution/distribution-lifecycle.mjs";
+import { buildCodexMarketplaceSnapshot, verifyCodexMarketplaceSnapshot } from "../scripts/lib/distribution/codex-marketplace.mjs";
+import { buildClaudeMarketplaceSnapshot, verifyClaudeMarketplaceSnapshot } from "../scripts/lib/distribution/claude-marketplace.mjs";
 
 const source = path.resolve(import.meta.dirname, "..");
 const contamination = { code: "LODE_MARKETPLACE_CONTENT_CONTAMINATION" };

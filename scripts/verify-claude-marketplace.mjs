@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildClaudeMarketplaceSnapshot, verifyClaudeMarketplaceSnapshot } from "./lib/claude-marketplace.mjs";
+import { buildClaudeMarketplaceSnapshot, verifyClaudeMarketplaceSnapshot } from "./lib/distribution/claude-marketplace.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lib/lode-artifact-composition.mjs";
 
 function option(name, fallback = null) {
@@ -96,9 +96,13 @@ if (providedRoot) {
     );
     assert.ok(startupHooks.hooks.PreToolUse.every((group) => group.hooks[0].tool === publicToolName("lode_session_host_request_prepare")));
     assert.equal(/permissionDecision|updatedInput/.test(JSON.stringify(startupHooks)), false);
-    assert.ok(runtimeManifest.files.some((file) => file.path === "scripts/lib/session-host-request.mjs"));
-    assert.ok(runtimeManifest.files.some((file) => file.path === "scripts/lib/session-host-adapter.mjs"));
-    for (const file of ["scripts/lib/native-session-observations.mjs", "scripts/lib/native-session-process.mjs", "scripts/opencode-plugin.mjs"]) {
+    assert.ok(runtimeManifest.files.some((file) => file.path === "scripts/lib/session/session-host-request.mjs"));
+    assert.ok(runtimeManifest.files.some((file) => file.path === "scripts/lib/session/session-host-adapter.mjs"));
+    for (const file of [
+      "scripts/lib/session/native-session-observations.mjs",
+      "scripts/lib/session/native-session-process.mjs",
+      "scripts/opencode-plugin.mjs",
+    ]) {
       assert.ok(
         runtimeManifest.files.some((entry) => entry.path === file),
         `Native observer dependency must be packaged: ${file}`,

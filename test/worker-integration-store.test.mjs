@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { workerIntegrationDirectory, publishIntegrationJson, readIntegrationBytes } from "../scripts/lib/worker-integration-store.mjs";
+import { workerIntegrationDirectory, publishIntegrationJson, readIntegrationBytes } from "../scripts/lib/worker/worker-integration-store.mjs";
 
 function fixture(t) {
   const parent = fs.realpathSync(process.env.HEAD_AGENT_TEST_TMP || os.tmpdir());

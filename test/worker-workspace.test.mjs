@@ -3,9 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { captureWorkerSourceBasis, verifyWorkerSourceBasis } from "../scripts/lib/worker-source-basis.mjs";
-import { prepareWorkerWorkspace, verifyWorkerWorkspace, collectWorkerWorkspacePatch } from "../scripts/lib/worker-workspace.mjs";
-import { captureWorkerWriteBasis } from "../scripts/lib/worker-patch-basis.mjs";
+import { captureWorkerSourceBasis, verifyWorkerSourceBasis } from "../scripts/lib/worker/worker-source-basis.mjs";
+import { prepareWorkerWorkspace, verifyWorkerWorkspace, collectWorkerWorkspacePatch } from "../scripts/lib/worker/worker-workspace.mjs";
+import { captureWorkerWriteBasis } from "../scripts/lib/worker/worker-patch-basis.mjs";
 
 console.log(
   JSON.stringify({

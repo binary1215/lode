@@ -11,26 +11,26 @@
   -> skills/lode-agent-core       human/agent operating contract
   -> .mcp.json                    read-only inspection surface
   -> scripts/lode.mjs             explicit mutation entrypoint
-       -> scripts/lib/lode-core   project canon and projections
-       -> scripts/lib/session-routing independent logical Session routing
-       -> scripts/lib/project-direction common current user direction
-       -> scripts/lib/project-graph bounded graph-first discovery
-       -> scripts/lib/context-compiler
+       -> scripts/lib/session/lode-core   project canon and projections
+       -> scripts/lib/session/session-routing independent logical Session routing
+       -> scripts/lib/session/project-direction common current user direction
+       -> scripts/lib/world/project-graph bounded graph-first discovery
+       -> scripts/lib/session/context-compiler
                                   versioned task Context Capsules
-       -> scripts/lib/execution-lineage
+       -> scripts/lib/runtime/execution-lineage
                                   content-derived lineage artifacts
-       -> scripts/lib/run-lineage contract-bound Run state transitions
-       -> scripts/lib/product-model user-owned product-intent canon contract
-        -> scripts/lib/onboarding project-scoped bootstrap, candidate, review, and promotion state machine
-             -> scripts/lib/onboarding-contract Session, storage, and state-pointer identity contract
-             -> scripts/lib/onboarding-projection immutable onboarding artifact validation and graph input
-       -> scripts/lib/compute-adapter backend-neutral compute and WorkerProtocol contract
-       -> scripts/lib/world-model incremental repository view
-            -> scripts/lib/semantic-graph evidence-linked semantic projection
-            -> scripts/lib/temporal-provenance immutable revision DAG and bounded traversal
-            -> scripts/lib/git-history replaceable Git evidence source
-            -> scripts/lib/runtime-state replaceable runtime evidence source
-            -> scripts/lib/world-model-store replaceable storage contract
+       -> scripts/lib/runtime/run-lineage contract-bound Run state transitions
+       -> scripts/lib/world/product-model user-owned product-intent canon contract
+        -> scripts/lib/session/onboarding project-scoped bootstrap, candidate, review, and promotion state machine
+             -> scripts/lib/session/onboarding-contract Session, storage, and state-pointer identity contract
+             -> scripts/lib/session/onboarding-projection immutable onboarding artifact validation and graph input
+       -> scripts/lib/runtime/compute-adapter backend-neutral compute and WorkerProtocol contract
+       -> scripts/lib/world/world-model incremental repository view
+            -> scripts/lib/world/semantic-graph evidence-linked semantic projection
+            -> scripts/lib/world/temporal-provenance immutable revision DAG and bounded traversal
+            -> scripts/lib/world/git-history replaceable Git evidence source
+            -> scripts/lib/runtime/runtime-state replaceable runtime evidence source
+            -> scripts/lib/world/world-model-store replaceable storage contract
 ```
 
 Claude Code, Codex 및 OpenCode는 동일한 `.lode/` 권한의 프로젝션입니다. 각각 별도의 프로젝트 진실을 소유하지 않습니다.

@@ -6,11 +6,11 @@ import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { prepareSourceContext } from "../scripts/lib/source-context-workflow.mjs";
-import { readSourceObservation } from "../scripts/lib/source-observation.mjs";
-import { indexProjectGraph, queryProjectGraph } from "../scripts/lib/project-graph.mjs";
-import { refreshWorldModel } from "../scripts/lib/incremental-refresh.mjs";
-import { buildWorldModel, readWorldModel } from "../scripts/lib/world-model.mjs";
+import { prepareSourceContext } from "../scripts/lib/world/source-context-workflow.mjs";
+import { readSourceObservation } from "../scripts/lib/world/source-observation.mjs";
+import { indexProjectGraph, queryProjectGraph } from "../scripts/lib/world/project-graph.mjs";
+import { refreshWorldModel } from "../scripts/lib/world/incremental-refresh.mjs";
+import { buildWorldModel, readWorldModel } from "../scripts/lib/world/world-model.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 

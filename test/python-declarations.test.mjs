@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { prepareSourceContext, inspectSourceObservation } from "../scripts/lib/source-context-workflow.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { prepareSourceContext, inspectSourceObservation } from "../scripts/lib/world/source-context-workflow.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
-import { exactDeclarationSlice } from "../scripts/lib/python-source-collector.mjs";
+import { exactDeclarationSlice } from "../scripts/lib/world/python-source-collector.mjs";
 
 // head_* request inputs below deliberately exercise compatibility dispatch;
 // generated catalog and Hook assertions use the canonical Lode vocabulary.

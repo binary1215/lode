@@ -65,9 +65,9 @@ export async function controlledGcStop({ cancel = false, stuck = false, deadline
   const config = { cancel, stuck, timeline, controller: new AbortController() };
   scenarios.set(root, config);
   try {
-    const lib = path.resolve(import.meta.dirname, "../../scripts/lib");
+    const lib = path.resolve(import.meta.dirname, "../../scripts/lib/world");
     const source = fs.readFileSync(path.join(lib, "snapshot-backend-reclamation.mjs"), "utf8");
-    const lifted = source.replace(/from "(\.\/[^"\n]+)"/g, (_, relative) => "from " + JSON.stringify(relative === "./runtime-process-supervisor.mjs"
+    const lifted = source.replace(/from "(\.\.?\/[^"\n]+)"/g, (_, relative) => "from " + JSON.stringify(path.basename(relative) === "runtime-process-supervisor.mjs"
       ? import.meta.url : pathToFileURL(path.resolve(lib, relative)).href));
     const moduleFile = path.join(root, "gc-caller.mjs"); fs.writeFileSync(moduleFile, lifted, { flag: "wx" });
     const { SnapshotBackendReclamation } = await import(pathToFileURL(moduleFile).href);

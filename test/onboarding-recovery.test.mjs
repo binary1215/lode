@@ -2,16 +2,16 @@ import { worldSnapshotFile, graphSnapshotFile, readFixtureSnapshot, writeFixture
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import zlib from "node:zlib";
-import { readSnapshotFile } from "../scripts/lib/snapshot-storage-codec.mjs";
-import { createSnapshotComposition } from "../scripts/lib/snapshot-domain-bundles.mjs";
-import { snapshotReaderRequirements } from "../scripts/lib/snapshot-storage-compatibility.mjs";
+import { readSnapshotFile } from "../scripts/lib/world/snapshot-storage-codec.mjs";
+import { createSnapshotComposition } from "../scripts/lib/world/snapshot-domain-bundles.mjs";
+import { snapshotReaderRequirements } from "../scripts/lib/world/snapshot-storage-compatibility.mjs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { initializeOrResumeProject, inspectProjectExperience } from "../scripts/lib/project-bootstrap.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
+import { initializeOrResumeProject, inspectProjectExperience } from "../scripts/lib/session/project-bootstrap.mjs";
 import {
   inspectOptionalOnboarding,
   inspectOnboarding,
@@ -20,18 +20,18 @@ import {
   restoreOnboardingCandidate,
   reviewOnboarding,
   startOnboarding,
-} from "../scripts/lib/onboarding.mjs";
+} from "../scripts/lib/session/onboarding.mjs";
 import crypto from "node:crypto";
-import { inspectConversationalOnboarding } from "../scripts/lib/onboarding-conversation.mjs";
-import { enterConversationRecovery } from "../scripts/lib/compaction-lifecycle.mjs";
-import { readProductModelCanon } from "../scripts/lib/product-model.mjs";
-import { inspectWorldModel } from "../scripts/lib/world-model.mjs";
-import { createHeadSession, withSessionRoute } from "../scripts/lib/session-routing.mjs";
-import { createRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
-import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
+import { inspectConversationalOnboarding } from "../scripts/lib/session/onboarding-conversation.mjs";
+import { enterConversationRecovery } from "../scripts/lib/session/compaction-lifecycle.mjs";
+import { readProductModelCanon } from "../scripts/lib/world/product-model.mjs";
+import { inspectWorldModel } from "../scripts/lib/world/world-model.mjs";
+import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
+import { createRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
+import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const moduleUrl = new URL("../scripts/lib/onboarding.mjs", import.meta.url).href;
+const moduleUrl = new URL("../scripts/lib/session/onboarding.mjs", import.meta.url).href;
 
 async function fixture() {
   const root = fs.mkdtempSync(path.join(pluginRoot, ".qa-onboarding-recovery-"));

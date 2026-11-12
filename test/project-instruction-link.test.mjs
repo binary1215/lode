@@ -4,12 +4,12 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import test from "node:test";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { initializeOrResumeProject } from "../scripts/lib/project-bootstrap.mjs";
-import { linkProjectInstructions } from "../scripts/lib/project-instruction-link.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { initializeOrResumeProject } from "../scripts/lib/session/project-bootstrap.mjs";
+import { linkProjectInstructions } from "../scripts/lib/storage/project-instruction-link.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { dispatch, tools } from "../scripts/mcp-server.mjs";
-import { formatProjectBootstrap } from "../scripts/lib/cli-presentation.mjs";
+import { formatProjectBootstrap } from "../scripts/lib/session/cli-presentation.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const hash = bytes => crypto.createHash("sha256").update(bytes).digest("hex");

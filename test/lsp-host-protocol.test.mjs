@@ -23,7 +23,7 @@ import {
   terminalResult,
   validateRange,
   verifyOwnershipBinding,
-} from "../scripts/lib/lsp-host-protocol.mjs";
+} from "../scripts/lib/runtime/lsp-host-protocol.mjs";
 
 const generationDigest = sha256("generation");
 const sources = [

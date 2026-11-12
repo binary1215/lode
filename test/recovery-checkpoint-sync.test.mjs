@@ -4,16 +4,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/execution-lineage.mjs";
-import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/run-lineage.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/runtime/run-lineage.mjs";
 import {
   inspectRecoveryCheckpointBasis,
   prepareCompaction,
   syncRecoveryCheckpoint,
-} from "../scripts/lib/compaction-recovery.mjs";
-import { integrateReviewedRunCheckpoint, restoreSessionFromArtifacts } from "../scripts/lib/session-recovery.mjs";
+} from "../scripts/lib/session/compaction-recovery.mjs";
+import { integrateReviewedRunCheckpoint, restoreSessionFromArtifacts } from "../scripts/lib/session/session-recovery.mjs";
 import { dispatch, catalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 

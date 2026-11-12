@@ -7,8 +7,8 @@ import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { initializeProject } from "./lib/head-core.mjs";
-import { buildWorldModel, inspectWorldModelStatus } from "./lib/world-model.mjs";
-import { createRepositoryScanReferenceAdapter } from "./lib/repository-scan.mjs";
+import { buildWorldModel, inspectWorldModelStatus } from "./lib/world/world-model.mjs";
+import { createRepositoryScanReferenceAdapter } from "./lib/world/repository-scan.mjs";
 import { dispatch } from "./mcp-server.mjs";
 
 export const RUNTIME_BASELINE = "86c88d1ec105d11621122c050c3b0f298574bee1";

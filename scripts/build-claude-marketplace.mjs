@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import path from "node:path";
-import { buildClaudeMarketplaceSnapshot } from "./lib/claude-marketplace.mjs";
+import { buildClaudeMarketplaceSnapshot } from "./lib/distribution/claude-marketplace.mjs";
 import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
 
 function option(name, fallback = "") {

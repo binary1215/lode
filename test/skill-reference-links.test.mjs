@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { buildCodexMarketplaceSnapshot } from "../scripts/lib/codex-marketplace.mjs";
-import { buildClaudeMarketplaceSnapshot } from "../scripts/lib/claude-marketplace.mjs";
+import { buildCodexMarketplaceSnapshot } from "../scripts/lib/distribution/codex-marketplace.mjs";
+import { buildClaudeMarketplaceSnapshot } from "../scripts/lib/distribution/claude-marketplace.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const skillRoot = path.join(pluginRoot, "skills", "lode-agent-core");

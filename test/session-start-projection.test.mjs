@@ -1,4 +1,4 @@
-import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
+import { relativeProjectArtifact } from "../scripts/lib/storage/project-storage-format.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -6,16 +6,16 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { createHeadSession, withSessionRoute } from "../scripts/lib/session-routing.mjs";
-import { createSessionHostAdapter } from "../scripts/lib/session-host-adapter.mjs";
+import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
+import { createSessionHostAdapter } from "../scripts/lib/session/session-host-adapter.mjs";
 import { sessionStartContext } from "../scripts/session-host-hook.mjs";
-import { fitSelectedBodyGroups, workBodyTuples } from "../scripts/lib/session-work-body-organization.mjs";
+import { fitSelectedBodyGroups, workBodyTuples } from "../scripts/lib/session/session-work-body-organization.mjs";
 import { publicToolName } from "../scripts/lib/lode-artifact-composition.mjs";
-import { inspectRecoveryCheckpointBasis, syncRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
-import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session-work-context.mjs";
-import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
-import { startupProjection as projectStartup } from "../scripts/lib/session-host-context-projection.mjs";
-import { coreEntryGuidance } from "../scripts/lib/lode-entry-guidance.mjs";
+import { inspectRecoveryCheckpointBasis, syncRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
+import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session/session-work-context.mjs";
+import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
+import { startupProjection as projectStartup } from "../scripts/lib/session/session-host-context-projection.mjs";
+import { coreEntryGuidance } from "../scripts/lib/session/lode-entry-guidance.mjs";
 
 const directionView = value => value ? Object.fromEntries(["directionId", "directionHash", "input"].filter(key => value[key] !== undefined).map(key => [key, value[key]])) : null;
 

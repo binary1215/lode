@@ -5,12 +5,12 @@ import path from "node:path";
 import test from "node:test";
 import { createHash } from "node:crypto";
 import { initializeProject } from "../scripts/lib/head-core.mjs";
-import { createHeadSession, withSessionRoute } from "../scripts/lib/session-routing.mjs";
-import { recordSessionWorkEvidence } from "../scripts/lib/session-work-context.mjs";
-import { queryProjectGraph } from "../scripts/lib/project-graph.mjs";
+import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
+import { recordSessionWorkEvidence } from "../scripts/lib/session/session-work-context.mjs";
+import { queryProjectGraph } from "../scripts/lib/world/project-graph.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
-import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
+import { formatCliResult } from "../scripts/lib/session/cli-presentation.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const selector = (saved) => ({ evidenceId: saved.evidence.evidenceId, evidenceDigest: saved.evidence.evidenceDigest });

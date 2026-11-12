@@ -3,12 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { formatMcpToolContent, formatCliResult, formatSessionWorkContext } from "../scripts/lib/cli-presentation.mjs";
-import { organizeSelectedWorkBodies, workBodyTuples } from "../scripts/lib/session-work-body-organization.mjs";
+import { formatMcpToolContent, formatCliResult, formatSessionWorkContext } from "../scripts/lib/session/cli-presentation.mjs";
+import { organizeSelectedWorkBodies, workBodyTuples } from "../scripts/lib/session/session-work-body-organization.mjs";
 import { initializeProject } from "../scripts/lib/head-core.mjs";
-import { prepareSourceContext } from "../scripts/lib/source-context-workflow.mjs";
+import { prepareSourceContext } from "../scripts/lib/world/source-context-workflow.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
-import { terminalBlock } from "../scripts/lib/terminal-graph.mjs";
+import { terminalBlock } from "../scripts/lib/world/terminal-graph.mjs";
 import { assertTerminalGraphPresentation } from "./helpers/terminal-graph-assertions.mjs";
 
 const render = (value) => formatMcpToolContent("head_project_graph", value);

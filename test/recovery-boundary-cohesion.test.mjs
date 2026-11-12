@@ -5,15 +5,15 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject, convergeProjectInstallation } from "../scripts/lib/head-core.mjs";
-import { createHeadSession, createSessionCallContext, defaultSessionStatePath, withSessionCallContext, withSessionRoute } from "../scripts/lib/session-routing.mjs";
-import { createSessionHostAdapter } from "../scripts/lib/session-host-adapter.mjs";
-import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session-work-context.mjs";
-import { inspectRecoveryCheckpointBasis, syncRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
-import { updateProjectDirection, assertProjectActionsCurrent } from "../scripts/lib/project-direction.mjs";
+import { createHeadSession, createSessionCallContext, defaultSessionStatePath, withSessionCallContext, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
+import { createSessionHostAdapter } from "../scripts/lib/session/session-host-adapter.mjs";
+import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session/session-work-context.mjs";
+import { inspectRecoveryCheckpointBasis, syncRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
+import { updateProjectDirection, assertProjectActionsCurrent } from "../scripts/lib/session/project-direction.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 
 import { seedLegacyProject } from "./helpers/legacy-project-fixture.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
 
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
@@ -188,9 +188,11 @@ for (const kind of ["project bytes","unknown managed path","manifest JSON","sele
 
 test("new dependency leaves cannot transitively reach World or runtime orchestration", () => {
   const graph=new Map(),directory=path.join(pluginRoot,"scripts/lib");
-  for(const name of fs.readdirSync(directory).filter(name=>name.endsWith(".mjs"))){
-    const source=fs.readFileSync(path.join(directory,name),"utf8"),references=[...source.matchAll(/\b(?:import|export)\s+[\s\S]*?\bfrom\s*["']([^"']+)["']/g),...source.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)];
-    graph.set(name,references.filter(match=>match[1].startsWith("./")).map(match=>path.basename(match[1])));
+  // Every scripts/lib module in any layer directory, keyed by file name; only
+  // references that resolve inside scripts/lib count.
+  for(const relative of fs.readdirSync(directory,{recursive:true}).filter(name=>name.endsWith(".mjs"))){
+    const file=path.join(directory,relative),source=fs.readFileSync(file,"utf8"),references=[...source.matchAll(/\b(?:import|export)\s+[\s\S]*?\bfrom\s*["']([^"']+)["']/g),...source.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)];
+    graph.set(path.basename(relative),references.filter(match=>match[1].startsWith(".")&&!path.relative(directory,path.resolve(path.dirname(file),match[1])).startsWith("..")).map(match=>path.basename(match[1])));
   }
   for(const leaf of ["session-paths.mjs","product-policy-records.mjs","runtime-invocation-storage.mjs","worker-patch-proposal-contract.mjs"]){
     const seen=new Set(),queue=[leaf];while(queue.length){const node=queue.pop();if(seen.has(node))continue;seen.add(node);queue.push(...(graph.get(node)||[]));}

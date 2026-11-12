@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { exportGraphExplorer } from "./lib/graph-explorer.mjs";
+import { exportGraphExplorer } from "./lib/world/graph-explorer.mjs";
 
 try {
   const options = {},

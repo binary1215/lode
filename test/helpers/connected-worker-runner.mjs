@@ -1,6 +1,6 @@
 // Trusted test Host runner. It executes only the local Node protocol fixture.
 import path from "node:path";
-import { executeBoundedWorkerDispatch } from "../../scripts/lib/bounded-worker-dispatch.mjs";
+import { executeBoundedWorkerDispatch } from "../../scripts/lib/worker/bounded-worker-dispatch.mjs";
 
 export default async function ({ root, authorization, policy, signal, onProcess }) {
   if (policy.kind !== "protocol-fixture" || policy.actualProviderInvoked !== false) throw new Error("Fixture Host only");

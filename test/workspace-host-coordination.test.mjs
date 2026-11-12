@@ -5,12 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { createRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
-import { continueSessionFromArtifacts } from "../scripts/lib/runtime-session-continuation.mjs";
-import { buildRuntimeAdapterComposition } from "../scripts/lib/runtime-adapter.mjs";
-import { VerifiedWorkspaceHostAdapter, WORKSPACE_HOST_COORDINATION_VERSION } from "../scripts/lib/workspace-host-coordination.mjs";
-import { createWorkspaceHostExportDriver, publishWorkspaceHostExportSnapshot, workspaceHostExportProcessProofHash } from "../scripts/lib/workspace-host-export-driver.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
+import { createRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
+import { continueSessionFromArtifacts } from "../scripts/lib/runtime/runtime-session-continuation.mjs";
+import { buildRuntimeAdapterComposition } from "../scripts/lib/runtime/runtime-adapter.mjs";
+import { VerifiedWorkspaceHostAdapter, WORKSPACE_HOST_COORDINATION_VERSION } from "../scripts/lib/worker/workspace-host-coordination.mjs";
+import { createWorkspaceHostExportDriver, publishWorkspaceHostExportSnapshot, workspaceHostExportProcessProofHash } from "../scripts/lib/worker/workspace-host-export-driver.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 function fixture(t) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "head-host-adapter-"));

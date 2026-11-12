@@ -1,4 +1,4 @@
-import { adoptVerifiedProjectCopy } from "../scripts/lib/project-copy-adoption.mjs";
+import { adoptVerifiedProjectCopy } from "../scripts/lib/storage/project-copy-adoption.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -8,32 +8,32 @@ import zlib from "node:zlib";
 import test from "node:test";
 import { initializeProject, inspectProject, convergeProjectInstallation } from "../scripts/lib/head-core.mjs";
 import { seedLegacyProject } from "./helpers/legacy-project-fixture.mjs";
-import { initializeOrResumeProject } from "../scripts/lib/project-bootstrap.mjs";
-import { resolveProjectStorage } from "../scripts/lib/project-storage-format.mjs";
-import { readWorldModelSnapshot } from "../scripts/lib/world-model.mjs";
-import { GitSnapshotStore, snapshotGitProcessStatus } from "../scripts/lib/git-snapshot-store.mjs";
-import { buildGraphExplorerSnapshot } from "../scripts/lib/graph-explorer.mjs";
+import { initializeOrResumeProject } from "../scripts/lib/session/project-bootstrap.mjs";
+import { resolveProjectStorage } from "../scripts/lib/storage/project-storage-format.mjs";
+import { readWorldModelSnapshot } from "../scripts/lib/world/world-model.mjs";
+import { GitSnapshotStore, snapshotGitProcessStatus } from "../scripts/lib/world/git-snapshot-store.mjs";
+import { buildGraphExplorerSnapshot } from "../scripts/lib/world/graph-explorer.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
-import { LocalJsonWorldModelStoreAdapter } from "../scripts/lib/world-model-store.mjs";
-import { LocalJsonGraphProjectionAdapter } from "../scripts/lib/graph-projection-adapter.mjs";
-import { buildWorldModel, readWorldModelForDiscovery, inspectWorldModel } from "../scripts/lib/world-model.mjs";
-import { refreshWorldModel } from "../scripts/lib/incremental-refresh.mjs";
-import { queryProjectGraph } from "../scripts/lib/project-graph.mjs";
-import { readGraphRecord } from "../scripts/lib/discovery-index.mjs";
-import { verifyHistoricalInventoryEntries } from "../scripts/lib/historical-artifact-boundary-store.mjs";
-import { decodeSnapshotBytes, readSnapshotFile } from "../scripts/lib/snapshot-storage-codec.mjs";
+import { LocalJsonWorldModelStoreAdapter } from "../scripts/lib/world/world-model-store.mjs";
+import { LocalJsonGraphProjectionAdapter } from "../scripts/lib/world/graph-projection-adapter.mjs";
+import { buildWorldModel, readWorldModelForDiscovery, inspectWorldModel } from "../scripts/lib/world/world-model.mjs";
+import { refreshWorldModel } from "../scripts/lib/world/incremental-refresh.mjs";
+import { queryProjectGraph } from "../scripts/lib/world/project-graph.mjs";
+import { readGraphRecord } from "../scripts/lib/world/discovery-index.mjs";
+import { verifyHistoricalInventoryEntries } from "../scripts/lib/world/historical-artifact-boundary-store.mjs";
+import { decodeSnapshotBytes, readSnapshotFile } from "../scripts/lib/world/snapshot-storage-codec.mjs";
 import {
   ensureProjectStorageIgnore,
   ensureOwnedSnapshotStoreIgnore,
   GENERATED_STORAGE_IGNORE_RULES,
   RETAINED_STORAGE_IGNORE_RULES,
-} from "../scripts/lib/project-storage-ignore.mjs";
-import { inspectSnapshotGarbageCollection } from "../scripts/lib/snapshot-gc.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { diffGraphLineage } from "../scripts/lib/graph-lineage.mjs";
+} from "../scripts/lib/storage/project-storage-ignore.mjs";
+import { inspectSnapshotGarbageCollection } from "../scripts/lib/world/snapshot-gc.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { diffGraphLineage } from "../scripts/lib/world/graph-lineage.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { spawn } from "node:child_process";
-import { createSnapshotBatchDecoder } from "../scripts/lib/git-snapshot-batch.mjs";
+import { createSnapshotBatchDecoder } from "../scripts/lib/world/git-snapshot-batch.mjs";
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const digest = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 function fixture(t, legacy = false) {
@@ -67,8 +67,8 @@ test("local prepared traversal detaches aliases and revalidates each request wit
   const f = fixture(t);
   source(f);
   const built = await buildWorldModel({ root: f.root });
-  const { queryTemporalProvenanceGraph } = await import("../scripts/lib/temporal-provenance.mjs");
-  const { buildPreparedTraversalRequest } = await import("../scripts/lib/graph-projection-adapter.mjs");
+  const { queryTemporalProvenanceGraph } = await import("../scripts/lib/world/temporal-provenance.mjs");
+  const { buildPreparedTraversalRequest } = await import("../scripts/lib/world/graph-projection-adapter.mjs");
   const graph = built.snapshot.temporalProvenanceGraph,
     result = queryTemporalProvenanceGraph(graph, { query: "compute_value", depth: 1 });
   const request = buildPreparedTraversalRequest({ graph, result, storage: f.storage }),

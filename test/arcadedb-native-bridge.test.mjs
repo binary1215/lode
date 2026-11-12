@@ -10,11 +10,11 @@ import {
   createArcadeDbNativeBridgeManifest,
   resolveVerifiedArcadeDbNativeBridge,
   verifyArcadeDbNativeBridgeManifest,
-} from "../scripts/lib/arcadedb-native-bridge.mjs";
-import { buildStorageSelection } from "../scripts/lib/onboarding-contract.mjs";
-import { ArcadeDbHttpTransport, buildArcadeDbBridgeEnvironment } from "../scripts/lib/graph-projection-adapter.mjs";
+} from "../scripts/lib/world/arcadedb-native-bridge.mjs";
+import { buildStorageSelection } from "../scripts/lib/session/onboarding-contract.mjs";
+import { ArcadeDbHttpTransport, buildArcadeDbBridgeEnvironment } from "../scripts/lib/world/graph-projection-adapter.mjs";
 
-const javascriptBridge = fileURLToPath(new URL("../scripts/lib/arcadedb-http-bridge.mjs", import.meta.url));
+const javascriptBridge = fileURLToPath(new URL("../scripts/lib/world/arcadedb-http-bridge.mjs", import.meta.url));
 
 const targets = {
   "darwin-arm64": { directory: "darwin-arm64", executable: "lode-agent-arcadedb-bridge" },

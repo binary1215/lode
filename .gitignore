@@ -98,6 +98,7 @@ test/helpers/*
 !test/fixtures/
 test/fixtures/*
 !test/fixtures/dispatch-recordings.json
+!test/fixtures/lib-layer-baseline.json
 !test/helpers/session-work-linkage-fixture.mjs
 !test/helpers/session-work-reentry-flow.mjs
 !test/helpers/worker-integration-fixture.mjs
@@ -162,6 +163,8 @@ Thumbs.db
 !test/hint-grouped-calls.test.mjs
 !test/held-direction-id.test.mjs
 !test/held-recovery-basis.test.mjs
+!test/project-root-drive-case.test.mjs
+!test/lib-layers.test.mjs
 !test/legacy-reason-codes.test.mjs
 !test/legacy-wire-spellings.test.mjs
 !test/operation-groups.test.mjs

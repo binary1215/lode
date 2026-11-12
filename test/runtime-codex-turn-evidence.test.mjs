@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertCodexProposalCompletion } from "../scripts/lib/runtime-codex-turn-evidence.mjs";
+import { assertCodexProposalCompletion } from "../scripts/lib/runtime/runtime-codex-turn-evidence.mjs";
 
 test("summary/notLoaded corroborate direct evidence without pretending to contain full history", () => {
   const reasoning = { id: "reasoning", type: "reasoning", summary: [], content: [] };

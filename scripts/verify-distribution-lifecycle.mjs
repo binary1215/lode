@@ -5,8 +5,8 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { installDistribution, inspectDistribution, rollbackDistribution, uninstallDistribution } from "./lib/distribution-lifecycle.mjs";
-import { resolveProjectStorage } from "./lib/project-storage-format.mjs";
+import { installDistribution, inspectDistribution, rollbackDistribution, uninstallDistribution } from "./lib/distribution/distribution-lifecycle.mjs";
+import { resolveProjectStorage } from "./lib/storage/project-storage-format.mjs";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sourceVersion = JSON.parse(fs.readFileSync(path.join(sourceRoot, "package.json"), "utf8")).version;
@@ -304,7 +304,7 @@ try {
   assert.equal(fs.existsSync(path.join(installedReleaseRoot, "scripts", "verify-live-provider-coordination.mjs")), false);
   assert.equal(fs.existsSync(path.join(installedReleaseRoot, "scripts", "lib", "role-coordination.mjs")), false);
   assert.equal(fs.existsSync(path.join(installedReleaseRoot, "scripts", "verify-hostless-session-recovery.mjs")), true);
-  assert.equal(fs.existsSync(path.join(installedReleaseRoot, "scripts", "lib", "workspace-host-export-driver.mjs")), true);
+  assert.equal(fs.existsSync(path.join(installedReleaseRoot, "scripts", "lib", "worker", "workspace-host-export-driver.mjs")), true);
   assert.equal(fs.existsSync(path.join(installedReleaseRoot, "README.ko.md")), true);
   assert.equal(fs.readFileSync(path.join(installedReleaseRoot, "LICENSE"), "utf8"), fs.readFileSync(path.join(sourceRoot, "LICENSE"), "utf8"));
   assert.equal(JSON.parse(fs.readFileSync(path.join(installedReleaseRoot, ".codex-plugin", "plugin.json"), "utf8")).license, "MIT");

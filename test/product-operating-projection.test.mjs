@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import * as facade from "../scripts/lib/product-operating-loop.mjs";
-import * as projection from "../scripts/lib/product-operating-projection.mjs";
+import * as facade from "../scripts/lib/world/product-operating-loop.mjs";
+import * as projection from "../scripts/lib/world/product-operating-projection.mjs";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
 
 const names = [
@@ -34,9 +34,9 @@ test("the facade retains its twenty existing names and the canonical continuity 
   assert.deepEqual(Object.keys(facade).sort(), names.sort());
   assert.equal(facade.buildLodeContinuitySnapshot, facade.buildHeadContinuitySnapshot);
   for (const name of names.filter((name) => Object.hasOwn(projection, name))) assert.equal(facade[name], projection[name], name);
-  const source = fs.readFileSync(new URL("../scripts/lib/product-operating-projection.mjs", import.meta.url), "utf8");
+  const source = fs.readFileSync(new URL("../scripts/lib/world/product-operating-projection.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(source, /(?:from\s*|import\s*\()["']\.\/(?:product-operating-loop|world-model|change-set|execution-lineage)\.mjs/u);
-  for (const name of ["world-model", "temporal-provenance"]) {
+  for (const name of ["world/world-model", "world/temporal-provenance"]) {
     const consumer = fs.readFileSync(new URL(`../scripts/lib/${name}.mjs`, import.meta.url), "utf8");
     assert.match(consumer, /from "\.\/product-operating-projection\.mjs"/u);
     assert.doesNotMatch(consumer, /from "\.\/product-operating-loop\.mjs"/u);

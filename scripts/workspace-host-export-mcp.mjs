@@ -3,8 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { ENVIRONMENT_NAME_PAIRS } from "../compat/head/public-names.mjs";
 import { serveMcp } from "./mcp-server.mjs";
-import { VerifiedWorkspaceHostAdapter } from "./lib/workspace-host-coordination.mjs";
-import { createWorkspaceHostExportDriver } from "./lib/workspace-host-export-driver.mjs";
+import { VerifiedWorkspaceHostAdapter } from "./lib/worker/workspace-host-coordination.mjs";
+import { createWorkspaceHostExportDriver } from "./lib/worker/workspace-host-export-driver.mjs";
 
 const REQUIRED = [
   "HEAD_AGENT_HOST_PROJECT_ROOT",

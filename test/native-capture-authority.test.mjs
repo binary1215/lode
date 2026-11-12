@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { syntheticNativeCapture, nativeProfile } from "./helpers/native-portability-fixture.mjs";
-import { prepareCodexNativeOffline } from "../scripts/lib/codex-native-offline.mjs";
-import { captureCodexNativeHistory } from "../scripts/lib/codex-native-capture.mjs";
-import { exportProjectBundle, inspectProjectBundle } from "../scripts/lib/project-portability.mjs";
-import { attachProjectNativeTransfer } from "../scripts/lib/project-native-transfer.mjs";
+import { prepareCodexNativeOffline } from "../scripts/lib/distribution/codex-native-offline.mjs";
+import { captureCodexNativeHistory } from "../scripts/lib/distribution/codex-native-capture.mjs";
+import { exportProjectBundle, inspectProjectBundle } from "../scripts/lib/storage/project-portability.mjs";
+import { attachProjectNativeTransfer } from "../scripts/lib/session/project-native-transfer.mjs";
 
 test("request revocation after observation or partial copy stops dependent capture/attachment without hiding its primary cause", async (t) => {
   if (process.platform !== "win32" || process.arch !== "x64")

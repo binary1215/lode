@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatCliResult, formatMcpToolContent } from "../scripts/lib/cli-presentation.mjs";
+import { formatCliResult, formatMcpToolContent } from "../scripts/lib/session/cli-presentation.mjs";
 
 test("Session hints expose recorded work pointers and update only; preserve every Session and raw field", () => {
   const value = { projectId: "synthetic-project", defaultSessionId: "chosen", sessions: [

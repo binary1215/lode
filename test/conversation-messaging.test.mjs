@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { initializeProject } from "../scripts/lib/lode-core.mjs";
+import { initializeProject } from "../scripts/lib/session/lode-core.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { runSessionHostHook } from "../scripts/session-host-hook.mjs";
 import {
@@ -21,14 +21,14 @@ import {
   sendProjectConversation,
   writeOpenCodeCallerTicket,
   deliverQueuedOpenCode as pumpOpenCode,
-} from "../scripts/lib/conversation-messaging.mjs";
+} from "../scripts/lib/session/conversation-messaging.mjs";
 import {
   claudeWireLines,
   deliverClaudeInbox,
   normalizeClaudeSocketPath,
   readClaudePeerToken,
   claudeSocketDigest,
-} from "../scripts/lib/conversation-messaging-claude.mjs";
+} from "../scripts/lib/session/conversation-messaging-claude.mjs";
 import {
   ancestorsFromPsTable,
   codexControlSocket,
@@ -36,10 +36,10 @@ import {
   collectAncestors,
   deliverCodexTurn,
   resolveCodexWindowsTarget,
-} from "../scripts/lib/conversation-messaging-codex.mjs";
-import { deliverOpenCodePrompt } from "../scripts/lib/conversation-messaging-opencode.mjs";
-import { conversationHostDirectory } from "../scripts/lib/conversation-mailbox-storage.mjs";
-import { processStartId } from "../scripts/lib/process-exists.mjs";
+} from "../scripts/lib/session/conversation-messaging-codex.mjs";
+import { deliverOpenCodePrompt } from "../scripts/lib/session/conversation-messaging-opencode.mjs";
+import { conversationHostDirectory } from "../scripts/lib/session/conversation-mailbox-storage.mjs";
+import { processStartId } from "../scripts/lib/core/process-exists.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const fixedNow = () => Date.parse("2026-10-31T00:00:00.000Z");
@@ -633,7 +633,7 @@ test("two processes cannot claim one old inbox message", async (t) => {
   const old = new Date(Date.now() - 60_000);
   fs.utimesSync(file, old, old);
   const script = `
-    import { prepareHookInjection } from ${JSON.stringify(new URL("../scripts/lib/conversation-messaging.mjs", import.meta.url).href)};
+    import { prepareHookInjection } from ${JSON.stringify(new URL("../scripts/lib/session/conversation-messaging.mjs", import.meta.url).href)};
     const result = prepareHookInjection({ runtime: "codex", environment: ${JSON.stringify(environment)}, event: { hook_event_name: "UserPromptSubmit", cwd: ${JSON.stringify(root)}, session_id: "codex-once" } });
     if (!result) { process.stdout.write("miss"); process.exit(0); }
     await new Promise(resolve => setTimeout(resolve, 400));
@@ -1532,7 +1532,7 @@ test("a tracked messaging gitignore is not rewritten", (t) => {
 });
 
 test("darwin process birth uses UTC and caches only its own successful birth", async () => {
-  const { processBirth: isolatedBirth } = await import("../scripts/lib/native-session-process.mjs?darwin-cache-fixture");
+  const { processBirth: isolatedBirth } = await import("../scripts/lib/session/native-session-process.mjs?darwin-cache-fixture");
   const calls = [];
   const first = isolatedBirth(process.pid, {
     platform: "darwin",
@@ -1634,7 +1634,7 @@ test("four processes can rewrite one presence without ENOENT or a lost file", as
   // was measured there), so the test checks rename races rather than starvation.
   const REWRITES = 40;
   const script = `
-    import { registerConversationPresence } from ${JSON.stringify(new URL("../scripts/lib/conversation-messaging.mjs", import.meta.url).href)};
+    import { registerConversationPresence } from ${JSON.stringify(new URL("../scripts/lib/session/conversation-messaging.mjs", import.meta.url).href)};
     for (let index = 0; index < ${REWRITES}; index += 1) {
       registerConversationPresence({
         root: ${JSON.stringify(root)},
@@ -1697,7 +1697,7 @@ test("barrier: stale recovery cannot overwrite another caller's admitted handoff
       const beforeDigest = crypto.createHash("sha256").update(fs.readFileSync(inflight)).digest("hex");
       const common = `
     import fs from "node:fs";
-    import { prepareHookInjection } from ${JSON.stringify(new URL("../scripts/lib/conversation-messaging.mjs", import.meta.url).href)};
+    import { prepareHookInjection } from ${JSON.stringify(new URL("../scripts/lib/session/conversation-messaging.mjs", import.meta.url).href)};
     const environment = ${JSON.stringify(environment)};
     const input = { runtime: "codex", environment, event: { hook_event_name: "UserPromptSubmit", cwd: ${JSON.stringify(root)}, session_id: "barrier" } };
   `;

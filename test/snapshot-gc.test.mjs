@@ -1,8 +1,8 @@
-import { resolveVerifiedProcessSupervisor, spawnSupervisedProcess } from "../scripts/lib/runtime-process-supervisor.mjs";
-import { createSourceObservation, sourceBundleKey, retainSourceFailure, readSourceObservationOriginal, readSourceFailure } from "../scripts/lib/source-observation.mjs";
-import { SnapshotBackendReclamation } from "../scripts/lib/snapshot-backend-reclamation.mjs";
-import { GitSnapshotStore, snapshotGitProcessStatus } from "../scripts/lib/git-snapshot-store.mjs";
-import { prepareSourceContext } from "../scripts/lib/source-context-workflow.mjs";
+import { resolveVerifiedProcessSupervisor, spawnSupervisedProcess } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
+import { createSourceObservation, sourceBundleKey, retainSourceFailure, readSourceObservationOriginal, readSourceFailure } from "../scripts/lib/world/source-observation.mjs";
+import { SnapshotBackendReclamation } from "../scripts/lib/world/snapshot-backend-reclamation.mjs";
+import { GitSnapshotStore, snapshotGitProcessStatus } from "../scripts/lib/world/git-snapshot-store.mjs";
+import { prepareSourceContext } from "../scripts/lib/world/source-context-workflow.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -11,26 +11,26 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import zlib from "node:zlib";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { buildWorldModel, readWorldModel, readWorldModelSnapshot } from "../scripts/lib/world-model.mjs";
-import { LocalJsonWorldModelStoreAdapter } from "../scripts/lib/world-model-store.mjs";
-import { LocalJsonGraphProjectionAdapter } from "../scripts/lib/graph-projection-adapter.mjs";
-import { compileContext, readContextCapsule } from "../scripts/lib/context-compiler.mjs";
-import { diffGraphLineage } from "../scripts/lib/graph-lineage.mjs";
-import { inspectSnapshotGarbageCollection, applySnapshotGarbageCollection } from "../scripts/lib/snapshot-gc.mjs";
-import { withSnapshotReferences, withSnapshotReferencesAsync, beginSnapshotCollection, withSnapshotCollectionUnlink, finishSnapshotCollection } from "../scripts/lib/snapshot-reference-lifetime.mjs";
-import { withRefreshWriterLease } from "../scripts/lib/refresh-writer-lease.mjs";
-import { createRecoveryCheckpoint, readRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { buildWorldModel, readWorldModel, readWorldModelSnapshot } from "../scripts/lib/world/world-model.mjs";
+import { LocalJsonWorldModelStoreAdapter } from "../scripts/lib/world/world-model-store.mjs";
+import { LocalJsonGraphProjectionAdapter } from "../scripts/lib/world/graph-projection-adapter.mjs";
+import { compileContext, readContextCapsule } from "../scripts/lib/session/context-compiler.mjs";
+import { diffGraphLineage } from "../scripts/lib/world/graph-lineage.mjs";
+import { inspectSnapshotGarbageCollection, applySnapshotGarbageCollection } from "../scripts/lib/world/snapshot-gc.mjs";
+import { withSnapshotReferences, withSnapshotReferencesAsync, beginSnapshotCollection, withSnapshotCollectionUnlink, finishSnapshotCollection } from "../scripts/lib/world/snapshot-reference-lifetime.mjs";
+import { withRefreshWriterLease } from "../scripts/lib/world/refresh-writer-lease.mjs";
+import { createRecoveryCheckpoint, readRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
 import { runCommand } from "../scripts/lode.mjs";
-import { createLodeSession, withSessionRoute } from "../scripts/lib/session-routing.mjs";
-import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session-work-context.mjs";
-import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/execution-lineage.mjs";
-import { startRun, finishRun, getPendingReviewContext, reviewRun, inspectRunStorageTransition } from "../scripts/lib/run-lineage.mjs";
-import { recordChangeSet, readChangeSet } from "../scripts/lib/change-set.mjs";
-import { buildSnapshotDeletionClosure, snapshotFileIdentity } from "../scripts/lib/snapshot-deletion-closure.mjs";
-import { classifySnapshotFileSystem } from "../scripts/lib/snapshot-filesystem.mjs";
-import { decodeSnapshotBytes } from "../scripts/lib/snapshot-storage-codec.mjs";
-import { emptyProductModelDocument } from "../scripts/lib/product-model.mjs";
+import { createLodeSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
+import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session/session-work-context.mjs";
+import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { startRun, finishRun, getPendingReviewContext, reviewRun, inspectRunStorageTransition } from "../scripts/lib/runtime/run-lineage.mjs";
+import { recordChangeSet, readChangeSet } from "../scripts/lib/world/change-set.mjs";
+import { buildSnapshotDeletionClosure, snapshotFileIdentity } from "../scripts/lib/world/snapshot-deletion-closure.mjs";
+import { classifySnapshotFileSystem } from "../scripts/lib/world/snapshot-filesystem.mjs";
+import { decodeSnapshotBytes } from "../scripts/lib/world/snapshot-storage-codec.mjs";
+import { emptyProductModelDocument } from "../scripts/lib/world/product-model.mjs";
 
 // Only effects requiring the statically unsupported macOS collection lease are
 // inapplicable there. Read-only closure/calculation and public refusal stay tested.
@@ -285,7 +285,7 @@ collectionTest("direct asynchronous snapshot create/reuse holds lifetime through
 
 collectionTest("a second process blocks only collection; a crashed participant is preserved without PID guesses", async t => {
   const f = await fixture(t); await orphan(f);
-  const moduleUrl = new URL("../scripts/lib/snapshot-reference-lifetime.mjs", import.meta.url).href;
+  const moduleUrl = new URL("../scripts/lib/world/snapshot-reference-lifetime.mjs", import.meta.url).href;
   const source = `import readline from 'node:readline';import {withSnapshotReferencesAsync} from ${JSON.stringify(moduleUrl)};
     const input=readline.createInterface({input:process.stdin});
     await withSnapshotReferencesAsync({root:process.argv[1]},async()=>{

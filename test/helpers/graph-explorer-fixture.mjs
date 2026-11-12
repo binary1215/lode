@@ -3,9 +3,9 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { fixture, sha, link } from "./session-work-linkage-fixture.mjs";
-import { buildWorldModel } from "../../scripts/lib/world-model.mjs";
-import { updateProjectDirection } from "../../scripts/lib/project-direction.mjs";
-import { readGraphProject } from "../../scripts/lib/discovery-index.mjs";
+import { buildWorldModel } from "../../scripts/lib/world/world-model.mjs";
+import { updateProjectDirection } from "../../scripts/lib/session/project-direction.mjs";
+import { readGraphProject } from "../../scripts/lib/world/discovery-index.mjs";
 
 // Shared synthetic input for source and actual-browser checks. No user records.
 export async function explorerFixture(t, { history = false, adversarial = false } = {}) {

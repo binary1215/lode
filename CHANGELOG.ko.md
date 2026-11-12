@@ -9,6 +9,27 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.116 — 게시 결과는 별도 확인
+
+- Windows에서 드라이브 문자가 소문자인 MCP `project_root`나 CLI 루트는 대문자로
+  기록된 Project와 같은 Project로 처리합니다. 이전에는 상태 조회가 재배치를
+  제안했고 다른 작업은 `NOT_INITIALIZED`로 답했습니다. 저장된 것은 다시 쓰지
+  않으며, 실제로 옮겨진 Project는 여전히 재배치로 보고합니다.
+  - 소문자 드라이브로 기록된 Project는 여전히 기록된 표기로만 접근합니다.
+    디렉터리 이름의 대소문자와 Host가 훅에 넘기는 `cwd`는 그대로입니다.
+- 읽기 전용 거절 코드 감사(`scripts/audit-reason-codes.mjs`,
+  `docs/reason-code-audit.md`)를 추가했습니다. 병합 후보는 이후 결정을 위한
+  제안이며, 동작은 바뀌지 않습니다.
+- `scripts/lib` 모듈을 `scripts/lib-layers.json`에 적힌 계층 디렉터리(`core`,
+  `storage`, `world`, `session`, `runtime`, `worker`, `distribution`)로
+  옮겼습니다. `scripts/lib/head-core.mjs`와
+  `scripts/lib/lode-artifact-composition.mjs`는 경로를 유지합니다.
+  - 테스트가 상위 계층 import나 정적 순환이 새로 생기는 것을 막습니다. 현재의
+    예외(정적 147개, 동적 30개)는 줄어들기만 하는 목록으로 둡니다. 엄격한
+    계층화에는 아직 이르지 못했습니다.
+- Conformance disposition MCP 스키마가 `actor: "lode"`를 받습니다(`"head"`는
+  별칭으로 남습니다).
+
 ## 0.3.0-beta.115 — 게시 결과는 별도 확인
 
 - MCP에서 Host가 검증한 호출자는 자신의 결과가 현재 공통 방향을 보여 준 뒤에는

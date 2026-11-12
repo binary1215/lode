@@ -5,20 +5,20 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/execution-lineage.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/runtime/execution-lineage.mjs";
 import {
   inspectFeatureMapping,
   readFeatureMappingCandidateSet,
   readFeatureMappingReviewDecision,
   reviewFeatureMapping,
   startFeatureMapping,
-} from "../scripts/lib/feature-mapping.mjs";
-import { featureMappingCanonicalJson, featureMappingDigest, verifyFeatureMappingCandidateSet } from "../scripts/lib/feature-mapping-projection.mjs";
+} from "../scripts/lib/world/feature-mapping.mjs";
+import { featureMappingCanonicalJson, featureMappingDigest, verifyFeatureMappingCandidateSet } from "../scripts/lib/world/feature-mapping-projection.mjs";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { buildWorldModel, inspectWorldModel, queryWorldTemporalGraph } from "../scripts/lib/world-model.mjs";
-import { refreshWorldModel } from "../scripts/lib/incremental-refresh.mjs";
-import { startRun } from "../scripts/lib/run-lineage.mjs";
+import { buildWorldModel, inspectWorldModel, queryWorldTemporalGraph } from "../scripts/lib/world/world-model.mjs";
+import { refreshWorldModel } from "../scripts/lib/world/incremental-refresh.mjs";
+import { startRun } from "../scripts/lib/runtime/run-lineage.mjs";
 import { dispatch as dispatchMcp } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/head.mjs";
 

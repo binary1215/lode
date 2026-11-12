@@ -1,4 +1,4 @@
-import { createSourceObservation, retainSourceObservation, readSourceObservation } from "../scripts/lib/source-observation.mjs";
+import { createSourceObservation, retainSourceObservation, readSourceObservation } from "../scripts/lib/world/source-observation.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -6,23 +6,23 @@ import path from "node:path";
 import crypto from "node:crypto";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { LocalJsonWorldModelStoreAdapter } from "../scripts/lib/world-model-store.mjs";
-import { LocalJsonGraphProjectionAdapter } from "../scripts/lib/graph-projection-adapter.mjs";
-import { buildWorldModel, readWorldModelForDiscovery, readWorldModelSnapshot } from "../scripts/lib/world-model.mjs";
-import { buildGraphExplorerSnapshot } from "../scripts/lib/graph-explorer.mjs";
-import { compileContext, readContextCapsule } from "../scripts/lib/context-compiler.mjs";
-import { queryProjectGraph } from "../scripts/lib/project-graph.mjs";
+import { LocalJsonWorldModelStoreAdapter } from "../scripts/lib/world/world-model-store.mjs";
+import { LocalJsonGraphProjectionAdapter } from "../scripts/lib/world/graph-projection-adapter.mjs";
+import { buildWorldModel, readWorldModelForDiscovery, readWorldModelSnapshot } from "../scripts/lib/world/world-model.mjs";
+import { buildGraphExplorerSnapshot } from "../scripts/lib/world/graph-explorer.mjs";
+import { compileContext, readContextCapsule } from "../scripts/lib/session/context-compiler.mjs";
+import { queryProjectGraph } from "../scripts/lib/world/project-graph.mjs";
 import { runCommand } from "../scripts/lode.mjs";
-import { inspectSnapshotPreservationClosure } from "../scripts/lib/snapshot-preservation-closure.mjs";
-import { ensureProjectStorageIgnore, GENERATED_STORAGE_IGNORE_RULES, RETAINED_STORAGE_IGNORE_RULES, ensureOwnedSnapshotStoreIgnore } from "../scripts/lib/project-storage-ignore.mjs";
-import { GitSnapshotStore, snapshotGitProcessStatus } from "../scripts/lib/git-snapshot-store.mjs";
+import { inspectSnapshotPreservationClosure } from "../scripts/lib/world/snapshot-preservation-closure.mjs";
+import { ensureProjectStorageIgnore, GENERATED_STORAGE_IGNORE_RULES, RETAINED_STORAGE_IGNORE_RULES, ensureOwnedSnapshotStoreIgnore } from "../scripts/lib/storage/project-storage-ignore.mjs";
+import { GitSnapshotStore, snapshotGitProcessStatus } from "../scripts/lib/world/git-snapshot-store.mjs";
 import zlib from "node:zlib";
 import { dispatch } from "../scripts/mcp-server.mjs";
-import { hydrateSnapshotComposition } from "../scripts/lib/snapshot-domain-bundles.mjs";
-import { canonicalGraphJson } from "../scripts/lib/discovery-index.mjs";
-import { readSnapshotFile } from "../scripts/lib/snapshot-storage-codec.mjs";
-import { verifyTemporalProvenanceGraph, buildTemporalProvenanceGraph } from "../scripts/lib/temporal-provenance.mjs";
-import { stabilizeTemporalRelationIdentities, temporalRelationIdentity } from "../scripts/lib/temporal-relation-identity.mjs";
+import { hydrateSnapshotComposition } from "../scripts/lib/world/snapshot-domain-bundles.mjs";
+import { canonicalGraphJson } from "../scripts/lib/world/discovery-index.mjs";
+import { readSnapshotFile } from "../scripts/lib/world/snapshot-storage-codec.mjs";
+import { verifyTemporalProvenanceGraph, buildTemporalProvenanceGraph } from "../scripts/lib/world/temporal-provenance.mjs";
+import { stabilizeTemporalRelationIdentities, temporalRelationIdentity } from "../scripts/lib/world/temporal-relation-identity.mjs";
 const pluginRoot=path.resolve(import.meta.dirname,"..");
 const product={schemaVersion:1,featureGroups:[{key:"editing",name:"Editing",description:"Edit a document."}],capabilities:[],features:[],requirements:[],constraints:[],decisions:[]};
 function fixture(t,options={}) {
@@ -238,14 +238,14 @@ test("generated ignore respects disjoint exceptions and exact managed upgrade wi
 });
 
 test("reader requirements are pointer-bound and status uses zero-write bounded reads",async t=>{
- const {inspectProjectExperience}=await import("../scripts/lib/project-bootstrap.mjs");const {formatProjectStatus}=await import("../scripts/lib/cli-presentation.mjs");
+ const {inspectProjectExperience}=await import("../scripts/lib/session/project-bootstrap.mjs");const {formatProjectStatus}=await import("../scripts/lib/session/cli-presentation.mjs");
  const f=fixture(t),built=await buildWorldModel({root:f.root});const worldPointer=path.join(f.root,f.storage.directory,"world-model/current.json"),graphPointer=path.join(f.root,f.storage.directory,"graph-projection/current.json");
  const originalWorld=fs.readFileSync(worldPointer),originalGraph=fs.readFileSync(graphPointer);const wp=JSON.parse(originalWorld),gp=JSON.parse(originalGraph);assert.equal(wp.readerRequirements.layout,"chunked-code-v3");assert.equal(wp.readerRequirements.snapshotId,built.snapshot.worldModelId);assert.equal(gp.readerRequirements.snapshotId,gp.graphSnapshotId);
  const open=fs.openSync;fs.openSync=function(file,...args){if(String(file).includes(path.sep+"snapshot-bundles"+path.sep)||String(file).includes(path.sep+"snapshots"+path.sep))assert.fail("status hydrated World/Graph");return open.call(this,file,...args);};let status;try{status=await inspectProjectExperience({root:f.root});}finally{fs.openSync=open;}
  assert(status.readiness.storage.layers.every(l=>l.state==="declared-supported"));assert.equal(status.ordinaryWorkBlocked,false);assert(fs.readFileSync(worldPointer).equals(originalWorld));assert(fs.readFileSync(graphPointer).equals(originalGraph));
  delete wp.readerRequirements;fs.writeFileSync(worldPointer,JSON.stringify(wp));status=await runCommand(["status",f.root]);assert.equal(status.readiness.storage.layers[0].state,"not-inspected");assert.match(formatProjectStatus(status),/Core work continues/);assert.equal(status.ordinaryWorkBlocked,false);assert.equal(status.userDecisionRequired,false);
  wp.readerRequirements={version:1,snapshotId:wp.worldModelId,layout:"future-layout",minimumReader:"9.9.9"};fs.writeFileSync(worldPointer,JSON.stringify(wp));const mcp=await dispatch({method:"tools/call",params:{name:"head_project_status",arguments:{project_root:f.root}}});assert.equal(mcp.error,undefined);const displayed=mcp.result.structuredContent;assert.match(mcp.result.content[0].text,/unsupported|9\.9\.9/);assert.equal(displayed.readiness.storage.layers[0].state,"unsupported");assert.equal(displayed.readiness.storage.layers[0].reasonCode,"STORAGE_VERSION_MISMATCH");assert.match(displayed.readiness.storage.layers[0].message,/9\.9\.9/);assert.match(formatProjectStatus(displayed),/unsupported|9\.9\.9/);
- const beforeBytes=fs.readFileSync(worldPointer);const {applySnapshotGarbageCollection}=await import("../scripts/lib/snapshot-gc.mjs");const gc=await applySnapshotGarbageCollection({root:f.root});assert.equal(gc.code,"STORAGE_VERSION_MISMATCH");assert.equal(gc.deletedCount,0);assert.equal(gc.applyPerformed,false);assert(fs.readFileSync(worldPointer).equals(beforeBytes));await assert.rejects((await import("../scripts/lib/incremental-refresh.mjs")).refreshWorldModel({root:f.root}),{code:"STORAGE_VERSION_MISMATCH"});assert(fs.readFileSync(worldPointer).equals(beforeBytes));
+ const beforeBytes=fs.readFileSync(worldPointer);const {applySnapshotGarbageCollection}=await import("../scripts/lib/world/snapshot-gc.mjs");const gc=await applySnapshotGarbageCollection({root:f.root});assert.equal(gc.code,"STORAGE_VERSION_MISMATCH");assert.equal(gc.deletedCount,0);assert.equal(gc.applyPerformed,false);assert(fs.readFileSync(worldPointer).equals(beforeBytes));await assert.rejects((await import("../scripts/lib/world/incremental-refresh.mjs")).refreshWorldModel({root:f.root}),{code:"STORAGE_VERSION_MISMATCH"});assert(fs.readFileSync(worldPointer).equals(beforeBytes));
  for (const minimumReader of ["9.9.9", "bad-version", "0.3.0-beta.999", null, 5]) {
    const supportedLayout = JSON.parse(originalWorld); supportedLayout.readerRequirements.minimumReader = minimumReader;
    fs.writeFileSync(worldPointer, JSON.stringify(supportedLayout));
@@ -255,16 +255,16 @@ test("reader requirements are pointer-bound and status uses zero-write bounded r
    const before = fs.readFileSync(worldPointer);
    const outcome = await applySnapshotGarbageCollection({ root: f.root });
    assert.equal(outcome.deletedCount, 0); assert.equal(outcome.code, "STORAGE_VERSION_MISMATCH");
-   await assert.rejects((await import("../scripts/lib/incremental-refresh.mjs")).refreshWorldModel({root:f.root}),{code:"STORAGE_VERSION_MISMATCH"});
+   await assert.rejects((await import("../scripts/lib/world/incremental-refresh.mjs")).refreshWorldModel({root:f.root}),{code:"STORAGE_VERSION_MISMATCH"});
    assert(fs.readFileSync(worldPointer).equals(before));
  }
  wp.readerRequirements.snapshotId="world-model-"+"f".repeat(24);fs.writeFileSync(worldPointer,JSON.stringify(wp));status=await inspectProjectExperience({root:f.root});assert.equal(status.readiness.storage.layers[0].reasonCode,"INVALID_READER_REQUIREMENTS");
- const invalidBytes = fs.readFileSync(worldPointer); const invalidGc = await applySnapshotGarbageCollection({root:f.root}); assert.equal(invalidGc.code,"INVALID_READER_REQUIREMENTS"); assert.equal(invalidGc.deletedCount,0); await assert.rejects((await import("../scripts/lib/incremental-refresh.mjs")).refreshWorldModel({root:f.root}),{code:"INVALID_READER_REQUIREMENTS"}); assert(fs.readFileSync(worldPointer).equals(invalidBytes));
- fs.writeFileSync(worldPointer,originalWorld);fs.writeFileSync(graphPointer,originalGraph);const {buildSnapshotDeletionClosure}=await import("../scripts/lib/snapshot-deletion-closure.mjs");const closure=await buildSnapshotDeletionClosure({root:f.root});assert.equal(closure.certified,true,JSON.stringify(closure.issues));
+ const invalidBytes = fs.readFileSync(worldPointer); const invalidGc = await applySnapshotGarbageCollection({root:f.root}); assert.equal(invalidGc.code,"INVALID_READER_REQUIREMENTS"); assert.equal(invalidGc.deletedCount,0); await assert.rejects((await import("../scripts/lib/world/incremental-refresh.mjs")).refreshWorldModel({root:f.root}),{code:"INVALID_READER_REQUIREMENTS"}); assert(fs.readFileSync(worldPointer).equals(invalidBytes));
+ fs.writeFileSync(worldPointer,originalWorld);fs.writeFileSync(graphPointer,originalGraph);const {buildSnapshotDeletionClosure}=await import("../scripts/lib/world/snapshot-deletion-closure.mjs");const closure=await buildSnapshotDeletionClosure({root:f.root});assert.equal(closure.certified,true,JSON.stringify(closure.issues));
 });
 
 test("physical storage reports separate byte scopes without treating observation as deletion evidence",async t=>{
- const {inspectSnapshotGarbageCollection}=await import("../scripts/lib/snapshot-gc.mjs");const {inspectPhysicalStorage}=await import("../scripts/lib/snapshot-storage-accounting.mjs");
+ const {inspectSnapshotGarbageCollection}=await import("../scripts/lib/world/snapshot-gc.mjs");const {inspectPhysicalStorage}=await import("../scripts/lib/world/snapshot-storage-accounting.mjs");
  const f=fixture(t);await buildWorldModel({root:f.root});const snapshotDir=path.join(f.root,f.storage.directory,"snapshot-bundles"),unknown=path.join(snapshotDir,"unknown-sidecar.bin");fs.writeFileSync(unknown,Buffer.alloc(123));
  const before=fs.readdirSync(snapshotDir).sort(),result=inspectSnapshotGarbageCollection({root:f.root});const physical=result.physicalStorage;assert(physical.backends.domainBundles.observedFileBytes>=123);assert(physical.observedFileBytes>result.storedBytes);assert.equal(physical.deletionAuthority,false);assert.equal(result.reclaimableBytes,0);assert.equal(result.storedBytes,physical.backends.snapshotFiles.observedFileBytes);assert.deepEqual(fs.readdirSync(snapshotDir).sort(),before);assert.equal(fs.statSync(unknown).size,123);
  const coordination=path.join(f.root,f.storage.directory,".operations");fs.mkdirSync(coordination,{recursive:true});fs.writeFileSync(path.join(coordination,"synthetic-unknown-writer"),Buffer.alloc(64));const active=inspectSnapshotGarbageCollection({root:f.root});assert.equal(active.physicalStorage.coverage.complete,false);assert(active.physicalStorage.coverage.issues.some(x=>x.reasonCode==="TRANSIENT_COORDINATION_EXCLUDED"));assert.equal(active.ordinaryWorkBlocked,false);
@@ -272,7 +272,7 @@ test("physical storage reports separate byte scopes without treating observation
 });
 
 test("bounded pointer inspection rejects descriptor growth before unbounded allocation",async t=>{
- const {inspectStorageReaderCompatibility}=await import("../scripts/lib/snapshot-storage-compatibility.mjs");const f=fixture(t);const directory=path.join(f.root,f.storage.directory,"world-model");fs.mkdirSync(directory,{recursive:true});const file=path.join(directory,"current.json");fs.writeFileSync(file,JSON.stringify({worldModelId:"world-model-"+"1".repeat(24)}));
+ const {inspectStorageReaderCompatibility}=await import("../scripts/lib/world/snapshot-storage-compatibility.mjs");const f=fixture(t);const directory=path.join(f.root,f.storage.directory,"world-model");fs.mkdirSync(directory,{recursive:true});const file=path.join(directory,"current.json");fs.writeFileSync(file,JSON.stringify({worldModelId:"world-model-"+"1".repeat(24)}));
  const open=fs.openSync,read=fs.readSync;let targetFd=null,readBytes=0,injected=false;
  fs.openSync=function(name,...args){const fd=open.call(this,name,...args);if(!injected&&typeof name==="string"&&path.resolve(name)===file){injected=true;targetFd=fd;fs.appendFileSync(file,Buffer.alloc(512*1024,32));}return fd;};fs.readSync=function(fd,...args){const size=read.call(this,fd,...args);if(fd===targetFd)readBytes+=size;return size;};let result;try{result=inspectStorageReaderCompatibility({root:f.root,storage:f.storage,verifyWorldPointer:()=>{},verifyGraphPointer:()=>{}});}finally{fs.openSync=open;fs.readSync=read;}
  assert.equal(result.layers[0].state,"unavailable");assert.equal(result.layers[0].reasonCode,"STORAGE_POINTER_CHANGED");assert.equal(readBytes,0);assert.equal(result.ordinaryWorkBlocked,false);
@@ -298,11 +298,11 @@ test("chunked code connects v3 writer to actual World Compiler Graph Explorer CL
  const v2=new LocalJsonWorldModelStoreAdapter({projectRoot:f.root,storage:f.storage,snapshotLayout:"shared-domains-v2"});await v2.writeSnapshot(first.snapshot.worldModelId,first.snapshot);assert(fs.readFileSync(first.file).equals(rootBytes),"same ID is never converted in place");
  fs.writeFileSync(path.join(f.root,"module.py"),"def compute_value():\n    return 2\n");const second=await buildWorldModel({root:f.root,storeAdapter:f.world,graphProjectionAdapter:f.graph});const next=await f.world.readSnapshot(second.snapshot.worldModelId);assert(pinned.filter(old=>next.snapshotStorage.dependencies.some(ref=>ref.address===old.ref.address)).length>8);
  for(const old of pinned)assert(fs.readFileSync(path.join(f.root,old.ref.address)).equals(old.bytes));assert(fs.readFileSync(first.file).equals(rootBytes));assert.deepEqual((await readWorldModelSnapshot({root:f.root,worldModelId:first.snapshot.worldModelId})).snapshot,first.snapshot);
- const {diffGraphLineage}=await import("../scripts/lib/graph-lineage.mjs");const args={root:f.root,fromWorldModelId:first.snapshot.worldModelId,toWorldModelId:second.snapshot.worldModelId,scopePaths:["module.py"],limit:1};const diff=await diffGraphLineage(args);assert.equal(diff.scope.verification,"full-endpoint-snapshots");assert.deepEqual((await runCommand(["graph-lineage-diff",f.root,"--from",args.fromWorldModelId,"--to",args.toWorldModelId,"--path","module.py","--limit","1"])).changes,diff.changes);
+ const {diffGraphLineage}=await import("../scripts/lib/world/graph-lineage.mjs");const args={root:f.root,fromWorldModelId:first.snapshot.worldModelId,toWorldModelId:second.snapshot.worldModelId,scopePaths:["module.py"],limit:1};const diff=await diffGraphLineage(args);assert.equal(diff.scope.verification,"full-endpoint-snapshots");assert.deepEqual((await runCommand(["graph-lineage-diff",f.root,"--from",args.fromWorldModelId,"--to",args.toWorldModelId,"--path","module.py","--limit","1"])).changes,diff.changes);
 });
 
 test("chunk index preserves duplicates and unknown row fields and rejects malformed reconstruction order",async()=>{
- const {splitWorldCodeChunks,joinWorldCodeChunks}=await import("../scripts/lib/snapshot-code-chunks.mjs");const data={files:[{path:"a",unknown:{"한글":"✓"}},{path:"a",unknown:{"한글":"✓"}}],semanticGraph:{nodes:[{id:"n",path:"a",extra:[1,2]}],edges:[{from:"n",id:"e"},{from:"n",id:"e"}],unknown:"kept"},extra:{scope:"same"}};
+ const {splitWorldCodeChunks,joinWorldCodeChunks}=await import("../scripts/lib/world/snapshot-code-chunks.mjs");const data={files:[{path:"a",unknown:{"한글":"✓"}},{path:"a",unknown:{"한글":"✓"}}],semanticGraph:{nodes:[{id:"n",path:"a",extra:[1,2]}],edges:[{from:"n",id:"e"},{from:"n",id:"e"}],unknown:"kept"},extra:{scope:"same"}};
  const values=new Map();let n=0;const put=(domain,payload)=>{const ref={domain,address:"leaf"+(n++)};values.set(ref.address,payload);return ref;};const encoded=splitWorldCodeChunks(data,put);const get=ref=>values.get(ref.address);assert.deepEqual(joinWorldCodeChunks(encoded,get),data);
  for(const change of [i=>{i.lists.files.order[0]=64;},i=>{i.chunks[0].counts.files=-1;},i=>{i.chunks.push(i.chunks[0]);},i=>{i.lists.files.order.pop();},i=>{i.lists.files.family="graph.nodes";},i=>{i.chunks[0].counts.semanticNodes+=1;},i=>{i.lists.files.extra=true;}]){const invalid=structuredClone(encoded);change(invalid);assert.throws(()=>joinWorldCodeChunks(invalid,get),{code:"INVALID_SNAPSHOT_CODE_CHUNKS"});}
 });
@@ -314,7 +314,7 @@ test("v3 missing corrupt and cross-project leaves fail exact historical read ins
 });
 
 test("physical bundle and root reads bound concurrent descriptor growth and preserve permission errors",async t=>{
- const {readBoundedSnapshotDescriptor}=await import("../scripts/lib/snapshot-storage-codec.mjs");const f=fixture(t,{snapshotLayout:"chunked-code-v3"});const built=await buildWorldModel({root:f.root,storeAdapter:f.world,graphProjectionAdapter:f.graph}),entry=await f.world.readSnapshot(built.snapshot.worldModelId),ref=entry.snapshotStorage.dependencies.find(r=>r.domain==="code-bucket-chunk");
+ const {readBoundedSnapshotDescriptor}=await import("../scripts/lib/world/snapshot-storage-codec.mjs");const f=fixture(t,{snapshotLayout:"chunked-code-v3"});const built=await buildWorldModel({root:f.root,storeAdapter:f.world,graphProjectionAdapter:f.graph}),entry=await f.world.readSnapshot(built.snapshot.worldModelId),ref=entry.snapshotStorage.dependencies.find(r=>r.domain==="code-bucket-chunk");
  for(const file of [built.file,path.join(f.root,ref.address)]){
   const original=fs.readFileSync(file),open=fs.openSync,read=fs.readSync;let target=null,injected=false,consumed=0;
   fs.openSync=function(name,...args){const fd=open.call(this,name,...args);if(typeof name==="string"&&path.resolve(name)===file&&!injected)target=fd;return fd;};fs.readSync=function(fd,...args){if(fd===target&&!injected){injected=true;fs.appendFileSync(file,Buffer.alloc(512*1024,32));}const n=read.call(this,fd,...args);if(fd===target)consumed+=n;return n;};try{await assert.rejects(()=>f.world.readSnapshot(built.snapshot.worldModelId),{code:"SNAPSHOT_STORAGE_DRIFT"});assert(consumed<=original.length+1);}finally{fs.openSync=open;fs.readSync=read;fs.writeFileSync(file,original);}
@@ -325,7 +325,7 @@ test("physical bundle and root reads bound concurrent descriptor growth and pres
 });
 
 test("coalesced bucket families cannot hide missing rows or reuse another group's leaf",async()=>{
- const {splitWorldCodeChunks,joinWorldCodeChunks,splitGraphCodeChunks,joinGraphCodeChunks}=await import("../scripts/lib/snapshot-code-chunks.mjs");
+ const {splitWorldCodeChunks,joinWorldCodeChunks,splitGraphCodeChunks,joinGraphCodeChunks}=await import("../scripts/lib/world/snapshot-code-chunks.mjs");
  for(const count of[0,1,65,130]){const values=new Map();let id=0;const put=(domain,payload)=>{const ref={domain,address:"leaf-"+(id++)};values.set(ref.address,payload);return ref;};const original={files:Array.from({length:count},(_,i)=>({path:i%2?"É/"+i:"é/"+i,unknown:[i,{note:"kept"}]})),semanticGraph:{nodes:Array.from({length:count},(_,i)=>({id:"n"+i,path:i%2?"É/"+i:"é/"+i})),edges:Array.from({length:count},(_,i)=>({id:"e"+i,from:"n"+i,to:"n"+i})),unknown:"unchanged"}};const encoded=splitWorldCodeChunks(original,put);assert.deepEqual(joinWorldCodeChunks(encoded,ref=>values.get(ref.address)),original);if(!count)continue;
  const ref=encoded.chunks[0].ref,valid=values.get(ref.address),missing=structuredClone(valid);delete missing.lists.semanticNodes;values.set(ref.address,missing);assert.throws(()=>joinWorldCodeChunks(encoded,r=>values.get(r.address)),{code:"INVALID_SNAPSHOT_CODE_CHUNKS"});values.set(ref.address,valid);
  const wrong=structuredClone(valid);wrong.lists.files.push({path:"extra"});values.set(ref.address,wrong);assert.throws(()=>joinWorldCodeChunks(encoded,r=>values.get(r.address)),{code:"INVALID_SNAPSHOT_CODE_CHUNKS"});values.set(ref.address,valid);

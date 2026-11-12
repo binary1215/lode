@@ -5,16 +5,16 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { syntheticNativeCapture, nativeProfile } from "./helpers/native-portability-fixture.mjs";
-import { nativeSqlitePath } from "../scripts/lib/codex-native-backup.mjs";
+import { nativeSqlitePath } from "../scripts/lib/distribution/codex-native-backup.mjs";
 import {
   observeCodexNativeTargetChoices,
   verifyCodexNativeTargetChoices,
   backupCodexNativeTargetChoices,
-} from "../scripts/lib/codex-native-target-choices.mjs";
+} from "../scripts/lib/distribution/codex-native-target-choices.mjs";
 import {
   selectCodexNativeRegistrationPolicy,
   verifyCodexNativeRegistrationPolicy,
-} from "../scripts/lib/codex-native-registration.mjs";
+} from "../scripts/lib/distribution/codex-native-registration.mjs";
 
 test("native metadata verifies current explicit settings without source fallback or permission flattening", () => {
   const root = path.resolve("synthetic-current-workspace");

@@ -1,22 +1,22 @@
-import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
+import { relativeProjectArtifact } from "../scripts/lib/storage/project-storage-format.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import { PassThrough, Writable } from "node:stream";
 import test from "node:test";
-import { createProcessSupervisorManifest } from "../scripts/lib/runtime-process-supervisor.mjs";
-import { RUNTIME_OPERATIONAL_STATE_ENV } from "../scripts/lib/runtime-execution-lease.mjs";
+import { createProcessSupervisorManifest } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
+import { RUNTIME_OPERATIONAL_STATE_ENV } from "../scripts/lib/runtime/runtime-execution-lease.mjs";
 import {
   invokeWorkerFileEffect,
   prepareWorkerFileEffectInvocation,
   invokePreparedWorkerFileEffect,
   workerFileEffectNativeIntentId,
-} from "../scripts/lib/runtime-worker-file-effect.mjs";
-import { integrationDigest as hash, integrationJson as canonicalJson } from "../scripts/lib/worker-integration-store.mjs";
+} from "../scripts/lib/runtime/runtime-worker-file-effect.mjs";
+import { integrationDigest as hash, integrationJson as canonicalJson } from "../scripts/lib/worker/worker-integration-store.mjs";
 import { workerIntegrationFixture } from "./helpers/worker-integration-fixture.mjs";
-import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/run-lineage.mjs";
-import { createHeadSession, withSessionRoute } from "../scripts/lib/session-routing.mjs";
+import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/runtime/run-lineage.mjs";
+import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
 import {
   applyWorkerPatchIntegration,
   readWorkerPatchApplication,
@@ -24,7 +24,7 @@ import {
   reconcileWorkerPatchIntegration,
   settleIncompleteWorkerPatchIntegration,
   workerEffectPathsOverlap,
-} from "../scripts/lib/worker-integration-application.mjs";
+} from "../scripts/lib/worker/worker-integration-application.mjs";
 
 console.log(
   JSON.stringify({

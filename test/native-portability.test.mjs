@@ -1,56 +1,56 @@
-import { operateProjectNativeHistory } from "../scripts/lib/project-native-history.mjs";
-import { assertProjectNativeTransferCurrent } from "../scripts/lib/project-native-transfer.mjs";
+import { operateProjectNativeHistory } from "../scripts/lib/session/project-native-history.mjs";
+import { assertProjectNativeTransferCurrent } from "../scripts/lib/session/project-native-transfer.mjs";
 import { syntheticNativeCapture } from "./helpers/native-portability-fixture.mjs";
 import {
   attachProjectNativeTransfer,
   readProjectNativeTransfer,
-} from "../scripts/lib/project-native-transfer.mjs";
+} from "../scripts/lib/session/project-native-transfer.mjs";
 import {
   exportProjectBundle,
   inspectProjectBundle,
   importProjectBundle,
-} from "../scripts/lib/project-portability.mjs";
+} from "../scripts/lib/storage/project-portability.mjs";
 import { pluginRoot } from "./helpers/session-work-linkage-fixture.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
-import { requestNativeRegistration } from "../scripts/lib/native-registration-journal.mjs";
-import { publishCodexNativeHistory } from "../scripts/lib/codex-native-publication.mjs";
+import { requestNativeRegistration } from "../scripts/lib/distribution/native-registration-journal.mjs";
+import { publishCodexNativeHistory } from "../scripts/lib/distribution/codex-native-publication.mjs";
 import {
   inspectCodexNativePayload,
   codexNativePayloadSummary,
-} from "../scripts/lib/codex-native-payload.mjs";
+} from "../scripts/lib/distribution/codex-native-payload.mjs";
 import {
   planCodexNativeRowMerge,
   applyCodexNativeRowMerge,
-} from "../scripts/lib/codex-native-row-merge.mjs";
-import { captureCodexNativeHistory } from "../scripts/lib/codex-native-capture.mjs";
+} from "../scripts/lib/distribution/codex-native-row-merge.mjs";
+import { captureCodexNativeHistory } from "../scripts/lib/distribution/codex-native-capture.mjs";
 import {
   observeCodexNativeWriters,
   prepareCodexNativeOffline,
   assertCodexNativeOffline,
   codexNativeOfflineProcessStatus,
-} from "../scripts/lib/codex-native-offline.mjs";
+} from "../scripts/lib/distribution/codex-native-offline.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
 import path from "node:path";
 import { fixture, snapshot } from "./helpers/session-work-linkage-fixture.mjs";
-import { inspectProject } from "../scripts/lib/lode-core.mjs";
+import { inspectProject } from "../scripts/lib/session/lode-core.mjs";
 import crypto from "node:crypto";
 import {
   createCodexRolloutVerifier,
   verifyCodexRollout,
-} from "../scripts/lib/codex-native-rollout.mjs";
+} from "../scripts/lib/distribution/codex-native-rollout.mjs";
 import { DatabaseSync } from "node:sqlite";
 import {
   inspectCodexNativeDatabase,
   readSelectedCodexHistory,
-} from "../scripts/lib/codex-native-portability.mjs";
+} from "../scripts/lib/distribution/codex-native-portability.mjs";
 import {
   encodeSqliteCell,
   decodeSqliteCell,
   readTypedSqliteRows,
-} from "../scripts/lib/native-sqlite-values.mjs";
+} from "../scripts/lib/core/native-sqlite-values.mjs";
 import {
   nativeProfile,
   profileBasis,

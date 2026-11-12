@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
 import {
   assessMetricComparison,
   compareMetricObservations,
@@ -14,10 +14,10 @@ import {
   inspectMeasurements,
   recordMetricObservation,
   traceMeasurementLineage,
-} from "../scripts/lib/measurement-workflow.mjs";
-import { proposeProductInitiative, reviewProductInitiative } from "../scripts/lib/product-operating-loop.mjs";
-import { queryTemporalProvenanceGraph } from "../scripts/lib/temporal-provenance.mjs";
-import { inspectWorldModel } from "../scripts/lib/world-model.mjs";
+} from "../scripts/lib/world/measurement-workflow.mjs";
+import { proposeProductInitiative, reviewProductInitiative } from "../scripts/lib/world/product-operating-loop.mjs";
+import { queryTemporalProvenanceGraph } from "../scripts/lib/world/temporal-provenance.mjs";
+import { inspectWorldModel } from "../scripts/lib/world/world-model.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { dispatch, operationCatalogTools as tools } from "../scripts/mcp-server.mjs";
 

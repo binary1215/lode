@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { snapshotInventory, verifyHistoricalMarketplaceOwnership, verifyHistoricalSupervisorManifest } from "../verify.mjs";
-import { verifyProcessSupervisorManifest } from "../../../scripts/lib/runtime-process-supervisor.mjs";
+import { verifyProcessSupervisorManifest } from "../../../scripts/lib/runtime/runtime-process-supervisor.mjs";
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 function canonical(value) {

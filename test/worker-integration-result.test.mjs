@@ -1,4 +1,4 @@
-import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
+import { relativeProjectArtifact } from "../scripts/lib/storage/project-storage-format.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -6,18 +6,22 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { workerIntegrationFixture } from "./helpers/worker-integration-fixture.mjs";
 import { inspectProject } from "../scripts/lib/head-core.mjs";
-import { createResultPacket, readLineageArtifact } from "../scripts/lib/execution-lineage.mjs";
-import { getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/run-lineage.mjs";
-import { createRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
+import { createResultPacket, readLineageArtifact } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/runtime/run-lineage.mjs";
+import { createRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
 import {
   applyWorkerPatchIntegration,
   readWorkerPatchApplication,
   reconcileWorkerPatchIntegration,
   settleIncompleteWorkerPatchIntegration,
-} from "../scripts/lib/worker-integration-application.mjs";
-import { prepareWorkerIntegrationResult, publishWorkerIntegrationResult, readWorkerIntegrationResult } from "../scripts/lib/worker-integration-result.mjs";
-import { integrationDigest, integrationJson } from "../scripts/lib/worker-integration-store.mjs";
-import { artifactAuthorityBoundary } from "../scripts/lib/authority-plane-contract.mjs";
+} from "../scripts/lib/worker/worker-integration-application.mjs";
+import {
+  prepareWorkerIntegrationResult,
+  publishWorkerIntegrationResult,
+  readWorkerIntegrationResult,
+} from "../scripts/lib/worker/worker-integration-result.mjs";
+import { integrationDigest, integrationJson } from "../scripts/lib/worker/worker-integration-store.mjs";
+import { artifactAuthorityBoundary } from "../scripts/lib/core/authority-plane-contract.mjs";
 
 console.log(
   JSON.stringify({
@@ -226,7 +230,7 @@ test("existing receipt is historical across later Run, Session, source and manag
 });
 
 function freshPublicationRetry(publication) {
-  const moduleUrl = new URL("../scripts/lib/worker-integration-result.mjs", import.meta.url).href;
+  const moduleUrl = new URL("../scripts/lib/worker/worker-integration-result.mjs", import.meta.url).href;
   const cwd = path.resolve(import.meta.dirname, "..");
   const code = `import { publishWorkerIntegrationResult } from ${JSON.stringify(moduleUrl)};
     const result = await publishWorkerIntegrationResult(${JSON.stringify(publication)}, {

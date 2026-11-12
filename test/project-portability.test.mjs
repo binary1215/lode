@@ -3,29 +3,29 @@ import test from "node:test";
 import fs from "node:fs";
 import path from "node:path";
 import { fixture, snapshot } from "./helpers/session-work-linkage-fixture.mjs";
-import { updateProjectDirection, readProjectDirection } from "../scripts/lib/project-direction.mjs";
+import { updateProjectDirection, readProjectDirection } from "../scripts/lib/session/project-direction.mjs";
 import {
   createRecoveryCheckpoint,
   readRecoveryCheckpoint,
-} from "../scripts/lib/compaction-recovery.mjs";
-import { inspectProject, convergeProjectInstallation } from "../scripts/lib/lode-core.mjs";
+} from "../scripts/lib/session/compaction-recovery.mjs";
+import { inspectProject, convergeProjectInstallation } from "../scripts/lib/session/lode-core.mjs";
 import { pluginRoot } from "./helpers/session-work-linkage-fixture.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
-import { effectiveToolCall } from "../scripts/lib/operation-groups.mjs";
+import { effectiveToolCall } from "../scripts/lib/core/operation-groups.mjs";
 import {
   createSessionCallContext,
   createLodeSession,
   withSessionRoute,
-} from "../scripts/lib/session-routing.mjs";
-import { recordSessionWorkEvidence } from "../scripts/lib/session-work-context.mjs";
+} from "../scripts/lib/session/session-routing.mjs";
+import { recordSessionWorkEvidence } from "../scripts/lib/session/session-work-context.mjs";
 import crypto from "node:crypto";
 import {
   exportProjectBundle,
   inspectProjectBundle,
   importProjectBundle,
   readImportedSourceOriginal,
-} from "../scripts/lib/project-portability.mjs";
+} from "../scripts/lib/storage/project-portability.mjs";
 
 test("portable export preserves only selected originals while excluding unselected runtime owners/evidence", (t) => {
   const f = fixture(t),
@@ -701,12 +701,12 @@ test("an exact default-format original maps to named without rewriting it; later
 test("active, pending-review and reviewed Run originals remain usable after selected import", async (t) => {
   for (const phase of ["active", "awaiting_review", "reviewed"]) {
     const f = fixture(t);
-    const { compileContext } = await import("../scripts/lib/context-compiler.mjs");
+    const { compileContext } = await import("../scripts/lib/session/context-compiler.mjs");
     const { createWholePlanSnapshot, createExecutionContract } = await import(
-      "../scripts/lib/execution-lineage.mjs"
+      "../scripts/lib/runtime/execution-lineage.mjs"
     );
     const { startRun, finishRun, reviewRun, getPendingReviewContext, inspectRunStorageTransition } =
-      await import("../scripts/lib/run-lineage.mjs");
+      await import("../scripts/lib/runtime/run-lineage.mjs");
     const capsule = (
       await f.route(() =>
         compileContext({ root: f.root, task: "Inspect selected Run history", persist: true }),
@@ -790,12 +790,12 @@ test("active, pending-review and reviewed Run originals remain usable after sele
 test("legacy default-owned Run keeps exact ownership through named import and its next legitimate mutation", async (t) => {
   const f = fixture(t),
     sourceId = f.owner.state.sessionId;
-  const { compileContext } = await import("../scripts/lib/context-compiler.mjs");
+  const { compileContext } = await import("../scripts/lib/session/context-compiler.mjs");
   const { createWholePlanSnapshot, createExecutionContract } = await import(
-    "../scripts/lib/execution-lineage.mjs"
+    "../scripts/lib/runtime/execution-lineage.mjs"
   );
   const { startRun, finishRun, getPendingReviewContext, inspectRunStorageTransition } =
-    await import("../scripts/lib/run-lineage.mjs");
+    await import("../scripts/lib/runtime/run-lineage.mjs");
   const capsule = (
     await compileContext({ root: f.root, task: "Preserve legacy default Run", persist: true })
   ).capsule;

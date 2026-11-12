@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import { processExists } from "./lib/process-exists.mjs";
+import { processExists } from "./lib/core/process-exists.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { executeComputeOperation, verifyComputeAdapterConformance } from "./lib/compute-adapter.mjs";
+import { executeComputeOperation, verifyComputeAdapterConformance } from "./lib/runtime/compute-adapter.mjs";
 import {
   createWorkerHealthReferenceAdapter,
   GoWorkerComputeAdapter,
@@ -14,15 +14,15 @@ import {
   WORKER_LIFECYCLE_INPUT,
   WORKER_LIFECYCLE_OPERATION,
   WORKER_LIFECYCLE_SEMANTIC_PRODUCER,
-} from "./lib/go-worker-adapter.mjs";
+} from "./lib/worker/go-worker-adapter.mjs";
 import {
   buildRepositoryScanInput,
   createRepositoryScanReferenceAdapter,
   REPOSITORY_SCAN_OPERATION,
   REPOSITORY_SCAN_SEMANTIC_PRODUCER,
   validateRepositoryScanResult,
-} from "./lib/repository-scan.mjs";
-import { buildRepositorySourceScope } from "./lib/repository-source-scope.mjs";
+} from "./lib/world/repository-scan.mjs";
+import { buildRepositorySourceScope } from "./lib/world/repository-source-scope.mjs";
 
 function parseArguments(values) {
   const result = {};

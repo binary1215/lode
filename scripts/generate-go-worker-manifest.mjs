@@ -2,7 +2,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { createGoWorkerManifest, WORKER_HEALTH_OPERATION } from "./lib/go-worker-adapter.mjs";
+import { createGoWorkerManifest, WORKER_HEALTH_OPERATION } from "./lib/worker/go-worker-adapter.mjs";
 
 function parseArguments(values) {
   const result = {};

@@ -4,12 +4,12 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 import plugin from "../scripts/opencode-plugin.mjs";
-import { createSessionHostAdapter } from "../scripts/lib/session-host-adapter.mjs";
-import { createHeadSession } from "../scripts/lib/session-routing.mjs";
-import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
-import { startupProjection, MAX_CONTEXT_CHARACTERS } from "../scripts/lib/session-host-context-projection.mjs";
-import { buildCodexMarketplaceSnapshot } from "../scripts/lib/codex-marketplace.mjs";
-import { buildClaudeMarketplaceSnapshot } from "../scripts/lib/claude-marketplace.mjs";
+import { createSessionHostAdapter } from "../scripts/lib/session/session-host-adapter.mjs";
+import { createHeadSession } from "../scripts/lib/session/session-routing.mjs";
+import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
+import { startupProjection, MAX_CONTEXT_CHARACTERS } from "../scripts/lib/session/session-host-context-projection.mjs";
+import { buildCodexMarketplaceSnapshot } from "../scripts/lib/distribution/codex-marketplace.mjs";
+import { buildClaudeMarketplaceSnapshot } from "../scripts/lib/distribution/claude-marketplace.mjs";
 import { fixture, snapshot, pluginRoot } from "./helpers/session-work-linkage-fixture.mjs";
 import { prepareRequest } from "./helpers/opencode-context-consumer.mjs";
 
@@ -256,7 +256,7 @@ test("generated canonical/legacy packages contain and load the private renderer 
     for (const name of ["lode-agent-plugin", "head-agent-plugin"]) {
       const packageRoot = path.join(f.base, `${provider}-${name}`), built = build({ sourceRoot: pluginRoot, outputRoot: packageRoot, name, repository: "local", commit: "local" });
       const root = path.join(packageRoot, "plugins", built.pluginName), entry = path.join(root, "scripts/opencode-plugin.mjs");
-      assert(fs.existsSync(path.join(root, "scripts/lib/session-host-context-projection.mjs")));
+      assert(fs.existsSync(path.join(root, "scripts/lib/session/session-host-context-projection.mjs")));
       const shim = path.join(f.base, `${provider}-${name}.mjs`);
       fs.writeFileSync(shim, `export {default} from ${JSON.stringify(pathToFileURL(entry).href)};\n`);
       const loaded = await import(pathToFileURL(shim).href), hooks = await loaded.default.server({ client: f.client, project: { id: f.projectID }, directory: f.root }, { environment: f.environment });

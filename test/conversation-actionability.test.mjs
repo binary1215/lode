@@ -4,12 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { inspectProjectExperience } from "../scripts/lib/project-bootstrap.mjs";
-import { createRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
-import { enterConversationRecovery, processCompactionLifecycle } from "../scripts/lib/compaction-lifecycle.mjs";
-import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
-import { startOnboarding } from "../scripts/lib/onboarding.mjs";
-import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
+import { inspectProjectExperience } from "../scripts/lib/session/project-bootstrap.mjs";
+import { createRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
+import { enterConversationRecovery, processCompactionLifecycle } from "../scripts/lib/session/compaction-lifecycle.mjs";
+import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
+import { startOnboarding } from "../scripts/lib/session/onboarding.mjs";
+import { formatCliResult } from "../scripts/lib/session/cli-presentation.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 

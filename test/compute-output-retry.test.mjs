@@ -6,10 +6,10 @@ import test from "node:test";
 import {
   buildComputeRequest, buildComputeErrorResponse, buildComputeSuccessResponse,
   executeComputeOperation, JsReferenceComputeAdapter, validateComputeResponse,
-} from "../scripts/lib/compute-adapter.mjs";
-import { GoWorkerComputeAdapter } from "../scripts/lib/go-worker-adapter.mjs";
+} from "../scripts/lib/runtime/compute-adapter.mjs";
+import { GoWorkerComputeAdapter } from "../scripts/lib/worker/go-worker-adapter.mjs";
 import { buildRepositoryScanInput, executeIncrementalRepositoryScan, executeRepositoryScan,
-  scanRepositoryReference, validateRepositoryScanExecution } from "../scripts/lib/repository-scan.mjs";
+  scanRepositoryReference, validateRepositoryScanExecution } from "../scripts/lib/world/repository-scan.mjs";
 
 const MiB = 1024 * 1024;
 const budgets = [64, 128, 256, 512].map(x => x * MiB);
@@ -175,7 +175,7 @@ test("incremental and initial scans retain complete captured facts across output
   fs.writeFileSync(sourceFile, source); reads = 0;
   fs.readFileSync = function(file, ...args) { const result = originalRead.call(this, file, ...args); if (path.resolve(String(file)) === sourceFile) reads++; return result; };
   let initial;
-  try { initial = await executeRepositoryScan({ projectRoot: root, adapter: new GoWorkerComputeAdapter({ pluginRoot: root, fallbackAdapter: (await import("../scripts/lib/repository-scan.mjs")).createRepositoryScanReferenceAdapter() }) }); } finally { fs.readFileSync = originalRead; }
+  try { initial = await executeRepositoryScan({ projectRoot: root, adapter: new GoWorkerComputeAdapter({ pluginRoot: root, fallbackAdapter: (await import("../scripts/lib/world/repository-scan.mjs")).createRepositoryScanReferenceAdapter() }) }); } finally { fs.readFileSync = originalRead; }
   assert.equal(reads, 1);
   assert.equal(initial.result.scanHash, baseline.scanHash);
   assert.deepEqual(initial.diagnostics.outputBudgetAttempts, budgets.slice(0, 2));

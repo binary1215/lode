@@ -3,10 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { formatCliResult, formatMcpToolContent } from "../scripts/lib/cli-presentation.mjs";
-import { formatTerminalGraph } from "../scripts/lib/terminal-graph.mjs";
+import { formatCliResult, formatMcpToolContent } from "../scripts/lib/session/cli-presentation.mjs";
+import { formatTerminalGraph } from "../scripts/lib/world/terminal-graph.mjs";
 import { initializeProject } from "../scripts/lib/head-core.mjs";
-import { prepareSourceContext } from "../scripts/lib/source-context-workflow.mjs";
+import { prepareSourceContext } from "../scripts/lib/world/source-context-workflow.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 
 const graph = () => ({

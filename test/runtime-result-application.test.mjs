@@ -7,12 +7,12 @@ import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { EventEmitter } from "node:events";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createExecutionContract, createWholePlanSnapshot, readLineageArtifact } from "../scripts/lib/execution-lineage.mjs";
-import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/run-lineage.mjs";
-import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
-import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime-protocol-evidence.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createExecutionContract, createWholePlanSnapshot, readLineageArtifact } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/runtime/run-lineage.mjs";
+import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime/runtime-protocol-evidence.mjs";
 import {
   buildRuntimeInvocationAuthorization,
   buildRuntimeInvocationLifecycleReceipt,
@@ -22,33 +22,42 @@ import {
   verifyRuntimeInvocationCurrentLineage,
   runRuntimeLifecycleConformance,
   reconcileWorkerMember,
-} from "../scripts/lib/runtime-invocation-lifecycle.mjs";
+} from "../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
 import {
   RUNTIME_OPERATIONAL_STATE_ENV,
   withRuntimeExecutionLease,
   inspectRuntimeExecutionLease,
   createRuntimePreConsumeGateCapability,
-} from "../scripts/lib/runtime-execution-lease.mjs";
-import { persistRuntimeInvocationRecord, readRuntimeInvocationRecord } from "../scripts/lib/runtime-invocation-record.mjs";
-import { applyRuntimeRunResult, readRuntimeInvocationResult } from "../scripts/lib/runtime-run-result-application.mjs";
-import { withProjectMutationAsync } from "../scripts/lib/project-mutation-lock.mjs";
-import { createBoundedWorkerDispatch } from "../scripts/lib/bounded-worker-dispatch.mjs";
+} from "../scripts/lib/runtime/runtime-execution-lease.mjs";
+import { persistRuntimeInvocationRecord, readRuntimeInvocationRecord } from "../scripts/lib/runtime/runtime-invocation-record.mjs";
+import { applyRuntimeRunResult, readRuntimeInvocationResult } from "../scripts/lib/runtime/runtime-run-result-application.mjs";
+import { withProjectMutationAsync } from "../scripts/lib/storage/project-mutation-lock.mjs";
+import { createBoundedWorkerDispatch } from "../scripts/lib/worker/bounded-worker-dispatch.mjs";
 import {
   createBoundedWorkerJobHost,
   startBoundedWorkerJob,
   readBoundedWorkerJob,
   cancelBoundedWorkerJob,
   reconcileBoundedWorkerJob,
-} from "../scripts/lib/bounded-worker-job.mjs";
-import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime-process-supervisor.mjs";
-import { captureWorkerSourceBasis } from "../scripts/lib/worker-source-basis.mjs";
-import { prepareWorkerWorkspace, workerExecutionBoundary } from "../scripts/lib/worker-workspace.mjs";
-import { captureWorkerWriteBasis } from "../scripts/lib/worker-patch-basis.mjs";
-import { prepareWorkerPatchIntegration, readWorkerPatchIntegration, requireCurrentWorkerPatchIntegration } from "../scripts/lib/worker-patch-integration.mjs";
-import { readWorkerIntegrationBasis } from "../scripts/lib/worker-integration-basis.mjs";
-import { executeCodexRuntimeInvocation } from "../scripts/lib/runtime-codex-exec.mjs";
-import { createBoundedWorkerWave, readBoundedWorkerWaveStatus, sealBoundedWorkerWave, waitForBoundedWorkerWave } from "../scripts/lib/bounded-worker-wave.mjs";
-import { formatCliResult, formatMcpToolContent } from "../scripts/lib/cli-presentation.mjs";
+} from "../scripts/lib/worker/bounded-worker-job.mjs";
+import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
+import { captureWorkerSourceBasis } from "../scripts/lib/worker/worker-source-basis.mjs";
+import { prepareWorkerWorkspace, workerExecutionBoundary } from "../scripts/lib/worker/worker-workspace.mjs";
+import { captureWorkerWriteBasis } from "../scripts/lib/worker/worker-patch-basis.mjs";
+import {
+  prepareWorkerPatchIntegration,
+  readWorkerPatchIntegration,
+  requireCurrentWorkerPatchIntegration,
+} from "../scripts/lib/worker/worker-patch-integration.mjs";
+import { readWorkerIntegrationBasis } from "../scripts/lib/worker/worker-integration-basis.mjs";
+import { executeCodexRuntimeInvocation } from "../scripts/lib/runtime/runtime-codex-exec.mjs";
+import {
+  createBoundedWorkerWave,
+  readBoundedWorkerWaveStatus,
+  sealBoundedWorkerWave,
+  waitForBoundedWorkerWave,
+} from "../scripts/lib/worker/bounded-worker-wave.mjs";
+import { formatCliResult, formatMcpToolContent } from "../scripts/lib/session/cli-presentation.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { dispatch as dispatchMcp, catalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 
@@ -291,7 +300,8 @@ test("wave guidance separates seal readiness, wait cancellation, member failure 
 
 test("public detached job survives its CLI frontend and reconciles one lease without relaunch", { skip: process.platform !== "win32" }, async (t) => {
   const f = await fixture(t, { withWrite: true });
-  const moduleUrl = (file) => pathToFileURL(path.join(pluginRoot, "scripts", "lib", file)).href;
+  const layers = JSON.parse(fs.readFileSync(path.join(pluginRoot, "scripts", "lib-layers.json"), "utf8"));
+  const moduleUrl = (file) => pathToFileURL(path.join(pluginRoot, "scripts", "lib", layers.modules[file], file)).href;
   const runnerFile = path.join(path.dirname(f.root), "synthetic-job-runner.mjs");
   const providerFixture = `
     process.stdin.resume();
@@ -1146,7 +1156,7 @@ test("proven dead unconsumed owner does not trap same-member source reprepare", 
     worker: { taskKey: "dead-owner", role: "coder", outcome: "Inspect", selectedContext: "", sourcePaths: ["selected.txt"] },
   };
   const previous = buildRuntimeInvocationAuthorization(options).authorization;
-  const moduleUrl = pathToFileURL(path.join(pluginRoot, "scripts/lib/runtime-execution-lease.mjs")).href;
+  const moduleUrl = pathToFileURL(path.join(pluginRoot, "scripts/lib/runtime/runtime-execution-lease.mjs")).href;
   const script = `const {withRuntimeExecutionLease,createRuntimePreConsumeGateCapability}=await import(process.argv[1]);
     const gate=createRuntimePreConsumeGateCapability(async()=>{process.send({claimed:true});await new Promise(()=>setInterval(()=>{},1000));});
     await withRuntimeExecutionLease({projectRoot:process.argv[2],authorization:JSON.parse(process.argv[3]),ownerFenceDigest:'${hash("crash fixture owner")}'},async()=>{}, {preConsumeGate:gate});`;

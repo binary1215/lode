@@ -5,7 +5,7 @@ import {
   buildStructuralRelationObservationEnvelope,
   verifyStructuralRelationObservationEnvelope,
   prepareStructuralRelationObservationEnvelope,
-} from "../scripts/lib/structural-relation-observation-envelope.mjs";
+} from "../scripts/lib/world/structural-relation-observation-envelope.mjs";
 
 const enc = new TextEncoder();
 const digest = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -192,9 +192,9 @@ test("SEO10 authority fields reject while imperative raw remains opaque", () => 
 });
 
 test("SEO11 envelope is isolated and rejects legacy kind", async () => {
-  const legacy = await import("../scripts/lib/source-relation-evidence.mjs");
-  const analysis = await import("../scripts/lib/source-analysis.mjs");
-  const graphApi = await import("../scripts/lib/semantic-graph.mjs");
+  const legacy = await import("../scripts/lib/world/source-relation-evidence.mjs");
+  const analysis = await import("../scripts/lib/world/source-analysis.mjs");
+  const graphApi = await import("../scripts/lib/world/semantic-graph.mjs");
   const caller = "export function caller() { target(); }\n";
   const target = "export function target() {}\n";
   const files = [["src/caller.ts", caller], ["src/target.ts", target]].map(([path, content]) => ({

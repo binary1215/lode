@@ -6,14 +6,14 @@ import path from "node:path";
 import test from "node:test";
 import { EventEmitter } from "node:events";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { createHeadSession, listHeadSessions, withSessionRoute, sessionStatePath, sessionDataPath } from "../scripts/lib/session-routing.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
+import { createHeadSession, listHeadSessions, withSessionRoute, sessionStatePath, sessionDataPath } from "../scripts/lib/session/session-routing.mjs";
 import {
   readProjectDirection,
   updateProjectDirection,
   assertProjectActionsCurrent,
   assertAuthorizationProjectDirection,
-} from "../scripts/lib/project-direction.mjs";
+} from "../scripts/lib/session/project-direction.mjs";
 import {
   createRecoveryCheckpoint,
   prepareCompaction,
@@ -22,28 +22,28 @@ import {
   continueCompaction,
   inspectRecoveryCheckpointBasis,
   syncRecoveryCheckpoint,
-} from "../scripts/lib/compaction-recovery.mjs";
-import { restoreSessionFromArtifacts } from "../scripts/lib/session-recovery.mjs";
-import { inspectProjectExperience, initializeOrResumeProject } from "../scripts/lib/project-bootstrap.mjs";
-import { inspectOptionalOnboarding, startOnboarding, reviewOnboarding } from "../scripts/lib/onboarding.mjs";
-import { onboardingCanonicalJson, onboardingDigest } from "../scripts/lib/onboarding-contract.mjs";
+} from "../scripts/lib/session/compaction-recovery.mjs";
+import { restoreSessionFromArtifacts } from "../scripts/lib/session/session-recovery.mjs";
+import { inspectProjectExperience, initializeOrResumeProject } from "../scripts/lib/session/project-bootstrap.mjs";
+import { inspectOptionalOnboarding, startOnboarding, reviewOnboarding } from "../scripts/lib/session/onboarding.mjs";
+import { onboardingCanonicalJson, onboardingDigest } from "../scripts/lib/session/onboarding-contract.mjs";
 import {
   captureHistoricalBoundaryApplicationBasis,
   createVerifiedHistoricalInventoryCapability,
   applyHistoricalArtifactBoundary,
-} from "../scripts/lib/historical-artifact-boundary.mjs";
-import { readHistoricalBoundaryApplication, verifyHistoricalArtifactBoundary } from "../scripts/lib/historical-artifact-boundary-store.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/execution-lineage.mjs";
-import { startRun, finishRun } from "../scripts/lib/run-lineage.mjs";
-import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
-import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime-protocol-evidence.mjs";
+} from "../scripts/lib/world/historical-artifact-boundary.mjs";
+import { readHistoricalBoundaryApplication, verifyHistoricalArtifactBoundary } from "../scripts/lib/world/historical-artifact-boundary-store.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { startRun, finishRun } from "../scripts/lib/runtime/run-lineage.mjs";
+import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime/runtime-protocol-evidence.mjs";
 import {
   buildRuntimeInvocationAuthorization,
   prepareRuntimeInvocationExecution,
   verifyRuntimeInvocationAuthorization,
-} from "../scripts/lib/runtime-invocation-lifecycle.mjs";
-import { withRuntimeExecutionLease, inspectRuntimeExecutionLease, RUNTIME_OPERATIONAL_STATE_ENV } from "../scripts/lib/runtime-execution-lease.mjs";
+} from "../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
+import { withRuntimeExecutionLease, inspectRuntimeExecutionLease, RUNTIME_OPERATIONAL_STATE_ENV } from "../scripts/lib/runtime/runtime-execution-lease.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 function project(t) {

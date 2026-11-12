@@ -3,7 +3,7 @@
 // --check writes nothing and exits 1 when the committed file is stale.
 
 import path from "node:path";
-import { generateClaudeHooks } from "./lib/claude-hooks-generation.mjs";
+import { generateClaudeHooks } from "./lib/distribution/claude-hooks-generation.mjs";
 
 const flags = process.argv.slice(2);
 try {

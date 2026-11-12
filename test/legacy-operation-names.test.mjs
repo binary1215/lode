@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { canonicalOperationName, legacyOperationName } from "../compat/head/public-names.mjs";
-import { OPERATION_DESCRIPTORS, resolveOperation } from "../scripts/lib/lode-operation-contract.mjs";
+import { OPERATION_DESCRIPTORS, resolveOperation } from "../scripts/lib/core/lode-operation-contract.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 
 // Stage 3-D: the internal name of every operation is its canonical lode_* name.
@@ -69,7 +69,7 @@ test("refusals name the operation by this artifact's public name, whatever spell
 });
 
 test("Session binding for unregistered names still follows the historical head_* prefixes only", async () => {
-  const { sessionCallRequiresBinding } = await import("../scripts/lib/session-routing.mjs");
+  const { sessionCallRequiresBinding } = await import("../scripts/lib/session/session-routing.mjs");
   assert.equal(sessionCallRequiresBinding("head_checkpoint_unregistered"), true);
   assert.equal(sessionCallRequiresBinding("lode_checkpoint_unregistered"), false);
   assert.equal(sessionCallRequiresBinding("head_checkpoint_basis"), true);

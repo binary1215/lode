@@ -3,9 +3,9 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { legacyReasonCodeFields } from "./lib/core/errors.mjs";
-import { installDistribution, inspectDistribution, rollbackDistribution, uninstallDistribution } from "./lib/distribution-lifecycle.mjs";
-import { initializeOrResumeProject } from "./lib/project-bootstrap.mjs";
-import { acquireVerifiedNativeArtifact } from "./lib/native-artifact-delivery.mjs";
+import { installDistribution, inspectDistribution, rollbackDistribution, uninstallDistribution } from "./lib/distribution/distribution-lifecycle.mjs";
+import { initializeOrResumeProject } from "./lib/session/project-bootstrap.mjs";
+import { acquireVerifiedNativeArtifact } from "./lib/distribution/native-artifact-delivery.mjs";
 
 function parse(argv) {
   const [command = "help", ...rest] = argv;

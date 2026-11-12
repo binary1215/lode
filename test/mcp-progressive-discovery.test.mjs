@@ -6,12 +6,12 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { dispatch, discoverTools, tools, catalogTools } from "../scripts/mcp-server.mjs";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { sessionStatePath } from "../scripts/lib/session-routing.mjs";
-import { groupMembership } from "../scripts/lib/operation-groups.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
+import { sessionStatePath } from "../scripts/lib/session/session-routing.mjs";
+import { groupMembership } from "../scripts/lib/core/operation-groups.mjs";
 import { publicToolName } from "../scripts/lib/lode-artifact-composition.mjs";
 import { runCommand, usage } from "../scripts/head.mjs";
-import { coreEntryGuidance } from "../scripts/lib/lode-entry-guidance.mjs";
+import { coreEntryGuidance } from "../scripts/lib/session/lode-entry-guidance.mjs";
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const request = (name, args = {}) => ({ id: 1, method: "tools/call", params: { name, arguments: args } });
 const call = (name, args = {}, options) => dispatch(request(name, args), options);
@@ -345,8 +345,8 @@ test("conversation onboarding discovers advanced schemas and exercises the adver
 });
 
 test("static Core capability data keeps the same public contract without eager runtime/installation ownership", async () => {
-  const standalone = await import("../scripts/lib/core-contract.mjs"),
-    core = await import("../scripts/lib/lode-core.mjs");
+  const standalone = await import("../scripts/lib/core/core-contract.mjs"),
+    core = await import("../scripts/lib/session/lode-core.mjs");
   assert.strictEqual(core.coreContract, standalone.coreContract);
   assert.deepEqual(core.coreContract(), standalone.coreContract());
   const original = standalone.coreContract();

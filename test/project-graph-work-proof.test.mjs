@@ -4,17 +4,17 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { syncBuiltinESMExports } from "node:module";
 import test from "node:test";
-import { createHeadSession, withSessionRoute, sessionStatePath } from "../scripts/lib/session-routing.mjs";
-import { recordSessionWorkEvidence, readSessionWorkContext, normalizeSessionWorkEvidence } from "../scripts/lib/session-work-context.mjs";
+import { createHeadSession, withSessionRoute, sessionStatePath } from "../scripts/lib/session/session-routing.mjs";
+import { recordSessionWorkEvidence, readSessionWorkContext, normalizeSessionWorkEvidence } from "../scripts/lib/session/session-work-context.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { localContinuityCommand } from "./helpers/session-continuity-process.mjs";
-import { queryProjectGraph, indexProjectGraph } from "../scripts/lib/project-graph.mjs";
-import { collectProjectGraphInventory } from "../scripts/lib/discovery-index.mjs";
-import { createSessionWorkReadContext, MAX_RECORD_BYTES } from "../scripts/lib/session-work-evidence-original.mjs";
-import { createWholePlanSnapshot } from "../scripts/lib/execution-lineage.mjs";
-import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
+import { queryProjectGraph, indexProjectGraph } from "../scripts/lib/world/project-graph.mjs";
+import { collectProjectGraphInventory } from "../scripts/lib/world/discovery-index.mjs";
+import { createSessionWorkReadContext, MAX_RECORD_BYTES } from "../scripts/lib/session/session-work-evidence-original.mjs";
+import { createWholePlanSnapshot } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
 import { fixture, exact, link, citation, snapshot, sha, encoded } from "./helpers/session-work-linkage-fixture.mjs";
-import { formatMcpToolContent } from "../scripts/lib/cli-presentation.mjs";
+import { formatMcpToolContent } from "../scripts/lib/session/cli-presentation.mjs";
 
 // Public local writers/readers and synthetic faults only. No subprocess,
 // installed Host, provider, model or actual execution evidence.

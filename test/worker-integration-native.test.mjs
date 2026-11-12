@@ -1,13 +1,21 @@
-import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
+import { relativeProjectArtifact } from "../scripts/lib/storage/project-storage-format.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { workerIntegrationFixture } from "./helpers/worker-integration-fixture.mjs";
-import { applyWorkerPatchIntegration, readWorkerPatchApplication, reconcileWorkerPatchIntegration } from "../scripts/lib/worker-integration-application.mjs";
-import { prepareWorkerIntegrationResult, publishWorkerIntegrationResult } from "../scripts/lib/worker-integration-result.mjs";
+import {
+  applyWorkerPatchIntegration,
+  readWorkerPatchApplication,
+  reconcileWorkerPatchIntegration,
+} from "../scripts/lib/worker/worker-integration-application.mjs";
+import { prepareWorkerIntegrationResult, publishWorkerIntegrationResult } from "../scripts/lib/worker/worker-integration-result.mjs";
 import { inspectProject } from "../scripts/lib/head-core.mjs";
-import { invokeWorkerFileEffect, prepareWorkerFileEffectInvocation, invokePreparedWorkerFileEffect } from "../scripts/lib/runtime-worker-file-effect.mjs";
+import {
+  invokeWorkerFileEffect,
+  prepareWorkerFileEffectInvocation,
+  invokePreparedWorkerFileEffect,
+} from "../scripts/lib/runtime/runtime-worker-file-effect.mjs";
 
 const nativeRoot = process.env.HEAD_AGENT_FILE_EFFECT_FIXTURE_ROOT;
 const skip = process.platform !== "win32" || !nativeRoot ? "Windows native image-effect fixture not supplied; no provider test" : false;

@@ -4,17 +4,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { readRuntimeOutputSpool } from "./lib/runtime-output-spool.mjs";
+import { readRuntimeOutputSpool } from "./lib/runtime/runtime-output-spool.mjs";
 import { initializeProject, inspectProject } from "./lib/head-core.mjs";
-import { compileContext } from "./lib/context-compiler.mjs";
-import { createExecutionContract, createWholePlanSnapshot } from "./lib/execution-lineage.mjs";
-import { startRun } from "./lib/run-lineage.mjs";
+import { compileContext } from "./lib/session/context-compiler.mjs";
+import { createExecutionContract, createWholePlanSnapshot } from "./lib/runtime/execution-lineage.mjs";
+import { startRun } from "./lib/runtime/run-lineage.mjs";
 import { runCommand } from "./head.mjs";
 import { dispatch } from "./mcp-server.mjs";
 import { publicToolName } from "./lib/lode-artifact-composition.mjs";
-import { formatForVerifiedOwner } from "./lib/project-storage-format.mjs";
-import { buildRuntimeVersionEvidence } from "./lib/runtime-machine-execution.mjs";
-import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "./lib/runtime-protocol-evidence.mjs";
+import { formatForVerifiedOwner } from "./lib/storage/project-storage-format.mjs";
+import { buildRuntimeVersionEvidence } from "./lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "./lib/runtime/runtime-protocol-evidence.mjs";
 import {
   buildRuntimeInvocationAuthorization,
   buildRuntimeInvocationLifecycleReceipt,
@@ -26,39 +26,39 @@ import {
   verifyRuntimeInvocationLifecycleReceipt,
   verifyRuntimeResultPacketDraft,
   verifyRuntimeStructuredResult,
-} from "./lib/runtime-invocation-lifecycle.mjs";
+} from "./lib/runtime/runtime-invocation-lifecycle.mjs";
 import {
   RUNTIME_OPERATIONAL_STATE_ENV,
   resolveRuntimeOperationalStateRoot,
   verifyRuntimeExecutionLeaseConsumption,
   verifyRuntimeExecutionLeaseRelease,
-} from "./lib/runtime-execution-lease.mjs";
+} from "./lib/runtime/runtime-execution-lease.mjs";
 import {
   CODEX_EXEC_RESULT_SCHEMA,
   classifyCodexProviderDiagnostics,
   executeCodexRuntimeInvocation,
   verifyCodexExecWireResultSchema,
-} from "./lib/runtime-codex-exec.mjs";
+} from "./lib/runtime/runtime-codex-exec.mjs";
 import {
   buildOpenCodeProviderEnvironment,
   classifyOpenCodeProviderDiagnostics,
   executeOpenCodeRuntimeInvocation,
   extractOpenCodeStructuredResult,
-} from "./lib/runtime-opencode-run.mjs";
+} from "./lib/runtime/runtime-opencode-run.mjs";
 import {
   buildClaudePrintArguments,
   classifyClaudeProviderDiagnostics,
   executeClaudeRuntimeInvocation,
   extractClaudeStructuredResult,
-} from "./lib/runtime-claude-print.mjs";
-import { applyRuntimeRunResult, normalizeRuntimeRunResultTextProjection, readRuntimeInvocationResult } from "./lib/runtime-run-result-application.mjs";
-import { resolveVerifiedProcessSupervisor } from "./lib/runtime-process-supervisor.mjs";
+} from "./lib/runtime/runtime-claude-print.mjs";
+import { applyRuntimeRunResult, normalizeRuntimeRunResultTextProjection, readRuntimeInvocationResult } from "./lib/runtime/runtime-run-result-application.mjs";
+import { resolveVerifiedProcessSupervisor } from "./lib/runtime/runtime-process-supervisor.mjs";
 import {
   applyBoundedWorkerDispatchResult,
   createBoundedWorkerDispatch,
   executeBoundedWorkerDispatch,
   waitForBoundedWorkerDispatch,
-} from "./lib/bounded-worker-dispatch.mjs";
+} from "./lib/worker/bounded-worker-dispatch.mjs";
 import {
   abandonBoundedWorkerWave,
   createBoundedWorkerWave,
@@ -66,7 +66,7 @@ import {
   readBoundedWorkerWaveStatus,
   sealBoundedWorkerWave,
   waitForBoundedWorkerWave,
-} from "./lib/bounded-worker-wave.mjs";
+} from "./lib/worker/bounded-worker-wave.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const fixtureNonce = `${process.pid}-${Date.now()}`;

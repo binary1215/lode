@@ -7,10 +7,10 @@ import test from "node:test";
 import { runCommand, usage } from "../scripts/head.mjs";
 import { dispatch, tools } from "../scripts/mcp-server.mjs";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { buildWorldModel } from "../scripts/lib/world-model.mjs";
-import { startOnboarding, reviewOnboarding } from "../scripts/lib/onboarding.mjs";
-import { startFeatureMapping, reviewFeatureMapping } from "../scripts/lib/feature-mapping.mjs";
-import { inspectWorldModel } from "../scripts/lib/world-model.mjs";
+import { buildWorldModel } from "../scripts/lib/world/world-model.mjs";
+import { startOnboarding, reviewOnboarding } from "../scripts/lib/session/onboarding.mjs";
+import { startFeatureMapping, reviewFeatureMapping } from "../scripts/lib/world/feature-mapping.mjs";
+import { inspectWorldModel } from "../scripts/lib/world/world-model.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const request = (name, args = {}) => ({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } });

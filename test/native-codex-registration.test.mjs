@@ -1,11 +1,11 @@
-import { registerCodexNativeHistory } from "../scripts/lib/codex-native-registration.mjs";
+import { registerCodexNativeHistory } from "../scripts/lib/distribution/codex-native-registration.mjs";
 import os from "node:os";
-import { openCodexNativeRegistrationRpc } from "../scripts/lib/codex-native-registration-rpc.mjs";
-import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime-process-supervisor.mjs";
-import { nativeSqlitePath } from "../scripts/lib/codex-native-backup.mjs";
-import { publishCodexNativeHistory } from "../scripts/lib/codex-native-publication.mjs";
-import { captureCodexNativeHistory } from "../scripts/lib/codex-native-capture.mjs";
-import { prepareCodexNativeOffline } from "../scripts/lib/codex-native-offline.mjs";
+import { openCodexNativeRegistrationRpc } from "../scripts/lib/distribution/codex-native-registration-rpc.mjs";
+import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
+import { nativeSqlitePath } from "../scripts/lib/distribution/codex-native-backup.mjs";
+import { publishCodexNativeHistory } from "../scripts/lib/distribution/codex-native-publication.mjs";
+import { captureCodexNativeHistory } from "../scripts/lib/distribution/codex-native-capture.mjs";
+import { prepareCodexNativeOffline } from "../scripts/lib/distribution/codex-native-offline.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import fs from "node:fs";
@@ -14,7 +14,7 @@ import { fixture, snapshot } from "./helpers/session-work-linkage-fixture.mjs";
 import { pluginRoot } from "./helpers/session-work-linkage-fixture.mjs";
 import crypto from "node:crypto";
 import { DatabaseSync, backup } from "node:sqlite";
-import { readTypedSqliteRows } from "../scripts/lib/native-sqlite-values.mjs";
+import { readTypedSqliteRows } from "../scripts/lib/core/native-sqlite-values.mjs";
 import { nativeProfile, syntheticNativeDatabase } from "./helpers/native-portability-fixture.mjs";
 
 test("opt-in exact installed SDK registers a fresh synthetic target without a model turn", async (t) => {

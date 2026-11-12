@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
-import { buildCodexFreshProposalPolicyPlan } from "../../scripts/lib/runtime-codex-proposal-policy.mjs";
+import { buildCodexFreshProposalPolicyPlan } from "../../scripts/lib/runtime/runtime-codex-proposal-policy.mjs";
 const scenario = process.argv[2] || "normal";
 const policy = buildCodexFreshProposalPolicyPlan({ executablePath: fs.realpathSync(process.execPath), codexHome: process.env.CODEX_HOME, evidenceMode: "protocol-fixture" });
 if (scenario === "environment-check") {

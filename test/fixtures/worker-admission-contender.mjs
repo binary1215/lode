@@ -4,15 +4,15 @@ import path from "node:path";
 import {
   enqueueWorkerAdmission,
   openWorkerAdmissionHost,
-} from "../../scripts/lib/worker-admission.mjs";
-import { readBoundedWorkerDispatch } from "../../scripts/lib/bounded-worker-dispatch.mjs";
+} from "../../scripts/lib/worker/worker-admission.mjs";
+import { readBoundedWorkerDispatch } from "../../scripts/lib/worker/bounded-worker-dispatch.mjs";
 import {
   buildRuntimeInvocationLifecycleReceipt,
   buildRuntimeResultPacketDraft,
   readRuntimeInvocationAuthorization,
-} from "../../scripts/lib/runtime-invocation-lifecycle.mjs";
-import { persistRuntimeInvocationRecord } from "../../scripts/lib/runtime-invocation-record.mjs";
-import { withRuntimeExecutionLease } from "../../scripts/lib/runtime-execution-lease.mjs";
+} from "../../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
+import { persistRuntimeInvocationRecord } from "../../scripts/lib/runtime/runtime-invocation-record.mjs";
+import { withRuntimeExecutionLease } from "../../scripts/lib/runtime/runtime-execution-lease.mjs";
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const config = JSON.parse(fs.readFileSync(path.resolve(process.argv[2]), "utf8"));

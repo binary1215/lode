@@ -3,8 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
-import { createProcessSupervisorManifest } from "./lib/runtime-process-supervisor.mjs";
-import { atomicWriteArtifact } from "./lib/artifact-storage.mjs";
+import { createProcessSupervisorManifest } from "./lib/runtime/runtime-process-supervisor.mjs";
+import { atomicWriteArtifact } from "./lib/storage/artifact-storage.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const version = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version;

@@ -1,4 +1,4 @@
-import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
+import { relativeProjectArtifact } from "../scripts/lib/storage/project-storage-format.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -6,15 +6,15 @@ import path from "node:path";
 import os from "node:os";
 import { spawn } from "node:child_process";
 import { initializeProject } from "../scripts/lib/head-core.mjs";
-import { prepareSourceContext, inspectSourceObservation } from "../scripts/lib/source-context-workflow.mjs";
-import { runPythonSourceWorker } from "../scripts/lib/python-source-collector.mjs";
+import { prepareSourceContext, inspectSourceObservation } from "../scripts/lib/world/source-context-workflow.mjs";
+import { runPythonSourceWorker } from "../scripts/lib/world/python-source-collector.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/head.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { sourceObservationDescriptor, verifySourceObservation } from "../scripts/lib/source-observation.mjs";
-import { artifactAuthorityBoundary, verifyArtifactAuthorityBoundary, assertNoAuthorityAmplification } from "../scripts/lib/authority-plane-contract.mjs";
-import { stageDistributionRelease } from "../scripts/lib/distribution-lifecycle.mjs";
-import { loadObservationArtifacts } from "../scripts/lib/observation-store.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { sourceObservationDescriptor, verifySourceObservation } from "../scripts/lib/world/source-observation.mjs";
+import { artifactAuthorityBoundary, verifyArtifactAuthorityBoundary, assertNoAuthorityAmplification } from "../scripts/lib/core/authority-plane-contract.mjs";
+import { stageDistributionRelease } from "../scripts/lib/distribution/distribution-lifecycle.mjs";
+import { loadObservationArtifacts } from "../scripts/lib/world/observation-store.mjs";
 import { inspectProject } from "../scripts/lib/head-core.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");

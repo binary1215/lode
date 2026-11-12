@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject } from "../scripts/lib/head-core.mjs";
-import { createNativeSessionHostBridge } from "../scripts/lib/session-native-host.mjs";
-import { SESSION_HOST_REQUEST_HELPER } from "../scripts/lib/session-host-request.mjs";
-import { createRecoveryBasisMemory } from "../scripts/lib/recovery-basis-memory.mjs";
+import { createNativeSessionHostBridge } from "../scripts/lib/session/session-native-host.mjs";
+import { SESSION_HOST_REQUEST_HELPER } from "../scripts/lib/session/session-host-request.mjs";
+import { createRecoveryBasisMemory } from "../scripts/lib/session/recovery-basis-memory.mjs";
 import { dispatch, entryHoldSession, initHoldSession, tools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 

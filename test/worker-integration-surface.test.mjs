@@ -1,4 +1,4 @@
-import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
+import { relativeProjectArtifact } from "../scripts/lib/storage/project-storage-format.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -8,7 +8,7 @@ import { dispatch, toolsForSurface } from "../scripts/mcp-server.mjs";
 const tools = toolsForSurface("managed-maintenance");
 import { inspectProject } from "../scripts/lib/head-core.mjs";
 import { workerIntegrationFixture } from "./helpers/worker-integration-fixture.mjs";
-import { formatCliResult, formatMcpToolContent } from "../scripts/lib/cli-presentation.mjs";
+import { formatCliResult, formatMcpToolContent } from "../scripts/lib/session/cli-presentation.mjs";
 
 console.log(
   JSON.stringify({

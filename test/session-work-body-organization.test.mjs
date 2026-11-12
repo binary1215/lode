@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { organizeSelectedWorkBodies, fitSelectedBodyGroups, workBodyTuples } from "../scripts/lib/session-work-body-organization.mjs";
+import { organizeSelectedWorkBodies, fitSelectedBodyGroups, workBodyTuples } from "../scripts/lib/session/session-work-body-organization.mjs";
 
 const selector = (value) => ({ evidenceId: value.evidenceId, evidenceDigest: value.evidenceDigest });
 function tuple(index, number, content = {}, owner = {}) {

@@ -5,14 +5,14 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { createHeadSession, withSessionRoute } from "../scripts/lib/session-routing.mjs";
-import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session-work-context.mjs";
-import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
-import { createSessionHostAdapter } from "../scripts/lib/session-host-adapter.mjs";
+import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
+import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session/session-work-context.mjs";
+import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
+import { createSessionHostAdapter } from "../scripts/lib/session/session-host-adapter.mjs";
 import { sessionStartContext } from "../scripts/session-host-hook.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
-import { formatCliResult, formatMcpToolContent } from "../scripts/lib/cli-presentation.mjs";
+import { formatCliResult, formatMcpToolContent } from "../scripts/lib/session/cli-presentation.mjs";
 
 const directionView = (value) =>
   value ? Object.fromEntries(["directionId", "directionHash", "input"].filter((key) => value[key] !== undefined).map((key) => [key, value[key]])) : null;

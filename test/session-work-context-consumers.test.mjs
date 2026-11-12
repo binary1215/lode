@@ -1,24 +1,30 @@
-import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
+import { relativeProjectArtifact } from "../scripts/lib/storage/project-storage-format.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { dispatch, catalogTools, operationCatalogTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/head.mjs";
-import { formatCliResult, formatMcpToolContent, formatConversationRecovery } from "../scripts/lib/cli-presentation.mjs";
-import { enterConversationRecovery } from "../scripts/lib/compaction-lifecycle.mjs";
-import { inspectRecoveryCheckpointBasis, syncRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
-import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
-import { createSessionHostAdapter } from "../scripts/lib/session-host-adapter.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/execution-lineage.mjs";
-import { startRun, finishRun } from "../scripts/lib/run-lineage.mjs";
+import { formatCliResult, formatMcpToolContent, formatConversationRecovery } from "../scripts/lib/session/cli-presentation.mjs";
+import { enterConversationRecovery } from "../scripts/lib/session/compaction-lifecycle.mjs";
+import { inspectRecoveryCheckpointBasis, syncRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
+import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
+import { createSessionHostAdapter } from "../scripts/lib/session/session-host-adapter.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { startRun, finishRun } from "../scripts/lib/runtime/run-lineage.mjs";
 import { sessionStartContext } from "../scripts/session-host-hook.mjs";
-import { startupProjection } from "../scripts/lib/session-host-context-projection.mjs";
-import { fitSelectedBodyGroups } from "../scripts/lib/session-work-body-organization.mjs";
-import { createSessionCallContext, withSessionCallContext, withSessionRoute, sessionStatePath, createHeadSession } from "../scripts/lib/session-routing.mjs";
+import { startupProjection } from "../scripts/lib/session/session-host-context-projection.mjs";
+import { fitSelectedBodyGroups } from "../scripts/lib/session/session-work-body-organization.mjs";
+import {
+  createSessionCallContext,
+  withSessionCallContext,
+  withSessionRoute,
+  sessionStatePath,
+  createHeadSession,
+} from "../scripts/lib/session/session-routing.mjs";
 import { inspectProject } from "../scripts/lib/head-core.mjs";
-import { readSessionWorkList } from "../scripts/lib/session-work-context.mjs";
+import { readSessionWorkList } from "../scripts/lib/session/session-work-context.mjs";
 import { localContinuityCommand } from "./helpers/session-continuity-process.mjs";
 import { fixture, exact, link, representative, snapshot, recordFor, accounting, pluginRoot, sha } from "./helpers/session-work-linkage-fixture.mjs";
 

@@ -11,7 +11,7 @@ import {
   PROCESS_SUPERVISOR_MANIFEST_VERSION,
   PROCESS_SUPERVISOR_PROTOCOL_VERSION,
   PROCESS_SUPERVISOR_INTERACTIVE_PROTOCOL_VERSION,
-} from "../scripts/lib/runtime-process-supervisor.mjs";
+} from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
 
 console.log(
   JSON.stringify({

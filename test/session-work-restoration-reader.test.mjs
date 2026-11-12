@@ -1,4 +1,4 @@
-import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
+import { relativeProjectArtifact } from "../scripts/lib/storage/project-storage-format.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -10,11 +10,15 @@ import {
   readSessionWorkContext,
   readSessionWorkEvidenceOwner,
   normalizeSessionWorkEvidence,
-} from "../scripts/lib/session-work-context.mjs";
-import { createSessionWorkReadContext, inspectSessionWorkReference, readSessionWorkFileObservation } from "../scripts/lib/session-work-evidence-original.mjs";
-import { refreshProjectGraphIndex } from "../scripts/lib/discovery-index.mjs";
+} from "../scripts/lib/session/session-work-context.mjs";
+import {
+  createSessionWorkReadContext,
+  inspectSessionWorkReference,
+  readSessionWorkFileObservation,
+} from "../scripts/lib/session/session-work-evidence-original.mjs";
+import { refreshProjectGraphIndex } from "../scripts/lib/world/discovery-index.mjs";
 import { fixture, exact, link, citation, snapshot, sha, encoded } from "./helpers/session-work-linkage-fixture.mjs";
-import { fitSessionWorkDelivery, workDeliveryCharacters } from "../scripts/lib/session-work-excerpts.mjs";
+import { fitSessionWorkDelivery, workDeliveryCharacters } from "../scripts/lib/session/session-work-excerpts.mjs";
 
 test("delivery coverage preserves exact sparse item counts and previously supplied excerpts", (t) => {
   const f = fixture(t);

@@ -6,8 +6,8 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { measureContextDiagnostics } from "../scripts/measure-context-diagnostics.mjs";
 import { initializeProject } from "../scripts/lib/head-core.mjs";
-import { buildWorldModel } from "../scripts/lib/world-model.mjs";
-import { previewContextWorkflow } from "../scripts/lib/context-workflow.mjs";
+import { buildWorldModel } from "../scripts/lib/world/world-model.mjs";
+import { previewContextWorkflow } from "../scripts/lib/session/context-workflow.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 

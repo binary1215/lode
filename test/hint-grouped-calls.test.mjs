@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { publicHintCall, publicHintText, publicToolName } from "../scripts/lib/lode-artifact-composition.mjs";
-import { effectiveToolCall, groupMembership, resolveGroupedCall } from "../scripts/lib/operation-groups.mjs";
-import { resolveOperation } from "../scripts/lib/lode-operation-contract.mjs";
+import { effectiveToolCall, groupMembership, resolveGroupedCall } from "../scripts/lib/core/operation-groups.mjs";
+import { resolveOperation } from "../scripts/lib/core/lode-operation-contract.mjs";
 import { initializeProject } from "../scripts/lib/head-core.mjs";
 import { catalogTools, dispatch, discoverTools, tools } from "../scripts/mcp-server.mjs";
 
@@ -56,12 +56,12 @@ test("no hint literal names a deprecated alias; grouped operations go through th
 
 // Files whose deprecated names are routing or dispatch tables, not hints.
 const ROUTING_FILES = new Set([
-  "scripts/lib/operation-registry.mjs",
-  "scripts/lib/lode-operation-contract.mjs",
-  "scripts/lib/operation-groups.mjs",
-  "scripts/lib/session-routing.mjs",
-  "scripts/lib/work-document-surface.mjs",
-  "scripts/lib/managed-maintenance-surface.mjs",
+  "scripts/lib/session/operation-registry.mjs",
+  "scripts/lib/core/lode-operation-contract.mjs",
+  "scripts/lib/core/operation-groups.mjs",
+  "scripts/lib/session/session-routing.mjs",
+  "scripts/lib/world/work-document-surface.mjs",
+  "scripts/lib/session/managed-maintenance-surface.mjs",
 ]);
 // Line-level dispatch: formatter selection by operation name, and the MCP
 // server's per-operation cancellation hook.

@@ -4,8 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { initializeProject, inspectProject } from "../../scripts/lib/head-core.mjs";
-import { createHeadSession, withSessionRoute } from "../../scripts/lib/session-routing.mjs";
-import { recordSessionWorkEvidence, readSessionWorkContext } from "../../scripts/lib/session-work-context.mjs";
+import { createHeadSession, withSessionRoute } from "../../scripts/lib/session/session-routing.mjs";
+import { recordSessionWorkEvidence, readSessionWorkContext } from "../../scripts/lib/session/session-work-context.mjs";
 
 // Synthetic local originals only. No native provider, model, or process fixture.
 export const pluginRoot = path.resolve(import.meta.dirname, "../..");

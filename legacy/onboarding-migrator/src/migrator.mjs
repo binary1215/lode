@@ -1,5 +1,5 @@
-import { applyHistoricalArtifactBoundary } from "../../../scripts/lib/historical-artifact-boundary.mjs";
-import { readHistoricalBoundaryApplication } from "../../../scripts/lib/historical-artifact-boundary-store.mjs";
+import { applyHistoricalArtifactBoundary } from "../../../scripts/lib/world/historical-artifact-boundary.mjs";
+import { readHistoricalBoundaryApplication } from "../../../scripts/lib/world/historical-artifact-boundary-store.mjs";
 import { inspectProject } from "../../../scripts/lib/head-core.mjs";
 import { inspectLegacyOnboarding } from "./legacy-validator.mjs";
 

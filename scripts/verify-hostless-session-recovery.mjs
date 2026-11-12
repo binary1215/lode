@@ -6,11 +6,11 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { initializeProject, inspectProject } from "./lib/head-core.mjs";
-import { compileContext } from "./lib/context-compiler.mjs";
-import { createExecutionContract, createWholePlanSnapshot } from "./lib/execution-lineage.mjs";
-import { finishRun, getPendingReviewContext, reviewRun, startRun } from "./lib/run-lineage.mjs";
-import { integrateReviewedRunCheckpoint, restoreSessionFromArtifacts } from "./lib/session-recovery.mjs";
-import { formatForVerifiedOwner } from "./lib/project-storage-format.mjs";
+import { compileContext } from "./lib/session/context-compiler.mjs";
+import { createExecutionContract, createWholePlanSnapshot } from "./lib/runtime/execution-lineage.mjs";
+import { finishRun, getPendingReviewContext, reviewRun, startRun } from "./lib/runtime/run-lineage.mjs";
+import { integrateReviewedRunCheckpoint, restoreSessionFromArtifacts } from "./lib/session/session-recovery.mjs";
+import { formatForVerifiedOwner } from "./lib/storage/project-storage-format.mjs";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const pluginRoot = path.resolve(path.dirname(scriptPath), "..");

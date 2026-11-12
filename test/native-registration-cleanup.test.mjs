@@ -7,7 +7,7 @@ import {
   syntheticNativeCapture,
   nativeProfile,
 } from "./helpers/native-portability-fixture.mjs";
-import { prepareCodexNativeOffline } from "../scripts/lib/codex-native-offline.mjs";
+import { prepareCodexNativeOffline } from "../scripts/lib/distribution/codex-native-offline.mjs";
 for (const [name, settings, expected] of [
   ["delayed EOF gets grace after flush", { flushDelay: 650, exitDelay: 100 }, null],
   [
@@ -51,7 +51,7 @@ for (const [name, settings, expected] of [
       probe: async () => ({ status: "observed", rows: [] }),
       versionProbe: async () => ({ status: "verified", version: nativeProfile.engineVersion }),
     });
-    const owner = new URL("../scripts/lib/codex-native-registration-rpc.mjs", import.meta.url);
+    const owner = new URL("../scripts/lib/distribution/codex-native-registration-rpc.mjs", import.meta.url);
     owner.search = "fixture=" + name;
     const fake = new URL(
         "./helpers/native-registration-supervisor-fixture.mjs",
@@ -65,7 +65,7 @@ for (const [name, settings, expected] of [
       resolve(specifier, context, next) {
         if (
           context.parentURL === owner.href &&
-          specifier === "./runtime-process-supervisor.mjs"
+          specifier === "../runtime/runtime-process-supervisor.mjs"
         )
           return { url: fake.href, shortCircuit: true };
         return next(specifier, context);

@@ -4,7 +4,7 @@ const loaded = [];
 const preparedViewFailure = process.argv[2] === "prepared-view";
 const hook = registerHooks({ load(url, context, nextLoad) {
   loaded.push(url);
-  if (url.endsWith(preparedViewFailure ? "/lib/runtime-prepared-input-view.mjs" : "/lib/world-model.mjs")) throw new Error("SYNTHETIC_OPTIONAL_MODULE_UNAVAILABLE");
+  if (url.endsWith(preparedViewFailure ? "/lib/runtime/runtime-prepared-input-view.mjs" : "/lib/world/world-model.mjs")) throw new Error("SYNTHETIC_OPTIONAL_MODULE_UNAVAILABLE");
   return nextLoad(url, context);
 } });
 try {
@@ -30,7 +30,7 @@ try {
   assert(!(await call("head_tools_discover", { prefix: "head_world_" })).error);
   const cold = [...loaded];
   for (const file of ["world-model", "context-compiler", "bounded-worker-job", "bounded-worker-wave", "worker-integration-workflow", "product-operating-loop", "observation-adapter"]) {
-    assert(!cold.some(url => url.endsWith(`/lib/${file}.mjs`)), file);
+    assert(!cold.some(url => url.endsWith(`/${file}.mjs`)), file);
   }
   const unavailable = await call("head_tools_read", { name: "head_world_model", arguments: { project_root: "." } });
   assert.match(unavailable.error.message, /SYNTHETIC_OPTIONAL_MODULE_UNAVAILABLE/);

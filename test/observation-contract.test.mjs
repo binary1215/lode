@@ -7,8 +7,8 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
 import {
   JsonEventFileObservationAdapter,
   ObservationAdapterRegistry,
@@ -17,13 +17,13 @@ import {
   ingestJsonObservationEventFile,
   ingestStructuredObservation,
   inspectObservationSources,
-} from "../scripts/lib/observation-adapter.mjs";
-import { createObservationTypeDescriptor } from "../scripts/lib/observation-contract.mjs";
-import { loadObservationProjection, queryObservations } from "../scripts/lib/observation-projection.mjs";
-import { recordCollectedObservation, recordDerivedObservation } from "../scripts/lib/observation-store.mjs";
-import { prepareObservationEvidence } from "../scripts/lib/observation-workflow.mjs";
-import { recordProductHypothesis, recordProductSignal } from "../scripts/lib/product-operating-loop.mjs";
-import { buildWorldModel, inspectWorldModelStatus, readWorldModel } from "../scripts/lib/world-model.mjs";
+} from "../scripts/lib/world/observation-adapter.mjs";
+import { createObservationTypeDescriptor } from "../scripts/lib/world/observation-contract.mjs";
+import { loadObservationProjection, queryObservations } from "../scripts/lib/world/observation-projection.mjs";
+import { recordCollectedObservation, recordDerivedObservation } from "../scripts/lib/world/observation-store.mjs";
+import { prepareObservationEvidence } from "../scripts/lib/world/observation-workflow.mjs";
+import { recordProductHypothesis, recordProductSignal } from "../scripts/lib/world/product-operating-loop.mjs";
+import { buildWorldModel, inspectWorldModelStatus, readWorldModel } from "../scripts/lib/world/world-model.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { dispatch as dispatchMcp, operationCatalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 
@@ -932,7 +932,7 @@ test("keeps divergent Observation replay process-safe across independent Node wr
   const firstInput = input({ suffix: "same-process-event", subjectType: "example.process.target", payload: { succeeded: true } });
   const secondInput = { ...structuredClone(firstInput), sourceEvidenceDigest: sha("different-process-evidence"), payload: { succeeded: false } };
   const startFile = path.join(root, "start-observation-writers.flag");
-  const adapterUrl = pathToFileURL(path.join(pluginRoot, "scripts", "lib", "observation-adapter.mjs")).href;
+  const adapterUrl = pathToFileURL(path.join(pluginRoot, "scripts", "lib", "world", "observation-adapter.mjs")).href;
   const workerSource = `
     import fs from "node:fs";
     import { setTimeout as delay } from "node:timers/promises";

@@ -2,14 +2,14 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createNativeObservationStore, nativeId, projectNativeObservations, appendNativeStatus } from "./lib/native-session-observations.mjs";
-import { createSessionHostAdapter } from "./lib/session-host-adapter.mjs";
-import { startupProjection, MAX_CONTEXT_CHARACTERS } from "./lib/session-host-context-projection.mjs";
-import { resolveOperation } from "./lib/lode-operation-contract.mjs";
-import { effectiveToolCall } from "./lib/operation-groups.mjs";
-import { assessSubagentStateWrite, subagentWriteGuardEnabled } from "./lib/subagent-write-guard.mjs";
-import { resolveProjectStorage, assertProjectStorageUnchanged } from "./lib/project-storage-format.mjs";
-import { safeGraphFile } from "./lib/discovery-index.mjs";
+import { createNativeObservationStore, nativeId, projectNativeObservations, appendNativeStatus } from "./lib/session/native-session-observations.mjs";
+import { createSessionHostAdapter } from "./lib/session/session-host-adapter.mjs";
+import { startupProjection, MAX_CONTEXT_CHARACTERS } from "./lib/session/session-host-context-projection.mjs";
+import { resolveOperation } from "./lib/core/lode-operation-contract.mjs";
+import { effectiveToolCall } from "./lib/core/operation-groups.mjs";
+import { assessSubagentStateWrite, subagentWriteGuardEnabled } from "./lib/session/subagent-write-guard.mjs";
+import { resolveProjectStorage, assertProjectStorageUnchanged } from "./lib/storage/project-storage-format.mjs";
+import { safeGraphFile } from "./lib/world/discovery-index.mjs";
 import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
 import {
   appendUserPromptReference,
@@ -17,8 +17,8 @@ import {
   freezeUserPromptReference,
   prepareUserPromptReference,
   acknowledgeUserPromptReference,
-} from "./lib/user-prompt-reference.mjs";
-import { deliverQueuedOpenCode, prepareOpenCodeInjection, registerOpenCodePresence, writeOpenCodeCallerTicket } from "./lib/conversation-messaging.mjs";
+} from "./lib/session/user-prompt-reference.mjs";
+import { deliverQueuedOpenCode, prepareOpenCodeInjection, registerOpenCodePresence, writeOpenCodeCallerTicket } from "./lib/session/conversation-messaging.mjs";
 
 // Dependency-free OpenCode V1 server entry, source-shaped against v1.19.0.
 // No client creation, daemon, auth/config edits or canonical HEAD mutation.

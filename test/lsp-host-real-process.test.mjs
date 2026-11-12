@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { __private } from "../scripts/lib/lsp-host-bridge.mjs";
+import { __private } from "../scripts/lib/runtime/lsp-host-bridge.mjs";
 import {
   LSP_HOST_REAL_LIMITS,
   LspFrameParser,
@@ -13,8 +13,8 @@ import {
   createPendingTable,
   encodeLspMessage,
   sha256,
-} from "../scripts/lib/lsp-host-protocol.mjs";
-import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime-process-supervisor.mjs";
+} from "../scripts/lib/runtime/lsp-host-protocol.mjs";
+import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const goldenFile = path.join(root, "test", "fixtures", "lsp-real-golden.json");

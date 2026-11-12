@@ -5,11 +5,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import { ArcadeDbHttpTransport } from "./lib/graph-projection-adapter.mjs";
-import { buildStorageSelection } from "./lib/onboarding-contract.mjs";
+import { ArcadeDbHttpTransport } from "./lib/world/graph-projection-adapter.mjs";
+import { buildStorageSelection } from "./lib/session/onboarding-contract.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
-const javascriptBridge = path.join(root, "scripts", "lib", "arcadedb-http-bridge.mjs");
+const javascriptBridge = path.join(root, "scripts", "lib", "world", "arcadedb-http-bridge.mjs");
 const serverFile = path.join(root, "scripts", "fixtures", "arcadedb-query-batch-server.mjs");
 const nativeIndex = process.argv.indexOf("--native");
 const nativeBridge = nativeIndex >= 0 ? path.resolve(process.argv[nativeIndex + 1] || "") : "";

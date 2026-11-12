@@ -3,8 +3,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { inspectProject } from "../../scripts/lib/head-core.mjs";
-import { initialOnboardingDocuments } from "../../scripts/lib/onboarding-contract.mjs";
-import { emptyProductModelDocument, normalizeProductModelDocument } from "../../scripts/lib/product-model.mjs";
+import { initialOnboardingDocuments } from "../../scripts/lib/session/onboarding-contract.mjs";
+import { emptyProductModelDocument, normalizeProductModelDocument } from "../../scripts/lib/world/product-model.mjs";
 
 // Synthetic legacy contract seed only; genuine old-producer interoperability is verified separately.
 export function seedLegacyProject(root, pluginRoot) {

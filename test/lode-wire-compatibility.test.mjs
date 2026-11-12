@@ -4,14 +4,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { formatForVerifiedOwner, familyFormatForOriginal } from "../scripts/lib/project-storage-format.mjs";
-import { loadReleaseObservationProjection } from "../scripts/lib/release-observation-projection.mjs";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { buildTemporalProvenanceGraph, queryTemporalProvenanceGraph } from "../scripts/lib/temporal-provenance.mjs";
+import { formatForVerifiedOwner, familyFormatForOriginal } from "../scripts/lib/storage/project-storage-format.mjs";
+import { loadReleaseObservationProjection } from "../scripts/lib/distribution/release-observation-projection.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { buildTemporalProvenanceGraph, queryTemporalProvenanceGraph } from "../scripts/lib/world/temporal-provenance.mjs";
 import {
   buildPreparedTraversalRequest, verifyPreparedTraversalRequest, verifyPreparedTraversalVerification,
   graphProjectionCanonicalJson, LocalJsonGraphProjectionAdapter, InMemoryGraphProjectionAdapter,
-} from "../scripts/lib/graph-projection-adapter.mjs";
+} from "../scripts/lib/world/graph-projection-adapter.mjs";
 
 test("bare lode-like project IDs do not change the existing lower projection wire default", t => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(process.env.LODE_AGENT_TEST_TMP || process.env.HEAD_AGENT_TEST_TMP || os.tmpdir(), "lode-bare-id-contract-")));

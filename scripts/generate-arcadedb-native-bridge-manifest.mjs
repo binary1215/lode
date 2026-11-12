@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { createArcadeDbNativeBridgeManifest } from "./lib/arcadedb-native-bridge.mjs";
+import { createArcadeDbNativeBridgeManifest } from "./lib/world/arcadedb-native-bridge.mjs";
 
 function option(name) {
   const index = process.argv.indexOf(name);

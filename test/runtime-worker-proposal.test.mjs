@@ -5,9 +5,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
-import { buildRuntimeProtocolEvidence, buildRuntimeProjectBinding } from "../scripts/lib/runtime-protocol-evidence.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProtocolEvidence, buildRuntimeProjectBinding } from "../scripts/lib/runtime/runtime-protocol-evidence.mjs";
 import {
   buildRuntimeInvocationAuthorization,
   verifyRuntimeInvocationAuthorization,
@@ -17,13 +17,13 @@ import {
   buildRuntimeResultPacketDraft,
   verifyRuntimeResultPacketDraft,
   normalizeRuntimeEvent,
-} from "../scripts/lib/runtime-invocation-lifecycle.mjs";
-import { captureWorkerSourceBasis } from "../scripts/lib/worker-source-basis.mjs";
-import { captureWorkerWriteBasis, buildWorkerPatchCandidate } from "../scripts/lib/worker-patch-basis.mjs";
-import { prepareWorkerWorkspace, workerExecutionBoundary } from "../scripts/lib/worker-workspace.mjs";
-import { workerPatchProposalExecutionBoundary, buildWorkerPatchProposalCandidate } from "../scripts/lib/worker-patch-proposal.mjs";
-import { withRuntimeExecutionLease, RUNTIME_OPERATIONAL_STATE_ENV } from "../scripts/lib/runtime-execution-lease.mjs";
-import { persistRuntimeInvocationRecord, readRuntimeInvocationRecord } from "../scripts/lib/runtime-invocation-record.mjs";
+} from "../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
+import { captureWorkerSourceBasis } from "../scripts/lib/worker/worker-source-basis.mjs";
+import { captureWorkerWriteBasis, buildWorkerPatchCandidate } from "../scripts/lib/worker/worker-patch-basis.mjs";
+import { prepareWorkerWorkspace, workerExecutionBoundary } from "../scripts/lib/worker/worker-workspace.mjs";
+import { workerPatchProposalExecutionBoundary, buildWorkerPatchProposalCandidate } from "../scripts/lib/worker/worker-patch-proposal.mjs";
+import { withRuntimeExecutionLease, RUNTIME_OPERATIONAL_STATE_ENV } from "../scripts/lib/runtime/runtime-execution-lease.mjs";
+import { persistRuntimeInvocationRecord, readRuntimeInvocationRecord } from "../scripts/lib/runtime/runtime-invocation-record.mjs";
 
 console.log(
   JSON.stringify({

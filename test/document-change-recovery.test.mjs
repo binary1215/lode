@@ -4,11 +4,11 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { buildWorldModel, materializeWorldMarkdownProjection, captureWorldMarkdownChanges, inspectWorldModel } from "../scripts/lib/world-model.mjs";
-import { applyDocumentChangeReview, reviewDocumentChanges, inspectDocumentChangeReviewStatus } from "../scripts/lib/document-change-review.mjs";
-import { readProductModelCanon } from "../scripts/lib/product-model.mjs";
+import { buildWorldModel, materializeWorldMarkdownProjection, captureWorldMarkdownChanges, inspectWorldModel } from "../scripts/lib/world/world-model.mjs";
+import { applyDocumentChangeReview, reviewDocumentChanges, inspectDocumentChangeReviewStatus } from "../scripts/lib/world/document-change-review.mjs";
+import { readProductModelCanon } from "../scripts/lib/world/product-model.mjs";
 import crypto from "node:crypto";
-import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session-work-context.mjs";
+import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session/session-work-context.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 async function fixture(disposition = "accept-all") {
@@ -90,7 +90,7 @@ function crash(root, reviewDecisionId, boundary, layout) {
         ||boundary==='receipt'&&name.startsWith(management+'/document-changes/applications/')
         ||boundary==='audit-world'&&name===management+'/world-model/current.json'&&worlds===2)process.exit(44);
       return result;}; syncBuiltinESMExports();
-    const {applyDocumentChangeReview}=await import(${JSON.stringify(new URL("../scripts/lib/document-change-review.mjs", import.meta.url).href)});
+    const {applyDocumentChangeReview}=await import(${JSON.stringify(new URL("../scripts/lib/world/document-change-review.mjs", import.meta.url).href)});
     await applyDocumentChangeReview({root,reviewDecisionId:${JSON.stringify(reviewDecisionId)}});
   `;
   const result = spawnSync(process.execPath, ["--input-type=module", "-e", source], { cwd: pluginRoot, encoding: "utf8", timeout: 45000, windowsHide: true });

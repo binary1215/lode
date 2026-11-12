@@ -6,8 +6,8 @@ import test from "node:test";
 import { catalogTools, dispatch } from "../scripts/mcp-server.mjs";
 import { runCommand, usage } from "../scripts/head.mjs";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { buildWorldModel } from "../scripts/lib/world-model.mjs";
-import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
+import { buildWorldModel } from "../scripts/lib/world/world-model.mjs";
+import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 async function call(name, args) {

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import vm from "node:vm";
 import { performance } from "node:perf_hooks";
-import { renderGraphExplorer } from "../../scripts/lib/graph-explorer-html.mjs";
+import { renderGraphExplorer } from "../../scripts/lib/world/graph-explorer-html.mjs";
 
 // Visibility only: no CSS layout, clipping, real accessibility tree or browser proof.
 export function visibleText(element) {

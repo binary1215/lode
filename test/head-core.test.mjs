@@ -1,7 +1,7 @@
 import { readFixtureSnapshot, writeFixtureSnapshot } from "./helpers/snapshot-storage-fixture.mjs";
 import assert from "node:assert/strict";
-import { arcadeDbGraphReservedSchemaFor } from "../scripts/lib/graph-projection-adapter.mjs";
-import { arcadeDbRequiredKeysFor } from "../scripts/lib/arcadedb-schema-contract.mjs";
+import { arcadeDbGraphReservedSchemaFor } from "../scripts/lib/world/graph-projection-adapter.mjs";
+import { arcadeDbRequiredKeysFor } from "../scripts/lib/world/arcadedb-schema-contract.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -9,18 +9,18 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { initializeProject, convergeProjectInstallation, inspectProject, inspectRuntimeAdapters } from "../scripts/lib/head-core.mjs";
-import { coreEntryGuidance } from "../scripts/lib/lode-entry-guidance.mjs";
+import { coreEntryGuidance } from "../scripts/lib/session/lode-entry-guidance.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "../scripts/lib/lode-artifact-composition.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { createRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
-import { compileContext, readContextCapsule } from "../scripts/lib/context-compiler.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
+import { createRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
+import { compileContext, readContextCapsule } from "../scripts/lib/session/context-compiler.mjs";
 import {
   buildComputeRequest,
   executeComputeOperation,
   JsReferenceComputeAdapter,
   validateComputeResponse,
   verifyComputeAdapterConformance,
-} from "../scripts/lib/compute-adapter.mjs";
+} from "../scripts/lib/runtime/compute-adapter.mjs";
 import {
   buildRepositoryScanInput,
   createRepositoryScanReferenceAdapter,
@@ -29,7 +29,7 @@ import {
   executeIncrementalRepositoryScan,
   scanRepositoryReference,
   validateRepositoryScanResult,
-} from "../scripts/lib/repository-scan.mjs";
+} from "../scripts/lib/world/repository-scan.mjs";
 import {
   createWorkerHealthReferenceAdapter,
   defaultGoWorkerManifestPath,
@@ -39,7 +39,7 @@ import {
   WORKER_HEALTH_INPUT,
   WORKER_HEALTH_OPERATION,
   WORKER_HEALTH_SEMANTIC_PRODUCER,
-} from "../scripts/lib/go-worker-adapter.mjs";
+} from "../scripts/lib/worker/go-worker-adapter.mjs";
 import {
   buildFreshHeadReview,
   createExecutionContract,
@@ -48,8 +48,8 @@ import {
   createReviewDecision,
   createWholePlanSnapshot,
   readLineageArtifact,
-} from "../scripts/lib/execution-lineage.mjs";
-import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/run-lineage.mjs";
+} from "../scripts/lib/runtime/execution-lineage.mjs";
+import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/runtime/run-lineage.mjs";
 import {
   WORLD_MODEL_STATUS_PROJECTION_MAX_BYTES,
   buildWorldModel,
@@ -66,18 +66,18 @@ import {
   queryWorldTemporalGraph,
   readWorldDocumentChangeCandidateSet,
   readWorldModel,
-} from "../scripts/lib/world-model.mjs";
+} from "../scripts/lib/world/world-model.mjs";
 import {
   buildTemporalProvenanceGraph,
   deduplicateTemporalEdgesInPlace,
   queryTemporalProvenanceGraph,
   verifyTemporalProvenanceGraph,
-} from "../scripts/lib/temporal-provenance.mjs";
+} from "../scripts/lib/world/temporal-provenance.mjs";
 import {
   InMemorySourceRelationEvidenceAdapter,
   buildSourceRelationEvidenceSet,
   verifySourceRelationEvidenceSet,
-} from "../scripts/lib/source-relation-evidence.mjs";
+} from "../scripts/lib/world/source-relation-evidence.mjs";
 import {
   ActivatedArcadeDbGraphProjectionAdapter,
   ArcadeDbGraphProjectionAdapter,
@@ -93,10 +93,10 @@ import {
   materializeGraphProjection,
   queryGraphProjection,
   verifyGraphProjectionAdapterConformance,
-} from "../scripts/lib/graph-projection-adapter.mjs";
-import { buildPreparedTraversalCostEvidence, verifyPreparedTraversalCostEvidence } from "../scripts/lib/prepared-traversal-benchmark.mjs";
-import { activateArcadeDbGraphProjection, inspectArcadeDbGraphProjectionStatus } from "../scripts/lib/graphdb-projection-activation.mjs";
-import { inspectOnboarding, readOnboardingCandidateSet, startOnboarding } from "../scripts/lib/onboarding.mjs";
+} from "../scripts/lib/world/graph-projection-adapter.mjs";
+import { buildPreparedTraversalCostEvidence, verifyPreparedTraversalCostEvidence } from "../scripts/lib/world/prepared-traversal-benchmark.mjs";
+import { activateArcadeDbGraphProjection, inspectArcadeDbGraphProjectionStatus } from "../scripts/lib/world/graphdb-projection-activation.mjs";
+import { inspectOnboarding, readOnboardingCandidateSet, startOnboarding } from "../scripts/lib/session/onboarding.mjs";
 import {
   DOCUMENT_PROJECTION_ADAPTER_VERSION,
   InMemoryMarkdownProjectionAdapter,
@@ -105,21 +105,21 @@ import {
   inspectMarkdownProjection,
   materializeMarkdownProjection,
   verifyDocumentProjectionAdapterConformance,
-} from "../scripts/lib/document-projection-adapter.mjs";
-import { normalizeProductModelDocument } from "../scripts/lib/product-model.mjs";
-import { WORLD_MODEL_STORE_ADAPTER_VERSION } from "../scripts/lib/world-model-store.mjs";
-import { GIT_HISTORY_ADAPTER_VERSION, GitCliHistoryAdapter } from "../scripts/lib/git-history.mjs";
-import { RUNTIME_STATE_ADAPTER_VERSION, RuntimeStateFileAdapter } from "../scripts/lib/runtime-state.mjs";
+} from "../scripts/lib/world/document-projection-adapter.mjs";
+import { normalizeProductModelDocument } from "../scripts/lib/world/product-model.mjs";
+import { WORLD_MODEL_STORE_ADAPTER_VERSION } from "../scripts/lib/world/world-model-store.mjs";
+import { GIT_HISTORY_ADAPTER_VERSION, GitCliHistoryAdapter } from "../scripts/lib/world/git-history.mjs";
+import { RUNTIME_STATE_ADAPTER_VERSION, RuntimeStateFileAdapter } from "../scripts/lib/runtime/runtime-state.mjs";
 import {
   ProjectionOnlyAgentRuntimeAdapter,
   buildRuntimeAdapterComposition,
   buildRuntimeAdapterContractMatrix,
   verifyRuntimeAdapterComposition,
   verifyRuntimeAdapterContractMatrix,
-} from "../scripts/lib/runtime-adapter.mjs";
+} from "../scripts/lib/runtime/runtime-adapter.mjs";
 import { WORLD_MODEL_STATUS_MCP_MAX_BYTES, dispatch as dispatchMcp, operationCatalogTools as mcpTools } from "../scripts/mcp-server.mjs";
-import { effectiveToolCall } from "../scripts/lib/operation-groups.mjs";
-import { buildRepositorySourceScope } from "../scripts/lib/repository-source-scope.mjs";
+import { effectiveToolCall } from "../scripts/lib/core/operation-groups.mjs";
+import { buildRepositorySourceScope } from "../scripts/lib/world/repository-source-scope.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import {
   inspectIncrementalRefresh,
@@ -129,7 +129,7 @@ import {
   refreshWorldModel,
   verifyIncrementalRefreshReceipt,
   verifyIncrementalRefreshRequest,
-} from "../scripts/lib/incremental-refresh.mjs";
+} from "../scripts/lib/world/incremental-refresh.mjs";
 import {
   buildRefreshTriggerBatch,
   createFileSystemRefreshWatcher,
@@ -139,17 +139,17 @@ import {
   readRefreshTriggerDelivery,
   verifyRefreshTriggerBatch,
   verifyRefreshTriggerDelivery,
-} from "../scripts/lib/refresh-trigger.mjs";
-import { withRefreshWriterLease } from "../scripts/lib/refresh-writer-lease.mjs";
-import { inspectPostRefreshProjectionPolicy } from "../scripts/lib/post-refresh-projection.mjs";
-import { initializeOrResumeProject, inspectProjectExperience } from "../scripts/lib/project-bootstrap.mjs";
+} from "../scripts/lib/world/refresh-trigger.mjs";
+import { withRefreshWriterLease } from "../scripts/lib/world/refresh-writer-lease.mjs";
+import { inspectPostRefreshProjectionPolicy } from "../scripts/lib/world/post-refresh-projection.mjs";
+import { initializeOrResumeProject, inspectProjectExperience } from "../scripts/lib/session/project-bootstrap.mjs";
 import {
   applyDocumentChangeReview,
   inspectDocumentChangeReviewStatus,
   readDocumentChangeApplicationReceipt,
   readDocumentChangeReviewDecision,
   reviewDocumentChanges,
-} from "../scripts/lib/document-change-review.mjs";
+} from "../scripts/lib/world/document-change-review.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const pluginVersion = JSON.parse(fs.readFileSync(path.join(pluginRoot, "package.json"), "utf8")).version;

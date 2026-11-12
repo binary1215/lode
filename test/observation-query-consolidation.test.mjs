@@ -5,10 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { ingestStructuredObservation } from "../scripts/lib/observation-adapter.mjs";
-import { recordDerivedObservation } from "../scripts/lib/observation-store.mjs";
-import * as api from "../scripts/lib/observation-projection.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
+import { ingestStructuredObservation } from "../scripts/lib/world/observation-adapter.mjs";
+import { recordDerivedObservation } from "../scripts/lib/world/observation-store.mjs";
+import * as api from "../scripts/lib/world/observation-projection.mjs";
 
 const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const pluginRoot = path.resolve(import.meta.dirname, "..");

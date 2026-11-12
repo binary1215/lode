@@ -6,10 +6,10 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { deliveryObservationDescriptor, inspectDeliveryState, recordDeliveryObservation } from "../scripts/lib/delivery-observation.mjs";
-import { loadObservationArtifacts, recordCollectedObservation } from "../scripts/lib/observation-store.mjs";
-import { verifyTemporalProvenanceGraph } from "../scripts/lib/temporal-provenance.mjs";
-import { buildWorldModel, inspectWorldModel } from "../scripts/lib/world-model.mjs";
+import { deliveryObservationDescriptor, inspectDeliveryState, recordDeliveryObservation } from "../scripts/lib/world/delivery-observation.mjs";
+import { loadObservationArtifacts, recordCollectedObservation } from "../scripts/lib/world/observation-store.mjs";
+import { verifyTemporalProvenanceGraph } from "../scripts/lib/world/temporal-provenance.mjs";
+import { buildWorldModel, inspectWorldModel } from "../scripts/lib/world/world-model.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { dispatch, operationCatalogTools as tools } from "../scripts/mcp-server.mjs";
 

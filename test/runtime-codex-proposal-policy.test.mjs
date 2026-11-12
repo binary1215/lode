@@ -14,7 +14,7 @@ import {
   assertCodexFreshProposalSkills,
   codexFreshProposalEnvironment,
   assertCodexFreshProposalInstructionSources,
-} from "../scripts/lib/runtime-codex-proposal-policy.mjs";
+} from "../scripts/lib/runtime/runtime-codex-proposal-policy.mjs";
 
 const copy = (value) => JSON.parse(JSON.stringify(value));
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");

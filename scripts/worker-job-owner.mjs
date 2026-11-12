@@ -1,4 +1,4 @@
-import { runBoundedWorkerJobOwner } from "./lib/bounded-worker-job.mjs";
+import { runBoundedWorkerJobOwner } from "./lib/worker/bounded-worker-job.mjs";
 
 // The owner's stderr is its local job diagnostic (stderr.bin). A failure names
 // the failing file operation and where it came from, so an intermittent

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { createProcessSupervisorManifest } from "./lib/runtime-process-supervisor.mjs";
+import { createProcessSupervisorManifest } from "./lib/runtime/runtime-process-supervisor.mjs";
 
 function option(name) {
   const index = process.argv.indexOf(name);

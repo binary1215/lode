@@ -4,9 +4,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { initializeProject, inspectProject, convergeProjectInstallation, inspectRuntimeAdapters, createCheckpoint, coreContract } from "../scripts/lib/lode-core.mjs";
-import { prepareContextWorkflow, previewContextWorkflow } from "../scripts/lib/context-workflow.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
+import { initializeProject, inspectProject, convergeProjectInstallation, inspectRuntimeAdapters, createCheckpoint, coreContract } from "../scripts/lib/session/lode-core.mjs";
+import { prepareContextWorkflow, previewContextWorkflow } from "../scripts/lib/session/context-workflow.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
@@ -31,14 +31,14 @@ function inventory(root) {
 test("EN/KO CLI example docs never show a bare head or lode command, which is not an installed launcher", () => {
   const exampleDocs = ["bounded-worker-wave", "compaction-recovery", "conformance-reconciliation", "delivery-observation",
     "document-change-review", "product-operating-loop", "release-observation", "session-recovery"];
-  // Wording pinned: the installed launcher is `${identity}-agent` (scripts/lib/distribution-lifecycle.mjs);
+  // Wording pinned: the installed launcher is `${identity}-agent` (scripts/lib/distribution/distribution-lifecycle.mjs);
   // no bare head or lode command is installed, so a doc example using one cannot run.
   for (const name of exampleDocs) for (const prefix of ["docs/", "docs/ko/"])
     assert.equal((read(`${prefix}${name}.md`).match(/^head |^lode /gm) || []).length, 0, `${prefix}${name}.md`);
 });
 
 test("the installed launcher is named lode-agent and the head-core import shim is retained", () => {
-  assert(read("scripts/lib/distribution-lifecycle.mjs").includes('const command = `${identity}-agent`;'));
+  assert(read("scripts/lib/distribution/distribution-lifecycle.mjs").includes('const command = `${identity}-agent`;'));
   assert(fs.existsSync(path.join(pluginRoot, "scripts/lib/head-core.mjs")), "Import shim is retained");
 });
 

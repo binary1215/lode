@@ -6,18 +6,18 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject, createCheckpoint } from "../scripts/lib/head-core.mjs";
-import { inspectProjectExperience } from "../scripts/lib/project-bootstrap.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/execution-lineage.mjs";
-import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/run-lineage.mjs";
-import { createRecoveryCheckpoint, readRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
-import { integrateReviewedRunCheckpoint, readRunResultIntegration, restoreSessionFromArtifacts } from "../scripts/lib/session-recovery.mjs";
+import { inspectProjectExperience } from "../scripts/lib/session/project-bootstrap.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/runtime/run-lineage.mjs";
+import { createRecoveryCheckpoint, readRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
+import { integrateReviewedRunCheckpoint, readRunResultIntegration, restoreSessionFromArtifacts } from "../scripts/lib/session/session-recovery.mjs";
 // Every operation, including the deprecated names grouped tools replaced (stage 3-F).
 import { dispatch, operationCatalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/head.mjs";
 
 import { seedLegacyProject } from "./helpers/legacy-project-fixture.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const cliFile = path.join(pluginRoot, "scripts", "head.mjs");

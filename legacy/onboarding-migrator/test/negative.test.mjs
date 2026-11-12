@@ -4,21 +4,21 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import test from "node:test";
-import { buildWorldModel } from "../../../scripts/lib/world-model.mjs";
+import { buildWorldModel } from "../../../scripts/lib/world/world-model.mjs";
 import {
   loadOnboardingGraphProjection,
   verifyOnboardingGraphProjectionInput,
   verifyProductModelRevisionForProjection,
-} from "../../../scripts/lib/onboarding-projection.mjs";
-import { verifyTemporalProvenanceGraph } from "../../../scripts/lib/temporal-provenance.mjs";
-import { createRecoveryCheckpoint, inspectRecoveryCheckpointBasis, readRecoveryCheckpoint } from "../../../scripts/lib/compaction-recovery.mjs";
-import { createVerifiedHistoricalInventoryCapability, applyHistoricalArtifactBoundary } from "../../../scripts/lib/historical-artifact-boundary.mjs";
+} from "../../../scripts/lib/session/onboarding-projection.mjs";
+import { verifyTemporalProvenanceGraph } from "../../../scripts/lib/world/temporal-provenance.mjs";
+import { createRecoveryCheckpoint, inspectRecoveryCheckpointBasis, readRecoveryCheckpoint } from "../../../scripts/lib/session/compaction-recovery.mjs";
+import { createVerifiedHistoricalInventoryCapability, applyHistoricalArtifactBoundary } from "../../../scripts/lib/world/historical-artifact-boundary.mjs";
 import {
   historicalBoundaryStorageFiles,
   historicalBoundaryDigest,
   verifyHistoricalInventoryEntries,
-} from "../../../scripts/lib/historical-artifact-boundary-store.mjs";
-import { onboardingCanonicalJson, onboardingDigest } from "../../../scripts/lib/onboarding-contract.mjs";
+} from "../../../scripts/lib/world/historical-artifact-boundary-store.mjs";
+import { onboardingCanonicalJson, onboardingDigest } from "../../../scripts/lib/session/onboarding-contract.mjs";
 import { inspectLegacyOnboarding } from "../src/legacy-validator.mjs";
 import { applyMigration } from "../src/migrator.mjs";
 import { legacyReadyFixture, pluginRoot, snapshotFiles } from "./fixture.mjs";

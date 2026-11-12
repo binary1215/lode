@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { tools } from "./mcp-server.mjs";
-import { previewContextWorkflow } from "./lib/context-workflow.mjs";
+import { previewContextWorkflow } from "./lib/session/context-workflow.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 
@@ -60,10 +60,11 @@ function sourceRevision(root) {
 
 function dependencySummary(root) {
   const library = path.join(root, "scripts", "lib");
+  // Modules live in the layer directories of scripts/lib (scripts/lib-layers.json).
   const files = fs
-    .readdirSync(library, { withFileTypes: true })
+    .readdirSync(library, { withFileTypes: true, recursive: true })
     .filter((item) => item.isFile() && item.name.endsWith(".mjs"))
-    .map((item) => path.join(library, item.name))
+    .map((item) => path.join(item.parentPath, item.name))
     .sort();
   const known = new Set(files);
   const graph = new Map();

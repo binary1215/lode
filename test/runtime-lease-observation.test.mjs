@@ -5,21 +5,21 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { exportProjectBundle, importProjectBundle } from "../scripts/lib/project-portability.mjs";
-import { updateProjectDirection, readProjectDirection } from "../scripts/lib/project-direction.mjs";
-import { adoptVerifiedProjectCopy } from "../scripts/lib/project-copy-adoption.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
-import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime-protocol-evidence.mjs";
-import { buildRuntimeInvocationAuthorization } from "../scripts/lib/runtime-invocation-lifecycle.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { exportProjectBundle, importProjectBundle } from "../scripts/lib/storage/project-portability.mjs";
+import { updateProjectDirection, readProjectDirection } from "../scripts/lib/session/project-direction.mjs";
+import { adoptVerifiedProjectCopy } from "../scripts/lib/storage/project-copy-adoption.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
+import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime/runtime-protocol-evidence.mjs";
+import { buildRuntimeInvocationAuthorization } from "../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
 import {
   RUNTIME_OPERATIONAL_STATE_ENV,
   createRuntimePreConsumeGateCapability,
   inspectRuntimeExecutionLease,
   verifyRuntimeExecutionLeaseOwnership,
   withRuntimeExecutionLease,
-} from "../scripts/lib/runtime-execution-lease.mjs";
+} from "../scripts/lib/runtime/runtime-execution-lease.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const ownerFenceDigest = crypto.createHash("sha256").update("synthetic lease observation owner").digest("hex");

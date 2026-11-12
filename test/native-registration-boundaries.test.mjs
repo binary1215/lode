@@ -10,11 +10,11 @@ import {
   syntheticNativeDatabase,
   nativeProfile,
 } from "./helpers/native-portability-fixture.mjs";
-import { prepareCodexNativeOffline } from "../scripts/lib/codex-native-offline.mjs";
-import { captureCodexNativeHistory } from "../scripts/lib/codex-native-capture.mjs";
-import { publishCodexNativeHistory } from "../scripts/lib/codex-native-publication.mjs";
-import { nativeSqlitePath } from "../scripts/lib/codex-native-backup.mjs";
-import { codexNativeApiExpectation } from "../scripts/lib/codex-native-api-evidence.mjs";
+import { prepareCodexNativeOffline } from "../scripts/lib/distribution/codex-native-offline.mjs";
+import { captureCodexNativeHistory } from "../scripts/lib/distribution/codex-native-capture.mjs";
+import { publishCodexNativeHistory } from "../scripts/lib/distribution/codex-native-publication.mjs";
+import { nativeSqlitePath } from "../scripts/lib/distribution/codex-native-backup.mjs";
+import { codexNativeApiExpectation } from "../scripts/lib/distribution/codex-native-api-evidence.mjs";
 
 test("SDK preparation retries safely while delivery, selected targets and concurrent attempts stay bounded", async (t) => {
   if (process.platform !== "win32" || process.arch !== "x64")
@@ -194,7 +194,7 @@ test("SDK preparation retries safely while delivery, selected targets and concur
         };
         assert.equal(globalThis[symbol], undefined);
         globalThis[symbol] = fixture;
-        const owner = new URL("../scripts/lib/codex-native-registration.mjs", import.meta.url);
+        const owner = new URL("../scripts/lib/distribution/codex-native-registration.mjs", import.meta.url);
         owner.search = "fixture=" + crypto.randomUUID();
         const fake = new URL("./helpers/native-registration-rpc-fixture.mjs", import.meta.url);
         hooks = registerHooks({

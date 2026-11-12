@@ -4,13 +4,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
 import { legacyReasonCodeFields } from "./lib/core/errors.mjs";
-import { callRegistered, registeredCommand } from "./lib/operation-registry.mjs";
-import { commandEntry, isManagedMutation, requireOperationSurface, requireSurface } from "./lib/managed-maintenance-surface.mjs";
-import { withSessionCallContext, sessionCallRequiresBinding, sessionSelectionUnresolved } from "./lib/session-routing.mjs";
-import { inspectProjectLocationExperience } from "./lib/project-bootstrap.mjs";
-import { formatCliError, formatCliResult } from "./lib/cli-presentation.mjs";
-import { readSessionWorkList } from "./lib/session-work-context.mjs";
-import { readBoundedWorkerDispatch } from "./lib/bounded-worker-dispatch.mjs";
+import { callRegistered, registeredCommand } from "./lib/session/operation-registry.mjs";
+import { commandEntry, isManagedMutation, requireOperationSurface, requireSurface } from "./lib/session/managed-maintenance-surface.mjs";
+import { withSessionCallContext, sessionCallRequiresBinding, sessionSelectionUnresolved } from "./lib/session/session-routing.mjs";
+import { inspectProjectLocationExperience } from "./lib/session/project-bootstrap.mjs";
+import { formatCliError, formatCliResult } from "./lib/session/cli-presentation.mjs";
+import { readSessionWorkList } from "./lib/session/session-work-context.mjs";
+import { readBoundedWorkerDispatch } from "./lib/worker/bounded-worker-dispatch.mjs";
+import { recordedRootSpelling } from "./lib/storage/project-root-spelling.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageMetadata = JSON.parse(fs.readFileSync(path.join(pluginRoot, "package.json"), "utf8"));
@@ -339,6 +340,17 @@ export async function runCommand(
     onExportScope = null,
   } = {},
 ) {
+  // A root that differs from the recorded one only in drive-letter case is the
+  // same Project (Windows only; a read of project.json, never a write).
+  // The root is argv[offset + 1]; when it is omitted it defaults to ".".
+  {
+    const offset = argv.length - commandEntry(argv).argv.length;
+    if (argv.length > offset) {
+      const given = argv[offset + 1] ?? ".";
+      const spelled = recordedRootSpelling(given);
+      if (spelled !== given) argv = [...argv.slice(0, offset + 1), spelled, ...argv.slice(offset + 2)];
+    }
+  }
   const entry = commandEntry(argv);
   const parsed = parse(entry.argv);
   const index = argv.indexOf("--session");

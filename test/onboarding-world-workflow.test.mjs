@@ -7,14 +7,14 @@ import test from "node:test";
 import { runCommand } from "../scripts/head.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { inspectOnboarding, reviewOnboarding, startOnboarding } from "../scripts/lib/onboarding.mjs";
-import { inspectConversationalOnboarding } from "../scripts/lib/onboarding-conversation.mjs";
-import { initializeOrResumeProject, inspectProjectExperience } from "../scripts/lib/project-bootstrap.mjs";
-import { refreshWorldModel } from "../scripts/lib/incremental-refresh.mjs";
-import { inspectFeatureMapping, startFeatureMapping, reviewFeatureMapping } from "../scripts/lib/feature-mapping.mjs";
-import { inspectWorldModel } from "../scripts/lib/world-model.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
+import { inspectOnboarding, reviewOnboarding, startOnboarding } from "../scripts/lib/session/onboarding.mjs";
+import { inspectConversationalOnboarding } from "../scripts/lib/session/onboarding-conversation.mjs";
+import { initializeOrResumeProject, inspectProjectExperience } from "../scripts/lib/session/project-bootstrap.mjs";
+import { refreshWorldModel } from "../scripts/lib/world/incremental-refresh.mjs";
+import { inspectFeatureMapping, startFeatureMapping, reviewFeatureMapping } from "../scripts/lib/world/feature-mapping.mjs";
+import { inspectWorldModel } from "../scripts/lib/world/world-model.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 

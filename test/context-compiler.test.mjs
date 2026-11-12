@@ -4,13 +4,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { compileContext, readContextCapsule, DEFAULT_CONTEXT_BUDGET } from "../scripts/lib/context-compiler.mjs";
-import { prepareContextWorkflow, previewContextWorkflow } from "../scripts/lib/context-workflow.mjs";
+import { compileContext, readContextCapsule, DEFAULT_CONTEXT_BUDGET } from "../scripts/lib/session/context-compiler.mjs";
+import { prepareContextWorkflow, previewContextWorkflow } from "../scripts/lib/session/context-workflow.mjs";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { buildWorldModel, readWorldModel } from "../scripts/lib/world-model.mjs";
-import { prepareSourceContext } from "../scripts/lib/source-context-workflow.mjs";
-import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
-import { proposeProductPolicy, reviewProductPolicy } from "../scripts/lib/product-policy.mjs";
+import { buildWorldModel, readWorldModel } from "../scripts/lib/world/world-model.mjs";
+import { prepareSourceContext } from "../scripts/lib/world/source-context-workflow.mjs";
+import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
+import { proposeProductPolicy, reviewProductPolicy } from "../scripts/lib/world/product-policy.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 function fixture(t) {

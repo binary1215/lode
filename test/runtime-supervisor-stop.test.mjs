@@ -5,7 +5,7 @@ import path from "node:path";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { createProcessSupervisorManifest, spawnSupervisedProcess } from "../scripts/lib/runtime-process-supervisor.mjs";
+import { createProcessSupervisorManifest, spawnSupervisedProcess } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
 
 test("graceful stop lets its native owner complete cleanup; explicit force retains the platform's exact owned fallback", async t => {
   const windows = process.platform === "win32", strategy = windows ? "windows-job-object" : "posix-process-group";

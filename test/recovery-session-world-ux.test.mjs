@@ -4,17 +4,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/execution-lineage.mjs";
-import { startRun, finishRun, reviewRun, getPendingReviewContext } from "../scripts/lib/run-lineage.mjs";
-import { createRecoveryCheckpoint, prepareCompaction, verifyCompaction, continueCompaction } from "../scripts/lib/compaction-recovery.mjs";
-import { restoreSessionFromArtifacts } from "../scripts/lib/session-recovery.mjs";
-import { createHeadSession, createSessionCallContext, withSessionCallContext, withSessionRoute } from "../scripts/lib/session-routing.mjs";
-import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { startRun, finishRun, reviewRun, getPendingReviewContext } from "../scripts/lib/runtime/run-lineage.mjs";
+import { createRecoveryCheckpoint, prepareCompaction, verifyCompaction, continueCompaction } from "../scripts/lib/session/compaction-recovery.mjs";
+import { restoreSessionFromArtifacts } from "../scripts/lib/session/session-recovery.mjs";
+import { createHeadSession, createSessionCallContext, withSessionCallContext, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
+import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
-import { formatCliResult, formatProjectStatus, formatSessionRestore, formatConversationRecovery } from "../scripts/lib/cli-presentation.mjs";
+import { formatCliResult, formatProjectStatus, formatSessionRestore, formatConversationRecovery } from "../scripts/lib/session/cli-presentation.mjs";
 
 // head_* request inputs below deliberately exercise compatibility dispatch;
 // generated catalog and Hook assertions use the canonical Lode vocabulary.

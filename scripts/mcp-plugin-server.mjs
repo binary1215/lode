@@ -2,7 +2,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serveMcp } from "./mcp-server.mjs";
-import { createPluginMcpLaunch } from "./lib/plugin-mcp-composition.mjs";
+import { createPluginMcpLaunch } from "./lib/distribution/plugin-mcp-composition.mjs";
 
 // Only the packaged plugin config uses this entry. Source imports and the
 // distribution launcher's internal MCP mode keep standalone composition.

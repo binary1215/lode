@@ -253,7 +253,7 @@ export const publicReleaseNames = ["BRANCH_STATE_OBSERVATION_DIRECTORY", "DEPLOY
 
 // Register for any explicit test-list position, not for helper-only imports.
 if (process.argv.slice(1).some(argument => path.resolve(argument) === fileURLToPath(import.meta.url))) {
-  const api = await import("../scripts/lib/release-observation.mjs");
+  const api = await import("../scripts/lib/distribution/release-observation.mjs");
   test("release observation facade preserves its exact fifteen public exports", () => assert.deepEqual(Object.keys(api).sort(), publicReleaseNames));
   for (const scenario of readerScenarios()) test(`stored release reader: ${scenario.id}`, { concurrency: false }, t => {
     const root = path.join(process.env.HEAD_AGENT_TEST_TMP || os.tmpdir(), `head-release-projection-${crypto.randomUUID()}`);

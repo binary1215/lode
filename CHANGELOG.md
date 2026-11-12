@@ -11,6 +11,29 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.116 — publication tracked separately
+
+- On Windows, an MCP `project_root` or CLI root whose drive letter is
+  lower-case is the same Project as its upper-case recorded spelling. Before,
+  status offered relocation and other operations answered `NOT_INITIALIZED`.
+  Nothing stored is rewritten, and a moved Project is still reported as
+  relocated.
+  - A Project recorded with a lower-case drive letter is still reached only by
+    its recorded spelling. Directory-name case and the `cwd` a Host passes to
+    hooks are unchanged.
+- Added a read-only reason-code audit (`scripts/audit-reason-codes.mjs`,
+  `docs/reason-code-audit.md`) with merge candidates for a later decision. No
+  behaviour change.
+- `scripts/lib` modules now live in layer directories (`core`, `storage`,
+  `world`, `session`, `runtime`, `worker`, `distribution`) listed in
+  `scripts/lib-layers.json`. `scripts/lib/head-core.mjs` and
+  `scripts/lib/lode-artifact-composition.mjs` keep their paths.
+  - A test keeps imports from gaining a higher layer or a static cycle, with a
+    shrink-only list of today's exceptions (147 static, 30 dynamic). Strict
+    layering is not reached yet.
+- The Conformance disposition MCP schema accepts `actor: "lode"` (`"head"`
+  remains an alias).
+
 ## 0.3.0-beta.115 — publication tracked separately
 
 - On MCP, a caller the Host has verified may omit `expected_direction_id` on
