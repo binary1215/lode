@@ -3,3 +3,6 @@
 
 # Format JavaScript sources with Prettier 3.9.10
 4fcde8da0d2dbaf3b1926cef3b90776bd06ee1d9
+
+# Stage 3-E: move scripts/lib modules into their layer directories (path edits only)
+541b114a52c129639886bf6a92ba7cbb870062f3
