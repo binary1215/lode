@@ -7,7 +7,7 @@ import { initializeProject } from "../scripts/lib/head-core.mjs";
 import { createNativeSessionHostBridge } from "../scripts/lib/session-native-host.mjs";
 import { SESSION_HOST_REQUEST_HELPER } from "../scripts/lib/session-host-request.mjs";
 import { createRecoveryBasisMemory } from "../scripts/lib/recovery-basis-memory.mjs";
-import { recordedRootSpelling, sameExceptDriveCase, sameRootSpelling, withRecordedProjectRoot } from "../scripts/lib/project-root-spelling.mjs";
+import { recordedRootSpelling, sameExceptDriveCase, withRecordedProjectRoot } from "../scripts/lib/project-root-spelling.mjs";
 import { createNativeObservationStore, normalizeNativeHook } from "../scripts/lib/native-session-observations.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
@@ -55,9 +55,6 @@ test("the drive-letter comparison is exact apart from the drive letter, and only
   assert.equal(sameExceptDriveCase("C:\\work\\p", "c:\\Work\\p"), false);
   assert.equal(sameExceptDriveCase("C:\\work\\p", "D:\\work\\p"), false);
   assert.equal(sameExceptDriveCase("/c/work", "/C/work"), false);
-  assert.equal(sameRootSpelling("C:\\p", "c:\\p", { platform: "win32" }), true);
-  assert.equal(sameRootSpelling("C:\\p", "c:\\p", { platform: "linux" }), false);
-  assert.equal(sameRootSpelling("/p", "/p", { platform: "linux" }), true);
   // Off Windows the requested spelling is always kept as given.
   assert.equal(recordedRootSpelling("c:\\anything", { platform: "linux" }), "c:\\anything");
   const plain = request("x", "lode_project_status");
@@ -110,12 +107,27 @@ test("MCP: the other drive-letter case answers exactly like the recorded spellin
   assert.equal(value(await dispatch(request(root, "lode_project_direction_read"))).directionId, update.direction.directionId);
 });
 
-test("MCP: a Project recorded with a lower-case drive letter answers the upper-case spelling too", onWindows, async (t) => {
-  const { root } = fixture(t, { spell: (value) => value[0].toLowerCase() + value.slice(1) });
+test("an upper-case drive letter is never looked up: no filesystem read before argument validation", onWindows, (t) => {
+  const { root } = fixture(t, { spell: (value) => value[0].toUpperCase() + value.slice(1) });
+  const realpath = t.mock.method(fs, "realpathSync");
+  const read = t.mock.method(fs, "readFileSync");
+  assert.equal(recordedRootSpelling(root), root);
+  assert.equal(recordedRootSpelling(path.join(root, "missing")), path.join(root, "missing"));
+  assert.equal(realpath.mock.callCount() + read.mock.callCount(), 0);
+  // A lower-case drive letter is looked up.
+  assert.equal(recordedRootSpelling(flip(root)), root);
+  assert.ok(realpath.mock.callCount() > 0);
+});
+
+test("a Project recorded with a lower-case drive letter keeps today's rule: only its recorded spelling reaches it", onWindows, async (t) => {
+  const { base, root } = fixture(t, { spell: (value) => value[0].toLowerCase() + value.slice(1) });
   assert.match(root, /^[a-z]:/);
   const upper = flip(root);
-  assert.equal(value(await dispatch(request(upper, "lode_project_status"))).status, "core_ready");
-  assert.deepEqual(value(await dispatch(request(upper, "lode_checkpoint_basis"))), value(await dispatch(request(root, "lode_checkpoint_basis"))));
+  assert.equal(recordedRootSpelling(upper), upper);
+  assert.equal(value(await dispatch(request(root, "lode_project_status"))).status, "core_ready");
+  const before = snapshot(base);
+  assert.equal(value(await dispatch(request(upper, "lode_project_status"))).status, "relocation_available");
+  assert.deepEqual(snapshot(base), before);
 });
 
 test("a Project that really moved is still reported as relocated, in either drive-letter case", onWindows, async (t) => {
@@ -129,13 +141,32 @@ test("a Project that really moved is still reported as relocated, in either driv
   }
 });
 
-test("CLI: the other drive-letter case is the same Project", onWindows, async (t) => {
+test("CLI: the other drive-letter case is the same Project, also as the default root", onWindows, async (t) => {
   const { base, root } = fixture(t);
   const other = flip(root);
   const before = snapshot(base);
   assert.equal((await runCommand(["status", other])).status, "core_ready");
   assert.deepEqual(await runCommand(["checkpoint-basis", other]), await runCommand(["checkpoint-basis", root]));
+  assert.deepEqual(await runCommand(["managed-maintenance", "checkpoint-basis", other]), await runCommand(["checkpoint-basis", root]));
+  const cwd = process.cwd();
+  try {
+    process.chdir(other);
+    assert.equal((await runCommand(["status"])).status, "core_ready");
+  } finally {
+    process.chdir(cwd);
+  }
   assert.deepEqual(snapshot(base), before);
+});
+
+test("a record that matches the given spelling exactly keeps it, so the selected Project never changes", onWindows, (t) => {
+  // .lode recorded with a lower-case drive letter, plus a legacy .head record
+  // with the upper-case one: each spelling keeps selecting what it selected.
+  const { root } = fixture(t, { spell: (value) => value[0].toLowerCase() + value.slice(1) });
+  const upper = flip(root);
+  fs.mkdirSync(path.join(root, ".head"));
+  fs.writeFileSync(path.join(root, ".head", "project.json"), JSON.stringify({ schemaVersion: 1, projectRoot: upper }));
+  assert.equal(recordedRootSpelling(root), root);
+  assert.equal(recordedRootSpelling(upper), upper);
 });
 
 test("verified callers: both spellings share one held basis, Host binding and Session", onWindows, async (t) => {

@@ -32,6 +32,7 @@ const PASS_THROUGH = new Map([
   ["subagent-write-guard", null],
   ["lode-entry-guidance", null],
   ["context-budget", null],
+  ["project-root-spelling", null],
   ["cli-presentation", new Set(["formatMcpToolContent"])],
   ["session-routing", new Set(["sessionCallRequiresBinding"])],
 ]);

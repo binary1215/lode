@@ -342,10 +342,14 @@ export async function runCommand(
 ) {
   // A root that differs from the recorded one only in drive-letter case is the
   // same Project (Windows only; a read of project.json, never a write).
+  // The root is argv[offset + 1]; when it is omitted it defaults to ".".
   {
     const offset = argv.length - commandEntry(argv).argv.length;
-    const spelled = argv.length > offset + 1 ? recordedRootSpelling(argv[offset + 1]) : argv[offset + 1];
-    if (spelled !== argv[offset + 1]) argv = [...argv.slice(0, offset + 1), spelled, ...argv.slice(offset + 2)];
+    if (argv.length > offset) {
+      const given = argv[offset + 1] ?? ".";
+      const spelled = recordedRootSpelling(given);
+      if (spelled !== given) argv = [...argv.slice(0, offset + 1), spelled, ...argv.slice(offset + 2)];
+    }
   }
   const entry = commandEntry(argv);
   const parsed = parse(entry.argv);

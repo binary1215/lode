@@ -6,9 +6,9 @@ import path from "node:path";
 // `projectRoot`, its id digest and the Host keys derived from it) is the exact
 // spelling recorded when it was created. A requested root that differs from the
 // recorded one only in drive-letter case is therefore read as the recorded
-// spelling. This is a read of `project.json` only: nothing is written, no stored
-// record changes, and any other difference (a moved Project, a different
-// directory-name case) keeps its existing result.
+// spelling. This only reads the `.lode` and `.head` project.json records:
+// nothing is written, no stored record changes, and any other difference (a
+// moved Project, a different directory-name case) keeps its existing result.
 
 const drive = /^[A-Za-z]:/;
 
@@ -26,16 +26,19 @@ export function sameExceptDriveCase(left, right) {
   );
 }
 
-// The same directory on Windows when the two spellings differ at most in
-// drive-letter case; exact equality everywhere else.
-export function sameRootSpelling(left, right, { platform = process.platform } = {}) {
-  return left === right || (platform === "win32" && sameExceptDriveCase(left, right));
-}
-
 // The recorded spelling of `root` when the Project there recorded it with only
-// a different drive-letter case; otherwise `root` exactly as given.
+// a different drive-letter case; otherwise `root` exactly as given. A record
+// that already matches the given spelling keeps it, so the spelling that
+// selected a Project before still selects the same one.
+//
+// Only a lower-case drive letter is looked up. An upper-case one (what Windows
+// shells, Node and Hosts normally report) is returned without touching the
+// filesystem, so argument validation still runs before any Project read. A
+// Project recorded with a lower-case drive letter therefore keeps today's rule:
+// it is reached with its recorded spelling.
 export function recordedRootSpelling(root, { platform = process.platform } = {}) {
   if (platform !== "win32" || typeof root !== "string" || !root) return root;
+  if (!/^[a-z]:/.test(path.win32.resolve(root))) return root;
   let resolved;
   try {
     resolved = fs.realpathSync(path.resolve(root));
@@ -43,16 +46,17 @@ export function recordedRootSpelling(root, { platform = process.platform } = {})
     return root;
   }
   if (!drive.test(resolved)) return root;
-  const recorded = new Set();
+  let recorded = null;
   for (const directory of [".lode", ".head"]) {
     try {
       const value = JSON.parse(fs.readFileSync(path.join(resolved, directory, "project.json"), "utf8"))?.projectRoot;
-      if (sameExceptDriveCase(value, resolved)) recorded.add(value);
+      if (value === resolved) return root;
+      if (sameExceptDriveCase(value, resolved)) recorded = value;
     } catch {
       /* No readable record: the given spelling stays. */
     }
   }
-  return recorded.size === 1 ? [...recorded][0] : root;
+  return recorded ?? root;
 }
 
 // An MCP tools/call request whose `project_root` (direct, routed through
