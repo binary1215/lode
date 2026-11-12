@@ -10,7 +10,7 @@ import { createSessionHostRequestRegistry, parseClaudeNativeToolName } from "./s
 import { subagentWriteGuardEnabled } from "./subagent-write-guard.mjs";
 import { effectiveToolCall } from "../core/operation-groups.mjs";
 import { createRecoveryBasisMemory } from "./recovery-basis-memory.mjs";
-import { withRecordedProjectRoot } from "../storage/project-root-spelling.mjs";
+import { recordedRootSpelling, withRecordedProjectRoot } from "../storage/project-root-spelling.mjs";
 
 // Held recovery basis views the bridge itself issued to a verified caller. The
 // dispatcher honours only these, so no embedder option can supply one.
@@ -24,6 +24,10 @@ const missingCaller = () => {
 
 // Thin Host transport composition. Nothing in tool arguments can supply a native
 // caller, and this module authors neither P2 direction nor effect authorization.
+// The Host's `${cwd}` from the hook template, in the recorded spelling when it
+// differs from the recorded Project root only in drive-letter case.
+const nativeProjectRoot = (value) => (typeof value === "string" && path.isAbsolute(value) && !value.includes("${") ? recordedRootSpelling(value) : null);
+
 export function createNativeSessionHostBridge({
   environment = process.env,
   runtime = null,
@@ -163,10 +167,7 @@ export function createNativeSessionHostBridge({
             nativeSessionId: value.native_session_id,
             agentId: value.native_agent_id || null,
             outerToolName: value.outer_tool_name,
-            nativeProjectRoot:
-              typeof value.native_project_root === "string" && path.isAbsolute(value.native_project_root) && !value.native_project_root.includes("${")
-                ? value.native_project_root
-                : null,
+            nativeProjectRoot: nativeProjectRoot(value.native_project_root),
           },
         });
         return reply(request);
@@ -185,10 +186,7 @@ export function createNativeSessionHostBridge({
               nativeSessionId: value.native_session_id,
               agentId: value.native_agent_id || null,
               outerToolName: value.outer_tool_name,
-              nativeProjectRoot:
-                typeof value.native_project_root === "string" && path.isAbsolute(value.native_project_root) && !value.native_project_root.includes("${")
-                  ? value.native_project_root
-                  : null,
+              nativeProjectRoot: nativeProjectRoot(value.native_project_root),
             },
           });
         } catch (error) {
@@ -229,10 +227,7 @@ export function createNativeSessionHostBridge({
           nativeSessionId: value.native_session_id,
           agentId: value.native_agent_id || null,
           outerToolName: value.outer_tool_name,
-          nativeProjectRoot:
-            typeof value.native_project_root === "string" && path.isAbsolute(value.native_project_root) && !value.native_project_root.includes("${")
-              ? value.native_project_root
-              : null,
+          nativeProjectRoot: nativeProjectRoot(value.native_project_root),
         },
       });
       return reply(request);

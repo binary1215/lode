@@ -9,6 +9,7 @@ import { resolveOperation } from "./lib/core/lode-operation-contract.mjs";
 import { effectiveToolCall } from "./lib/core/operation-groups.mjs";
 import { assessSubagentStateWrite, subagentWriteGuardEnabled } from "./lib/session/subagent-write-guard.mjs";
 import { resolveProjectStorage, assertProjectStorageUnchanged } from "./lib/storage/project-storage-format.mjs";
+import { recordedRootSpelling } from "./lib/storage/project-root-spelling.mjs";
 import { safeGraphFile } from "./lib/world/discovery-index.mjs";
 import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
 import {
@@ -91,8 +92,12 @@ export default {
       pending = 0,
       queue = Promise.resolve();
     const userMessages = new Map();
+    // Lode reads and keys the Project by its recorded root. A Host directory that
+    // differs from it only in drive-letter case (Windows) uses the recorded
+    // spelling; OpenCode client calls and session matching keep `directory`.
+    const lodeRoot = () => recordedRootSpelling(directory);
     function promptCaller(sessionID) {
-      return nativeId(sessionID) ? { root: directory, runtime: "opencode", nativeSessionId: sessionID, environment } : null;
+      return nativeId(sessionID) ? { root: lodeRoot(), runtime: "opencode", nativeSessionId: sessionID, environment } : null;
     }
     function notePromptEvent(event) {
       const type = event?.type;
@@ -130,12 +135,12 @@ export default {
     function watchInbox() {
       if (watcher || disposed) return;
       try {
-        const storage = resolveProjectStorage(directory);
+        const storage = resolveProjectStorage(lodeRoot());
         if (!storage) return;
         const inbox = path.join(storage.projectRoot, storage.directory, "messaging", "inbox");
         if (!fs.existsSync(inbox)) return;
         watcher = fs.watch(inbox, { recursive: true }, () => {
-          deliverQueuedOpenCode({ root: directory, client, directory, environment, skipSessionIds: [...activeSessionIds] }).catch(() => {});
+          deliverQueuedOpenCode({ root: lodeRoot(), client, directory, environment, skipSessionIds: [...activeSessionIds] }).catch(() => {});
         });
         watcher.unref?.();
       } catch {
@@ -143,9 +148,9 @@ export default {
       }
     }
     function registerIfMailbox(session) {
-      const storage = resolveProjectStorage(directory);
+      const storage = resolveProjectStorage(lodeRoot());
       if (!storage || !fs.existsSync(path.join(storage.projectRoot, storage.directory, "messaging"))) return;
-      registerOpenCodePresence({ root: directory, session, client, environment });
+      registerOpenCodePresence({ root: lodeRoot(), session, client, environment });
       watchInbox();
     }
     const caller = (id) => ({ runtime: "opencode", nativeSessionId: id, agentId: null });
@@ -209,7 +214,7 @@ export default {
             // OpenCode substitutes env before config hooks; an unset root is
             // already /scripts/..., not the literal placeholder. Repair only
             // the exact owned original and current package, in memory.
-            if ([portableOpenCodeScript, "/scripts/mcp-server.mjs"].includes(item.command[1]) && ownsPortableLaunch(directory, name, item.command))
+            if ([portableOpenCodeScript, "/scripts/mcp-server.mjs"].includes(item.command[1]) && ownsPortableLaunch(lodeRoot(), name, item.command))
               item.command = ["node", packagedServer];
             if (!samePath(path.resolve(directory, item.command[1]), packagedServer)) continue;
             serverPrefixes.push(sanitize(name) + "_");
@@ -244,14 +249,14 @@ export default {
           if (disposed || !contextSupported || !nativeId(input?.sessionID)) return;
           const session = await exactSession(input.sessionID);
           if (!session || disposed || !contextSupported || deliveries.get(system) !== delivery) return;
-          if (![".head", ".lode"].some((name) => fs.existsSync(path.join(directory, name, "project.json")))) return;
+          if (![".head", ".lode"].some((name) => fs.existsSync(path.join(lodeRoot(), name, "project.json")))) return;
           let text, prepared;
           try {
             const adapter = createSessionHostAdapter({ runtime: "opencode", nativeSessionId: session.id, environment });
-            text = startupProjection(await adapter.enter({ root: directory }), directory, "opencode");
+            text = startupProjection(await adapter.enter({ root: lodeRoot() }), lodeRoot(), "opencode");
             if (text.length > MAX_CONTEXT_CHARACTERS.opencode) throw new Error("Context exceeds its delivery bound.");
             prepared = prepareUserPromptReference({
-              root: directory,
+              root: lodeRoot(),
               runtime: "opencode",
               nativeSessionId: session.id,
               environment,
@@ -277,7 +282,7 @@ export default {
             // Never session.prompt the session whose transform is running. That
             // call is the busy session and can hang this hook. Its inbox is
             // injected below; other sessions are delivered by the inbox watcher.
-            pending = prepareOpenCodeInjection({ root: directory, session });
+            pending = prepareOpenCodeInjection({ root: lodeRoot(), session });
             if (pending?.text && Object.isExtensible(system)) Array.prototype.push.call(system, pending.text);
             else pending?.release();
             if (pending?.text && system.at(-1) === pending.text) pending.commit();
@@ -338,7 +343,7 @@ export default {
             reason: null,
             ...(status ? { nativeStatus: status } : {}),
           };
-          await store.observe({ root: directory, caller: caller(id), observation, eventId });
+          await store.observe({ root: lodeRoot(), caller: caller(id), observation, eventId });
         });
       },
       async "experimental.session.compacting"(input, output) {
@@ -372,8 +377,8 @@ export default {
           const targetArgs = routed ? output?.args?.arguments : output?.args;
           if (["lode_conversation_list", "lode_conversation_send"].includes(inner) && object(targetArgs) && nativeId(input?.sessionID)) {
             const session = await exactSession(input.sessionID);
-            if (session) registerOpenCodePresence({ root: directory, session, client, environment });
-            const ticket = session && writeOpenCodeCallerTicket({ root: directory, session, args: targetArgs, environment });
+            if (session) registerOpenCodePresence({ root: lodeRoot(), session, client, environment });
+            const ticket = session && writeOpenCodeCallerTicket({ root: lodeRoot(), session, args: targetArgs, environment });
             if (ticket) {
               const descriptor = Object.getOwnPropertyDescriptor(targetArgs, "host_ticket");
               if (!descriptor || descriptor.writable !== false) targetArgs.host_ticket = ticket;
@@ -430,7 +435,7 @@ export default {
             !nativeId(input.callID) ||
             !object(args) ||
             typeof args.project_root !== "string" ||
-            !samePath(args.project_root, directory) ||
+            !samePath(recordedRootSpelling(args.project_root), lodeRoot()) ||
             !object(output) ||
             output.isError ||
             !object(output.structuredContent) ||
@@ -443,7 +448,7 @@ export default {
           )
             return;
           if (!(await exactSession(input.sessionID))) return;
-          const projection = (await projectNativeObservations({ root: directory, caller: caller(input.sessionID), environment })) || {
+          const projection = (await projectNativeObservations({ root: lodeRoot(), caller: caller(input.sessionID), environment })) || {
             authorityPlane: "P5",
             scope: "native-caller-not-logical-session-execution",
             caller: caller(input.sessionID),
