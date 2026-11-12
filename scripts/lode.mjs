@@ -11,7 +11,7 @@ import { inspectProjectLocationExperience } from "./lib/session/project-bootstra
 import { formatCliError, formatCliResult } from "./lib/session/cli-presentation.mjs";
 import { readSessionWorkList } from "./lib/session/session-work-context.mjs";
 import { readBoundedWorkerDispatch } from "./lib/worker/bounded-worker-dispatch.mjs";
-import { recordedRootSpelling } from "./lib/storage/project-root-spelling.mjs";
+import { recordedRootSpelling, withOnDiskSpellingRetry } from "./lib/storage/project-root-spelling.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageMetadata = JSON.parse(fs.readFileSync(path.join(pluginRoot, "package.json"), "utf8"));
@@ -325,7 +325,20 @@ function requireRuntimeSurface(command, surface, root, authorization) {
   requireOperationSurface(command, surface, { workerBound });
 }
 
-export async function runCommand(
+export async function runCommand(argv = process.argv.slice(2), options = {}) {
+  // A root that differs from the recorded one only in drive-letter case is the
+  // same Project (Windows only; a read of project.json, never a write).
+  // The root is argv[offset + 1]; when it is omitted it defaults to ".".
+  const offset = argv.length - commandEntry(argv).argv.length;
+  if (argv.length <= offset) return await runSpelledCommand(argv, options);
+  const given = argv[offset + 1] ?? ".";
+  const withRoot = (root) => (root === given ? argv : [...argv.slice(0, offset + 1), root, ...argv.slice(offset + 2)]);
+  // A root that differs only in directory-name case is retried with the
+  // recorded spelling after its Project was not found (no read when found).
+  return await withOnDiskSpellingRetry(recordedRootSpelling(given), (root) => runSpelledCommand(withRoot(root), options));
+}
+
+async function runSpelledCommand(
   argv = process.argv.slice(2),
   {
     observationRegistry = null,
@@ -340,17 +353,6 @@ export async function runCommand(
     onExportScope = null,
   } = {},
 ) {
-  // A root that differs from the recorded one only in drive-letter case is the
-  // same Project (Windows only; a read of project.json, never a write).
-  // The root is argv[offset + 1]; when it is omitted it defaults to ".".
-  {
-    const offset = argv.length - commandEntry(argv).argv.length;
-    if (argv.length > offset) {
-      const given = argv[offset + 1] ?? ".";
-      const spelled = recordedRootSpelling(given);
-      if (spelled !== given) argv = [...argv.slice(0, offset + 1), spelled, ...argv.slice(offset + 2)];
-    }
-  }
   const entry = commandEntry(argv);
   const parsed = parse(entry.argv);
   const index = argv.indexOf("--session");

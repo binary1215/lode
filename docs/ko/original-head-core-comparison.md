@@ -65,7 +65,7 @@ Lode 값은 `node scripts/audit-metrics.mjs`에서 왔습니다([규칙 표면
 | Skill 목록의 Skill 설명 | Skill 1개, 76자 | Skill 3개, 969자 | 커밋된 `start-job` `description` 값의 문자 수 |
 | 기본 도구 수 | 9(Codex는 10) | 22 | `packages/context/README.md`의 도구 표 |
 | 저장 호출 수 | 1(`save`) | Host가 검증한 호출자 1, 그 밖에는 2 | 도구 표 |
-| 재개 호출 수 | 시작 hook이 작업 세션을 불러오면 0, 아니면 1(`load`) | 연결된 Host 대화에서 0, 검증되지 않은 호출자나 새 Codex 스레드는 1(`lode_conversation_enter`), 새 Claude Code 대화는 2(`lode_project_initialize_or_resume` 또는 `lode_session_list` 다음 `lode_conversation_enter`) | README hook 절 |
+| 재개 호출 수 | 시작 hook이 작업 세션을 불러오면 0, 아니면 1(`load`) | 연결된 Host 대화에서 0, 검증되지 않은 호출자나 새 Codex 스레드는 1(`lode_conversation_enter`), 새 Claude Code 대화는 Session이 하나면 1(`lode_conversation_enter`), 여럿이면 2(`lode_session_list` 다음 `lode_conversation_enter`) | README hook 절 |
 | 위임 호출 수 | 플러그인 호출 0, Host의 fork나 agent 도구 사용 | 기본 경로에서 Lode 호출 0, managed 경로에서 4 + 4 | 서버 instructions |
 | core 글의 금지 표현 | 3 | 진입 문단 1, 기본으로 항상 읽히는 글 전체 4 | 감사의 표현 목록; 원본의 서버 instructions와 Skill은 한국어라 영어 목록이 맞지 않음 |
 

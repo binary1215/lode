@@ -6,6 +6,7 @@ import { verifyCopiedGitOwner, verifyCopiedGitRef } from "./project-copy-git-pro
 import { verifyCopiedProjectFile } from "./project-copy-evidence.mjs";
 import { sha256Hex as digest } from "../core/digest.mjs";
 import { fail } from "../core/errors.mjs";
+import { noteRecordedSpellingMiss } from "./project-root-spelling.mjs";
 
 const lodeFormat = Object.freeze({
   dialect: "lode",
@@ -148,6 +149,10 @@ export function resolveProjectStorage(root = ".", { readLegacyProject } = {}) {
   }
   const selected = legacy.state === "owned" ? legacy : canonical.state === "owned" ? canonical : null;
   if (!selected) {
+    // Not found as given. Inside an entry scope, a marker recorded under the
+    // on-disk letter case of this same folder stops the request so the entry
+    // retries it with that spelling (see project-root-spelling.mjs).
+    for (const candidate of [legacy, canonical]) if (candidate.state === "foreign") noteRecordedSpellingMiss(projectRoot, candidate.project?.projectRoot);
     // Preserve the original legacy marker dependency and its diagnostic cause.
     if (legacy.error) {
       if (readLegacyProject) readLegacyProject(legacy.projectFile);

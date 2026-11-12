@@ -136,6 +136,7 @@ async function measureFlows({ project, hostRoot }) {
   const { createNativeSessionHostBridge } = await import("./lib/session/session-native-host.mjs");
   const { SESSION_HOST_REQUEST_HELPER } = await import("./lib/session/session-host-request.mjs");
   const { sessionStartContext } = await import("./session-host-hook.mjs");
+  const { createLodeSession } = await import("./lib/session/session-routing.mjs");
   const call = async (root, name, args = {}, options = {}, meta = undefined) => {
     const response = await dispatch(
       { jsonrpc: "2.0", id: name, method: "tools/call", params: { ...(meta ? { _meta: meta } : {}), name, arguments: { project_root: root, ...args } } },
@@ -223,59 +224,89 @@ async function measureFlows({ project, hostRoot }) {
   const hookLinkedText = startLinked.hookSpecificOutput?.additionalContext ?? "{}";
 
   // A new Claude Code conversation (a verified caller: each call is prepared by
-  // the PreToolUse hook helper, as the installed hook does). Its SessionStart
-  // Hook gives orientation only, and entry alone does not select a Session.
-  const claudeStart = JSON.parse(
-    (
-      await sessionStartContext({
-        runtime: "claude",
-        event: { hook_event_name: "SessionStart", source: "startup", cwd: verified, session_id: "audit-metrics-claude" },
-        environment,
-      })
-    ).hookSpecificOutput?.additionalContext ?? "{}",
-  );
+  // the PreToolUse hook helper, as the installed hook does). The calls are not
+  // a fixed sequence: they follow the state each step returns, as the Skill
+  // entry table says (the Hook state, then the call it names), until the saved
+  // direction comes back or a Session list leaves the choice to the user.
   const claude = createNativeSessionHostBridge({ runtime: "claude", environment });
   let toolUse = 0;
-  const claudeCall = async (root, name, args = {}) => {
-    const id = `audit-metrics-tool-use-${++toolUse}`;
-    const request = {
-      jsonrpc: "2.0",
-      id,
-      method: "tools/call",
-      params: { _meta: { "claudecode/toolUseId": id }, name, arguments: { project_root: root, ...args } },
-    };
-    const prepared = await dispatch(
-      {
+  const claudeCall =
+    (nativeSessionId) =>
+    async (root, name, args = {}) => {
+      const id = `audit-metrics-tool-use-${++toolUse}`;
+      const request = {
         jsonrpc: "2.0",
-        id: `${id}-hook`,
+        id,
         method: "tools/call",
-        params: {
-          name: SESSION_HOST_REQUEST_HELPER,
-          arguments: {
-            native_session_id: "audit-metrics-claude",
-            native_agent_id: "",
-            tool_use_id: id,
-            outer_tool_name: `mcp__lode__${name}`,
-            original_arguments: JSON.stringify(request.params.arguments),
-            native_project_root: root,
+        params: { _meta: { "claudecode/toolUseId": id }, name, arguments: { project_root: root, ...args } },
+      };
+      const prepared = await dispatch(
+        {
+          jsonrpc: "2.0",
+          id: `${id}-hook`,
+          method: "tools/call",
+          params: {
+            name: SESSION_HOST_REQUEST_HELPER,
+            arguments: {
+              native_session_id: nativeSessionId,
+              native_agent_id: "",
+              tool_use_id: id,
+              outer_tool_name: `mcp__lode__${name}`,
+              original_arguments: JSON.stringify(request.params.arguments),
+              native_project_root: root,
+            },
           },
         },
-      },
-      { nativeSessionBridge: claude },
+        { nativeSessionBridge: claude },
+      );
+      if (prepared.result?.isError) throw new Error(`hook preparation for ${name} failed`);
+      const response = await dispatch(request, { nativeSessionBridge: claude });
+      return response.result.structuredContent ?? JSON.parse(response.result.content[0].text);
+    };
+  const followClaudeEntry = async (nativeSessionId) => {
+    const start = JSON.parse(
+      (
+        await sessionStartContext({
+          runtime: "claude",
+          event: { hook_event_name: "SessionStart", source: "startup", cwd: verified, session_id: nativeSessionId },
+          environment,
+        })
+      ).hookSpecificOutput?.additionalContext ?? "{}",
     );
-    if (prepared.result?.isError) throw new Error(`hook preparation for ${name} failed`);
-    const response = await dispatch(request, { nativeSessionBridge: claude });
-    return response.result.structuredContent ?? JSON.parse(response.result.content[0].text);
+    const steps = flow(claudeCall(nativeSessionId));
+    let state = start,
+      userChoice = false;
+    for (let guard = 0; guard < 3 && state.status === "session_selection_unresolved" && state.sessionDiscovery?.call; guard++) {
+      const { name, arguments: next } = state.sessionDiscovery.call;
+      const { project_root: _root, ...args } = next;
+      const result = await steps.call(verified, name, args);
+      if (name !== "lode_session_list") {
+        state = result;
+        continue;
+      }
+      // The list leaves the choice to the user; the measurement takes the
+      // Session that holds the saved direction (the Project default).
+      userChoice = true;
+      state = await steps.call(verified, "lode_conversation_enter", { session_id: result.defaultSessionId });
+    }
+    return { start, steps, state, userChoice };
   };
-  let claudeEnterOnly, claudeResume, claudeResumeFlow;
+  let claudeSingle, claudeSeveral;
   try {
-    claudeEnterOnly = await claudeCall(verified, "lode_conversation_enter");
-    claudeResumeFlow = flow(claudeCall);
-    await claudeResumeFlow.call(verified, "lode_project_initialize_or_resume", { profile: "core" });
-    claudeResume = await claudeResumeFlow.call(verified, "lode_conversation_enter");
+    claudeSingle = await followClaudeEntry("audit-metrics-claude");
+    // A second Session: the new conversation now has a choice to make.
+    createLodeSession({ root: verified, purpose: "Another task" });
+    claudeSeveral = await followClaudeEntry("audit-metrics-claude-several");
   } finally {
     claude.dispose();
   }
+  const claudeRow = (caller, { start, steps, state, userChoice }) => ({
+    caller,
+    calls: steps.sequence.length,
+    sequence: steps.sequence,
+    status: `Hook gives ${start.status} (${start.reasonCode}); after the sequence ${state.status}${userChoice ? "; the list leaves the choice to the user" : ""}`,
+    savedPurposeReturned: restored(state),
+  });
 
   return {
     instructions: initialize.result.instructions,
@@ -316,14 +347,8 @@ async function measureFlows({ project, hostRoot }) {
           status: codexNew.status,
           savedPurposeReturned: restored(codexNew),
         },
-        {
-          caller: "new Claude Code conversation (verified)",
-          calls: claudeResumeFlow.sequence.length,
-          sequence: claudeResumeFlow.sequence,
-          status: `Hook gives ${claudeStart.status}; entry alone gives ${claudeEnterOnly.status}; after the sequence ${claudeResume.status}`,
-          savedPurposeReturned: restored(claudeResume),
-          alternative: "lode_session_list -> lode_conversation_enter {session_id}",
-        },
+        claudeRow("new Claude Code conversation, Project with one Session (verified)", claudeSingle),
+        claudeRow("new Claude Code conversation, Project with several Sessions (verified)", claudeSeveral),
         {
           caller: "same Codex thread after compaction, SessionStart Hook",
           calls: 0,

@@ -174,3 +174,5 @@ Thumbs.db
 !test/helpers/dispatch-recording-register.mjs
 !test/helpers/dispatch-recording-run.mjs
 !test/audit-metrics.test.mjs
+!test/single-session-claude-entry.test.mjs
+!test/directory-name-case.test.mjs

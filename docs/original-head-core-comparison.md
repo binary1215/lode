@@ -67,7 +67,7 @@ the commit above; the method is in the last column.
 | Skill descriptions in the Skill list | 1 Skill, 76 characters | 3 Skills, 969 characters | characters of the committed `start-job` `description` value |
 | Tools listed by default | 9 (10 on Codex) | 22 | tool table in `packages/context/README.md` |
 | Calls to save | 1 (`save`) | 1 for a verified Host caller, 2 otherwise | tool table |
-| Calls to resume | 0 when the start hook loads the work session; 1 (`load`) otherwise | 0 in a linked Host conversation; 1 (`lode_conversation_enter`) for an unverified caller or a new Codex thread; 2 for a new Claude Code conversation (`lode_project_initialize_or_resume` or `lode_session_list`, then `lode_conversation_enter`) | README hook section |
+| Calls to resume | 0 when the start hook loads the work session; 1 (`load`) otherwise | 0 in a linked Host conversation; 1 (`lode_conversation_enter`) for an unverified caller or a new Codex thread; for a new Claude Code conversation 1 (`lode_conversation_enter`) when the Project has one Session, 2 (`lode_session_list`, then `lode_conversation_enter`) when it has several | README hook section |
 | Calls to delegate | 0 plugin calls; the Host's fork or agent tool | 0 Lode calls on the default path; 4 + 4 on the managed path | server instructions |
 | Prohibition phrases in the core text | 3 | 1 in the entry paragraph; 4 across the default always-read text | phrase list of the audit; the original's server instructions and Skill are in Korean, so the English list does not apply to them |
 

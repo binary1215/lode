@@ -11,6 +11,34 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.118 — publication tracked separately
+
+- On a case-insensitive filesystem, a root whose directory names differ from
+  the recorded Project root only in letter case now reaches that Project (MCP
+  `project_root`, CLI root, the `cwd` a Host passes to hooks, the OpenCode
+  plugin directory). Before, status offered relocation and other operations
+  answered `NOT_INITIALIZED`.
+  - The on-disk spelling is looked up only after the Project was not found as
+    given, and the request then runs once more with the recorded spelling. A
+    Project found as given costs no extra read. Nothing stored is rewritten.
+  - A moved Project, and a folder renamed to another letter case after it was
+    recorded, are still reported as relocated.
+- A new Claude Code conversation in a Project with exactly one Session gets
+  that Session's saved direction from one `lode_conversation_enter` call
+  (two calls before). No binding is written.
+  - The SessionStart Hook still selects nothing; it reports
+    `reasonCode: SINGLE_SESSION_ENTRY_AVAILABLE` and names
+    `lode_conversation_enter` as the next call. The Skill entry table has a
+    row for it. The start context is 52 characters longer.
+  - The same applies to a Claude Code call that the PreToolUse hook did not
+    prepare.
+  - With two or more Sessions, or a binding that is lost, pending, corrupt or
+    locally unconfirmed, the result is unchanged: the user chooses. A
+    conversation answered without a binding must choose a Session once a
+    second Session exists.
+- `scripts/audit-metrics.mjs` follows the state each step returns when it
+  counts resume calls; `docs/rule-surface-audit.md` is re-measured.
+
 ## 0.3.0-beta.117 — publication tracked separately
 
 - On Windows, a Host that hands Lode a project folder with a lower-case drive

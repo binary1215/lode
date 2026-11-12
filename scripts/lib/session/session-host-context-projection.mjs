@@ -320,8 +320,11 @@ export function startupProjection(entry, root, runtime = "claude", groupFitter =
   // The owner-verified next call is optional guidance, not an eager inventory or
   // a route. Never displace current direction or originals to repeat its root.
   if (entry.status === "session_selection_unresolved" && entry.sessionDiscovery) {
+    // The reason code picks the Skill entry row; the call is the same either way.
+    if (typeof entry.reasonCode === "string") context.reasonCode = entry.reasonCode;
     context.sessionDiscovery = entry.sessionDiscovery;
     if (exceedsBound()) delete context.sessionDiscovery;
+    if (exceedsBound()) delete context.reasonCode;
   }
   // Guidance follows fitting originals/Todo/reasons; it never evicts them.
   // Missing fields do not prove delivery, just as local output is no Host/model

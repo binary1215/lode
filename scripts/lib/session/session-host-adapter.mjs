@@ -10,7 +10,7 @@ import path from "node:path";
 import { atomicWriteArtifact } from "../core/fs-atomic.mjs";
 import { withProjectMutation } from "../storage/project-mutation-lock.mjs";
 import { resolveRuntimeOperationalStateRoot } from "../runtime/runtime-execution-lease.mjs";
-import { createSessionCallContext, safeSessionPath, withSessionCallContext, sessionSelectionUnresolved } from "./session-routing.mjs";
+import { createSessionCallContext, projectHasSingleSession, safeSessionPath, withSessionCallContext, sessionSelectionUnresolved } from "./session-routing.mjs";
 import { defaultSessionStatePath } from "./session-paths.mjs";
 import { enterConversationRecovery } from "./compaction-lifecycle.mjs";
 
@@ -370,7 +370,9 @@ export function createSessionHostAdapter({
       };
     }
   }
-  function contextFor(projectRoot, { allowAbsentDefault = false, onBindingRead = null } = {}) {
+  // allowAbsentDefault may be a function; it is then asked only when the
+  // binding is absent, so a bound caller pays for no extra check.
+  function contextFor(projectRoot, { allowAbsentDefault = false, onBindingRead = null, onAbsentLoss = null } = {}) {
     const owner = project(projectRoot),
       context = createSessionCallContext();
     const binding = readOwner(owner);
@@ -379,9 +381,12 @@ export function createSessionHostAdapter({
       context.lose(owner.root);
       return context;
     }
-    if (binding.status === "absent" && allowAbsentDefault) return context;
+    if (binding.status === "absent" && (typeof allowAbsentDefault === "function" ? allowAbsentDefault() : allowAbsentDefault)) return context;
     if (["bound", "default"].includes(binding.status)) context.select(owner.root, binding.sessionId);
-    else context.lose(owner.root);
+    else {
+      if (binding.status === "absent") onAbsentLoss?.();
+      context.lose(owner.root);
+    }
     return context;
   }
   return Object.freeze({
@@ -410,12 +415,18 @@ export function createSessionHostAdapter({
       return contextFor(args.project_root, options);
     },
     async enter({ root = "." } = {}) {
+      // Startup never selects the default here. A Claude Code conversation
+      // with no binding in a Project with one Session is told that entry
+      // answers with that Session, so it calls entry instead of a list.
+      let absentLoss = false;
       try {
-        const context = contextFor(root);
+        const context = contextFor(root, { onAbsentLoss: () => (absentLoss = true) });
         return await withSessionCallContext({ root, context }, async () => await enterConversationRecovery({ root }));
       } catch (error) {
         // Same narrow Project-only path as MCP; no default Session is inspected
         // and then hidden. A damaged common original remains an error.
+        if (runtime === "claude" && absentLoss && error.code === "SESSION_SELECTION_LOST" && projectHasSingleSession(root))
+          return sessionSelectionUnresolved(root, { includeProjectFacts: true, reasonCode: "SINGLE_SESSION_ENTRY_AVAILABLE", singleSessionEntry: true });
         return sessionSelectionUnresolved(root, { includeProjectFacts: true, reasonCode: error.code || "HOST_BINDING_UNAVAILABLE" });
       }
     },

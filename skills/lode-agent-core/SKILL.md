@@ -15,7 +15,8 @@ Read the state you were given (Hook `additionalContext` or the result of
 | --- | --- | --- |
 | `conversation_ready` | none | Work from `workContext` records and `workContext.todoContext` directly. |
 | `conversation_direction_restored` (and its `_without_transport_continuation` / `_after_uncertain_continuation` variants) | none | Compare `currentProjectDirection` goal, constraints and cancellations with the current request; the current request wins. |
-| `session_selection_unresolved` | `sessionDiscovery.call` as returned (= `lode_session_list`, in the default list) | Show candidates and leave the choice to the user; independent work continues. |
+| `session_selection_unresolved` + `reasonCode: SINGLE_SESSION_ENTRY_AVAILABLE` | `sessionDiscovery.call` as returned (= `lode_conversation_enter`) | The Project's only Session answers with its saved direction; nothing is bound. |
+| `session_selection_unresolved` (other `reasonCode`) | `sessionDiscovery.call` as returned (= `lode_session_list`, in the default list) | Show candidates and leave the choice to the user; independent work continues. |
 | `conversation_recovery_unavailable` or Hook `host_context_unavailable` + `reasonCode: NOT_INITIALIZED` | `lode_project_initialize_or_resume {project_root, profile: "core"}` only when the user wants Lode here | Never create root instruction files without `write_root_instruction_files`. |
 | same + `PROJECT_RELOCATION_AVAILABLE` / `PROJECT_RELOCATION_PENDING` | `nextAction.entrypoint` as returned (resume, `profile: "core"`) | Never initialize a new Project over a moved one. |
 | same + `PROJECT_NOT_READY` | `lode_project_status {project_root}` | Report the drift it names; ordinary work is not blocked (`ordinaryWorkBlocked: false`). |

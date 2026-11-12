@@ -4,7 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { coreEntryGuidance } from "./lib/session/lode-entry-guidance.mjs";
-import { withRecordedCwd } from "./lib/storage/project-root-spelling.mjs";
+import { rootSpellingRetryPending, withOnDiskSpellingRetry, withRecordedCwd } from "./lib/storage/project-root-spelling.mjs";
 // Node >=24 supports synchronous ESM module loading. Load readers lazily so an
 // End-only Hook does not import recovery/prompt readers; Start awaits storage I/O.
 const require = createRequire(import.meta.url);
@@ -13,6 +13,15 @@ const require = createRequire(import.meta.url);
 // and exact paired-clear carrier continuity; neither path writes P2 direction.
 export async function sessionStartContext({ runtime, event, environment = process.env } = {}) {
   event = withRecordedCwd(event);
+  // A cwd that differs only in directory-name case is retried with the
+  // recorded spelling after its Project was not found (no read when found).
+  if (typeof event?.cwd !== "string") return await spelledSessionStartContext({ runtime, event, environment });
+  return await withOnDiskSpellingRetry(event.cwd, (cwd) =>
+    spelledSessionStartContext({ runtime, event: cwd === event.cwd ? event : { ...event, cwd }, environment }),
+  );
+}
+
+async function spelledSessionStartContext({ runtime, event, environment }) {
   if (
     !["codex", "claude"].includes(runtime) ||
     event?.hook_event_name !== "SessionStart" ||
@@ -107,6 +116,14 @@ export async function runSessionHostHook({
   // A Host cwd that differs from the recorded Project root only in drive-letter
   // case reaches that Project (Windows); every hook path below reads event.cwd.
   event = withRecordedCwd(event);
+  const options = { runtime, environment, observeOnly, deliver, processObserver, deadlineAt };
+  // A cwd that differs only in directory-name case is retried with the
+  // recorded spelling after its Project was not found (no read when found).
+  if (typeof event?.cwd !== "string") return await runSpelledSessionHostHook({ ...options, event });
+  return await withOnDiskSpellingRetry(event.cwd, (cwd) => runSpelledSessionHostHook({ ...options, event: cwd === event.cwd ? event : { ...event, cwd } }));
+}
+
+async function runSpelledSessionHostHook({ runtime, event, environment, observeOnly, deliver, processObserver, deadlineAt }) {
   const startedAt = Date.now();
   const promptDeadlineAt = Math.min(deadlineAt ?? Infinity, startedAt + 10_000);
   let nativeOutcome;
@@ -166,6 +183,9 @@ export async function runSessionHostHook({
     } catch {
       /* Preserve primary context and the undelivered reference. */
     }
+  // The Project was not found under this cwd spelling and the entry retries
+  // with the recorded one: deliver nothing from this attempt.
+  if (rootSpellingRetryPending()) return context;
   // Direct callers receive a constructed local object. Command Hooks use the
   // stdout callback instead. Neither boundary proves Host or model reception.
   let injection = null;

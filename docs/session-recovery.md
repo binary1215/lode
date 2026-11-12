@@ -439,7 +439,20 @@ Unavailable optional storage suppresses that hint, not ordinary direct work.
 
 An absent Claude native-caller binding cannot silently choose another logical
 Session through the Project default. Exact explicit logical routes and explicit
-initialize/resume remain available. No old-to-new native-ID correlation is guessed
+initialize/resume remain available. The one exception has nothing to switch
+away from: when the Project has exactly one Session (`sessions/by-id` absent
+or empty, checked by reading at most one directory entry), a Claude Code call
+whose binding is absent, or that the PreToolUse hook did not prepare, is
+answered by that Session for the request, as a Codex thread is. No binding is
+written. The SessionStart Hook still selects nothing; it reports
+`reasonCode: SINGLE_SESSION_ENTRY_AVAILABLE` with `lode_conversation_enter` as
+the next call, so one entry call returns the saved direction. With two or more
+Sessions, or a binding that is lost, pending, corrupt or locally unconfirmed,
+the result is unchanged. Because no binding is written, a conversation answered
+this way loses that answer once the Project gains a second Session (created by
+it with `lode_session_create` or by another conversation): its next entry or
+save answers `session_selection_unresolved` (`SESSION_SELECTION_LOST`) until a
+Session is chosen. The save is refused, not lost. No old-to-new native-ID correlation is guessed
 from recency or a different caller. Synthetic routing tests do not prove actual
 Claude `/clear` ID changes or automatic cross-ID restoration.
 

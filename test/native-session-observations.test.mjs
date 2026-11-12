@@ -1197,6 +1197,10 @@ test("Claude private Hook correlation uses explicit logical routing without chan
   fs.mkdirSync(path.join(config, "sessions"), { recursive: true });
   f.environment.CLAUDE_CONFIG_DIR = config;
   fs.writeFileSync(path.join(config, "sessions", `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: "claude-caller" }));
+  // A second Session keeps the refusal (beta.118: with exactly one Session an
+  // absent binding is answered by that Session; see
+  // single-session-claude-entry.test.mjs).
+  createHeadSession({ root: f.root, purpose: "Another task" });
   const before = tree(f.root);
   await runSessionHostHook({
     runtime: "claude",

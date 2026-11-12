@@ -9,7 +9,7 @@ import { resolveOperation } from "./lib/core/lode-operation-contract.mjs";
 import { effectiveToolCall } from "./lib/core/operation-groups.mjs";
 import { assessSubagentStateWrite, subagentWriteGuardEnabled } from "./lib/session/subagent-write-guard.mjs";
 import { resolveProjectStorage, assertProjectStorageUnchanged } from "./lib/storage/project-storage-format.mjs";
-import { recordedRootSpelling } from "./lib/storage/project-root-spelling.mjs";
+import { recordedRootSpelling, rootSpellingRetryPending, withOnDiskSpellingRetry } from "./lib/storage/project-root-spelling.mjs";
 import { safeGraphFile } from "./lib/world/discovery-index.mjs";
 import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
 import {
@@ -95,7 +95,10 @@ export default {
     // Lode reads and keys the Project by its recorded root. A Host directory that
     // differs from it only in drive-letter case (Windows) uses the recorded
     // spelling; OpenCode client calls and session matching keep `directory`.
-    const lodeRoot = () => recordedRootSpelling(directory);
+    // A directory that differs only in directory-name case is learned from the
+    // first hook whose Project was not found as given (see spelledHooks below).
+    let learnedRoot = null;
+    const lodeRoot = () => learnedRoot ?? recordedRootSpelling(directory);
     function promptCaller(sessionID) {
       return nativeId(sessionID) ? { root: lodeRoot(), runtime: "opencode", nativeSessionId: sessionID, environment } : null;
     }
@@ -187,7 +190,25 @@ export default {
       queue = work;
       return work;
     }
-    return {
+    // Each hook runs with the directory-name case retry until the recorded
+    // spelling is learned; a Project found as given costs no extra read.
+    const spelledHooks = (hooks) =>
+      Object.fromEntries(
+        Object.entries(hooks).map(([name, hook]) => [
+          name,
+          name === "dispose"
+            ? hook
+            : async (...args) => {
+                if (learnedRoot !== null) return await hook(...args);
+                const given = lodeRoot();
+                return await withOnDiskSpellingRetry(given, async (root) => {
+                  if (root !== given) learnedRoot = root;
+                  return await hook(...args);
+                });
+              },
+        ]),
+      );
+    return spelledHooks({
       async config(config) {
         aliases = new Map();
         serverPrefixes = [];
@@ -275,6 +296,8 @@ export default {
           }
           if (disposed || !contextSupported || output.system !== system || deliveries.get(system) !== delivery || !sessionScope(session, input.sessionID))
             return;
+          // Not found under this directory spelling: the retry delivers instead.
+          if (rootSpellingRetryPending()) return;
           let pending = null;
           try {
             activeSessionIds.add(session.id);
@@ -435,7 +458,7 @@ export default {
             !nativeId(input.callID) ||
             !object(args) ||
             typeof args.project_root !== "string" ||
-            !samePath(recordedRootSpelling(args.project_root), lodeRoot()) ||
+            !(samePath(args.project_root, directory) || samePath(recordedRootSpelling(args.project_root), lodeRoot())) ||
             !object(output) ||
             output.isError ||
             !object(output.structuredContent) ||
@@ -490,6 +513,6 @@ export default {
         deliveries = new WeakMap();
         await queue;
       },
-    };
+    });
   },
 };
