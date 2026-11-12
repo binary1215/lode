@@ -20,11 +20,11 @@ These are the texts a model receives in every session without asking for them.
 | Source | Delivered as | Characters | Prohibitions |
 | --- | --- | ---: | ---: |
 | Entry paragraph (`coreEntryGuidance`) | MCP `initialize` instructions | 822 | 1 |
-| SessionStart context, fresh core project | Claude Code and Codex Hook `additionalContext` | 1,857 | 2 |
+| SessionStart context, fresh core project | Claude Code and Codex Hook `additionalContext`; the same start context in OpenCode's system prompt | 1,857 | 2 |
 | `lode-agent-core` Skill description | Skill list | 342 | 0 |
 | `lode-agent-onboarding` Skill description | Skill list | 408 | 1 |
 | `lode-conversation` Skill description | Skill list | 219 | 0 |
-| Project instructions (`lode-instructions.md`) | root `CLAUDE.md` / `AGENTS.md` / `opencode.json`, only when written | 2,301 | 1 |
+| Project instructions (`lode-instructions.md`) | root `CLAUDE.md` / `AGENTS.md` / `opencode.json`, only when written or linked | 2,301 | 1 |
 
 | Total | Characters | Prohibitions |
 | --- | ---: | ---: |
@@ -37,23 +37,35 @@ Notes:
 
 - Initialization does not write root instruction files by default. On a fresh
   core project the Claude, Codex and OpenCode instruction integrations all
-  report `withheld`. A project that opts in (`write_root_instruction_files`)
-  gets `CLAUDE.md` and `AGENTS.md` equal to the generated
-  `lode-instructions.md`.
+  report `withheld`. Two opt-ins make the project instructions always-read:
+  `write_root_instruction_files` writes `CLAUDE.md` and `AGENTS.md` equal to the
+  generated `lode-instructions.md`, and `instruction_integration: "link"` adds a
+  managed block that imports it (`@` lines in Claude Code; a pointer to read it
+  for Codex and OpenCode).
 - The entry paragraph is repeated inside the SessionStart context and inside the
   project instructions. The "counted once" rows subtract the repeats.
+- The SessionStart context contains the project path twice (JSON-escaped), so
+  1,857 and every total that includes it depend on where the project is. The
+  measurement used a 73-character escaped temporary path on Windows; a shorter
+  path gives a smaller number (7 characters shorter gave 1,843). The script
+  prints the path length it saw.
 - The SessionStart context grows with recorded direction. After one save it was
-  3,842 characters. It includes the project path, so its length depends on the
-  path length.
-- The default tool list is also sent every session. It is measured separately
-  under Tool surface below.
+  3,842 characters.
+- The default tool list is also sent every session. It is not in these totals;
+  it is measured under Tool surface below, and its prohibition phrases are
+  counted separately (31).
 
 ## Prohibition phrases
 
 The script counts these phrases: `never`, `do not`, `must not`, `cannot`. It
 matches whole words, case-insensitively, over the full text. This is the list the
-0.3.0-beta.109 and 0.3.0-beta.110 measurements used (see the changelog). Other
-strong words such as "must" or "forbidden" are not counted.
+0.3.0-beta.110 measurement used; 0.3.0-beta.109 counted only "never" and
+"do not" (see the changelog). Other strong words such as "must" or "forbidden"
+are not counted.
+
+The default `tools/list` result, sent every session, contains 31 of these
+phrases (29 "never", 2 "cannot"). It is counted apart from the instruction
+texts.
 
 | File | Characters | Prohibitions |
 | --- | ---: | ---: |
@@ -72,7 +84,8 @@ The four references rewritten in step 4-C (conversation-ux, recovery-workflow,
 runtime-composition, project-discovery) total 46,348 characters and 22
 prohibitions. The per-file counts match the 4-C result (6, 4, 8, 4). The
 character total is higher than the 44,905 recorded then because
-`recovery-workflow.md` grew from 8,907 to 10,350 characters in 0.3.0-beta.111.
+`recovery-workflow.md` grew from 8,907 to 10,350 characters between
+0.3.0-beta.111 and 0.3.0-beta.115.
 
 ## Tool surface
 
@@ -89,17 +102,29 @@ model; the script measures what the server returns.
 
 ## Calls for save, resume and delegation
 
-Save and resume are scripted. The script runs each flow on a temporary core
-project and checks that the save returns `created` and that the resume returns
-the saved purpose.
+Save and resume are scripted. The script runs each sequence on a temporary core
+project with the in-process MCP server and reports the calls it dispatched and
+the outcome (save `created`, resume returning the saved purpose). Verified
+callers are simulated the way the Hosts identify them: a Codex `threadId`, and
+for Claude Code a PreToolUse hook preparation before each call. The CLI row is
+not run by the script; it is the same two operations as the unverified MCP
+caller.
 
 | Task | Caller | Lode calls | Sequence |
 | --- | --- | ---: | --- |
-| Save | Unverified MCP caller, or the CLI | 2 | `lode_checkpoint_basis`, then `lode_checkpoint_sync` |
+| Save | Unverified MCP caller | 2 | `lode_checkpoint_basis`, then `lode_checkpoint_sync` |
+| Save | CLI (not run by the script) | 2 | `checkpoint-basis`, then `checkpoint-sync` |
 | Save | Caller the Host verified, after entry | 1 | `lode_checkpoint_sync` |
-| Resume | New conversation, any MCP caller | 1 | `lode_conversation_enter` |
-| Resume | Same Host conversation after compaction, with the SessionStart Hook | 0 | The Hook delivers the saved direction |
-| Resume | New Host conversation not linked to a Session yet | 1 | The Hook gives orientation only; then `lode_conversation_enter` |
+| Resume | New conversation, unverified MCP caller | 1 | `lode_conversation_enter` |
+| Resume | New Codex thread | 1 | `lode_conversation_enter` |
+| Resume | New Claude Code conversation | 2 | `lode_project_initialize_or_resume`, then `lode_conversation_enter`; or `lode_session_list`, then `lode_conversation_enter` with `session_id` |
+| Resume | Same Codex thread after compaction, with the SessionStart Hook | 0 | The Hook delivers the saved direction |
+
+In a new Claude Code conversation the SessionStart Hook gives orientation only
+(`session_selection_unresolved`), and `lode_conversation_enter` alone answers
+`session_selection_unresolved` without the saved direction: a new Claude Code
+conversation does not select a Session by default. That is today's behaviour;
+this audit records it and does not change it.
 
 Delegation is a hand count from the documented paths. It is not scripted
 because a worker run needs a model provider. Step 4-E (a lightweight managed
@@ -124,7 +149,7 @@ measured at the time, not by this script.
 
 | Change | Before | After | Release and PR |
 | --- | ---: | ---: | --- |
-| Always-loaded guidance (`lode-instructions.md`), characters | 8,381 | 2,301 | 0.3.0-beta.109, #54 |
+| Project instructions (`lode-instructions.md`), characters | 8,381 | 2,301 | 0.3.0-beta.109, #54 |
 | Default `tools/list` | 23 | 22 | 0.3.0-beta.106, #51 |
 | Listed catalog | 130 | 50 | 0.3.0-beta.108, #53 |
 | 4-C reference set, characters | 68,835 | 44,905 | 0.3.0-beta.110, #59 |
@@ -157,7 +182,8 @@ be narrowed or removed.
 | Run | accepted WholePlan, ExecutionContract, ContextCapsule, exact Run, bounded executor, ResultPacket, Fresh Lode review | no provider-session identity and no automatic Canon promotion |
 | Authority | Run controls plus the user's explicit decision at the affected boundary | no approval implied by capability, graph materialization, document edits or model output |
 
-The always-loaded guidance names when to open a Run: persistent ownership,
+The project instructions (always read only when root files are written or
+linked) name when to open a Run: persistent ownership,
 recovery after interruption, tracking effects with unknown outcomes, or
 preventing duplicate integration. Otherwise work stays direct.
 
@@ -226,7 +252,8 @@ without Git or GraphDB.
 
 ## Verdict
 
-The default always-read text is 3,648 characters with 4 prohibition phrases. The
+The default always-read instruction text is 3,648 characters (on the measuring
+path) with 4 prohibition phrases; the default tool list sent beside it has 31. The
 retained runtime rules map to authority separation, credential and privacy
 protection, exact scope and identity, recoverability, or process ownership.
 Optional adapters stay scoped. When a new mandatory rule is proposed, re-run

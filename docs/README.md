@@ -80,6 +80,7 @@ work logs are intentionally excluded from the distribution and are not runtime a
 - [Codex marketplace distribution](codex-marketplace.md)
 - [Claude Code marketplace distribution](claude-marketplace.md)
 - [Rule surface audit](rule-surface-audit.md)
+- [Original HEAD Core comparison](original-head-core-comparison.md)
 - [Reason code audit](reason-code-audit.md)
 - [MCP tool surface and deprecated names](mcp-surface.md)
 
@@ -88,7 +89,6 @@ work logs are intentionally excluded from the distribution and are not runtime a
 These documents explain prior design comparisons or audits. They do not override the
 current executable contracts above.
 
-- [Original HEAD Core comparison](original-head-core-comparison.md)
 - [Lode-Agent GraphDB Brief v4 summary and design review](Lode_GraphDB_Brief_v4.md)
 
 <a id="command-reference"></a>

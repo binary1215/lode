@@ -62,12 +62,12 @@ the commit above; the method is in the last column.
 
 | Measure | Original | Lode | Original method |
 | --- | --- | --- | --- |
-| Core text read every session | 6,948 characters (HEAD Core, after first-run consent) | 822-character entry paragraph; 2,301-character project instructions only when root files are written | `wc -m` on `instructions/HEAD_CORE.md` |
-| MCP server instructions | 1,339 characters shared, plus 241 for Claude Code or 337 for Codex | 822 characters | `wc -m` on the template text in `core/mcp.mjs`, without the code around it |
-| Skill descriptions in the Skill list | 1 Skill, 76 characters | 3 Skills, 969 characters | `wc -m` on the `start-job` description |
+| Core text read every session | 6,909 characters (HEAD Core, after first-run consent) | 822-character entry paragraph; 2,301-character project instructions only when root files are written or linked | characters of the committed blob (`git show <commit>:packages/context/instructions/HEAD_CORE.md`, LF line endings) |
+| MCP server instructions | 1,314 characters shared, plus 241 for Claude Code or 337 for Codex | 822 characters | characters of the template-literal values in the committed `packages/context/core/mcp.mjs` (escaped backticks counted once; read as text, not evaluated) |
+| Skill descriptions in the Skill list | 1 Skill, 76 characters | 3 Skills, 969 characters | characters of the committed `start-job` `description` value |
 | Tools listed by default | 9 (10 on Codex) | 22 | tool table in `packages/context/README.md` |
 | Calls to save | 1 (`save`) | 1 for a verified Host caller, 2 otherwise | tool table |
-| Calls to resume | 0 when the start hook loads the work session; 1 (`load`) otherwise | 0 in a linked Host conversation; 1 (`lode_conversation_enter`) otherwise | README hook section |
+| Calls to resume | 0 when the start hook loads the work session; 1 (`load`) otherwise | 0 in a linked Host conversation; 1 (`lode_conversation_enter`) for an unverified caller or a new Codex thread; 2 for a new Claude Code conversation (`lode_project_initialize_or_resume` or `lode_session_list`, then `lode_conversation_enter`) | README hook section |
 | Calls to delegate | 0 plugin calls; the Host's fork or agent tool | 0 Lode calls on the default path; 4 + 4 on the managed path | server instructions |
 | Prohibition phrases in the core text | 3 | 1 in the entry paragraph; 4 across the default always-read text | phrase list of the audit; the original's server instructions and Skill are in Korean, so the English list does not apply to them |
 

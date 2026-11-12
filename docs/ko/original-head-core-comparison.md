@@ -60,12 +60,12 @@ Lode 값은 `node scripts/audit-metrics.mjs`에서 왔습니다([규칙 표면
 
 | 측정 | 원본 | Lode | 원본 측정 방법 |
 | --- | --- | --- | --- |
-| 세션마다 읽히는 core 글 | 6,948자(첫 실행 동의 뒤 HEAD Core) | 822자 진입 문단; 2,301자 프로젝트 지침은 루트 파일을 쓴 경우에만 | `instructions/HEAD_CORE.md`에 `wc -m` |
-| MCP 서버 instructions | 공용 1,339자, 여기에 Claude Code 241자 또는 Codex 337자 | 822자 | `core/mcp.mjs`의 템플릿 글에 `wc -m`, 둘러싼 코드는 제외 |
-| Skill 목록의 Skill 설명 | Skill 1개, 76자 | Skill 3개, 969자 | `start-job` 설명에 `wc -m` |
+| 세션마다 읽히는 core 글 | 6,909자(첫 실행 동의 뒤 HEAD Core) | 822자 진입 문단; 2,301자 프로젝트 지침은 루트 파일을 쓰거나 연결한 경우에만 | 커밋된 blob의 문자 수(`git show <commit>:packages/context/instructions/HEAD_CORE.md`, LF 줄바꿈) |
+| MCP 서버 instructions | 공용 1,314자, 여기에 Claude Code 241자 또는 Codex 337자 | 822자 | 커밋된 `packages/context/core/mcp.mjs`의 템플릿 리터럴 값의 문자 수(이스케이프된 백틱은 한 글자로 셈, 실행하지 않고 글로 읽음) |
+| Skill 목록의 Skill 설명 | Skill 1개, 76자 | Skill 3개, 969자 | 커밋된 `start-job` `description` 값의 문자 수 |
 | 기본 도구 수 | 9(Codex는 10) | 22 | `packages/context/README.md`의 도구 표 |
 | 저장 호출 수 | 1(`save`) | Host가 검증한 호출자 1, 그 밖에는 2 | 도구 표 |
-| 재개 호출 수 | 시작 hook이 작업 세션을 불러오면 0, 아니면 1(`load`) | 연결된 Host 대화에서 0, 아니면 1(`lode_conversation_enter`) | README hook 절 |
+| 재개 호출 수 | 시작 hook이 작업 세션을 불러오면 0, 아니면 1(`load`) | 연결된 Host 대화에서 0, 검증되지 않은 호출자나 새 Codex 스레드는 1(`lode_conversation_enter`), 새 Claude Code 대화는 2(`lode_project_initialize_or_resume` 또는 `lode_session_list` 다음 `lode_conversation_enter`) | README hook 절 |
 | 위임 호출 수 | 플러그인 호출 0, Host의 fork나 agent 도구 사용 | 기본 경로에서 Lode 호출 0, managed 경로에서 4 + 4 | 서버 instructions |
 | core 글의 금지 표현 | 3 | 진입 문단 1, 기본으로 항상 읽히는 글 전체 4 | 감사의 표현 목록; 원본의 서버 instructions와 Skill은 한국어라 영어 목록이 맞지 않음 |
 
@@ -102,8 +102,8 @@ Lode 값은 `node scripts/audit-metrics.mjs`에서 왔습니다([규칙 표면
 ## 이전 비교
 
 이 문서의 이전 판은 원본의 예전 모습과 Lode를 비교했습니다. 2026-08-20에 원본
-작성자가 Lode 소스 `fd9ad3b`를 감사했고, 여러 차례 뒤에 막는 수정 사항을 찾지
-않았습니다. 2026-10-20에는 원본 경로를
+작성자가 Lode 소스 `fd9ad3b`를 감사했고, 여러 차례 뒤에 반드시 고쳐야 할 사항은
+없다고 확인했습니다. 2026-10-20에는 원본 경로를
 [`ba220c55c14b8af947bf6d1fb9d27a620a2cf2aa`](https://github.com/Won6314/head-agent-core/tree/ba220c55c14b8af947bf6d1fb9d27a620a2cf2aa)에서
 다시 확인했습니다. 두 결과 모두 이름을 밝힌 커밋에만 적용됩니다. 이 문서는 비교
 판정을 내리지 않습니다.

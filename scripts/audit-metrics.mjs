@@ -134,6 +134,7 @@ const recovery = {
 async function measureFlows({ project, hostRoot }) {
   const { dispatch } = await import("./mcp-server.mjs");
   const { createNativeSessionHostBridge } = await import("./lib/session/session-native-host.mjs");
+  const { SESSION_HOST_REQUEST_HELPER } = await import("./lib/session/session-host-request.mjs");
   const { sessionStartContext } = await import("./session-host-hook.mjs");
   const call = async (root, name, args = {}, options = {}, meta = undefined) => {
     const response = await dispatch(
@@ -143,10 +144,23 @@ async function measureFlows({ project, hostRoot }) {
     if (response.error) throw Object.assign(new Error(`${name}: ${response.error.message}`), { code: response.error.data?.reasonCode });
     return response.result.structuredContent ?? JSON.parse(response.result.content[0].text);
   };
+  // Every counted flow records the tool calls it dispatches; the reported count
+  // is the length of that record, not a literal.
+  const flow = (via = call) => {
+    const sequence = [];
+    return {
+      sequence,
+      call: (root, name, ...rest) => {
+        sequence.push(name);
+        return via(root, name, ...rest);
+      },
+    };
+  };
+  const restored = (value) => JSON.stringify(value).includes(recovery.purpose);
   const initialize = await dispatch({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
   const toolsList = await dispatch({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
 
-  // Unverified MCP caller (and the CLI): read the basis, then sync.
+  // Unverified MCP caller: read the basis, then sync.
   const plain = project("plain");
   // This project opts in to root instruction files, so CLAUDE.md and AGENTS.md exist.
   await call(plain, "lode_project_initialize_or_resume", { profile: "core", write_root_instruction_files: true });
@@ -156,14 +170,15 @@ async function measureFlows({ project, hostRoot }) {
     if (fs.existsSync(file)) generated[relative] = fs.readFileSync(file, "utf8");
   }
   await call(plain, "lode_conversation_enter");
-  const basis = await call(plain, "lode_checkpoint_basis");
-  const plainSave = await call(plain, "lode_checkpoint_sync", { expected_recovery_basis_id: basis.basis.basisId, ...recovery });
+  const plainSaveFlow = flow();
+  const basis = await plainSaveFlow.call(plain, "lode_checkpoint_basis");
+  const plainSave = await plainSaveFlow.call(plain, "lode_checkpoint_sync", { expected_recovery_basis_id: basis.basis.basisId, ...recovery });
 
-  // Resume in a new conversation: one read-only entry call returns the saved direction.
-  const resumed = await call(plain, "lode_conversation_enter");
-  const resumedText = JSON.stringify(resumed);
+  // Resume in a new conversation by an unverified MCP caller: one entry call.
+  const plainResumeFlow = flow();
+  const resumed = await plainResumeFlow.call(plain, "lode_conversation_enter");
 
-  // SessionStart Hook (Claude Code and Codex): context arrives before the first model turn.
+  // SessionStart Hook: context arrives before the first model turn.
   const environment = { HEAD_AGENT_OPERATIONAL_STATE_ROOT: hostRoot };
   const fresh = project("fresh");
   // Default initialization: what a project gets without opting in.
@@ -178,27 +193,26 @@ async function measureFlows({ project, hostRoot }) {
     event: { hook_event_name: "SessionStart", source: "startup", cwd: fresh, session_id: "audit-metrics-fresh" },
     environment,
   });
-  // A Host conversation that is not linked to a Session yet gets orientation only.
-  const startUnlinked = await sessionStartContext({
-    runtime: "claude",
-    event: { hook_event_name: "SessionStart", source: "startup", cwd: plain, session_id: "audit-metrics-unlinked" },
-    environment,
-  });
   const hookFresh = startFresh.hookSpecificOutput?.additionalContext ?? "";
-  const hookUnlinked = JSON.parse(startUnlinked.hookSpecificOutput?.additionalContext ?? "{}");
+  // The project path is embedded in this context, so its length depends on where the project is.
+  const escapedFresh = JSON.stringify(fresh).slice(1, -1);
+  const hookFreshPath = { projectPathChars: escapedFresh.length, occurrences: hookFresh.split(escapedFresh).length - 1 };
 
-  // Verified Host caller (Codex thread route): entry, then one sync with no basis id.
+  // Verified Codex caller (thread route): entry, then one sync with no basis id.
   const verified = project("verified");
-  const bridge = createNativeSessionHostBridge({ runtime: "codex", environment });
-  let verifiedSave;
+  const codex = createNativeSessionHostBridge({ runtime: "codex", environment });
+  let verifiedSave, verifiedSaveFlow, codexNew, codexNewFlow;
   try {
-    const options = { nativeSessionBridge: bridge };
-    const meta = { threadId: "audit-metrics" };
-    await call(verified, "lode_project_initialize_or_resume", { profile: "core" }, options, meta);
-    await call(verified, "lode_conversation_enter", {}, options, meta);
-    verifiedSave = await call(verified, "lode_checkpoint_sync", recovery, options, meta);
+    const options = { nativeSessionBridge: codex };
+    await call(verified, "lode_project_initialize_or_resume", { profile: "core" }, options, { threadId: "audit-metrics" });
+    await call(verified, "lode_conversation_enter", {}, options, { threadId: "audit-metrics" });
+    verifiedSaveFlow = flow();
+    verifiedSave = await verifiedSaveFlow.call(verified, "lode_checkpoint_sync", recovery, options, { threadId: "audit-metrics" });
+    // A new Codex thread restores the saved direction with one entry call.
+    codexNewFlow = flow();
+    codexNew = await codexNewFlow.call(verified, "lode_conversation_enter", {}, options, { threadId: "audit-metrics-new-thread" });
   } finally {
-    bridge.dispose();
+    codex.dispose();
   }
   // The same Codex thread starts again after compaction: the Hook delivers the saved direction.
   const startLinked = await sessionStartContext({
@@ -208,39 +222,114 @@ async function measureFlows({ project, hostRoot }) {
   });
   const hookLinkedText = startLinked.hookSpecificOutput?.additionalContext ?? "{}";
 
+  // A new Claude Code conversation (a verified caller: each call is prepared by
+  // the PreToolUse hook helper, as the installed hook does). Its SessionStart
+  // Hook gives orientation only, and entry alone does not select a Session.
+  const claudeStart = JSON.parse(
+    (
+      await sessionStartContext({
+        runtime: "claude",
+        event: { hook_event_name: "SessionStart", source: "startup", cwd: verified, session_id: "audit-metrics-claude" },
+        environment,
+      })
+    ).hookSpecificOutput?.additionalContext ?? "{}",
+  );
+  const claude = createNativeSessionHostBridge({ runtime: "claude", environment });
+  let toolUse = 0;
+  const claudeCall = async (root, name, args = {}) => {
+    const id = `audit-metrics-tool-use-${++toolUse}`;
+    const request = {
+      jsonrpc: "2.0",
+      id,
+      method: "tools/call",
+      params: { _meta: { "claudecode/toolUseId": id }, name, arguments: { project_root: root, ...args } },
+    };
+    const prepared = await dispatch(
+      {
+        jsonrpc: "2.0",
+        id: `${id}-hook`,
+        method: "tools/call",
+        params: {
+          name: SESSION_HOST_REQUEST_HELPER,
+          arguments: {
+            native_session_id: "audit-metrics-claude",
+            native_agent_id: "",
+            tool_use_id: id,
+            outer_tool_name: `mcp__lode__${name}`,
+            original_arguments: JSON.stringify(request.params.arguments),
+            native_project_root: root,
+          },
+        },
+      },
+      { nativeSessionBridge: claude },
+    );
+    if (prepared.result?.isError) throw new Error(`hook preparation for ${name} failed`);
+    const response = await dispatch(request, { nativeSessionBridge: claude });
+    return response.result.structuredContent ?? JSON.parse(response.result.content[0].text);
+  };
+  let claudeEnterOnly, claudeResume, claudeResumeFlow;
+  try {
+    claudeEnterOnly = await claudeCall(verified, "lode_conversation_enter");
+    claudeResumeFlow = flow(claudeCall);
+    await claudeResumeFlow.call(verified, "lode_project_initialize_or_resume", { profile: "core" });
+    claudeResume = await claudeResumeFlow.call(verified, "lode_conversation_enter");
+  } finally {
+    claude.dispose();
+  }
+
   return {
     instructions: initialize.result.instructions,
     toolsListResult: toolsList.result,
     generated,
     rootInstructionsByDefault,
     hookFresh,
+    hookFreshPath,
     hookLinkedChars: hookLinkedText.length,
     flows: {
       save: [
-        { caller: "unverified MCP caller or CLI", calls: 2, sequence: ["lode_checkpoint_basis", "lode_checkpoint_sync"], outcome: plainSave.outcome },
-        { caller: "verified Host caller after entry", calls: 1, sequence: ["lode_checkpoint_sync"], outcome: verifiedSave.outcome },
+        { caller: "unverified MCP caller", calls: plainSaveFlow.sequence.length, sequence: plainSaveFlow.sequence, outcome: plainSave.outcome },
+        {
+          caller: "verified Host caller after entry (Codex thread)",
+          calls: verifiedSaveFlow.sequence.length,
+          sequence: verifiedSaveFlow.sequence,
+          outcome: verifiedSave.outcome,
+        },
+        {
+          caller: "CLI",
+          calls: 2,
+          sequence: ["checkpoint-basis", "checkpoint-sync"],
+          outcome: "not run by this script (the same two operations as the unverified MCP caller)",
+        },
       ],
       resume: [
         {
-          caller: "new conversation, any MCP caller",
-          calls: 1,
-          sequence: ["lode_conversation_enter"],
+          caller: "new conversation, unverified MCP caller",
+          calls: plainResumeFlow.sequence.length,
+          sequence: plainResumeFlow.sequence,
           status: resumed.status,
-          savedPurposeReturned: resumedText.includes(recovery.purpose),
+          savedPurposeReturned: restored(resumed),
         },
         {
-          caller: "same Host conversation after compaction, SessionStart Hook (Codex)",
+          caller: "new Codex thread (verified)",
+          calls: codexNewFlow.sequence.length,
+          sequence: codexNewFlow.sequence,
+          status: codexNew.status,
+          savedPurposeReturned: restored(codexNew),
+        },
+        {
+          caller: "new Claude Code conversation (verified)",
+          calls: claudeResumeFlow.sequence.length,
+          sequence: claudeResumeFlow.sequence,
+          status: `Hook gives ${claudeStart.status}; entry alone gives ${claudeEnterOnly.status}; after the sequence ${claudeResume.status}`,
+          savedPurposeReturned: restored(claudeResume),
+          alternative: "lode_session_list -> lode_conversation_enter {session_id}",
+        },
+        {
+          caller: "same Codex thread after compaction, SessionStart Hook",
           calls: 0,
           sequence: [],
           status: JSON.parse(hookLinkedText).status,
           savedPurposeReturned: hookLinkedText.includes(recovery.purpose),
-        },
-        {
-          caller: "new Host conversation not linked yet, SessionStart Hook (Claude Code)",
-          calls: 1,
-          sequence: ["lode_conversation_enter"],
-          status: `Hook gives ${hookUnlinked.status}; entry gives ${resumed.status}`,
-          savedPurposeReturned: resumedText.includes(recovery.purpose),
         },
       ],
       delegation: DELEGATION_HAND_COUNTS,
@@ -270,7 +359,8 @@ export async function auditMetrics() {
       {
         id: "session-start-context",
         source: "scripts/session-host-hook.mjs (fresh core project, Claude startup)",
-        delivery: "SessionStart `additionalContext`",
+        delivery: "SessionStart `additionalContext` (Claude Code, Codex; OpenCode system context)",
+        pathDependent: measured.hookFreshPath,
       },
       measured.hookFresh,
     ),
@@ -316,6 +406,8 @@ export async function auditMetrics() {
       method: "whole-word, case-insensitive regular expression over the full text",
       alwaysReadByDefault: alwaysRead.filter((item) => !item.optIn).reduce((total, item) => total + item.prohibitions, 0),
       alwaysReadWithRootInstructionFiles: alwaysRead.reduce((total, item) => total + item.prohibitions, 0),
+      // Sent every session too, but counted apart from the instruction texts above.
+      defaultToolsListResult: countProhibitions(listJson),
       files: progressive,
       referenceSet4C: { files: set4c.map((item) => item.file), chars: set4c.reduce((t, i) => t + i.chars, 0), total: set4c.reduce((t, i) => t + i.total, 0) },
     },
@@ -330,7 +422,8 @@ export async function auditMetrics() {
       catalogArrayUtf8Bytes: diagnostics.mcpCatalog.catalogArrayUtf8Bytes,
     },
     calls: {
-      method: "save and resume: scripted on temporary core projects with the in-process MCP server; delegation: hand count of the documented paths",
+      method:
+        "save and resume: the script runs each sequence on temporary core projects with the in-process MCP server and reports the calls it dispatched and the outcome (the CLI row is not run); delegation: hand count of the documented paths",
       ...measured.flows,
     },
   };
@@ -339,7 +432,14 @@ export async function auditMetrics() {
 function table(report) {
   const rows = [];
   const add = (metric, value, note = "") => rows.push([metric, String(value), note]);
-  for (const item of report.alwaysRead.sources) add(`always-read chars: ${item.id}`, item.chars, item.delivery);
+  for (const item of report.alwaysRead.sources)
+    add(
+      `always-read chars: ${item.id}`,
+      item.chars,
+      item.pathDependent
+        ? `${item.delivery}; includes the project path ${item.pathDependent.occurrences} times (${item.pathDependent.projectPathChars} chars each here)`
+        : item.delivery,
+    );
   const { byDefault, withRootInstructionFiles } = report.alwaysRead;
   add("always-read chars: sum by default", byDefault.chars, "without the opt-in root instruction files");
   add(
@@ -352,6 +452,7 @@ function table(report) {
   add("session-start-context after one save", report.alwaysRead.sessionStartContextAfterOneSaveChars, "chars; grows with saved direction (not summed)");
   add("prohibitions: always-read by default", report.prohibitions.alwaysReadByDefault, report.prohibitions.phrases.join(" | "));
   add("prohibitions: always-read with root files", report.prohibitions.alwaysReadWithRootInstructionFiles);
+  add("prohibitions: default tools/list result", report.prohibitions.defaultToolsListResult.total, "sent every session; not in the always-read sums");
   for (const item of report.prohibitions.files) add(`prohibitions: ${item.file}`, item.total, `${item.chars} chars`);
   add("prohibitions: 4-C reference set", report.prohibitions.referenceSet4C.total, `${report.prohibitions.referenceSet4C.chars} chars`);
   add("tools: default tools/list", report.tools.defaultToolsList);
@@ -364,7 +465,7 @@ function table(report) {
     add(
       `calls: resume (${item.caller})`,
       item.calls,
-      `${item.sequence.join(" -> ") || "none"}; ${item.status}; saved purpose returned: ${item.savedPurposeReturned}`,
+      `${item.sequence.join(" -> ") || "none"}; ${item.status}; saved purpose returned: ${item.savedPurposeReturned}${item.alternative ? `; or ${item.alternative}` : ""}`,
     );
   for (const item of report.calls.delegation) add(`calls: delegation (${item.path})`, item.lodeCalls, `hand count; Host calls: ${item.hostCalls}`);
   const width = [0, 1].map((column) => Math.max(...rows.map((row) => row[column].length)));

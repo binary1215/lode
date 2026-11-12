@@ -22,11 +22,11 @@
 | 출처 | 전달 방식 | 문자 수 | 금지 표현 |
 | --- | --- | ---: | ---: |
 | 진입 문단(`coreEntryGuidance`) | MCP `initialize` instructions | 822 | 1 |
-| SessionStart 맥락, 새 core 프로젝트 | Claude Code와 Codex Hook `additionalContext` | 1,857 | 2 |
+| SessionStart 맥락, 새 core 프로젝트 | Claude Code와 Codex Hook `additionalContext`, OpenCode 시스템 프롬프트의 같은 시작 맥락 | 1,857 | 2 |
 | `lode-agent-core` Skill 설명 | Skill 목록 | 342 | 0 |
 | `lode-agent-onboarding` Skill 설명 | Skill 목록 | 408 | 1 |
 | `lode-conversation` Skill 설명 | Skill 목록 | 219 | 0 |
-| 프로젝트 지침(`lode-instructions.md`) | 루트 `CLAUDE.md` / `AGENTS.md` / `opencode.json`, 쓴 경우에만 | 2,301 | 1 |
+| 프로젝트 지침(`lode-instructions.md`) | 루트 `CLAUDE.md` / `AGENTS.md` / `opencode.json`, 쓰거나 연결한 경우에만 | 2,301 | 1 |
 
 | 합계 | 문자 수 | 금지 표현 |
 | --- | ---: | ---: |
@@ -38,20 +38,31 @@
 참고:
 
 - 초기화는 기본으로 루트 지침 파일을 쓰지 않습니다. 새 core 프로젝트에서는 Claude,
-  Codex, OpenCode 지침 연동이 모두 `withheld`를 보고합니다. 선택한
-  프로젝트(`write_root_instruction_files`)는 생성된 `lode-instructions.md`와 같은
-  `CLAUDE.md`와 `AGENTS.md`를 받습니다.
+  Codex, OpenCode 지침 연동이 모두 `withheld`를 보고합니다. 두 옵션이 프로젝트
+  지침을 항상 읽히게 합니다. `write_root_instruction_files`를 켠 프로젝트는 생성된
+  `lode-instructions.md`와 같은 `CLAUDE.md`와 `AGENTS.md`를 받고,
+  `instruction_integration: "link"`를 켠 프로젝트는 그것을 불러오는 관리 블록을
+  받습니다(Claude Code에서는 `@` 줄, Codex와 OpenCode에서는 읽으라는 안내).
 - 진입 문단은 SessionStart 맥락과 프로젝트 지침 안에 다시 들어 있습니다. "한 번만
   셈" 행은 그 반복을 뺀 값입니다.
+- SessionStart 맥락에는 프로젝트 경로가 JSON 이스케이프된 채로 두 번 들어 있습니다.
+  그래서 1,857과 이를 포함한 모든 합계는 프로젝트 위치에 따라 달라집니다. 측정에는
+  Windows에서 이스케이프 후 73자인 임시 경로를 썼고, 7자 짧은 경로에서는 1,843자
+  였습니다. 스크립트는 자신이 본 경로 길이를 함께 출력합니다.
 - SessionStart 맥락은 기록된 방향이 늘면 커집니다. 저장을 한 번 한 뒤에는 3,842자
-  였습니다. 프로젝트 경로가 들어가므로 길이는 경로 길이에 따라 달라집니다.
-- 기본 도구 목록도 세션마다 전달됩니다. 아래 도구 표면에서 따로 잽니다.
+  였습니다.
+- 기본 도구 목록도 세션마다 전달됩니다. 이 합계에는 들어 있지 않으며, 아래 도구
+  표면에서 따로 재고 그 안의 금지 표현도 따로 셉니다(31개).
 
 ## 금지 표현
 
 스크립트는 `never`, `do not`, `must not`, `cannot`을 셉니다. 전체 글에서 대소문자를
-가리지 않고 단어 단위로 맞춥니다. 0.3.0-beta.109와 0.3.0-beta.110 측정이 쓴 목록과
-같습니다(변경 기록 참고). "must"나 "forbidden" 같은 다른 강한 낱말은 세지 않습니다.
+가리지 않고 단어 단위로 맞춥니다. 0.3.0-beta.110 측정이 쓴 목록과 같고,
+0.3.0-beta.109는 "never"와 "do not"만 셌습니다(변경 기록 참고). "must"나
+"forbidden" 같은 다른 강한 낱말은 세지 않습니다.
+
+세션마다 전달되는 기본 `tools/list` 결과에는 이 표현이 31개 있습니다("never" 29,
+"cannot" 2). 지침 글과는 따로 셉니다.
 
 | 파일 | 문자 수 | 금지 표현 |
 | --- | ---: | ---: |
@@ -69,8 +80,8 @@
 4-C 단계에서 다시 쓴 네 참조(conversation-ux, recovery-workflow,
 runtime-composition, project-discovery)는 합계 46,348자, 금지 표현 22개입니다.
 파일별 개수는 4-C 결과(6, 4, 8, 4)와 같습니다. 문자 합계가 당시 기록한 44,905보다
-큰 것은 0.3.0-beta.111에서 `recovery-workflow.md`가 8,907자에서 10,350자로 늘었기
-때문입니다.
+큰 것은 0.3.0-beta.111과 0.3.0-beta.115 사이에 `recovery-workflow.md`가 8,907자에서
+10,350자로 늘었기 때문입니다.
 
 ## 도구 표면
 
@@ -87,16 +98,27 @@ runtime-composition, project-discovery)는 합계 46,348자, 금지 표현 22개
 
 ## 저장, 재개, 위임 호출 수
 
-저장과 재개는 스크립트로 잽니다. 스크립트는 각 흐름을 임시 core 프로젝트에서
-실행하고, 저장이 `created`를 돌려주는지, 재개가 저장한 목적을 돌려주는지 확인합니다.
+저장과 재개는 스크립트로 잽니다. 스크립트는 각 순서를 임시 core 프로젝트에서
+프로세스 내 MCP 서버로 실행하고, 실제로 보낸 호출과 결과(저장 `created`, 저장한
+목적을 돌려주는 재개)를 보고합니다. 검증된 호출자는 Host가 식별하는 방식대로
+흉내 냅니다. Codex는 `threadId`, Claude Code는 호출마다 앞선 PreToolUse 훅 준비입니다.
+CLI 행은 스크립트가 실행하지 않으며, 검증되지 않은 MCP 호출자와 같은 두 작업입니다.
 
 | 작업 | 호출자 | Lode 호출 | 순서 |
 | --- | --- | ---: | --- |
-| 저장 | 검증되지 않은 MCP 호출자 또는 CLI | 2 | `lode_checkpoint_basis` 다음 `lode_checkpoint_sync` |
+| 저장 | 검증되지 않은 MCP 호출자 | 2 | `lode_checkpoint_basis` 다음 `lode_checkpoint_sync` |
+| 저장 | CLI(스크립트로 실행하지 않음) | 2 | `checkpoint-basis` 다음 `checkpoint-sync` |
 | 저장 | Host가 검증한 호출자, 진입 후 | 1 | `lode_checkpoint_sync` |
-| 재개 | 새 대화, 모든 MCP 호출자 | 1 | `lode_conversation_enter` |
-| 재개 | 압축 뒤 같은 Host 대화, SessionStart Hook 사용 | 0 | Hook이 저장된 방향을 전달 |
-| 재개 | 아직 Session에 연결되지 않은 새 Host 대화 | 1 | Hook은 방향 안내만 줌, 이어서 `lode_conversation_enter` |
+| 재개 | 새 대화, 검증되지 않은 MCP 호출자 | 1 | `lode_conversation_enter` |
+| 재개 | 새 Codex 스레드 | 1 | `lode_conversation_enter` |
+| 재개 | 새 Claude Code 대화 | 2 | `lode_project_initialize_or_resume` 다음 `lode_conversation_enter`, 또는 `lode_session_list` 다음 `session_id`를 준 `lode_conversation_enter` |
+| 재개 | 압축 뒤 같은 Codex 스레드, SessionStart Hook 사용 | 0 | Hook이 저장된 방향을 전달 |
+
+새 Claude Code 대화에서 SessionStart Hook은 방향 안내만
+주고(`session_selection_unresolved`), `lode_conversation_enter`만 부르면 저장된 방향
+없이 `session_selection_unresolved`로 답합니다. 새 Claude Code 대화는 기본으로
+Session을 고르지 않기 때문입니다. 지금의 동작이며, 이 감사는 기록만 하고 바꾸지
+않습니다.
 
 위임은 문서화된 경로를 손으로 센 값입니다. worker 실행에는 모델 제공자가 필요해서
 스크립트로 재지 않습니다. 4-E 단계(가벼운 managed worker 경로)는 만들지 않았으므로
@@ -121,7 +143,7 @@ apply, prepare-result, publish-result입니다. Run을 여는 호출과 이후 �
 
 | 변경 | 전 | 후 | 릴리스와 PR |
 | --- | ---: | ---: | --- |
-| 항상 로드되는 지침(`lode-instructions.md`), 문자 수 | 8,381 | 2,301 | 0.3.0-beta.109, #54 |
+| 프로젝트 지침(`lode-instructions.md`), 문자 수 | 8,381 | 2,301 | 0.3.0-beta.109, #54 |
 | 기본 `tools/list` | 23 | 22 | 0.3.0-beta.106, #51 |
 | 목록 카탈로그 | 130 | 50 | 0.3.0-beta.108, #53 |
 | 4-C 참조 묶음, 문자 수 | 68,835 | 44,905 | 0.3.0-beta.110, #59 |
@@ -153,7 +175,7 @@ apply, prepare-result, publish-result입니다. Run을 여는 호출과 이후 �
 | Run | 수락된 WholePlan, ExecutionContract, ContextCapsule, 정확한 Run, 제한된 실행기, ResultPacket, Fresh Lode 검토 | 제공자 세션 식별자 없음, 자동 Canon 승격 없음 |
 | Authority | Run 통제와 영향받는 경계에서의 사용자의 명시적 결정 | 기능, 그래프 생성, 문서 편집, 모델 출력으로 암시되는 승인 없음 |
 
-항상 로드되는 지침은 Run을 여는 때를 밝힙니다. 지속적인 소유, 중단 뒤 복구, 결과를
+프로젝트 지침(루트 파일을 쓰거나 연결했을 때만 항상 읽힘)은 Run을 여는 때를 밝힙니다. 지속적인 소유, 중단 뒤 복구, 결과를
 모르는 효과 추적, 중복 통합 방지가 필요할 때입니다. 그 밖에는 직접 작업합니다.
 
 ### 하위 시스템과 어댑터 규칙
@@ -212,11 +234,12 @@ GraphDB 없는 core 동작의 전제 조건이 아닙니다.
 
 - 특정 Host가 기본 도구 목록 가운데 실제로 모델 앞에 놓는 양.
 - 토큰 수. 모든 크기는 문자 수나 UTF-8 바이트입니다.
-- 스크립트로 잰 위임 호출 수, 그리고 글 크기가 모델 품질에 주는 영향.
+- 위임 호출 수를 스크립트로 재는 것, 그리고 글 크기가 모델 품질에 주는 영향.
 
 ## 결론
 
-기본으로 항상 읽히는 글은 3,648자이고 금지 표현은 4개입니다. 남은 런타임 규칙은
+기본으로 항상 읽히는 지침 글은 측정 경로에서 3,648자이고 금지 표현은 4개입니다. 함께
+전달되는 기본 도구 목록에는 31개가 있습니다. 남은 런타임 규칙은
 권한 분리, 자격 증명과 개인정보 보호, 정확한 범위와 식별자, 복구 가능성, 프로세스
 소유 가운데 하나에 대응합니다. 선택 어댑터는 범위 안에 머뭅니다. 새 필수 규칙을
 제안할 때는 `node scripts/audit-metrics.mjs`를 다시 실행하고, 같은 변경에서 그
