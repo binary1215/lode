@@ -11,7 +11,11 @@ import {
   readSessionWorkEvidenceOwner,
   normalizeSessionWorkEvidence,
 } from "../scripts/lib/session/session-work-context.mjs";
-import { createSessionWorkReadContext, inspectSessionWorkReference, readSessionWorkFileObservation } from "../scripts/lib/session/session-work-evidence-original.mjs";
+import {
+  createSessionWorkReadContext,
+  inspectSessionWorkReference,
+  readSessionWorkFileObservation,
+} from "../scripts/lib/session/session-work-evidence-original.mjs";
 import { refreshProjectGraphIndex } from "../scripts/lib/world/discovery-index.mjs";
 import { fixture, exact, link, citation, snapshot, sha, encoded } from "./helpers/session-work-linkage-fixture.mjs";
 import { fitSessionWorkDelivery, workDeliveryCharacters } from "../scripts/lib/session/session-work-excerpts.mjs";

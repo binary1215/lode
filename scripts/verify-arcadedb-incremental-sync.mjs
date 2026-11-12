@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import { ArcadeDbGraphProjectionAdapter, ArcadeDbHttpTransport, buildGraphProjectionPointer } from "./lib/world/graph-projection-adapter.mjs";
-import { buildArcadeDbIncrementalSyncManifest, buildArcadeDbIncrementalSyncReceipt, executeArcadeDbIncrementalSync } from "./lib/world/arcadedb-incremental-sync.mjs";
+import {
+  buildArcadeDbIncrementalSyncManifest,
+  buildArcadeDbIncrementalSyncReceipt,
+  executeArcadeDbIncrementalSync,
+} from "./lib/world/arcadedb-incremental-sync.mjs";
 import { buildStorageSelection } from "./lib/session/onboarding-contract.mjs";
 import { buildTemporalProvenanceGraph } from "./lib/world/temporal-provenance.mjs";
 

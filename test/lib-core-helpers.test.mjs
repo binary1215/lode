@@ -18,7 +18,9 @@ const libRoot = path.join(pluginRoot, "scripts/lib");
 
 // The core helper modules define these primitives; every other scripts/lib
 // module, in any layer directory (core included), must use them.
-const CORE_HELPERS = new Set(["canonical-json.mjs", "digest.mjs", "errors.mjs", "fs-atomic.mjs", "path-safety.mjs"].map((name) => path.join(libRoot, "core", name)));
+const CORE_HELPERS = new Set(
+  ["canonical-json.mjs", "digest.mjs", "errors.mjs", "fs-atomic.mjs", "path-safety.mjs"].map((name) => path.join(libRoot, "core", name)),
+);
 
 function libSources() {
   const files = [];

@@ -1,7 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { atomicCreateArtifact } from "../core/fs-atomic.mjs";
-import { copiedProjectFile, inspectCopiedProjectFile, readCopiedProjectExcerpt, copyOriginal, verifyCopiedProjectFile } from "../storage/project-copy-evidence.mjs";
+import {
+  copiedProjectFile,
+  inspectCopiedProjectFile,
+  readCopiedProjectExcerpt,
+  copyOriginal,
+  verifyCopiedProjectFile,
+} from "../storage/project-copy-evidence.mjs";
 import { readSnapshotFile, SNAPSHOT_STORAGE_LIMITS } from "../world/snapshot-storage-codec.mjs";
 import { inspectProviderHistoryOriginal } from "./provider-native-history-format.mjs";
 import { sha256Hex as hash } from "../core/digest.mjs";

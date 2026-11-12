@@ -716,7 +716,9 @@ async function dispatchRouted(
     if (!registered) throw new Error(`Unknown tool: ${publicToolName(name)}`);
     // Only a view the native bridge issued to a verified caller counts (4-D).
     const basisMemory =
-      recoveryBasisMemory && (await import("./lib/session/session-native-host.mjs")).isBridgeIssuedRecoveryBasis(recoveryBasisMemory) ? recoveryBasisMemory : null;
+      recoveryBasisMemory && (await import("./lib/session/session-native-host.mjs")).isBridgeIssuedRecoveryBasis(recoveryBasisMemory)
+        ? recoveryBasisMemory
+        : null;
     const heldBasis = basisMemory ? await heldRecoveryBasisCall(name, args, basisMemory) : null;
     let entryBasis = basisMemory ? await entryRecoveryBasisBefore(name, args) : null;
     if (heldBasis) args = heldBasis.args;

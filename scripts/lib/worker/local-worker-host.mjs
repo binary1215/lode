@@ -23,7 +23,11 @@ import { captureWorkerSourceBasis } from "./worker-source-basis.mjs";
 import { captureWorkerWriteBasis } from "./worker-patch-basis.mjs";
 import { prepareWorkerWorkspace, verifyWorkerWorkspace } from "./worker-workspace.mjs";
 import { workerPatchProposalExecutionBoundary } from "./worker-patch-proposal.mjs";
-import { buildCodexFreshProposalPolicyPlan, verifyCodexFreshProposalPolicyPlan, assertCodexFreshProposalPolicy } from "../runtime/runtime-codex-proposal-policy.mjs";
+import {
+  buildCodexFreshProposalPolicyPlan,
+  verifyCodexFreshProposalPolicyPlan,
+  assertCodexFreshProposalPolicy,
+} from "../runtime/runtime-codex-proposal-policy.mjs";
 import { buildCodexNativePrefixPolicyPlan, verifyCodexNativePrefixPolicyPlan, assertCodexNativePrefixPolicy } from "../runtime/runtime-codex-prefix-policy.mjs";
 import { inspectCodexFreshProposalHostInventory } from "../runtime/runtime-codex-app-server-transport.mjs";
 import { resolveVerifiedProcessSupervisor } from "../runtime/runtime-process-supervisor.mjs";

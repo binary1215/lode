@@ -28,7 +28,11 @@ import { workerPatchProposalExecutionBoundary, buildWorkerPatchProposalCandidate
 import { prepareWorkerWorkspace } from "../scripts/lib/worker/worker-workspace.mjs";
 import { workerMemberKey } from "../scripts/lib/worker/worker-member-registry.mjs";
 import { composeWorkerPatchCandidates } from "../scripts/lib/worker/worker-patch-composition.mjs";
-import { verifyWorkerPatchIntegrationIntent, readWorkerPatchIntegration, prepareWorkerPatchIntegration } from "../scripts/lib/worker/worker-patch-integration.mjs";
+import {
+  verifyWorkerPatchIntegrationIntent,
+  readWorkerPatchIntegration,
+  prepareWorkerPatchIntegration,
+} from "../scripts/lib/worker/worker-patch-integration.mjs";
 import { applyWorkerPatchIntegration, readWorkerPatchApplication } from "../scripts/lib/worker/worker-integration-application.mjs";
 import { prepareWorkerIntegrationResult, publishWorkerIntegrationResult } from "../scripts/lib/worker/worker-integration-result.mjs";
 import {

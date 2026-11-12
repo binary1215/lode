@@ -1,4 +1,9 @@
-import { formatForVerifiedOwner, familyFormatForOriginal, resolveProjectStorage, projectCopyContainsAuthorization } from "../storage/project-storage-format.mjs";
+import {
+  formatForVerifiedOwner,
+  familyFormatForOriginal,
+  resolveProjectStorage,
+  projectCopyContainsAuthorization,
+} from "../storage/project-storage-format.mjs";
 import { sha256Hex as digest } from "../core/digest.mjs";
 import { runtimeCanonicalJson as canonicalJson, runtimeCanonicalValue as canonicalValue } from "../core/canonical-json.mjs";
 import { failWith } from "../core/errors.mjs";

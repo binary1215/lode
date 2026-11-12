@@ -98,7 +98,11 @@ if (providedRoot) {
     assert.equal(/permissionDecision|updatedInput/.test(JSON.stringify(startupHooks)), false);
     assert.ok(runtimeManifest.files.some((file) => file.path === "scripts/lib/session/session-host-request.mjs"));
     assert.ok(runtimeManifest.files.some((file) => file.path === "scripts/lib/session/session-host-adapter.mjs"));
-    for (const file of ["scripts/lib/session/native-session-observations.mjs", "scripts/lib/session/native-session-process.mjs", "scripts/opencode-plugin.mjs"]) {
+    for (const file of [
+      "scripts/lib/session/native-session-observations.mjs",
+      "scripts/lib/session/native-session-process.mjs",
+      "scripts/opencode-plugin.mjs",
+    ]) {
       assert.ok(
         runtimeManifest.files.some((entry) => entry.path === file),
         `Native observer dependency must be packaged: ${file}`,

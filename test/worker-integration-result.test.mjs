@@ -15,7 +15,11 @@ import {
   reconcileWorkerPatchIntegration,
   settleIncompleteWorkerPatchIntegration,
 } from "../scripts/lib/worker/worker-integration-application.mjs";
-import { prepareWorkerIntegrationResult, publishWorkerIntegrationResult, readWorkerIntegrationResult } from "../scripts/lib/worker/worker-integration-result.mjs";
+import {
+  prepareWorkerIntegrationResult,
+  publishWorkerIntegrationResult,
+  readWorkerIntegrationResult,
+} from "../scripts/lib/worker/worker-integration-result.mjs";
 import { integrationDigest, integrationJson } from "../scripts/lib/worker/worker-integration-store.mjs";
 import { artifactAuthorityBoundary } from "../scripts/lib/core/authority-plane-contract.mjs";
 

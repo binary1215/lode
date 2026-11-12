@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import { historicalBoundaryCanonicalJson, historicalBoundaryDigest, readCommittedHistoricalArtifactBoundary } from "../world/historical-artifact-boundary-store.mjs";
+import {
+  historicalBoundaryCanonicalJson,
+  historicalBoundaryDigest,
+  readCommittedHistoricalArtifactBoundary,
+} from "../world/historical-artifact-boundary-store.mjs";
 
 import { formatForVerifiedOwner, familyFormatForOriginal, relativeProjectArtifact } from "../storage/project-storage-format.mjs";
 
