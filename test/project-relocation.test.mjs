@@ -33,6 +33,68 @@ function copy(f, name = "relocated") {
 }
 const bytes = (root, relative) => fs.readFileSync(path.join(root, relative), "utf8");
 
+async function newlineRelocationFixture(t) {
+  const base = fs.mkdtempSync(path.join(pluginRoot, ".qa-newline-resume-"));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const root = path.join(base, "original");
+  fs.mkdirSync(root);
+  await initializeOrResumeProject({ root, pluginRoot, runtimes: ["codex"] });
+  const moved = copy({ base, root });
+  const manifest = JSON.parse(bytes(moved, ".lode/generated/manifest.json"));
+  const observed = new Map();
+  for (const entry of manifest.managed) {
+    const file = path.join(moved, entry.path);
+    const before = fs.readFileSync(file, "utf8");
+    const converted = Buffer.from(before.replace(/\r?\n/g, "\r\n"));
+    fs.writeFileSync(file, converted);
+    observed.set(entry.path, converted);
+  }
+  return { base, root, moved, observed };
+}
+
+test("public resume restores exact recorded newline bytes before strict relocation, preserving originals", async (t) => {
+  const f = await newlineRelocationFixture(t);
+  const before = snapshot(f.moved);
+  assert.throws(() => resumeProjectLocation({ root: f.moved, pluginRoot, inspectOnly: true }), { code: "PROJECT_NOT_READY" });
+  assert.deepEqual(snapshot(f.moved), before);
+  const result = await initializeOrResumeProject({ root: f.moved, pluginRoot, instructionIntegration: "preserve" });
+  assert.equal(result.projectLocation.status, "relocated");
+  assert.equal(result.projectLocation.byteRepair.status, "original-bytes-restored");
+  assert.equal(result.projectLocation.nativeBindingTransferred, false);
+  assert.equal(result.projectLocation.executionReplayAllowed, false);
+  for (const repair of result.projectLocation.byteRepair.applied) {
+    assert.deepEqual(fs.readFileSync(path.join(f.moved, repair.backup)), f.observed.get(repair.path));
+  }
+  assert.equal(inspectProject(f.moved).status, "ready");
+});
+
+test("newline relocation refuses edited, missing and invalid owner inputs without repair", async (t) => {
+  for (const kind of ["edited", "missing", "runtime", "session", "lost-binding", "package"])
+    await t.test(kind, async (t) => {
+      const f = await newlineRelocationFixture(t);
+      const options = { root: f.moved, pluginRoot };
+      const role = path.join(f.moved, ".lode/roles/developer.md");
+      if (kind === "edited") fs.appendFileSync(role, "user edit\r\n");
+      if (kind === "missing") fs.unlinkSync(role);
+      if (kind === "runtime") options.runtimes = ["claude"];
+      if (kind === "session") options.projectSessionRoute = { sessionId: "session-00000000-0000-0000-0000-000000000000" };
+      if (kind === "lost-binding") {
+        const context = createSessionCallContext();
+        context.lose(f.moved);
+        options.projectSessionRoute = { context };
+      }
+      if (kind === "package") {
+        options.pluginRoot = path.join(f.base, "invalid-plugin");
+        fs.mkdirSync(path.join(options.pluginRoot, ".codex-plugin"), { recursive: true });
+        fs.writeFileSync(path.join(options.pluginRoot, "package.json"), '{"version":"synthetic"}');
+        fs.writeFileSync(path.join(options.pluginRoot, ".codex-plugin/plugin.json"), '{"version":""}');
+      }
+      const before = snapshot(f.moved);
+      await assert.rejects(initializeOrResumeProject(options));
+      assert.deepEqual(snapshot(f.moved), before);
+    });
+});
+
 test("copy origin inspection separates an unproved origin from damaged declared history without granting ownership", async (t) => {
   for (const directory of [".head", ".lode"])
     await t.test(directory, () => {
