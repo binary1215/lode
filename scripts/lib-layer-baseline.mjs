@@ -5,7 +5,10 @@
 // test/lib-layers.test.mjs fails on a new upward import, on a new static cycle,
 // and on a recorded entry that no longer exists. Regenerate the file with
 // `node scripts/lib-layer-baseline.mjs --write` after removing an upward
-// import; `--check` compares without writing.
+// import; `--check` compares without writing. Imports are found by text: static
+// import/export declarations, import("literal") and require("literal"). A
+// template-literal import() or a new URL(..., import.meta.url) file read is not
+// an import edge here.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

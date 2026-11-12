@@ -22,6 +22,8 @@ const { REASON_CODES, LEGACY_REASON_CODES } = await import(pathToFileURL(path.jo
 
 const kind = (file) => {
   if (file === "scripts/lib/core/errors.mjs") return "registry";
+  // The audit report names codes; it must not count itself as documentation.
+  if (file === "docs/reason-code-audit.md") return null;
   if (/^scripts\/(verify-|codemods\/|audit-)/.test(file)) return "test";
   if (/^(scripts|hooks|compat|legacy)\/.*\.(mjs|cjs|js)$/.test(file)) return "code";
   if (/^native\/.*\.go$/.test(file)) return "go";

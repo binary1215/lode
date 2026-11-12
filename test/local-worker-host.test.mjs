@@ -112,8 +112,8 @@ async function fixture(t, { nativeFixtureRoot = nativeRoot } = {}) {
     path.join(installed, "test", "helpers", "codex-proposal-protocol-fixture.mjs"),
   );
   const importLocal = (file) => import(pathToFileURL(path.join(installed, "scripts", file)).href);
-  const host = await importLocal("lib/local-worker-host.mjs"),
-    jobs = await importLocal("lib/bounded-worker-job.mjs");
+  const host = await importLocal("lib/worker/local-worker-host.mjs"),
+    jobs = await importLocal("lib/worker/bounded-worker-job.mjs");
   const cliModule = await importLocal("head.mjs"),
     mcpModule = await importLocal("mcp-server.mjs");
   const cli = {
@@ -208,7 +208,7 @@ test("selected-only global instructions report a scoped limitation without provi
       });
   const before = snapshot(f.root),
     events = [];
-  const { formatCliResult, formatMcpToolContent } = await f.importLocal("lib/cli-presentation.mjs");
+  const { formatCliResult, formatMcpToolContent } = await f.importLocal("lib/session/cli-presentation.mjs");
   for (const contextMode of ["fresh", "native-prefix"]) {
     const cli = await f.cli.runCommand(
       [
@@ -430,8 +430,8 @@ test("reviewer source-change regression: same member safely reprepares and concu
   const before = fs.readFileSync(path.join(f.root, f.layout.directory, "sessions/current.json"));
   const first = await f.host.prepareLocalBoundedWorker(f.input, options);
   f.prepared.push(first);
-  const lifecycle = await f.importLocal("lib/runtime-invocation-lifecycle.mjs"),
-    leases = await f.importLocal("lib/runtime-execution-lease.mjs");
+  const lifecycle = await f.importLocal("lib/runtime/runtime-invocation-lifecycle.mjs"),
+    leases = await f.importLocal("lib/runtime/runtime-execution-lease.mjs");
   const prior = lifecycle.readRuntimeInvocationAuthorization({ root: f.root, authorizationId: first.authorizationId }).authorization;
   assert.equal(
     leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: prior.projectId, authorizationId: prior.authorizationId }).singleUseConsumed,
@@ -474,8 +474,8 @@ test("reviewer reselection regression: newly present target can join explicit re
   const before = fs.readFileSync(path.join(f.root, f.layout.directory, "sessions/current.json"));
   const first = await f.host.prepareLocalBoundedWorker(f.input, options);
   f.prepared.push(first);
-  const lifecycle = await f.importLocal("lib/runtime-invocation-lifecycle.mjs"),
-    leases = await f.importLocal("lib/runtime-execution-lease.mjs");
+  const lifecycle = await f.importLocal("lib/runtime/runtime-invocation-lifecycle.mjs"),
+    leases = await f.importLocal("lib/runtime/runtime-execution-lease.mjs");
   const prior = lifecycle.readRuntimeInvocationAuthorization({ root: f.root, authorizationId: first.authorizationId }).authorization;
   fs.writeFileSync(path.join(f.root, "target.txt"), "user-created current preimage\n");
   await assert.rejects(f.host.prepareLocalBoundedWorker(f.input, options), { code: "INVALID_WORKER_PATCH_PROPOSAL" });
@@ -586,8 +586,8 @@ test("read reselection recovers publication and revisiting an old selection link
   f.prepared.push(revisited);
   assert.notEqual(revisited.authorizationId, first.authorizationId);
   assert.notEqual(revisited.authorizationId, next.authorizationId);
-  const lifecycle = await f.importLocal("lib/runtime-invocation-lifecycle.mjs"),
-    leases = await f.importLocal("lib/runtime-execution-lease.mjs");
+  const lifecycle = await f.importLocal("lib/runtime/runtime-invocation-lifecycle.mjs"),
+    leases = await f.importLocal("lib/runtime/runtime-execution-lease.mjs");
   assert.equal(
     lifecycle.reconcileWorkerMember({ root: f.root, taskKey: f.input.taskKey }).authorization.workerInput.previousAuthorizationId,
     next.authorizationId,
@@ -623,7 +623,7 @@ test("public preparation recovers a proven dead unconsumed owner without changin
     options = { root: f.root, protocolFixtureBackend: f.backend };
   const first = await f.host.prepareLocalBoundedWorker(f.input, options);
   f.prepared.push(first);
-  const lifecycle = await f.importLocal("lib/runtime-invocation-lifecycle.mjs");
+  const lifecycle = await f.importLocal("lib/runtime/runtime-invocation-lifecycle.mjs");
   const authorization = lifecycle.readRuntimeInvocationAuthorization({ root: f.root, authorizationId: first.authorizationId }).authorization;
   const moduleUrl = pathToFileURL(path.join(f.installed, "scripts/lib/runtime/runtime-execution-lease.mjs")).href;
   const script = `const {withRuntimeExecutionLease,createRuntimePreConsumeGateCapability}=await import(process.argv[1]);
@@ -710,7 +710,7 @@ test("public reprepare uses existing verified never-started evidence for a chang
     options = { root: f.root, protocolFixtureBackend: f.backend };
   const first = await f.host.prepareLocalBoundedWorker(f.input, options);
   f.prepared.push(first);
-  const lifecycle = await f.importLocal("lib/runtime-invocation-lifecycle.mjs");
+  const lifecycle = await f.importLocal("lib/runtime/runtime-invocation-lifecycle.mjs");
   const prior = lifecycle.readRuntimeInvocationAuthorization({ root: f.root, authorizationId: first.authorizationId }).authorization;
   await assert.rejects(
     lifecycle.runRuntimeLifecycleConformance({
@@ -741,8 +741,8 @@ for (const reselect of [false, true])
         options = { root: f.root, protocolFixtureBackend: f.backend };
       const first = await f.host.prepareLocalBoundedWorker(f.input, options);
       f.prepared.push(first);
-      const lifecycle = await f.importLocal("lib/runtime-invocation-lifecycle.mjs"),
-        leases = await f.importLocal("lib/runtime-execution-lease.mjs");
+      const lifecycle = await f.importLocal("lib/runtime/runtime-invocation-lifecycle.mjs"),
+        leases = await f.importLocal("lib/runtime/runtime-execution-lease.mjs");
       const authorization = lifecycle.readRuntimeInvocationAuthorization({ root: f.root, authorizationId: first.authorizationId }).authorization;
       let ready, release;
       const reached = new Promise((resolve) => {
@@ -1046,7 +1046,7 @@ test("public partial launch stays open and can be abandoned without success or P
   assert.equal((await f.publicMcp("head_bounded_worker_wave_abandon", abandonment)).status, "abandoned");
   assert.equal((await f.publicMcp("head_bounded_worker_wave_abandon", abandonment)).status, "existing");
   assert.equal((await f.publicMcp("head_bounded_worker_wave_status", { wave_id })).projection.state, "abandoned");
-  const leases = await f.importLocal("lib/runtime-execution-lease.mjs");
+  const leases = await f.importLocal("lib/runtime/runtime-execution-lease.mjs");
   const authorization = JSON.parse(
     fs.readFileSync(path.join(f.root, f.layout.directory, "runtime/execution-authorizations", f.prepared[1].authorizationId + ".json")),
   );
@@ -1069,7 +1069,7 @@ test("fresh public frontends restore HEAD direction and rediscover completed and
     authorization_id = held.authorizationId;
   const pending = await f.publicMcp("head_bounded_worker_job_status", { authorization_id });
   assert.equal(pending.ownerExitObserved, false);
-  const leases = await f.importLocal("lib/runtime-execution-lease.mjs");
+  const leases = await f.importLocal("lib/runtime/runtime-execution-lease.mjs");
   const authorization = JSON.parse(fs.readFileSync(path.join(f.root, f.layout.directory, "runtime/execution-authorizations", authorization_id + ".json")));
   const lease = () => leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization_id });
   assert.equal(lease().singleUseConsumed, true);
@@ -1125,7 +1125,7 @@ test(
       if (!markers.length) await pause();
     }
     assert.equal(markers.length, 1, "Observed one real synthetic provider turn before crash");
-    const leases = await f.importLocal("lib/runtime-execution-lease.mjs");
+    const leases = await f.importLocal("lib/runtime/runtime-execution-lease.mjs");
     const lease = () => leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization_id });
     assert.equal(lease().singleUseConsumed, true);
     assert.equal(fs.existsSync(path.join(directory, "terminal.json")), false);

@@ -1,6 +1,7 @@
 # Reason code audit
 
-Surveyed: 2026-11-12, on 0.3.0-beta.114 (`main` 2485fc7).
+Surveyed: 2026-11-12, on 0.3.0-beta.115 (`main` b466613). The script does not
+count this report itself.
 
 This audit counts, for every reason code in `REASON_CODES`
 (`scripts/lib/core/errors.mjs`), what uses the code itself rather than its
@@ -38,16 +39,16 @@ candidate to check, not a proven unused one.
 | Measure | Codes |
 | --- | --- |
 | Listed in `REASON_CODES` | 2,721 |
-| Consumed in shipped code or Go | 355 |
-| — compared directly | 184 |
+| Consumed in shipped code or Go | 356 |
+| — compared directly | 185 |
 | — covered by a prefix branch | 20 |
 | — only keyed in a map | 5 |
 | — only listed in an array or `Set` | 145 |
 | — named in Go sources | 17 |
 | Documented in English docs or skills | 28 (8 in skills) |
 | Asserted by tests or verifiers | 832 |
-| **Quiet** | **2,352** (86%) |
-| — quiet but asserted by a test | 619 |
+| **Quiet** | **2,351** (86%) |
+| — quiet but asserted by a test | 618 |
 | — quiet and never asserted | 1,733 |
 | With a legacy `HEAD_*` spelling still carried | 121 |
 
@@ -73,7 +74,7 @@ The area is the code's first word. Areas with at least 20 codes:
 | `INVALID_*` | 576 | 60 | 4 | 515 | 100 |
 | `NATIVE_*` | 252 | 40 | 3 | 209 | 61 |
 | `CODEX_*` | 180 | 13 | 0 | 167 | 69 |
-| `PROJECT_*` | 137 | 20 | 3 | 116 | 29 |
+| `PROJECT_*` | 137 | 21 | 3 | 115 | 28 |
 | `RUNTIME_*` | 92 | 10 | 1 | 82 | 29 |
 | `ARCADEDB_*` | 83 | 12 | 0 | 71 | 15 |
 | `DOCUMENT_*` | 78 | 5 | 1 | 72 | 9 |
@@ -97,7 +98,7 @@ The area is the code's first word. Areas with at least 20 codes:
 | `RUN_*` | 30 | 1 | 1 | 29 | 14 |
 | `CONFORMANCE_*` | 27 | 5 | 1 | 22 | 8 |
 | `PREPARED_*` | 27 | 3 | 0 | 24 | 8 |
-| `TEMPORAL_*` | 27 | 2 | 0 | 25 | 8 |
+| `TEMPORAL_*` | 27 | 2 | 0 | 25 | 7 |
 | `BOUNDED_*` | 26 | 6 | 0 | 20 | 8 |
 | `COMPACTION_*` | 25 | 6 | 0 | 19 | 8 |
 | `GC_*` | 22 | 0 | 0 | 22 | 4 |
@@ -113,7 +114,7 @@ Quiet codes by last word:
 | (`INVALID_*` prefix) | 515 |
 | `MISMATCH` | 397 |
 | `INVALID` | 131 |
-| `CONFLICT` | 115 |
+| `CONFLICT` | 114 |
 | `REQUIRED` | 109 |
 | `ERROR` | 86 |
 | `UNAVAILABLE` | 69 |
@@ -147,14 +148,14 @@ These are proposals for the merge decision, not changes. Every candidate keeps
 the human-readable message. Under design 4.6, the old code is still returned in
 a separate response field for two minor versions.
 
-1. **Keep as is.** Keep all 355 consumed codes and the 28 documented ones. Inside
+1. **Keep as is.** Keep all 356 consumed codes and the 28 documented ones. Inside
    the four prefix-branch groups, keep at least the prefix.
 2. **First candidates.** These are the 1,733 quiet codes that no test asserts.
    Group each area's codes by their last word into one area code, for example
    `PRODUCT_*_MISMATCH` → `PRODUCT_MISMATCH` and `CODEX_*_INVALID` →
    `CODEX_INVALID`. No test needs to change; only the registry list and the emit
    sites do.
-3. **Second candidates.** These are the 619 quiet codes that tests assert. They
+3. **Second candidates.** These are the 618 quiet codes that tests assert. They
    are the same kind of grouping, but each test assertion has to move to the area
    code or the old-code field.
 4. **`INVALID_*` (576).** This is the largest family and mostly input or record
