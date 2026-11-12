@@ -1698,7 +1698,7 @@ export const OPERATIONS = Object.freeze([
     tool: {
       name: "lode_conformance_disposition",
       description:
-        "Record a disposition for one exact Finding. Lode may acknowledge/defer with actor=head without user confirmation, but cannot supersede user dispositions or close findings. User dispositions require explicit confirmation. Neither path authorizes execution, mutates Canon, or writes recovery direction.",
+        "Record a disposition for one exact Finding. Lode may acknowledge/defer with actor=lode (legacy alias head) without user confirmation, but cannot supersede user dispositions or close findings. User dispositions require explicit confirmation. Neither path authorizes execution, mutates Canon, or writes recovery direction.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1708,7 +1708,7 @@ export const OPERATIONS = Object.freeze([
           rationale: { type: "string", minLength: 1 },
           defer_until: { anyOf: [{ type: "string", format: "date-time" }, { type: "null" }] },
           resolution_id: { anyOf: [{ type: "string", pattern: "^conformance-resolution-[a-f0-9]{24}$" }, { type: "null" }] },
-          actor: { type: "string", enum: ["user", "head"], default: "user" },
+          actor: { type: "string", enum: ["user", "lode", "head"], default: "user" },
           confirm_user_disposition: { type: "boolean", default: false },
         },
         required: ["project_root", "finding_id", "disposition", "rationale"],

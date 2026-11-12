@@ -25,11 +25,13 @@ Status: implemented provider-neutral P3 candidate evidence, P4 queue and audit v
 
 ## Lode maintenance without another user gate
 
-The existing disposition API accepts `actor: "head"` for `acknowledge` and
-`defer` without `confirmUserDisposition` (MCP: `confirm_user_disposition`).
-Its receipt uses `head-maintenance-evidence-not-user-decision-or-execution-authority`,
-not user provenance. Lode cannot follow any user receipt or close a Finding;
-user dispositions still require confirmation and may supersede Lode maintenance.
+The existing disposition API accepts `actor: "lode"` (legacy alias `"head"`) for
+`acknowledge` and `defer` without `confirmUserDisposition` (MCP:
+`confirm_user_disposition`). Its receipt uses
+`lode-maintenance-evidence-not-user-decision-or-execution-authority` (`head-` in a
+legacy `.head` Project), not user provenance. Lode cannot follow any user receipt
+or close a Finding; user dispositions still require confirmation and may
+supersede Lode maintenance.
 Readers validate the entire author chain, not just individual hashes. Replay
 includes author authority. Queue/read output exposes the author and maintained
 Findings remain visible in the default all-status queue. Maintenance requests

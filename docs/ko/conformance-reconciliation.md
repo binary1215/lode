@@ -25,10 +25,10 @@ coverage나 승인도 바꾸지 않습니다. Lode는 이의가 현재 판단에
 
 ## 사용자 확인 없는 Lode 증거 정리
 
-기존 disposition API는 `actor: "head"`일 때 `acknowledge`와 `defer`를
-`confirmUserDisposition` 없이 허용합니다(MCP: `confirm_user_disposition`).
-영수증 권위는 `head-maintenance-evidence-not-user-decision-or-execution-authority`로
-구분합니다. Lode는 어떤 사용자 영수증도 덮거나 Finding을 닫을 수 없습니다.
+기존 disposition API는 `actor: "lode"`(옛 별칭 `"head"`)일 때 `acknowledge`와
+`defer`를 `confirmUserDisposition` 없이 허용합니다(MCP: `confirm_user_disposition`).
+영수증 권위는 `lode-maintenance-evidence-not-user-decision-or-execution-authority`(옛
+`.head` Project에서는 `head-`)로 구분합니다. Lode는 어떤 사용자 영수증도 덮거나 Finding을 닫을 수 없습니다.
 사용자 처분에는 명시적 확인이 필요하며 Lode 정리를 대체할 수 있습니다.
 조회 시 개별 해시뿐 아니라 작성자 전환 계보도 검증하고, 재시도는 작성 권위를
 포함해 비교합니다. 기본 전체 상태 큐는 정리된 Finding도 작성자와 함께 보여줍니다.

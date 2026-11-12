@@ -22,7 +22,11 @@ import { dispatch as dispatchMcp, operationCatalogTools as mcpTools } from "../s
 import { ingestStructuredObservation } from "../scripts/lib/world/observation-adapter.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { formatReviewOutcome, formatConformanceFinding, formatConformanceQueue } from "../scripts/lib/session/cli-presentation.mjs";
-import { conformanceCanonicalJson, createConformanceDispositionReceipt, CONFORMANCE_MAINTENANCE_AUTHORITY } from "../scripts/lib/runtime/conformance-contract.mjs";
+import {
+  conformanceCanonicalJson,
+  createConformanceDispositionReceipt,
+  CONFORMANCE_MAINTENANCE_AUTHORITY,
+} from "../scripts/lib/runtime/conformance-contract.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const testParent = process.env.HEAD_AGENT_TEST_TMP || os.tmpdir();
@@ -62,6 +66,26 @@ test("Lode maintenance stays visible, preserves user authority, and rejects forg
   assert.equal(row.status, "deferred");
   assert.equal(row.latestDisposition.actor, "lode");
   assert.match(formatConformanceQueue(await inspectConformanceQueue({ root })), /\(lode\)/);
+  // The canonical actor value is in the MCP schema; "head" stays its alias.
+  assert.deepEqual(mcpTools.find((tool) => tool.name === "lode_conformance_disposition").inputSchema.properties.actor.enum, ["user", "lode", "head"]);
+  const lodeActor = await dispatchMcp({
+    jsonrpc: "2.0",
+    id: "lode-maintenance",
+    method: "tools/call",
+    params: {
+      name: "lode_conformance_disposition",
+      arguments: {
+        project_root: root,
+        finding_id: finding.findingId,
+        actor: "lode",
+        disposition: "defer",
+        rationale: "Still not needed for the present task.",
+      },
+    },
+  });
+  assert.equal(lodeActor.error, undefined, JSON.stringify(lodeActor.error));
+  assert.equal(lodeActor.result.isError, undefined);
+  assert.equal((await inspectConformanceQueue({ root })).findings[0].latestDisposition.actor, "lode");
   assert.match(formatConformanceFinding(readConformanceFinding({ root, findingId: finding.findingId })), /without a user response/);
   for (const disposition of ["dismiss", "accept-resolution", "request-code-fix", "request-canon-revision"])
     await assert.rejects(async () => await recordConformanceDisposition({ ...request, disposition }), { code: "CONFORMANCE_MAINTENANCE_ONLY" });
