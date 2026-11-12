@@ -9,6 +9,7 @@ import { SESSION_HOST_REQUEST_HELPER } from "../scripts/lib/session/session-host
 import { createRecoveryBasisMemory } from "../scripts/lib/session/recovery-basis-memory.mjs";
 import { dispatch, entryHoldSession, initHoldSession, tools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
+import { createHeadSession } from "../scripts/lib/session/session-routing.mjs";
 
 // 4-D part (b), user decision 4-2 (a): a Host-verified caller may omit
 // expected_recovery_basis_id on lode_checkpoint_sync. Explicit ids, unverified
@@ -184,7 +185,7 @@ test("a held basis is per logical Session: another Session of the same caller do
   assert.equal(refused.error.data.reasonCode, "RECOVERY_BASIS_NOT_HELD");
 });
 
-test("verified Claude caller (hook-prepared) saves in one call; without the hook preparation it keeps today's behaviour", async (t) => {
+test("verified Claude caller (hook-prepared) saves in one call; without the hook preparation the held basis is never used", async (t) => {
   const { root, environment } = fixture(t);
   const bridge = createNativeSessionHostBridge({ runtime: "claude", environment });
   t.after(() => bridge.dispose());
@@ -216,11 +217,19 @@ test("verified Claude caller (hook-prepared) saves in one call; without the hook
   };
   value(await call("lode_project_initialize_or_resume", {}, "init"));
   value(await call("lode_checkpoint_basis", {}, "basis"));
-  const before = snapshot(root);
-  // No hook preparation: the caller is unverified, so the held basis is not used.
-  const unprepared = await call("lode_checkpoint_sync", direction, "sync-unprepared", false);
-  assert.equal(unprepared.error, undefined);
-  assert.equal(unprepared.result.structuredContent.reasonCode, "NATIVE_SESSION_CALLER_UNAVAILABLE", "unverified: today's behaviour, no held basis");
+  // No hook preparation: the caller is unverified, so the held basis is not used
+  // and nothing is written. With one Session (beta.118) the call reaches the
+  // tool as an unverified MCP caller does, which must name its basis id.
+  let before = snapshot(root);
+  const single = await call("lode_checkpoint_sync", direction, "sync-unprepared-single", false);
+  assert.equal(single.error.data.reasonCode, "INVALID_COMPACTION_INPUT", "unverified: the basis id is required, no held basis");
+  assert.deepEqual(snapshot(root), before);
+  // With a second Session there is a choice to lose: the caller stays unavailable.
+  createHeadSession({ root, purpose: "Second line of work" });
+  before = snapshot(root);
+  const several = await call("lode_checkpoint_sync", direction, "sync-unprepared-several", false);
+  assert.equal(several.error, undefined);
+  assert.equal(several.result.structuredContent.reasonCode, "NATIVE_SESSION_CALLER_UNAVAILABLE", "unverified: no held basis");
   assert.deepEqual(snapshot(root), before);
   assert.equal(value(await call("lode_checkpoint_sync", direction, "sync")).outcome, "created");
 });
