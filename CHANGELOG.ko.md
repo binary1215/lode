@@ -9,6 +9,32 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.118 — 게시 결과는 별도 확인
+
+- 대소문자를 구분하지 않는 파일 시스템에서, 디렉터리 이름이 기록된 Project
+  루트와 대소문자만 다른 루트가 이제 그 Project에 도달합니다(MCP
+  `project_root`, CLI 루트, Host가 훅에 넘기는 `cwd`, OpenCode 플러그인
+  디렉터리). 이전에는 상태 조회가 재배치를 제안했고 다른 작업은
+  `NOT_INITIALIZED`로 답했습니다.
+  - 실제 디스크 철자는 주어진 루트로 Project를 찾지 못했을 때만 확인하며,
+    그때 요청을 기록된 철자로 한 번 더 실행합니다. 주어진 대로 찾은 Project는
+    추가로 읽는 것이 없습니다. 저장된 것은 다시 쓰지 않습니다.
+  - 옮겨진 Project와, 기록된 뒤 대소문자만 바꿔 이름을 바꾼 폴더는 여전히
+    재배치로 보고합니다.
+- Session이 정확히 하나인 Project에서 새 Claude Code 대화는
+  `lode_conversation_enter` 한 번으로 그 Session의 저장된 방향을 받습니다
+  (이전에는 두 번). 연결은 쓰지 않습니다.
+  - SessionStart Hook은 여전히 아무것도 고르지 않고
+    `reasonCode: SINGLE_SESSION_ENTRY_AVAILABLE`과 다음 호출
+    `lode_conversation_enter`를 알려 줍니다. Skill 진입 표에 해당 행이
+    생겼습니다. 시작 맥락은 52자 길어졌습니다.
+  - PreToolUse 훅이 준비하지 못한 Claude Code 호출에도 같게 적용됩니다.
+  - Session이 둘 이상이거나 연결이 lost, pending, corrupt 또는 로컬 미확인
+    상태이면 결과는 그대로이며 사용자가 고릅니다. 연결 없이 답을 받은 대화는
+    두 번째 Session이 생기면 Session을 골라야 합니다.
+- `scripts/audit-metrics.mjs`가 재개 호출 수를 셀 때 각 단계가 돌려준 상태를
+  따라갑니다. `docs/rule-surface-audit.md`를 다시 측정했습니다.
+
 ## 0.3.0-beta.117 — 게시 결과는 별도 확인
 
 - Windows에서 Host가 드라이브 문자가 소문자인 프로젝트 폴더를 넘겨도 대문자로
