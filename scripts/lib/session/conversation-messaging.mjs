@@ -10,6 +10,7 @@ import {
 } from "./conversation-mailbox-storage.mjs";
 import { withLocalMutation } from "../storage/project-mutation-lock.mjs";
 import { resolveProjectStorage } from "../storage/project-storage-format.mjs";
+import { recordedRootSpelling } from "../storage/project-root-spelling.mjs";
 import { claudeChannel, claudeDeliver, claudeLive } from "./conversation-messaging-claude.mjs";
 import { ensureMessagingDirectoryIgnore } from "../storage/project-storage-ignore.mjs";
 import { processExists, processStartId } from "../core/process-exists.mjs";
@@ -979,7 +980,8 @@ export function writeOpenCodeCallerTicket({ root, session, args, environment = p
   if (!identityFromCaller(caller)) return null;
   const project = openProject(root);
   ensureMailbox(project);
-  if (path.resolve(session.directory || root) !== project.root) return null;
+  // The Host directory may differ from the recorded root only in drive-letter case.
+  if (path.resolve(recordedRootSpelling(session.directory || root)) !== project.root) return null;
   const id = crypto.randomBytes(16).toString("hex");
   const body = { digest: argumentDigest(args), projectRoot: project.root, caller, expiresAt: nowMs(now) + CONVERSATION_LIMITS.ticketTtlMs };
   const mac = ticketMac(environment, body);
@@ -1620,7 +1622,11 @@ export async function deliverQueuedOpenCode({
   skipSessionId = null,
   skipSessionIds = null,
 } = {}) {
-  const project = openProject(directory || root);
+  // Lode opens the Project by its recorded spelling; the OpenCode client keeps
+  // the Host directory when only its drive-letter case differs.
+  const given = directory || root,
+    spelled = recordedRootSpelling(given);
+  const project = openProject(spelled);
   const skip = new Set(Array.isArray(skipSessionIds) ? skipSessionIds : []);
   if (skipSessionId) skip.add(skipSessionId);
   const results = [];
@@ -1642,7 +1648,12 @@ export async function deliverQueuedOpenCode({
         if (refused) results.push(refused);
         continue;
       }
-      const attempt = await deliverOpenCodePrompt({ client, directory: project.root, sessionId: record.nativeSessionId, text: renderInjection([message], 0) });
+      const attempt = await deliverOpenCodePrompt({
+        client,
+        directory: spelled === given ? project.root : given,
+        sessionId: record.nativeSessionId,
+        text: renderInjection([message], 0),
+      });
       if (attempt.outcome === "delivered" || attempt.outcome === "sent") {
         const handed = markHanded(project, message, attempt.outcome, attempt.evidence, attempt.receipt ?? null);
         if (handed) results.push(handed);
@@ -1659,7 +1670,7 @@ export async function deliverQueuedOpenCode({
 export function registerOpenCodePresence({ root, session, client, environment = process.env, now = Date.now } = {}) {
   if (!session || !ID.test(session.id || "")) return null;
   try {
-    if (fs.realpathSync(session.directory || root) !== fs.realpathSync(root)) return null;
+    if (fs.realpathSync(recordedRootSpelling(session.directory || root)) !== fs.realpathSync(root)) return null;
   } catch {
     return null;
   }

@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { coreEntryGuidance } from "./lib/session/lode-entry-guidance.mjs";
+import { withRecordedCwd } from "./lib/storage/project-root-spelling.mjs";
 // Node >=24 supports synchronous ESM module loading. Load readers lazily so an
 // End-only Hook does not import recovery/prompt readers; Start awaits storage I/O.
 const require = createRequire(import.meta.url);
@@ -11,6 +12,7 @@ const require = createRequire(import.meta.url);
 // A read-only command Hook renderer. The outer driver may retain P5 observations
 // and exact paired-clear carrier continuity; neither path writes P2 direction.
 export async function sessionStartContext({ runtime, event, environment = process.env } = {}) {
+  event = withRecordedCwd(event);
   if (
     !["codex", "claude"].includes(runtime) ||
     event?.hook_event_name !== "SessionStart" ||
@@ -102,6 +104,9 @@ export async function runSessionHostHook({
   processObserver = null,
   deadlineAt = null,
 } = {}) {
+  // A Host cwd that differs from the recorded Project root only in drive-letter
+  // case reaches that Project (Windows); every hook path below reads event.cwd.
+  event = withRecordedCwd(event);
   const startedAt = Date.now();
   const promptDeadlineAt = Math.min(deadlineAt ?? Infinity, startedAt + 10_000);
   let nativeOutcome;

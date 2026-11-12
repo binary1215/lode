@@ -75,3 +75,11 @@ export function withRecordedProjectRoot(request, options) {
   if (top === outer && nested === outer.arguments) return request;
   return { ...request, params: { ...request.params, arguments: nested === top.arguments ? top : { ...top, arguments: nested } } };
 }
+
+// A Host hook event whose `cwd` (the root a Host hands to every hook) uses the
+// recorded spelling. The event is returned unchanged when nothing differs.
+export function withRecordedCwd(event, options) {
+  if (!event || typeof event !== "object" || typeof event.cwd !== "string") return event;
+  const cwd = recordedRootSpelling(event.cwd, options);
+  return cwd === event.cwd ? event : { ...event, cwd };
+}

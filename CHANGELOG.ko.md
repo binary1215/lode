@@ -9,6 +9,23 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.117 — 게시 결과는 별도 확인
+
+- Windows에서 Host가 드라이브 문자가 소문자인 프로젝트 폴더를 넘겨도 대문자로
+  기록된 Project에 도달합니다. Claude Code와 Codex 훅의 `cwd`(세션 시작
+  컨텍스트, 프롬프트·종료·압축 관측, Codex fork 연결), OpenCode의
+  `directory`(컨텍스트, 관측, 대화 메시지), Claude Code 도구 훅이 넘기는
+  `native_project_root`가 해당합니다. 저장된 것은 다시 쓰지 않으며, 실제로
+  옮겨진 Project는 여전히 재배치로 보고합니다.
+  - 디렉터리 이름의 대소문자는 그대로이며, 아직 Project가 아닌 폴더는 여전히
+    넘겨받은 표기로 비교합니다.
+- 규칙 표면 수치를 출력하는 `scripts/audit-metrics.mjs`를 추가했습니다. 항상
+  읽히는 지침 크기, 금지 표현 수, 도구 수, `tools/list` 크기, 저장·재개·위임에
+  필요한 호출 수를 냅니다. 출력만 하며 한도를 두지 않습니다.
+- `docs/rule-surface-audit.md`와 `docs/original-head-core-comparison.md`를 현재
+  상태에 맞게 다시 썼습니다. 비교는 현재의 원본 저장소를 기준으로 하며, Lode가
+  무엇을 왜 더했는지 기록합니다.
+
 ## 0.3.0-beta.116 — 게시 결과는 별도 확인
 
 - Windows에서 드라이브 문자가 소문자인 MCP `project_root`나 CLI 루트는 대문자로

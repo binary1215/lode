@@ -164,6 +164,7 @@ Thumbs.db
 !test/held-direction-id.test.mjs
 !test/held-recovery-basis.test.mjs
 !test/project-root-drive-case.test.mjs
+!test/host-root-drive-case.test.mjs
 !test/lib-layers.test.mjs
 !test/legacy-reason-codes.test.mjs
 !test/legacy-wire-spellings.test.mjs
@@ -172,3 +173,4 @@ Thumbs.db
 !test/helpers/dispatch-recording-hooks.mjs
 !test/helpers/dispatch-recording-register.mjs
 !test/helpers/dispatch-recording-run.mjs
+!test/audit-metrics.test.mjs

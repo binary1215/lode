@@ -79,6 +79,7 @@
 - [Codex 마켓플레이스 배포](codex-marketplace.md)
 - [Claude Code 마켓플레이스 배포](claude-marketplace.md)
 - [규칙 표면 감사](rule-surface-audit.md)
+- [원본 HEAD Core 비교](original-head-core-comparison.md)
 - [거절 코드 감사](reason-code-audit.md)
 - [MCP 도구 표면과 폐기 예정 이름](mcp-surface.md)
 
@@ -87,7 +88,6 @@
 다음 문서는 이전 설계 비교나 감사를 설명합니다. 위의 현재 실행 가능 계약보다
 우선하지 않습니다.
 
-- [원본 HEAD Core 비교](original-head-core-comparison.md)
 - [Lode-Agent GraphDB Brief v4 요약 및 설계 검토](Lode_GraphDB_Brief_v4.md)
 
 <a id="command-reference"></a>
