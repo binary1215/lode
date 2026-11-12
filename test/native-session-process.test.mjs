@@ -6,9 +6,9 @@ import { spawn } from "node:child_process";
 import childProcess from "node:child_process";
 import crypto from "node:crypto";
 import { syncBuiltinESMExports } from "node:module";
-import { decodeWindowsProcessQueryWire, decodeWindowsCodexInventoryWire, WINDOWS_PROCESS_QUERY_WIRE } from "../scripts/lib/windows-process-query-wire.mjs";
+import { decodeWindowsProcessQueryWire, decodeWindowsCodexInventoryWire, WINDOWS_PROCESS_QUERY_WIRE } from "../scripts/lib/runtime/windows-process-query-wire.mjs";
 import test from "node:test";
-import { observeClaudeProcess, probeClaudeProcesses, probeNativeProcesses } from "../scripts/lib/native-session-process.mjs";
+import { observeClaudeProcess, probeClaudeProcesses, probeNativeProcesses } from "../scripts/lib/session/native-session-process.mjs";
 
 const envToken = "a".repeat(64),
   nativeSessionId = "claude-synthetic-only";

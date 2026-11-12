@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import path from "node:path";
-import { assembleVerifiedNativeBundle } from "./lib/native-artifact-delivery.mjs";
+import { assembleVerifiedNativeBundle } from "./lib/distribution/native-artifact-delivery.mjs";
 
 function option(name, fallback = "") {
   const index = process.argv.indexOf(name);

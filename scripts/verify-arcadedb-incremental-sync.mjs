@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
-import { ArcadeDbGraphProjectionAdapter, ArcadeDbHttpTransport, buildGraphProjectionPointer } from "./lib/graph-projection-adapter.mjs";
-import { buildArcadeDbIncrementalSyncManifest, buildArcadeDbIncrementalSyncReceipt, executeArcadeDbIncrementalSync } from "./lib/arcadedb-incremental-sync.mjs";
-import { buildStorageSelection } from "./lib/onboarding-contract.mjs";
-import { buildTemporalProvenanceGraph } from "./lib/temporal-provenance.mjs";
+import { ArcadeDbGraphProjectionAdapter, ArcadeDbHttpTransport, buildGraphProjectionPointer } from "./lib/world/graph-projection-adapter.mjs";
+import { buildArcadeDbIncrementalSyncManifest, buildArcadeDbIncrementalSyncReceipt, executeArcadeDbIncrementalSync } from "./lib/world/arcadedb-incremental-sync.mjs";
+import { buildStorageSelection } from "./lib/session/onboarding-contract.mjs";
+import { buildTemporalProvenanceGraph } from "./lib/world/temporal-provenance.mjs";
 
 const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -303,7 +303,7 @@ httpContract.applySyncBatch(projectId, initialManifest, nodeBatch);
 assert.match(httpContract.commands.at(-1).command, /INSERT INTO HeadAgentGraphNode/);
 assert.doesNotMatch(httpContract.commands.at(-1).command, /UPSERT|UPDATE HeadAgentGraphNode|COMMIT RETRY/);
 // Legacy/full-topology publication has the same post-read race boundary.
-const transportSource = fs.readFileSync(new URL("./lib/graph-projection-adapter.mjs", import.meta.url), "utf8");
+const transportSource = fs.readFileSync(new URL("./lib/world/graph-projection-adapter.mjs", import.meta.url), "utf8");
 assert.doesNotMatch(transportSource, /UPDATE \$\{ARCADEDB_NODE_TYPE\}.*UPSERT/);
 const parallelPairs = new Map();
 for (const edge of baseGraph.edges) {
@@ -321,7 +321,7 @@ const edgeCommand = httpContract.commands.at(-1);
 assert.equal(edgeCommand.operation, "command");
 assert.equal(edgeCommand.command.includes("IF NOT EXISTS"), false);
 
-const bridgeSource = fs.readFileSync(new URL("./lib/arcadedb-http-bridge.mjs", import.meta.url), "utf8");
+const bridgeSource = fs.readFileSync(new URL("./lib/world/arcadedb-http-bridge.mjs", import.meta.url), "utf8");
 assert.equal(bridgeSource.includes("process.exit(response.ok ? 0 : 3)"), false);
 assert.equal(bridgeSource.includes("process.exitCode = response.ok ? 0 : 3"), true);
 

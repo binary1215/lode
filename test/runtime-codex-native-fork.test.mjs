@@ -5,19 +5,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
-import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime-protocol-evidence.mjs";
-import { buildRuntimeInvocationAuthorization, prepareRuntimeInvocationExecution } from "../scripts/lib/runtime-invocation-lifecycle.mjs";
-import { createBoundedWorkerDispatch } from "../scripts/lib/bounded-worker-dispatch.mjs";
-import { captureWorkerSourceBasis } from "../scripts/lib/worker-source-basis.mjs";
-import { prepareWorkerWorkspace, workerExecutionBoundary } from "../scripts/lib/worker-workspace.mjs";
-import { RUNTIME_OPERATIONAL_STATE_ENV, inspectRuntimeExecutionLease } from "../scripts/lib/runtime-execution-lease.mjs";
-import { readRuntimeOutputSpool } from "../scripts/lib/runtime-output-spool.mjs";
-import { readRuntimeInvocationRecord } from "../scripts/lib/runtime-invocation-record.mjs";
-import { resolveVerifiedProcessSupervisor, spawnSupervisedProcess, verifyRuntimeProcessSupervisorHandle } from "../scripts/lib/runtime-process-supervisor.mjs";
-import { executeCodexRuntimeInvocation } from "../scripts/lib/runtime-codex-exec.mjs";
-import { buildCodexWorkerPolicyPlan, createCodexWorkerPolicyHost, bindCodexWorkerPolicyCapability } from "../scripts/lib/runtime-codex-worker-policy.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime/runtime-protocol-evidence.mjs";
+import { buildRuntimeInvocationAuthorization, prepareRuntimeInvocationExecution } from "../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
+import { createBoundedWorkerDispatch } from "../scripts/lib/worker/bounded-worker-dispatch.mjs";
+import { captureWorkerSourceBasis } from "../scripts/lib/worker/worker-source-basis.mjs";
+import { prepareWorkerWorkspace, workerExecutionBoundary } from "../scripts/lib/worker/worker-workspace.mjs";
+import { RUNTIME_OPERATIONAL_STATE_ENV, inspectRuntimeExecutionLease } from "../scripts/lib/runtime/runtime-execution-lease.mjs";
+import { readRuntimeOutputSpool } from "../scripts/lib/runtime/runtime-output-spool.mjs";
+import { readRuntimeInvocationRecord } from "../scripts/lib/runtime/runtime-invocation-record.mjs";
+import { resolveVerifiedProcessSupervisor, spawnSupervisedProcess, verifyRuntimeProcessSupervisorHandle } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
+import { executeCodexRuntimeInvocation } from "../scripts/lib/runtime/runtime-codex-exec.mjs";
+import { buildCodexWorkerPolicyPlan, createCodexWorkerPolicyHost, bindCodexWorkerPolicyCapability } from "../scripts/lib/runtime/runtime-codex-worker-policy.mjs";
 import {
   createCodexNativeForkHost,
   inspectCodexNativeForkHost,
@@ -26,7 +26,7 @@ import {
   extractCodexNativeForkResult,
   createCodexNativeForkOwnedTransport,
   CODEX_NATIVE_FORK_ACTUAL_UNAVAILABLE,
-} from "../scripts/lib/runtime-codex-native-fork.mjs";
+} from "../scripts/lib/runtime/runtime-codex-native-fork.mjs";
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const copy = (value) => structuredClone(value);

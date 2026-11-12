@@ -1,4 +1,4 @@
-import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
+import { relativeProjectArtifact } from "../scripts/lib/storage/project-storage-format.mjs";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
@@ -7,20 +7,20 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/execution-lineage.mjs";
-import { startRun, getPendingReviewContext, reviewRun } from "../scripts/lib/run-lineage.mjs";
-import { integrateReviewedRunCheckpoint, restoreSessionFromArtifacts } from "../scripts/lib/session-recovery.mjs";
-import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
-import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime-protocol-evidence.mjs";
-import { buildRuntimeInvocationAuthorization } from "../scripts/lib/runtime-invocation-lifecycle.mjs";
-import { captureWorkerSourceBasis } from "../scripts/lib/worker-source-basis.mjs";
-import { captureWorkerWriteBasis } from "../scripts/lib/worker-patch-basis.mjs";
-import { prepareWorkerWorkspace } from "../scripts/lib/worker-workspace.mjs";
-import { workerPatchProposalExecutionBoundary } from "../scripts/lib/worker-patch-proposal.mjs";
-import { buildCodexFreshProposalPolicyPlan } from "../scripts/lib/runtime-codex-proposal-policy.mjs";
-import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime-process-supervisor.mjs";
-import { RUNTIME_OPERATIONAL_STATE_ENV, inspectRuntimeExecutionLease } from "../scripts/lib/runtime-execution-lease.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { startRun, getPendingReviewContext, reviewRun } from "../scripts/lib/runtime/run-lineage.mjs";
+import { integrateReviewedRunCheckpoint, restoreSessionFromArtifacts } from "../scripts/lib/session/session-recovery.mjs";
+import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime/runtime-protocol-evidence.mjs";
+import { buildRuntimeInvocationAuthorization } from "../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
+import { captureWorkerSourceBasis } from "../scripts/lib/worker/worker-source-basis.mjs";
+import { captureWorkerWriteBasis } from "../scripts/lib/worker/worker-patch-basis.mjs";
+import { prepareWorkerWorkspace } from "../scripts/lib/worker/worker-workspace.mjs";
+import { workerPatchProposalExecutionBoundary } from "../scripts/lib/worker/worker-patch-proposal.mjs";
+import { buildCodexFreshProposalPolicyPlan } from "../scripts/lib/runtime/runtime-codex-proposal-policy.mjs";
+import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
+import { RUNTIME_OPERATIONAL_STATE_ENV, inspectRuntimeExecutionLease } from "../scripts/lib/runtime/runtime-execution-lease.mjs";
 import {
   createBoundedWorkerJobHost,
   startBoundedWorkerJob,
@@ -28,11 +28,11 @@ import {
   readBoundedWorkerPatch,
   cancelBoundedWorkerJob,
   reconcileBoundedWorkerJob,
-} from "../scripts/lib/bounded-worker-job.mjs";
-import { operateWorkerIntegration, inspectWorkerIntegration } from "../scripts/lib/worker-integration-workflow.mjs";
-import { readWorkerPatchIntegration } from "../scripts/lib/worker-patch-integration.mjs";
-import { applyWorkerPatchIntegration } from "../scripts/lib/worker-integration-application.mjs";
-import { readWorkerIntegrationBasis } from "../scripts/lib/worker-integration-basis.mjs";
+} from "../scripts/lib/worker/bounded-worker-job.mjs";
+import { operateWorkerIntegration, inspectWorkerIntegration } from "../scripts/lib/worker/worker-integration-workflow.mjs";
+import { readWorkerPatchIntegration } from "../scripts/lib/worker/worker-patch-integration.mjs";
+import { applyWorkerPatchIntegration } from "../scripts/lib/worker/worker-integration-application.mjs";
+import { readWorkerIntegrationBasis } from "../scripts/lib/worker/worker-integration-basis.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const supervisorRoot = process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT;

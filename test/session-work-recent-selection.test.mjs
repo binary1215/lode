@@ -1,4 +1,4 @@
-import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
+import { relativeProjectArtifact } from "../scripts/lib/storage/project-storage-format.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -6,9 +6,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { createHeadSession, sessionStatePath, withSessionRoute } from "../scripts/lib/session-routing.mjs";
-import { enterConversationRecovery } from "../scripts/lib/compaction-lifecycle.mjs";
-import { normalizeSessionWorkEvidence, recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session-work-context.mjs";
+import { createHeadSession, sessionStatePath, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
+import { enterConversationRecovery } from "../scripts/lib/session/compaction-lifecycle.mjs";
+import { normalizeSessionWorkEvidence, recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session/session-work-context.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const sha = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");

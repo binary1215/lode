@@ -6,17 +6,17 @@ import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
-import { createGoWorkerManifest } from "./lib/go-worker-adapter.mjs";
+import { createGoWorkerManifest } from "./lib/worker/go-worker-adapter.mjs";
 import {
   createProcessSupervisorManifest,
   PROCESS_SUPERVISOR_MANIFEST_VERSION,
   PROCESS_SUPERVISOR_INTERACTIVE_PROTOCOL_VERSION,
-} from "./lib/runtime-process-supervisor.mjs";
-import { createArcadeDbNativeBridgeManifest } from "./lib/arcadedb-native-bridge.mjs";
-import { acquireVerifiedNativeArtifact, assembleVerifiedNativeBundle, verifyNativeBundleOverlay } from "./lib/native-artifact-delivery.mjs";
-import { installDistribution, inspectDistribution, uninstallDistribution } from "./lib/distribution-lifecycle.mjs";
-import { buildCodexMarketplaceSnapshot, verifyCodexMarketplaceSnapshot } from "./lib/codex-marketplace.mjs";
-import { buildClaudeMarketplaceSnapshot, verifyClaudeMarketplaceSnapshot } from "./lib/claude-marketplace.mjs";
+} from "./lib/runtime/runtime-process-supervisor.mjs";
+import { createArcadeDbNativeBridgeManifest } from "./lib/world/arcadedb-native-bridge.mjs";
+import { acquireVerifiedNativeArtifact, assembleVerifiedNativeBundle, verifyNativeBundleOverlay } from "./lib/distribution/native-artifact-delivery.mjs";
+import { installDistribution, inspectDistribution, uninstallDistribution } from "./lib/distribution/distribution-lifecycle.mjs";
+import { buildCodexMarketplaceSnapshot, verifyCodexMarketplaceSnapshot } from "./lib/distribution/codex-marketplace.mjs";
+import { buildClaudeMarketplaceSnapshot, verifyClaudeMarketplaceSnapshot } from "./lib/distribution/claude-marketplace.mjs";
 import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");

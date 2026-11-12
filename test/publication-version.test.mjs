@@ -4,9 +4,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { buildCodexMarketplaceSnapshot } from "../scripts/lib/codex-marketplace.mjs";
-import { buildClaudeMarketplaceSnapshot } from "../scripts/lib/claude-marketplace.mjs";
-import { BUILD_RECIPE, RELEASE_ASSETS, comparePublicationVersions, decideMarketplacePublication, decideReleasePublication, logicalPublicationDigest, publicationGithub, readPublicationSnapshot } from "../scripts/lib/publication-version.mjs";
+import { buildCodexMarketplaceSnapshot } from "../scripts/lib/distribution/codex-marketplace.mjs";
+import { buildClaudeMarketplaceSnapshot } from "../scripts/lib/distribution/claude-marketplace.mjs";
+import { BUILD_RECIPE, RELEASE_ASSETS, comparePublicationVersions, decideMarketplacePublication, decideReleasePublication, logicalPublicationDigest, publicationGithub, readPublicationSnapshot } from "../scripts/lib/distribution/publication-version.mjs";
 import { previousPublicationRepository, readPreviousPublication } from "../legacy/marketplace-ownership/publication.mjs";
 
 const sourceRoot = path.resolve(import.meta.dirname, "..");
@@ -83,7 +83,7 @@ test("four real provider/identity snapshots are separately verified, read-only a
       assert.equal(snapshot.sourceCommit, a);
       assert.equal(snapshot.pluginName, `${identity}-agent-core`);
       assert.ok(snapshot.files.some(file => file.path.startsWith("native/") && file.path.endsWith(".go")));
-      for (const excluded of ["scripts/verify-publication-version.mjs", "scripts/lib/publication-version.mjs", "legacy/marketplace-ownership/publication.mjs"]) {
+      for (const excluded of ["scripts/verify-publication-version.mjs", "scripts/lib/distribution/publication-version.mjs", "legacy/marketplace-ownership/publication.mjs"]) {
         assert.equal(snapshot.files.some(file => file.path === excluded), false);
         assert.equal(fs.existsSync(path.join(root, "plugins", snapshot.pluginName, excluded)), false);
       }

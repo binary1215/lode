@@ -50,7 +50,7 @@ become an additional source of product meaning or recovery direction.
 | P4 Derived Relation/View | reproducible retrieval and human-facing views | ProjectGraphDiscoveryProjection, ProjectGraphObservationIndex, GraphSnapshot, GraphDB projection, TraversalResult, GraphLineageStatusProjection/TraceProjection/DiffProjection, MeasurementLineageProjection, DeliveryStateProjection, Markdown/Document projection, LodeContinuitySnapshot, SessionRestoreProjection, RecoveryCheckpointDiagnosisProjection, WorkerWaveStatusProjection/ResultProjection, ObservationStatusProjection, ObservationSourceDiscoveryProjection, ObservationPreparationProjection, ConformancePreparationProjection/QueueProjection/FindingGraphProjection/TriggerBatchProjection | a projection cannot mutate Canon, grant instruction authority, or be the only recovery source |
 | P5 Operational Effect | host-local process, continuation, wait, and delivery effects | PID, token, proof, lease, endpoint, inbox, delivery receipt, ContinuationOutcome, BoundedWorkerWaitOutcome, BoundedWorkerWaveWaitOutcome, ObservationSourceBinding, ConformanceTriggerBinding, provider-session reference | successful continuation, waiting, delivery, or process control cannot authorize execution, review, promotion, or recovery |
 
-`scripts/lib/authority-plane-contract.mjs` emits one content-derived
+`scripts/lib/core/authority-plane-contract.mjs` emits one content-derived
 `AuthorityPlaneContract`, assigns the implemented artifacts above to exact planes,
 and verifies embedded artifact boundaries. These are semantic classes rather than
 a persistence hierarchy: P2 is authoritative for recovery but does not own P1

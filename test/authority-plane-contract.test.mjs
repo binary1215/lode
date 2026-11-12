@@ -10,16 +10,16 @@ import {
   assertReceiptProjectedOnlyInChild,
   authorityPlaneContract,
   verifyArtifactAuthorityBoundary,
-} from "../scripts/lib/authority-plane-contract.mjs";
+} from "../scripts/lib/core/authority-plane-contract.mjs";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
 import {
   ActivatedArcadeDbGraphProjectionAdapter,
   InMemoryGraphProjectionAdapter,
   LocalJsonGraphProjectionAdapter,
   materializeGraphProjection,
-} from "../scripts/lib/graph-projection-adapter.mjs";
-import { withProjectMutation } from "../scripts/lib/project-mutation-lock.mjs";
-import { buildWorldModel } from "../scripts/lib/world-model.mjs";
+} from "../scripts/lib/world/graph-projection-adapter.mjs";
+import { withProjectMutation } from "../scripts/lib/storage/project-mutation-lock.mjs";
+import { buildWorldModel } from "../scripts/lib/world/world-model.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { readPublicationSnapshot } from "../../scripts/lib/publication-version.mjs";
+import { readPublicationSnapshot } from "../../scripts/lib/distribution/publication-version.mjs";
 import { verifyHistoricalMarketplaceOwnership } from "./verify.mjs";
 
 const renamePins = { codex: "d0b9b6bee9e6aaed5c76de1c881520067d61e985", claude: "d22c0e04a8bcaf83814f452fb69ae99a13de8f0a" };

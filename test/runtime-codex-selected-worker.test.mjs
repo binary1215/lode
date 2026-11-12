@@ -5,33 +5,33 @@ import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import test from "node:test";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
-import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime-protocol-evidence.mjs";
-import { buildRuntimeInvocationAuthorization, prepareRuntimeInvocationExecution } from "../scripts/lib/runtime-invocation-lifecycle.mjs";
-import { captureWorkerSourceBasis } from "../scripts/lib/worker-source-basis.mjs";
-import { captureWorkerWriteBasis } from "../scripts/lib/worker-patch-basis.mjs";
-import { prepareWorkerWorkspace, workerExecutionBoundary } from "../scripts/lib/worker-workspace.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime/runtime-protocol-evidence.mjs";
+import { buildRuntimeInvocationAuthorization, prepareRuntimeInvocationExecution } from "../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
+import { captureWorkerSourceBasis } from "../scripts/lib/worker/worker-source-basis.mjs";
+import { captureWorkerWriteBasis } from "../scripts/lib/worker/worker-patch-basis.mjs";
+import { prepareWorkerWorkspace, workerExecutionBoundary } from "../scripts/lib/worker/worker-workspace.mjs";
 import {
   buildCodexWorkerPolicyPlan,
   bindCodexWorkerPolicyCapability,
   createCodexWorkerPolicyHost,
   withCodexWorkerPolicyCapability,
   inspectCodexWorkerPolicyCapability,
-} from "../scripts/lib/runtime-codex-worker-policy.mjs";
-import { executeCodexRuntimeInvocation } from "../scripts/lib/runtime-codex-exec.mjs";
-import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime-process-supervisor.mjs";
-import { RUNTIME_OPERATIONAL_STATE_ENV, inspectRuntimeExecutionLease } from "../scripts/lib/runtime-execution-lease.mjs";
-import { readRuntimeInvocationRecord } from "../scripts/lib/runtime-invocation-record.mjs";
+} from "../scripts/lib/runtime/runtime-codex-worker-policy.mjs";
+import { executeCodexRuntimeInvocation } from "../scripts/lib/runtime/runtime-codex-exec.mjs";
+import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
+import { RUNTIME_OPERATIONAL_STATE_ENV, inspectRuntimeExecutionLease } from "../scripts/lib/runtime/runtime-execution-lease.mjs";
+import { readRuntimeInvocationRecord } from "../scripts/lib/runtime/runtime-invocation-record.mjs";
 import {
   createBoundedWorkerJobHost,
   startBoundedWorkerJob,
   readBoundedWorkerJob,
   cancelBoundedWorkerJob,
   reconcileBoundedWorkerJob,
-} from "../scripts/lib/bounded-worker-job.mjs";
+} from "../scripts/lib/worker/bounded-worker-job.mjs";
 import { connectCodexWorkerHost } from "./helpers/codex-selected-fixture-host.mjs";
-import runCodexWorker from "../scripts/lib/runtime-codex-worker-runner.mjs";
+import runCodexWorker from "../scripts/lib/runtime/runtime-codex-worker-runner.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const hostModuleFile = path.join(import.meta.dirname, "helpers", "codex-selected-fixture-host.mjs");

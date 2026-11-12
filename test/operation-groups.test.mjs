@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { catalogTools, discoverTools, dispatch, operationCatalogTools, tools, toolsForSurface } from "../scripts/mcp-server.mjs";
-import { resolveOperation } from "../scripts/lib/lode-operation-contract.mjs";
+import { resolveOperation } from "../scripts/lib/core/lode-operation-contract.mjs";
 import {
   DEPRECATED_ALIAS_REMOVAL_VERSION,
   OPERATION_GROUPS,
@@ -11,7 +11,7 @@ import {
   groupMembership,
   operationGroup,
   resolveGroupedCall,
-} from "../scripts/lib/operation-groups.mjs";
+} from "../scripts/lib/core/operation-groups.mjs";
 import { legacyOperationName } from "../compat/head/public-names.mjs";
 import { generateMcpSurfaceDocs } from "../scripts/generate-mcp-surface-docs.mjs";
 

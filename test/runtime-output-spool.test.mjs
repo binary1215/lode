@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
-import { openRuntimeOutputSpool, readRuntimeOutputSpool } from "../scripts/lib/runtime-output-spool.mjs";
+import { openRuntimeOutputSpool, readRuntimeOutputSpool } from "../scripts/lib/runtime/runtime-output-spool.mjs";
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 function fixture(t) {
@@ -47,7 +47,7 @@ test("provider bytes survive before terminal and are never inferred complete", (
 test("replacement reader retains fsynced bytes after writer exits without a terminal", (t) => {
   const { options } = fixture(t);
   const script = `
-    import { openRuntimeOutputSpool } from ${JSON.stringify(new URL("../scripts/lib/runtime-output-spool.mjs", import.meta.url).href)};
+    import { openRuntimeOutputSpool } from ${JSON.stringify(new URL("../scripts/lib/runtime/runtime-output-spool.mjs", import.meta.url).href)};
     process.stdout.write(JSON.stringify({ pid: process.pid, parentPid: process.ppid, cwd: process.cwd(), ports: [] }) + '\\n');
     const spool = openRuntimeOutputSpool(JSON.parse(process.argv[1]));
     spool.append('stdout', Buffer.from('durable partial provider event\\n'));

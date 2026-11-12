@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { publicToolName } from "../scripts/lib/lode-artifact-composition.mjs";
-import { inertTerminalText } from "../scripts/lib/terminal-graph.mjs";
+import { inertTerminalText } from "../scripts/lib/world/terminal-graph.mjs";
 
 test("cleanup presentation separates zero success, yield, unsupported, preserved and partial without changing raw outcomes", () => {
   const cases = [
@@ -68,7 +68,7 @@ import {
   formatReviewOutcome,
   formatSessionRestore,
   formatSessionWorkContext,
-} from "../scripts/lib/cli-presentation.mjs";
+} from "../scripts/lib/session/cli-presentation.mjs";
 
 function repeatedWorkFixture() {
   const common = {

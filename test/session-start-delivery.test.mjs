@@ -3,11 +3,11 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { sessionStartContext } from "../scripts/session-host-hook.mjs";
-import { startupProjection as format, COMPACT_SCOPE as compactScope } from "../scripts/lib/session-host-context-projection.mjs";
-import { createSessionHostAdapter } from "../scripts/lib/session-host-adapter.mjs";
-import { enterConversationRecovery } from "../scripts/lib/compaction-lifecycle.mjs";
-import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
-import { inspectRecoveryCheckpointBasis, syncRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
+import { startupProjection as format, COMPACT_SCOPE as compactScope } from "../scripts/lib/session/session-host-context-projection.mjs";
+import { createSessionHostAdapter } from "../scripts/lib/session/session-host-adapter.mjs";
+import { enterConversationRecovery } from "../scripts/lib/session/compaction-lifecycle.mjs";
+import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
+import { inspectRecoveryCheckpointBasis, syncRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
 import { fixture, link, exact, citation, snapshot, pluginRoot } from "./helpers/session-work-linkage-fixture.mjs";
 
 // Serializer and injected local Host seam only, not installed/native/model tests.

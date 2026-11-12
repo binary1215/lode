@@ -1,6 +1,6 @@
 // One-way compatibility for operation names: a historical head_<suffix> wire
 // name means lode_<suffix>. Only names whose canonical form is a registered
-// operation resolve (see scripts/lib/lode-operation-contract.mjs).
+// operation resolve (see scripts/lib/core/lode-operation-contract.mjs).
 export const LEGACY_OPERATION_PREFIX = "head_";
 export const OPERATION_PREFIX = "lode_";
 

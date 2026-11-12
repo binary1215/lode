@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { createBoundedWorkerDispatch } from "../scripts/lib/bounded-worker-dispatch.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
+import { createBoundedWorkerDispatch } from "../scripts/lib/worker/bounded-worker-dispatch.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { dispatch, catalogTools } from "../scripts/mcp-server.mjs";
 

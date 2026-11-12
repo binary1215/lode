@@ -5,15 +5,15 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createWholePlanSnapshot, createNextWholePlanSnapshot, createExecutionContract } from "../scripts/lib/execution-lineage.mjs";
-import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/run-lineage.mjs";
-import { createRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
-import { restoreSessionFromArtifacts } from "../scripts/lib/session-recovery.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createWholePlanSnapshot, createNextWholePlanSnapshot, createExecutionContract } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/runtime/run-lineage.mjs";
+import { createRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
+import { restoreSessionFromArtifacts } from "../scripts/lib/session/session-recovery.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
-const moduleUrl = pathToFileURL(path.join(pluginRoot, "scripts/lib/run-lineage.mjs")).href;
+const moduleUrl = pathToFileURL(path.join(pluginRoot, "scripts/lib/runtime/run-lineage.mjs")).href;
 console.log(
   JSON.stringify({
     event: "owned-test-process",

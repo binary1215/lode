@@ -10,7 +10,7 @@ const fixtureFile = path.join(pluginRoot, "test/fixtures/dispatch-recordings.jso
 const register = pathToFileURL(path.join(pluginRoot, "test/helpers/dispatch-recording-register.mjs")).href;
 const runner = path.join(pluginRoot, "test/helpers/dispatch-recording-run.mjs");
 
-// Recorded before any operation moved to scripts/lib/operation-registry.mjs. Each
+// Recorded before any operation moved to scripts/lib/session/operation-registry.mjs. Each
 // entry names the scripts/lib function an MCP tool or CLI command calls and the
 // exact arguments it passes; moving an operation must not change any entry.
 // Regenerate only for an intended dispatch change, never to absorb a move:
@@ -58,7 +58,7 @@ test("grouped tools, their routers and the deprecated names call exactly what th
   const expected = JSON.parse(fs.readFileSync(fixtureFile, "utf8"));
   const recorded = new Map(expected.entries.filter((entry) => entry.surface === "mcp").map((entry) => [key(entry), entry]));
   const { catalogTools } = await import("../scripts/mcp-server.mjs");
-  const { operationGroup } = await import("../scripts/lib/operation-groups.mjs");
+  const { operationGroup } = await import("../scripts/lib/core/operation-groups.mjs");
   const groups = catalogTools.filter((tool) => operationGroup(tool.name));
   assert.ok(groups.length > 0);
   for (const group of groups) {

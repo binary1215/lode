@@ -1,4 +1,4 @@
-import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
+import { relativeProjectArtifact } from "../scripts/lib/storage/project-storage-format.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -7,18 +7,18 @@ import path from "node:path";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
-import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime-protocol-evidence.mjs";
-import { buildRuntimeInvocationAuthorization } from "../scripts/lib/runtime-invocation-lifecycle.mjs";
-import { captureWorkerSourceBasis } from "../scripts/lib/worker-source-basis.mjs";
-import { captureWorkerWriteBasis, buildWorkerPatchCandidate } from "../scripts/lib/worker-patch-basis.mjs";
-import { prepareWorkerWorkspace } from "../scripts/lib/worker-workspace.mjs";
-import { buildWorkerPatchProposalCandidate, workerPatchProposalExecutionBoundary } from "../scripts/lib/worker-patch-proposal.mjs";
-import { buildCodexFreshProposalPolicyPlan } from "../scripts/lib/runtime-codex-proposal-policy.mjs";
-import { buildCodexNativePrefixPolicyPlan } from "../scripts/lib/runtime-codex-prefix-policy.mjs";
-import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime-process-supervisor.mjs";
-import { RUNTIME_OPERATIONAL_STATE_ENV, inspectRuntimeExecutionLease } from "../scripts/lib/runtime-execution-lease.mjs";
-import { readRuntimeInvocationRecord } from "../scripts/lib/runtime-invocation-record.mjs";
+import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime/runtime-protocol-evidence.mjs";
+import { buildRuntimeInvocationAuthorization } from "../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
+import { captureWorkerSourceBasis } from "../scripts/lib/worker/worker-source-basis.mjs";
+import { captureWorkerWriteBasis, buildWorkerPatchCandidate } from "../scripts/lib/worker/worker-patch-basis.mjs";
+import { prepareWorkerWorkspace } from "../scripts/lib/worker/worker-workspace.mjs";
+import { buildWorkerPatchProposalCandidate, workerPatchProposalExecutionBoundary } from "../scripts/lib/worker/worker-patch-proposal.mjs";
+import { buildCodexFreshProposalPolicyPlan } from "../scripts/lib/runtime/runtime-codex-proposal-policy.mjs";
+import { buildCodexNativePrefixPolicyPlan } from "../scripts/lib/runtime/runtime-codex-prefix-policy.mjs";
+import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
+import { RUNTIME_OPERATIONAL_STATE_ENV, inspectRuntimeExecutionLease } from "../scripts/lib/runtime/runtime-execution-lease.mjs";
+import { readRuntimeInvocationRecord } from "../scripts/lib/runtime/runtime-invocation-record.mjs";
 import {
   createBoundedWorkerJobHost,
   startBoundedWorkerJob,
@@ -26,8 +26,8 @@ import {
   readBoundedWorkerPatch,
   cancelBoundedWorkerJob,
   reconcileBoundedWorkerJob,
-} from "../scripts/lib/bounded-worker-job.mjs";
-import runCodexProposal from "../scripts/lib/runtime-codex-proposal-runner.mjs";
+} from "../scripts/lib/worker/bounded-worker-job.mjs";
+import runCodexProposal from "../scripts/lib/runtime/runtime-codex-proposal-runner.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -225,8 +225,8 @@ test("proposal Host admits only its fixed runner and explicitly bound read-only 
   assert.equal(f.authorization.workspaceMode, "read-only");
   assert.equal(Object.hasOwn(f.authorization.workerInput, "writeBasis"), false);
   for (const extra of [
-    { runnerFile: path.join(pluginRoot, "scripts/lib/runtime-codex-worker-runner.mjs") },
-    { hostModuleFile: path.join(pluginRoot, "scripts/lib/runtime-codex-worker-runner.mjs") },
+    { runnerFile: path.join(pluginRoot, "scripts/lib/runtime/runtime-codex-worker-runner.mjs") },
+    { hostModuleFile: path.join(pluginRoot, "scripts/lib/runtime/runtime-codex-worker-runner.mjs") },
     { codexPolicyCapability: {} },
     { environment: { CODEX_HOME: f.container } },
     { environment: { NODE_OPTIONS: "--import ./unbound-loader.mjs" } },
@@ -238,7 +238,7 @@ test("proposal Host admits only its fixed runner and explicitly bound read-only 
   const oldFixture = createBoundedWorkerJobHost({
     policy: { kind: "protocol-fixture", actualProviderInvoked: false },
     workspaceBinding: f.workspaceBinding,
-    runnerFile: path.join(pluginRoot, "scripts/lib/runtime-codex-worker-runner.mjs"),
+    runnerFile: path.join(pluginRoot, "scripts/lib/runtime/runtime-codex-worker-runner.mjs"),
   });
   await assert.rejects(
     startBoundedWorkerJob(f.input, {

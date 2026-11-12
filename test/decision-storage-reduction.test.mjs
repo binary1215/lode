@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createWholePlanSnapshot, createExecutionContract, readLineageArtifact } from "../scripts/lib/execution-lineage.mjs";
-import { startRun, finishRun, getPendingReviewContext, reviewRun, sessionStateHash, operationPointerHash } from "../scripts/lib/run-lineage.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createWholePlanSnapshot, createExecutionContract, readLineageArtifact } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { startRun, finishRun, getPendingReviewContext, reviewRun, sessionStateHash, operationPointerHash } from "../scripts/lib/runtime/run-lineage.mjs";
 import {
   createRecoveryCheckpoint,
   inspectRecoveryCheckpointBasis,
@@ -14,11 +14,11 @@ import {
   verifyCompaction,
   continueCompaction,
   inspectCompaction,
-} from "../scripts/lib/compaction-recovery.mjs";
-import { restoreSessionFromArtifacts, integrateReviewedRunCheckpoint, readRunResultIntegration } from "../scripts/lib/session-recovery.mjs";
-import { createHeadSession, withSessionRoute } from "../scripts/lib/session-routing.mjs";
-import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
-import { proposeProductInitiative, reviewProductInitiative, inspectProductOperatingLoop } from "../scripts/lib/product-operating-loop.mjs";
+} from "../scripts/lib/session/compaction-recovery.mjs";
+import { restoreSessionFromArtifacts, integrateReviewedRunCheckpoint, readRunResultIntegration } from "../scripts/lib/session/session-recovery.mjs";
+import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
+import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
+import { proposeProductInitiative, reviewProductInitiative, inspectProductOperatingLoop } from "../scripts/lib/world/product-operating-loop.mjs";
 
 console.log(
   JSON.stringify({

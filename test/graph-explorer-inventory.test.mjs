@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { collectGraphExplorerInventory, queryProjectGraph } from "../scripts/lib/project-graph.mjs";
-import { buildWorldModel, inspectWorldDomainFreshness } from "../scripts/lib/world-model.mjs";
-import { LocalJsonWorldModelStoreAdapter } from "../scripts/lib/world-model-store.mjs";
+import { collectGraphExplorerInventory, queryProjectGraph } from "../scripts/lib/world/project-graph.mjs";
+import { buildWorldModel, inspectWorldDomainFreshness } from "../scripts/lib/world/world-model.mjs";
+import { LocalJsonWorldModelStoreAdapter } from "../scripts/lib/world/world-model-store.mjs";
 import { explorerFixture } from "./helpers/graph-explorer-fixture.mjs";
 import { snapshot } from "./helpers/session-work-linkage-fixture.mjs";
 

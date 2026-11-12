@@ -13,7 +13,7 @@ import {
   validateWorkspaceHostAdapter,
   verifyRuntimeAdapterComposition,
   verifyRuntimeAdapterContractMatrix,
-} from "./lib/runtime-adapter.mjs";
+} from "./lib/runtime/runtime-adapter.mjs";
 import {
   RUNTIME_MACHINE_CONTROL_METHODS,
   ReadOnlyAgentRuntimeAdapter,
@@ -21,7 +21,7 @@ import {
   ReadOnlyWorkspaceHostAdapter,
   buildRuntimeMachineComposition,
   verifyRuntimeMachineComposition,
-} from "./lib/runtime-machine-discovery.mjs";
+} from "./lib/runtime/runtime-machine-discovery.mjs";
 import {
   BoundedVersionAgentRuntimeAdapter,
   BoundedVersionPlatformAdapter,
@@ -29,7 +29,7 @@ import {
   RUNTIME_VERSION_CONTROL_METHODS,
   buildRuntimeVersionEvidence,
   verifyRuntimeVersionEvidence,
-} from "./lib/runtime-machine-execution.mjs";
+} from "./lib/runtime/runtime-machine-execution.mjs";
 import {
   BoundedProtocolAgentRuntimeAdapter,
   BoundedProtocolPlatformAdapter,
@@ -39,8 +39,8 @@ import {
   buildRuntimeProtocolEvidence,
   verifyRuntimeProjectBinding,
   verifyRuntimeProtocolEvidence,
-} from "./lib/runtime-protocol-evidence.mjs";
-import { VerifiedWorkspaceHostAdapter, WORKSPACE_HOST_COORDINATION_VERSION } from "./lib/workspace-host-coordination.mjs";
+} from "./lib/runtime/runtime-protocol-evidence.mjs";
+import { VerifiedWorkspaceHostAdapter, WORKSPACE_HOST_COORDINATION_VERSION } from "./lib/worker/workspace-host-coordination.mjs";
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const hasOwnKeyDeep = (value, key) => {

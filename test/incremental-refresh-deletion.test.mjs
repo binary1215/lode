@@ -5,18 +5,18 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { diffGraphLineage } from "../scripts/lib/graph-lineage.mjs";
+import { diffGraphLineage } from "../scripts/lib/world/graph-lineage.mjs";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { refreshWorldModel } from "../scripts/lib/incremental-refresh.mjs";
-import { normalizeProductModelDocument } from "../scripts/lib/product-model.mjs";
-import { writeRepositorySourceScope } from "../scripts/lib/repository-source-scope.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
+import { refreshWorldModel } from "../scripts/lib/world/incremental-refresh.mjs";
+import { normalizeProductModelDocument } from "../scripts/lib/world/product-model.mjs";
+import { writeRepositorySourceScope } from "../scripts/lib/world/repository-source-scope.mjs";
 import {
   buildTemporalProvenanceGraph,
   currentTemporalLogicalEntityIds,
   filterRevisionParentsForCurrentTemporalEntities,
-} from "../scripts/lib/temporal-provenance.mjs";
-import { buildWorldModel, readWorldModel } from "../scripts/lib/world-model.mjs";
+} from "../scripts/lib/world/temporal-provenance.mjs";
+import { buildWorldModel, readWorldModel } from "../scripts/lib/world/world-model.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 

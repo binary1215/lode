@@ -5,10 +5,10 @@ import vm from "node:vm";
 import crypto from "node:crypto";
 import { explorerDom, visibleText } from "./helpers/graph-explorer-dom-fixture.mjs";
 import { fixture as workFixture, snapshot as inputSnapshot } from "./helpers/session-work-linkage-fixture.mjs";
-import { buildGraphExplorerSnapshot } from "../scripts/lib/graph-explorer.mjs";
-import { queryProjectGraph } from "../scripts/lib/project-graph.mjs";
+import { buildGraphExplorerSnapshot } from "../scripts/lib/world/graph-explorer.mjs";
+import { queryProjectGraph } from "../scripts/lib/world/project-graph.mjs";
 import { productPerspectiveFixture } from "./helpers/product-perspective-fixture.mjs";
-import { normalizeEvidenceAnchors } from "../scripts/lib/product-policy-records.mjs";
+import { normalizeEvidenceAnchors } from "../scripts/lib/world/product-policy-records.mjs";
 
 const source = fs.readFileSync(new URL("../scripts/graph-explorer/exploration.js", import.meta.url), "utf8");
 const factory = () => vm.runInNewContext(source + "\nexplorerModel");

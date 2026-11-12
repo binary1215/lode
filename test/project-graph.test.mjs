@@ -6,27 +6,27 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
 import {
   createWholePlanSnapshot,
   createExecutionContract,
   createResultPacket,
   createReviewDecision,
   buildFreshHeadReview,
-} from "../scripts/lib/execution-lineage.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { startRun } from "../scripts/lib/run-lineage.mjs";
-import { proposeProductPolicy, reviewProductPolicy } from "../scripts/lib/product-policy.mjs";
-import { prepareSourceContext } from "../scripts/lib/source-context-workflow.mjs";
-import { readSourceObservation } from "../scripts/lib/source-observation.mjs";
-import { buildWorldModel } from "../scripts/lib/world-model.mjs";
-import { InMemoryGraphProjectionAdapter, materializeGraphProjection } from "../scripts/lib/graph-projection-adapter.mjs";
-import { projectGraphIndexPath, projectGraphDigest } from "../scripts/lib/discovery-index.mjs";
-import { indexProjectGraph, queryProjectGraph } from "../scripts/lib/project-graph.mjs";
-import { startOnboarding, reviewOnboarding } from "../scripts/lib/onboarding.mjs";
-import { historicalIntegrityBasis } from "../scripts/lib/historical-artifact-boundary-store.mjs";
-import { publishHistoricalContinuityReceipt } from "../scripts/lib/historical-continuity.mjs";
-import { buildGraphExplorerSnapshot } from "../scripts/lib/graph-explorer.mjs";
+} from "../scripts/lib/runtime/execution-lineage.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { startRun } from "../scripts/lib/runtime/run-lineage.mjs";
+import { proposeProductPolicy, reviewProductPolicy } from "../scripts/lib/world/product-policy.mjs";
+import { prepareSourceContext } from "../scripts/lib/world/source-context-workflow.mjs";
+import { readSourceObservation } from "../scripts/lib/world/source-observation.mjs";
+import { buildWorldModel } from "../scripts/lib/world/world-model.mjs";
+import { InMemoryGraphProjectionAdapter, materializeGraphProjection } from "../scripts/lib/world/graph-projection-adapter.mjs";
+import { projectGraphIndexPath, projectGraphDigest } from "../scripts/lib/world/discovery-index.mjs";
+import { indexProjectGraph, queryProjectGraph } from "../scripts/lib/world/project-graph.mjs";
+import { startOnboarding, reviewOnboarding } from "../scripts/lib/session/onboarding.mjs";
+import { historicalIntegrityBasis } from "../scripts/lib/world/historical-artifact-boundary-store.mjs";
+import { publishHistoricalContinuityReceipt } from "../scripts/lib/session/historical-continuity.mjs";
+import { buildGraphExplorerSnapshot } from "../scripts/lib/world/graph-explorer.mjs";
 import { explorerDom } from "./helpers/graph-explorer-dom-fixture.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -488,7 +488,7 @@ async function onboardingFixture(t) {
 }
 async function assertWarmCold(root, options, previous) {
   const warm = await queryProjectGraph({ root, ...options, previousResult: previous });
-  const coldModule = await import(`../scripts/lib/project-graph.mjs?dependency-test=${Math.random()}`);
+  const coldModule = await import(`../scripts/lib/world/project-graph.mjs?dependency-test=${Math.random()}`);
   const cold = await coldModule.queryProjectGraph({ root, ...options });
   assert.deepEqual(warm.integrity, cold.integrity);
   assert.deepEqual(warm.coverage, cold.coverage);

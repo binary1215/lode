@@ -8,7 +8,7 @@ import {
   logicalPublicationDigest,
   publicationGithub,
   readPublicationSnapshot,
-} from "./lib/publication-version.mjs";
+} from "./lib/distribution/publication-version.mjs";
 
 const options = Object.create(null);
 for (let i = 2; i < process.argv.length; i += 2) {

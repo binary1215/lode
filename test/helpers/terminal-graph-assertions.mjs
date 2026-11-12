@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { formatTerminalGraph, terminalBlock, inertTerminalText } from "../../scripts/lib/terminal-graph.mjs";
+import { formatTerminalGraph, terminalBlock, inertTerminalText } from "../../scripts/lib/world/terminal-graph.mjs";
 
 // The CLI intentionally has a relationship-first display, unlike MCP text.
 // Check its visible originals/qualifiers and exact diagnostic payload separately.

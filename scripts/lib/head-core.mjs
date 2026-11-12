@@ -9,4 +9,4 @@ export {
   inspectRuntimeAdapters,
   createCheckpoint,
   coreContract,
-} from "./lode-core.mjs";
+} from "./session/lode-core.mjs";

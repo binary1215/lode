@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fixture } from "./session-work-linkage-fixture.mjs";
-import { prepareCodexNativeOffline } from "../../scripts/lib/codex-native-offline.mjs";
-import { captureCodexNativeHistory } from "../../scripts/lib/codex-native-capture.mjs";
+import { prepareCodexNativeOffline } from "../../scripts/lib/distribution/codex-native-offline.mjs";
+import { captureCodexNativeHistory } from "../../scripts/lib/distribution/codex-native-capture.mjs";
 import { DatabaseSync } from "node:sqlite";
-import { nativeSqlitePath } from "../../scripts/lib/codex-native-backup.mjs";
-import { codexNativePortabilityProfile } from "../../scripts/lib/codex-native-portability.mjs";
+import { nativeSqlitePath } from "../../scripts/lib/distribution/codex-native-backup.mjs";
+import { codexNativePortabilityProfile } from "../../scripts/lib/distribution/codex-native-portability.mjs";
 export const nativeProfile = codexNativePortabilityProfile();
 
 export const profileBasis = {

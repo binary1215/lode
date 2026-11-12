@@ -1,12 +1,12 @@
-import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
+import { relativeProjectArtifact } from "../scripts/lib/storage/project-storage-format.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { inspectProject } from "../scripts/lib/head-core.mjs";
-import { createHeadSession, withSessionRoute } from "../scripts/lib/session-routing.mjs";
-import { normalizeSessionWorkEvidence, recordSessionWorkEvidence } from "../scripts/lib/session-work-context.mjs";
-import { MAX_RECORD_BYTES } from "../scripts/lib/session-work-evidence-original.mjs";
+import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
+import { normalizeSessionWorkEvidence, recordSessionWorkEvidence } from "../scripts/lib/session/session-work-context.mjs";
+import { MAX_RECORD_BYTES } from "../scripts/lib/session/session-work-evidence-original.mjs";
 import { fixture, exact, link, citation, representative, snapshot, sha, encoded, recordFor } from "./helpers/session-work-linkage-fixture.mjs";
 
 // Numeric scopes, not selection wording, distinguish hinted default from

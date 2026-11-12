@@ -4,7 +4,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { createNativeSmokeCleanup } from "../scripts/lib/native-smoke-cleanup.mjs";
+import { createNativeSmokeCleanup } from "../scripts/lib/distribution/native-smoke-cleanup.mjs";
 
 const file = fileURLToPath(import.meta.url);
 const cwd = path.resolve(path.dirname(file), "..");

@@ -6,11 +6,11 @@ import test from "node:test";
 import {
   buildComputeRequest, buildComputeSuccessResponse, DEFAULT_COMPUTE_LIMITS,
   normalizeComputeLimits, validateComputeResponse,
-} from "../scripts/lib/compute-adapter.mjs";
+} from "../scripts/lib/runtime/compute-adapter.mjs";
 import {
   buildRepositoryScanInput, executeIncrementalRepositoryScan, scanRepositoryReference,
   validateRepositoryScanExecution,
-} from "../scripts/lib/repository-scan.mjs";
+} from "../scripts/lib/world/repository-scan.mjs";
 
 const MiB = 1024 * 1024;
 const request = limits => buildComputeRequest({ operation: "fixture.output-budget.v1", input: {},

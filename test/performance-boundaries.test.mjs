@@ -4,10 +4,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { analyzeSourceFile, extractSourceDependencies, extractSourceSymbols, extractSemanticSourceFacts } from "../scripts/lib/source-analysis.mjs";
+import { analyzeSourceFile, extractSourceDependencies, extractSourceSymbols, extractSemanticSourceFacts } from "../scripts/lib/world/source-analysis.mjs";
 import { buildRepositoryScanInput, scanRepositoryReference, inspectRepositoryScanForWorld, validateRepositoryScanResult,
-  inspectRepositoryScanFreshness, executeIncrementalRepositoryScan, validateRepositoryScanExecution } from "../scripts/lib/repository-scan.mjs";
-import { buildComputeRequest, buildComputeSuccessResponse, validateComputeResponse } from "../scripts/lib/compute-adapter.mjs";
+  inspectRepositoryScanFreshness, executeIncrementalRepositoryScan, validateRepositoryScanExecution } from "../scripts/lib/world/repository-scan.mjs";
+import { buildComputeRequest, buildComputeSuccessResponse, validateComputeResponse } from "../scripts/lib/runtime/compute-adapter.mjs";
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(process.env.HEAD_AGENT_TEST_TMP || os.tmpdir(), "lode-perf-"));

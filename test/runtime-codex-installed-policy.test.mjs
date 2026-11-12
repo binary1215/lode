@@ -4,12 +4,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { inspectCodexInstalledPolicySnapshot } from "../scripts/lib/runtime-codex-installed-policy.mjs";
+import { inspectCodexInstalledPolicySnapshot } from "../scripts/lib/runtime/runtime-codex-installed-policy.mjs";
 import {
   inspectCodexNativeForkCandidate,
   inspectCurrentCodexNativeForkCompatibility,
   assertCodexInstalledForkRequest,
-} from "../scripts/lib/runtime-codex-fork-compatibility.mjs";
+} from "../scripts/lib/runtime/runtime-codex-fork-compatibility.mjs";
 
 test("native candidate checks known source restrictions without claiming enforcement", () => {
   const current = inspectCurrentCodexNativeForkCompatibility();
@@ -55,7 +55,7 @@ import {
   verifyCodexWorkerPolicyPlan,
   inspectCodexWorkerPolicyCapability,
   CODEX_WORKER_REQUIRED_ENFORCEMENT,
-} from "../scripts/lib/runtime-codex-worker-policy.mjs";
+} from "../scripts/lib/runtime/runtime-codex-worker-policy.mjs";
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const clone = (value) => JSON.parse(JSON.stringify(value));

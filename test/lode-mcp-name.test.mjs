@@ -7,7 +7,7 @@ import test from "node:test";
 import { pathToFileURL } from "node:url";
 import { ARTIFACT_COMPOSITION, artifactCompositionForIdentity } from "../scripts/lib/lode-artifact-composition.mjs";
 import { historicalArtifactServerName } from "../compat/head/artifact-composition.mjs";
-import { stageDistributionRelease, verifyDistributionRelease, installDistribution, rollbackDistribution, inspectDistribution } from "../scripts/lib/distribution-lifecycle.mjs";
+import { stageDistributionRelease, verifyDistributionRelease, installDistribution, rollbackDistribution, inspectDistribution } from "../scripts/lib/distribution/distribution-lifecycle.mjs";
 import { dispatch, catalogTools } from "../scripts/mcp-server.mjs";
 
 const sourceRoot = path.resolve(import.meta.dirname, "..");

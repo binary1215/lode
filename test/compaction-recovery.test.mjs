@@ -4,13 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { spawn } from "node:child_process";
-import { withProjectMutation, withProjectMutationAsync } from "../scripts/lib/project-mutation-lock.mjs";
-import { withRefreshWriterLease, inspectRefreshWriterLease } from "../scripts/lib/refresh-writer-lease.mjs";
+import { withProjectMutation, withProjectMutationAsync } from "../scripts/lib/storage/project-mutation-lock.mjs";
+import { withRefreshWriterLease, inspectRefreshWriterLease } from "../scripts/lib/world/refresh-writer-lease.mjs";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/execution-lineage.mjs";
-import { finishRun, startRun } from "../scripts/lib/run-lineage.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { finishRun, startRun } from "../scripts/lib/runtime/run-lineage.mjs";
 import {
   abortCompaction,
   continueCompaction,
@@ -18,7 +18,7 @@ import {
   prepareCompaction,
   readRecoveryCheckpoint,
   verifyCompaction,
-} from "../scripts/lib/compaction-recovery.mjs";
+} from "../scripts/lib/session/compaction-recovery.mjs";
 import { dispatch, operationCatalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/head.mjs";
 
@@ -64,10 +64,10 @@ function projectBytes(root) {
 
 function recoveryChild(t, action, input, { holdLock = false, crashAfter = null, crashAfterConsumption = false, crashRefreshStaging = false } = {}) {
   const script = `
-    import { prepareCompaction, continueCompaction } from './scripts/lib/compaction-recovery.mjs';
-    import { withProjectMutation } from './scripts/lib/project-mutation-lock.mjs';
+    import { prepareCompaction, continueCompaction } from './scripts/lib/session/compaction-recovery.mjs';
+    import { withProjectMutation } from './scripts/lib/storage/project-mutation-lock.mjs';
     import fs from 'node:fs';
-    import { withRefreshWriterLease } from './scripts/lib/refresh-writer-lease.mjs';
+    import { withRefreshWriterLease } from './scripts/lib/world/refresh-writer-lease.mjs';
     import { inspectProject } from './scripts/lib/head-core.mjs';
     const input = JSON.parse(process.argv[1]);
     console.error(JSON.stringify({pid: process.pid, parentPid: process.ppid, command: ['node', '--input-type=module', '--eval', 'recovery-test-worker'], cwd: process.cwd(), ports: []}));

@@ -3,10 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { withProjectMutation } from "../scripts/lib/project-mutation-lock.mjs";
-import { compileContext, readContextCapsule } from "../scripts/lib/context-compiler.mjs";
+import { withProjectMutation } from "../scripts/lib/storage/project-mutation-lock.mjs";
+import { compileContext, readContextCapsule } from "../scripts/lib/session/context-compiler.mjs";
 import { catalogTools } from "../scripts/mcp-server.mjs";
-import { initializeProject } from "../scripts/lib/lode-core.mjs";
+import { initializeProject } from "../scripts/lib/session/lode-core.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 
 const source = path.resolve(import.meta.dirname, "..");

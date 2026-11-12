@@ -10,15 +10,15 @@ import {
   onboardingCanonicalJson,
   onboardingDigest,
   verifyOnboardingState,
-} from "../../../scripts/lib/onboarding-contract.mjs";
+} from "../../../scripts/lib/session/onboarding-contract.mjs";
 import {
   verifyOnboardingCandidateSetForProjection,
   verifyOnboardingReviewDecisionForProjection,
   verifyProductModelRevisionForProjection,
-} from "../../../scripts/lib/onboarding-projection.mjs";
-import { normalizeProductModelDocument, PRODUCT_ENTITY_KINDS_V1, readProductModelCanon } from "../../../scripts/lib/product-model.mjs";
-import { createVerifiedHistoricalInventoryCapability } from "../../../scripts/lib/historical-artifact-boundary.mjs";
-import { historicalBoundaryDigest } from "../../../scripts/lib/historical-artifact-boundary-store.mjs";
+} from "../../../scripts/lib/session/onboarding-projection.mjs";
+import { normalizeProductModelDocument, PRODUCT_ENTITY_KINDS_V1, readProductModelCanon } from "../../../scripts/lib/world/product-model.mjs";
+import { createVerifiedHistoricalInventoryCapability } from "../../../scripts/lib/world/historical-artifact-boundary.mjs";
+import { historicalBoundaryDigest } from "../../../scripts/lib/world/historical-artifact-boundary-store.mjs";
 
 const LEGACY_LIMITS = Object.freeze({ maxInferredSymbols: 24, maxCandidates: 200, maxEvidenceRecords: 250, maxUnknowns: 100 });
 const FAMILIES = Object.freeze({

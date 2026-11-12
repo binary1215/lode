@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildCodexMarketplaceSnapshot, verifyCodexMarketplaceSnapshot } from "./lib/codex-marketplace.mjs";
+import { buildCodexMarketplaceSnapshot, verifyCodexMarketplaceSnapshot } from "./lib/distribution/codex-marketplace.mjs";
 import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
 
 function canonical(value) {
@@ -106,8 +106,8 @@ if (providedRoot) {
       "SessionEnd",
     ]);
     assert.match(startupHooks.hooks.SessionStart[0].hooks[0].command, /session-host-hook\.mjs/);
-    assert.ok(runtimeManifest.files.some((file) => file.path === "scripts/lib/session-host-adapter.mjs"));
-    for (const file of ["scripts/lib/native-session-observations.mjs", "scripts/lib/native-session-process.mjs", "scripts/opencode-plugin.mjs"]) {
+    assert.ok(runtimeManifest.files.some((file) => file.path === "scripts/lib/session/session-host-adapter.mjs"));
+    for (const file of ["scripts/lib/session/native-session-observations.mjs", "scripts/lib/session/native-session-process.mjs", "scripts/opencode-plugin.mjs"]) {
       assert.ok(
         runtimeManifest.files.some((entry) => entry.path === file),
         `Native observer dependency must be packaged: ${file}`,

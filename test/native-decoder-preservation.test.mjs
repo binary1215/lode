@@ -4,15 +4,15 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { nativeSqlitePath } from "../scripts/lib/codex-native-backup.mjs";
+import { nativeSqlitePath } from "../scripts/lib/distribution/codex-native-backup.mjs";
 import {
   CODEX_NATIVE_MAX_FRAME_BYTES,
   inspectCodexRolloutOriginal,
-} from "../scripts/lib/codex-native-rollout.mjs";
-import { captureCodexNativeHistory } from "../scripts/lib/codex-native-capture.mjs";
-import { prepareCodexNativeOffline } from "../scripts/lib/codex-native-offline.mjs";
-import { inspectCodexNativePayload } from "../scripts/lib/codex-native-payload.mjs";
-import { publishCodexNativeHistory } from "../scripts/lib/codex-native-publication.mjs";
+} from "../scripts/lib/distribution/codex-native-rollout.mjs";
+import { captureCodexNativeHistory } from "../scripts/lib/distribution/codex-native-capture.mjs";
+import { prepareCodexNativeOffline } from "../scripts/lib/distribution/codex-native-offline.mjs";
+import { inspectCodexNativePayload } from "../scripts/lib/distribution/codex-native-payload.mjs";
+import { publishCodexNativeHistory } from "../scripts/lib/distribution/codex-native-publication.mjs";
 import { syntheticNativeCapture, nativeProfile } from "./helpers/native-portability-fixture.mjs";
 
 test("actual frame limit preserves exact raw bytes while hidden following frames and native qualification remain unverified", async (t) => {

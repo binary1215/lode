@@ -15,11 +15,11 @@ import {
   inspectArcadeDbGraphProjectionActivation,
   materializeGraphProjection,
   queryGraphProjection,
-} from "./lib/graph-projection-adapter.mjs";
-import { buildStorageSelection } from "./lib/onboarding-contract.mjs";
-import { buildPreparedTraversalCostEvidence } from "./lib/prepared-traversal-benchmark.mjs";
-import { buildTemporalProvenanceGraph, queryTemporalProvenanceGraph } from "./lib/temporal-provenance.mjs";
-import { inspectWorldModel } from "./lib/world-model.mjs";
+} from "./lib/world/graph-projection-adapter.mjs";
+import { buildStorageSelection } from "./lib/session/onboarding-contract.mjs";
+import { buildPreparedTraversalCostEvidence } from "./lib/world/prepared-traversal-benchmark.mjs";
+import { buildTemporalProvenanceGraph, queryTemporalProvenanceGraph } from "./lib/world/temporal-provenance.mjs";
+import { inspectWorldModel } from "./lib/world/world-model.mjs";
 
 const fail = (message, code = "PREPARED_TRAVERSAL_BENCHMARK_ERROR") => {
   const error = new Error(message);

@@ -2,14 +2,14 @@
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { executeComputeOperation, verifyComputeAdapterConformance } from "./lib/compute-adapter.mjs";
-import { GoWorkerComputeAdapter } from "./lib/go-worker-adapter.mjs";
+import { executeComputeOperation, verifyComputeAdapterConformance } from "./lib/runtime/compute-adapter.mjs";
+import { GoWorkerComputeAdapter } from "./lib/worker/go-worker-adapter.mjs";
 import {
   buildRepositoryScanInput,
   createRepositoryScanReferenceAdapter,
   REPOSITORY_SCAN_OPERATION,
   REPOSITORY_SCAN_SEMANTIC_PRODUCER,
-} from "./lib/repository-scan.mjs";
+} from "./lib/world/repository-scan.mjs";
 
 function parseArguments(values) {
   const result = {};

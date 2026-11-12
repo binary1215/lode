@@ -4,11 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject } from "../scripts/lib/head-core.mjs";
-import { createNativeSessionHostBridge } from "../scripts/lib/session-native-host.mjs";
-import { SESSION_HOST_REQUEST_HELPER } from "../scripts/lib/session-host-request.mjs";
-import { createRecoveryBasisMemory } from "../scripts/lib/recovery-basis-memory.mjs";
-import { recordedRootSpelling, sameExceptDriveCase, withRecordedProjectRoot } from "../scripts/lib/project-root-spelling.mjs";
-import { createNativeObservationStore, normalizeNativeHook } from "../scripts/lib/native-session-observations.mjs";
+import { createNativeSessionHostBridge } from "../scripts/lib/session/session-native-host.mjs";
+import { SESSION_HOST_REQUEST_HELPER } from "../scripts/lib/session/session-host-request.mjs";
+import { createRecoveryBasisMemory } from "../scripts/lib/session/recovery-basis-memory.mjs";
+import { recordedRootSpelling, sameExceptDriveCase, withRecordedProjectRoot } from "../scripts/lib/storage/project-root-spelling.mjs";
+import { createNativeObservationStore, normalizeNativeHook } from "../scripts/lib/session/native-session-observations.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 

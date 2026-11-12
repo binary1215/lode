@@ -7,14 +7,14 @@ import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { createHeadSession, withSessionRoute, sessionStatePath } from "../scripts/lib/session-routing.mjs";
-import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
-import { createSessionHostAdapter } from "../scripts/lib/session-host-adapter.mjs";
-import { createNativeSessionHostBridge } from "../scripts/lib/session-native-host.mjs";
-import { SESSION_HOST_REQUEST_HELPER } from "../scripts/lib/session-host-request.mjs";
-import { recordSessionWorkEvidence } from "../scripts/lib/session-work-context.mjs";
-import { enterConversationRecovery } from "../scripts/lib/compaction-lifecycle.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
+import { createHeadSession, withSessionRoute, sessionStatePath } from "../scripts/lib/session/session-routing.mjs";
+import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
+import { createSessionHostAdapter } from "../scripts/lib/session/session-host-adapter.mjs";
+import { createNativeSessionHostBridge } from "../scripts/lib/session/session-native-host.mjs";
+import { SESSION_HOST_REQUEST_HELPER } from "../scripts/lib/session/session-host-request.mjs";
+import { recordSessionWorkEvidence } from "../scripts/lib/session/session-work-context.mjs";
+import { enterConversationRecovery } from "../scripts/lib/session/compaction-lifecycle.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { sessionStartContext, runSessionHostHook } from "../scripts/session-host-hook.mjs";
 import {
@@ -22,8 +22,8 @@ import {
   normalizeNativeHook,
   observeNativeHook,
   projectNativeObservations,
-} from "../scripts/lib/native-session-observations.mjs";
-import { probeClaudeProcesses } from "../scripts/lib/native-session-process.mjs";
+} from "../scripts/lib/session/native-session-observations.mjs";
+import { probeClaudeProcesses } from "../scripts/lib/session/native-session-process.mjs";
 import { localContinuityCommand } from "./helpers/session-continuity-process.mjs";
 import {
   captureUserPrompt,
@@ -32,7 +32,7 @@ import {
   acknowledgeUserPromptReference,
   transferNativeClearPromptReference,
   createUserPromptReferenceOperation,
-} from "../scripts/lib/user-prompt-reference.mjs";
+} from "../scripts/lib/session/user-prompt-reference.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, ".."),
   caller = { runtime: "codex", nativeSessionId: "native-main", agentId: null };
@@ -541,7 +541,7 @@ test("host-c: separate Hook processes use an actual owned process witness and sy
     script = path.join(f.base, "hook-driver.mjs");
   fs.writeFileSync(
     script,
-    `import fs from "node:fs";\nimport {runSessionHostHook} from ${JSON.stringify(pathToFileURL(path.join(pluginRoot, "scripts/session-host-hook.mjs")).href)};\nimport {observeClaudeProcess} from ${JSON.stringify(pathToFileURL(path.join(pluginRoot, "scripts/lib/native-session-process.mjs")).href)};\nconst input=JSON.parse(fs.readFileSync(process.argv[2],"utf8"));\nconst started=Date.now();const output=await runSessionHostHook({...input,processObserver:options=>observeClaudeProcess({...options,onProcess:event=>process.stderr.write(JSON.stringify({...event,elapsedMs:Date.now()-started})+"\\n")})});\nprocess.stdout.write(JSON.stringify(output));\n`,
+    `import fs from "node:fs";\nimport {runSessionHostHook} from ${JSON.stringify(pathToFileURL(path.join(pluginRoot, "scripts/session-host-hook.mjs")).href)};\nimport {observeClaudeProcess} from ${JSON.stringify(pathToFileURL(path.join(pluginRoot, "scripts/lib/session/native-session-process.mjs")).href)};\nconst input=JSON.parse(fs.readFileSync(process.argv[2],"utf8"));\nconst started=Date.now();const output=await runSessionHostHook({...input,processObserver:options=>observeClaudeProcess({...options,onProcess:event=>process.stderr.write(JSON.stringify({...event,elapsedMs:Date.now()-started})+"\\n")})});\nprocess.stdout.write(JSON.stringify(output));\n`,
   );
   const before = tree(f.root),
     outputs = [];
@@ -1445,7 +1445,7 @@ test("two actual overlapping processes merge under one lock without lost updates
   await f.store.observe({ root: f.root, caller, observation: observed(f.root, "seed") });
   const dir = path.join(f.operational, "native-observations", fs.readdirSync(path.join(f.operational, "native-observations"))[0]);
   fs.writeFileSync(path.join(dir, "writer.lock"), "fixture-owner");
-  const module = pathToFileURL(path.join(pluginRoot, "scripts/lib/native-session-observations.mjs")).href,
+  const module = pathToFileURL(path.join(pluginRoot, "scripts/lib/session/native-session-observations.mjs")).href,
     gate = path.join(f.base, "gate");
   const children = [];
   try {

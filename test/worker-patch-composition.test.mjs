@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import test from "node:test";
-import { buildWorkerPatchCandidate } from "../scripts/lib/worker-patch-basis.mjs";
-import { composeWorkerPatchCandidates } from "../scripts/lib/worker-patch-composition.mjs";
+import { buildWorkerPatchCandidate } from "../scripts/lib/worker/worker-patch-basis.mjs";
+import { composeWorkerPatchCandidates } from "../scripts/lib/worker/worker-patch-composition.mjs";
 
 console.log(
   JSON.stringify({

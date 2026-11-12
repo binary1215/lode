@@ -5,20 +5,20 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import { deriveOpenCodeHistoryImport } from "../scripts/lib/provider-native-history-format.mjs";
-import { decodeOpenCodeAtomicHistory } from "../scripts/lib/opencode-atomic-history-validation.mjs";
+import { deriveOpenCodeHistoryImport } from "../scripts/lib/session/provider-native-history-format.mjs";
+import { decodeOpenCodeAtomicHistory } from "../scripts/lib/session/opencode-atomic-history-validation.mjs";
 import { inspectOpenCodeAtomicBatch, publishOpenCodeAtomicBatch, readOpenCodeAtomicHistory,
-  listOpenCodeAtomicHistory, isQualifiedOpenCodeExecutable } from "../scripts/lib/opencode-atomic-history-store.mjs";
-import { createOpenCodeAtomicHistoryHost } from "../scripts/lib/opencode-atomic-history-host.mjs";
-import { resolveVerifiedProcessSupervisor, spawnSupervisedProcess } from "../scripts/lib/runtime-process-supervisor.mjs";
+  listOpenCodeAtomicHistory, isQualifiedOpenCodeExecutable } from "../scripts/lib/session/opencode-atomic-history-store.mjs";
+import { createOpenCodeAtomicHistoryHost } from "../scripts/lib/session/opencode-atomic-history-host.mjs";
+import { resolveVerifiedProcessSupervisor, spawnSupervisedProcess } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
 import { fixture as projectFixture, snapshot } from "./helpers/session-work-linkage-fixture.mjs";
-import { exportProjectBundle } from "../scripts/lib/project-portability.mjs";
-import { captureProviderNativeHistory } from "../scripts/lib/provider-native-history-payload.mjs";
-import { attachProjectNativeTransfer } from "../scripts/lib/project-native-transfer.mjs";
+import { exportProjectBundle } from "../scripts/lib/storage/project-portability.mjs";
+import { captureProviderNativeHistory } from "../scripts/lib/session/provider-native-history-payload.mjs";
+import { attachProjectNativeTransfer } from "../scripts/lib/session/project-native-transfer.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 
-const profile = JSON.parse(fs.readFileSync(new URL("../scripts/lib/opencode-atomic-history-profile.json", import.meta.url)));
+const profile = JSON.parse(fs.readFileSync(new URL("../scripts/lib/session/opencode-atomic-history-profile.json", import.meta.url)));
 const slash = value => path.resolve(value).replaceAll("\\", "/");
 function fixture(t) {
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-opencode-atomic-")));
@@ -267,7 +267,7 @@ test("termination of an owned synthetic child rolls back before commit and prese
   for (const boundary of ["before-commit", "after-commit"]) await t.test(boundary, async t => {
     const f = fixture(t), docs = [selected(history())], input = path.join(f.base, "input.json"), ready = path.join(f.base, "ready");
     fs.writeFileSync(input, JSON.stringify({ ...options(f, docs.map(row => ({ ...row, raw: row.raw.toString("base64") }))), ready, boundary }));
-    const module = new URL("../scripts/lib/opencode-atomic-history-store.mjs", import.meta.url).href;
+    const module = new URL("../scripts/lib/session/opencode-atomic-history-store.mjs", import.meta.url).href;
     const script = `import fs from 'node:fs';import{publishOpenCodeAtomicBatch}from ${JSON.stringify(module)};const x=JSON.parse(fs.readFileSync(process.argv[1]));x.documents=x.documents.map(r=>({...r,raw:Buffer.from(r.raw,'base64')}));await publishOpenCodeAtomicBatch({...x,onPhase:async({phase})=>{if(phase===x.boundary){fs.writeFileSync(x.ready,'ready',{flag:'wx'});await new Promise(()=>setInterval(()=>{},1000));}}});`;
     const selection = resolveVerifiedProcessSupervisor({ pluginRoot: process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT });
     const handle = spawnSupervisedProcess({ selection, executablePath: process.execPath, args: ["--input-type=module", "-e", script, input], cwd: f.root,

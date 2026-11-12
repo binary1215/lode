@@ -8,11 +8,11 @@ import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 import readline from "node:readline";
 import { artifactCompositionForIdentity } from "../scripts/lib/lode-artifact-composition.mjs";
-import { buildCodexMarketplaceSnapshot, verifyCodexMarketplaceSnapshot } from "../scripts/lib/codex-marketplace.mjs";
-import { buildClaudeMarketplaceSnapshot, verifyClaudeMarketplaceSnapshot } from "../scripts/lib/claude-marketplace.mjs";
-import { installDistribution, rollbackDistribution, stageDistributionRelease } from "../scripts/lib/distribution-lifecycle.mjs";
-import { portableMcpLaunch } from "../scripts/lib/portable-client-command.mjs";
-import { initializeProject, convergeProjectInstallation } from "../scripts/lib/lode-core.mjs";
+import { buildCodexMarketplaceSnapshot, verifyCodexMarketplaceSnapshot } from "../scripts/lib/distribution/codex-marketplace.mjs";
+import { buildClaudeMarketplaceSnapshot, verifyClaudeMarketplaceSnapshot } from "../scripts/lib/distribution/claude-marketplace.mjs";
+import { installDistribution, rollbackDistribution, stageDistributionRelease } from "../scripts/lib/distribution/distribution-lifecycle.mjs";
+import { portableMcpLaunch } from "../scripts/lib/distribution/portable-client-command.mjs";
+import { initializeProject, convergeProjectInstallation } from "../scripts/lib/session/lode-core.mjs";
 
 const source = path.resolve(import.meta.dirname, "..");
 const read = relative => fs.readFileSync(path.join(source, relative), "utf8");
@@ -206,7 +206,7 @@ test("host-d: actual packaged plugin request omits only its own new MCP file wit
 test("host-d: unmanifested plugin-entry code cannot upgrade an older standalone package into plugin provenance", async t => {
   const root = fixture(t), priorSource = path.join(root, "prior source"), outputRoot = path.join(root, "prior package");
   stageDistributionRelease({ sourceRoot: source, destinationRoot: priorSource });
-  const newFiles = ["scripts/mcp-plugin-server.mjs", "scripts/lib/plugin-mcp-composition.mjs"];
+  const newFiles = ["scripts/mcp-plugin-server.mjs", "scripts/lib/distribution/plugin-mcp-composition.mjs"];
   for (const file of newFiles) fs.unlinkSync(path.join(priorSource, file));
   const sourceMcp = path.join(priorSource, ".mcp.json"), old = JSON.parse(fs.readFileSync(sourceMcp));
   old.mcpServers.lode.args = ["scripts/mcp-server.mjs"]; fs.writeFileSync(sourceMcp, JSON.stringify(old));

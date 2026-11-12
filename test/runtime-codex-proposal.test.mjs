@@ -5,17 +5,17 @@ import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import test from "node:test";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
-import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime-protocol-evidence.mjs";
-import { buildRuntimeInvocationAuthorization } from "../scripts/lib/runtime-invocation-lifecycle.mjs";
-import { captureWorkerSourceBasis } from "../scripts/lib/worker-source-basis.mjs";
-import { captureWorkerWriteBasis } from "../scripts/lib/worker-patch-basis.mjs";
-import { prepareWorkerWorkspace } from "../scripts/lib/worker-workspace.mjs";
-import { workerPatchProposalExecutionBoundary, buildWorkerPatchProposalCandidate } from "../scripts/lib/worker-patch-proposal.mjs";
-import { buildCodexFreshProposalPolicyPlan } from "../scripts/lib/runtime-codex-proposal-policy.mjs";
-import { buildCodexNativePrefixPolicyPlan } from "../scripts/lib/runtime-codex-prefix-policy.mjs";
-import { createCodexFreshProposalFixtureCapability } from "../scripts/lib/runtime-codex-app-server-transport.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime/runtime-protocol-evidence.mjs";
+import { buildRuntimeInvocationAuthorization } from "../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
+import { captureWorkerSourceBasis } from "../scripts/lib/worker/worker-source-basis.mjs";
+import { captureWorkerWriteBasis } from "../scripts/lib/worker/worker-patch-basis.mjs";
+import { prepareWorkerWorkspace } from "../scripts/lib/worker/worker-workspace.mjs";
+import { workerPatchProposalExecutionBoundary, buildWorkerPatchProposalCandidate } from "../scripts/lib/worker/worker-patch-proposal.mjs";
+import { buildCodexFreshProposalPolicyPlan } from "../scripts/lib/runtime/runtime-codex-proposal-policy.mjs";
+import { buildCodexNativePrefixPolicyPlan } from "../scripts/lib/runtime/runtime-codex-prefix-policy.mjs";
+import { createCodexFreshProposalFixtureCapability } from "../scripts/lib/runtime/runtime-codex-app-server-transport.mjs";
 import {
   CODEX_FRESH_PROPOSAL_RESULT_SCHEMA,
   executeCodexFreshProposalInvocation,
@@ -24,12 +24,12 @@ import {
   assertCodexFreshProposalFeatureList,
   assertCodexFreshProposalResultBoundary,
   createCodexProposalExecutionControl,
-} from "../scripts/lib/runtime-codex-proposal.mjs";
-import { verifyCodexExecWireResultSchema } from "../scripts/lib/runtime-codex-exec.mjs";
-import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime-process-supervisor.mjs";
-import { RUNTIME_OPERATIONAL_STATE_ENV, inspectRuntimeExecutionLease } from "../scripts/lib/runtime-execution-lease.mjs";
-import { readRuntimeInvocationRecord } from "../scripts/lib/runtime-invocation-record.mjs";
-import { readRuntimeOutputSpool } from "../scripts/lib/runtime-output-spool.mjs";
+} from "../scripts/lib/runtime/runtime-codex-proposal.mjs";
+import { verifyCodexExecWireResultSchema } from "../scripts/lib/runtime/runtime-codex-exec.mjs";
+import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
+import { RUNTIME_OPERATIONAL_STATE_ENV, inspectRuntimeExecutionLease } from "../scripts/lib/runtime/runtime-execution-lease.mjs";
+import { readRuntimeInvocationRecord } from "../scripts/lib/runtime/runtime-invocation-record.mjs";
+import { readRuntimeOutputSpool } from "../scripts/lib/runtime/runtime-output-spool.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");

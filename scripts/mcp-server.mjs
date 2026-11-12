@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import readline from "node:readline";
-import { resolveOperation } from "./lib/lode-operation-contract.mjs";
-import { callRegistered, registeredOperation, registryCatalog, WORLD_MODEL_STATUS_MCP_MAX_BYTES } from "./lib/operation-registry.mjs";
-import { assertProjectRootArgument } from "./lib/mcp-argument-validation.mjs";
+import { resolveOperation } from "./lib/core/lode-operation-contract.mjs";
+import { callRegistered, registeredOperation, registryCatalog, WORLD_MODEL_STATUS_MCP_MAX_BYTES } from "./lib/session/operation-registry.mjs";
+import { assertProjectRootArgument } from "./lib/core/mcp-argument-validation.mjs";
 import { legacyReasonCodeFields } from "./lib/core/errors.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lib/lode-artifact-composition.mjs";
 import { DISCOVERY_PREFIX_PAIRS, legacyOperationName } from "../compat/head/public-names.mjs";
@@ -13,7 +13,7 @@ import {
   groupedCatalog,
   operationGroup,
   resolveGroupedCall,
-} from "./lib/operation-groups.mjs";
+} from "./lib/core/operation-groups.mjs";
 const semanticToolName = (name) => resolveOperation(name)?.semanticName ?? name;
 const presentedTools = new WeakMap();
 const presentedTool = (tool) => {
@@ -25,14 +25,14 @@ const presentedTool = (tool) => {
 };
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isManagedMutation, requireOperationSurface, requireSurface } from "./lib/managed-maintenance-surface.mjs";
-import { coreEntryGuidance } from "./lib/lode-entry-guidance.mjs";
-import { formatMcpToolContent } from "./lib/cli-presentation.mjs";
-import { sessionCallRequiresBinding } from "./lib/session-routing.mjs";
-import { createNativeSessionHostBridge } from "./lib/session-native-host.mjs";
-import { SESSION_HOST_REQUEST_HELPER } from "./lib/session-host-request.mjs";
-import { assessSubagentStateWrite, subagentWriteGuardEnabled } from "./lib/subagent-write-guard.mjs";
-import { withRecordedProjectRoot } from "./lib/project-root-spelling.mjs";
+import { isManagedMutation, requireOperationSurface, requireSurface } from "./lib/session/managed-maintenance-surface.mjs";
+import { coreEntryGuidance } from "./lib/session/lode-entry-guidance.mjs";
+import { formatMcpToolContent } from "./lib/session/cli-presentation.mjs";
+import { sessionCallRequiresBinding } from "./lib/session/session-routing.mjs";
+import { createNativeSessionHostBridge } from "./lib/session/session-native-host.mjs";
+import { SESSION_HOST_REQUEST_HELPER } from "./lib/session/session-host-request.mjs";
+import { assessSubagentStateWrite, subagentWriteGuardEnabled } from "./lib/session/subagent-write-guard.mjs";
+import { withRecordedProjectRoot } from "./lib/storage/project-root-spelling.mjs";
 import fs from "node:fs";
 
 const protocolVersion = "2024-11-05";
@@ -45,7 +45,7 @@ const allTools = [...registryCatalog()];
 // session bridge accepts it, before any catalog lookup; every other path refuses
 // it with NATIVE_HOOK_DIRECT_INGRESS_REQUIRED (see dispatchSessionRequest).
 // Listed surface: grouped tools replace their member operations (see
-// scripts/lib/operation-groups.mjs). allTools keeps every operation for dispatch.
+// scripts/lib/core/operation-groups.mjs). allTools keeps every operation for dispatch.
 const surfaceTools = groupedCatalog(allTools);
 const operationsByName = new Map(allTools.map((tool) => [tool.name, tool]));
 const defaultToolNames = new Set([
@@ -255,7 +255,7 @@ async function subagentStateWriteRejection(name, args, caller, environment) {
   // A cold catalog or disabled guard must not load optional Codex observations.
   let current = caller && typeof caller === "object" ? { ...caller } : null;
   if (current?.runtime === "codex" && current.subagent !== true && typeof args?.project_root === "string" && typeof current.nativeSessionId === "string") {
-    const { recordedSubagentCaller } = await import("./lib/subagent-caller-signal.mjs");
+    const { recordedSubagentCaller } = await import("./lib/session/subagent-caller-signal.mjs");
     if (recordedSubagentCaller({ root: args.project_root, runtime: "codex", nativeSessionId: current.nativeSessionId, environment }))
       current = { ...current, subagent: true };
   }
@@ -280,7 +280,7 @@ export { WORLD_MODEL_STATUS_MCP_MAX_BYTES };
 
 async function unresolvedSessionResponse(id, name, root, reasonCode) {
   try {
-    const routing = await import("./lib/session-routing.mjs");
+    const routing = await import("./lib/session/session-routing.mjs");
     const value = routing.sessionSelectionUnresolved(root, {
       includeProjectFacts: ["lode_project_status", "lode_conversation_enter"].includes(name),
       reasonCode,
@@ -356,7 +356,7 @@ async function dispatchSessionRequest(request, options = {}) {
   let bindingFailure = null;
   if (request.method === "tools/call" && args?.project_root && requestedName === "lode_project_status") {
     try {
-      const { inspectProjectLocationExperience } = await import("./lib/project-bootstrap.mjs");
+      const { inspectProjectLocationExperience } = await import("./lib/session/project-bootstrap.mjs");
       const projectLocationProjection = inspectProjectLocationExperience({ root: args.project_root, sessionId: hasSelection ? args.session_id : undefined });
       if (projectLocationProjection) return await dispatchRouted(request, { ...options, projectLocationProjection });
     } catch (error) {
@@ -439,7 +439,7 @@ async function dispatchSessionRequest(request, options = {}) {
       delete cleanArgs.session_id;
       const clean = { ...request, params: { ...request.params, arguments: routed ? { ...outer, arguments: cleanArgs } : cleanArgs } };
       if (!hasSelection && !dependent) return await dispatchRouted(clean, options);
-      const { withSessionCallContext } = await import("./lib/session-routing.mjs");
+      const { withSessionCallContext } = await import("./lib/session/session-routing.mjs");
       const response = await withSessionCallContext(
         { root: args.project_root, sessionId: hasSelection ? args.session_id : undefined, context: sessionContext },
         async () => await dispatchRouted(clean, options),
@@ -474,7 +474,7 @@ async function dispatchSessionRequest(request, options = {}) {
 // so the operation keeps today's "required" refusal.
 async function heldRecoveryBasisCall(name, args, memory) {
   if (name !== "lode_checkpoint_sync" || !args || typeof args !== "object" || args.expected_recovery_basis_id !== undefined) return null;
-  const { routedSessionId } = await import("./lib/session-routing.mjs");
+  const { routedSessionId } = await import("./lib/session/session-routing.mjs");
   // An uninitialized or unreadable Project has no routed Session: leave the
   // call unchanged so the operation gives its own refusal, as on main.
   let sessionId;
@@ -568,8 +568,8 @@ async function reArmHeldBases(root, direction, memory) {
   try {
     const sessions = memory.heldSessions(root);
     if (!sessions.length) return;
-    const { inspectRecoveryCheckpointBasis, recoveryBasisIdWithDirection } = await import("./lib/compaction-recovery.mjs");
-    const { withSessionRoute } = await import("./lib/session-routing.mjs");
+    const { inspectRecoveryCheckpointBasis, recoveryBasisIdWithDirection } = await import("./lib/session/compaction-recovery.mjs");
+    const { withSessionRoute } = await import("./lib/session/session-routing.mjs");
     for (const sessionId of sessions) {
       try {
         const basis = withSessionRoute(root, sessionId, () => inspectRecoveryCheckpointBasis({ root }).basis);
@@ -591,7 +591,7 @@ async function reArmHeldBases(root, direction, memory) {
 async function entryRecoveryBasisBefore(name, args) {
   if (name !== "lode_conversation_enter" || typeof args?.project_root !== "string") return null;
   try {
-    const { inspectRecoveryCheckpointBasis } = await import("./lib/compaction-recovery.mjs");
+    const { inspectRecoveryCheckpointBasis } = await import("./lib/session/compaction-recovery.mjs");
     return inspectRecoveryCheckpointBasis({ root: args.project_root }).basis;
   } catch {
     return null;
@@ -610,7 +610,7 @@ export function entryHoldSession(value, basis) {
 }
 
 // Initialize-or-resume: the basis was read right before the final read that
-// built this result (scripts/lib/entry-basis-capture.mjs); hold only when it is
+// built this result (scripts/lib/session/entry-basis-capture.mjs); hold only when it is
 // exactly the returned Session record and Project direction.
 export function initHoldSession(value, basis, sessionHash) {
   const sessionId = value?.project?.sessionId;
@@ -627,7 +627,7 @@ async function rememberEntryBasis(name, args, value, memory, entryBasis) {
   if (name === "lode_conversation_enter") sessionId = entryHoldSession(value, entryBasis);
   else {
     try {
-      const { sessionStateHash } = await import("./lib/run-lineage.mjs");
+      const { sessionStateHash } = await import("./lib/runtime/run-lineage.mjs");
       sessionId = initHoldSession(value, entryBasis, sessionStateHash);
     } catch {
       sessionId = null;
@@ -716,7 +716,7 @@ async function dispatchRouted(
     if (!registered) throw new Error(`Unknown tool: ${publicToolName(name)}`);
     // Only a view the native bridge issued to a verified caller counts (4-D).
     const basisMemory =
-      recoveryBasisMemory && (await import("./lib/session-native-host.mjs")).isBridgeIssuedRecoveryBasis(recoveryBasisMemory) ? recoveryBasisMemory : null;
+      recoveryBasisMemory && (await import("./lib/session/session-native-host.mjs")).isBridgeIssuedRecoveryBasis(recoveryBasisMemory) ? recoveryBasisMemory : null;
     const heldBasis = basisMemory ? await heldRecoveryBasisCall(name, args, basisMemory) : null;
     let entryBasis = basisMemory ? await entryRecoveryBasisBefore(name, args) : null;
     if (heldBasis) args = heldBasis.args;
@@ -749,7 +749,7 @@ async function dispatchRouted(
       });
     let value;
     if (capturesInitBasis) {
-      const { withEntryBasisCapture } = await import("./lib/entry-basis-capture.mjs");
+      const { withEntryBasisCapture } = await import("./lib/session/entry-basis-capture.mjs");
       ({ value, basis: entryBasis } = await withEntryBasisCapture(invoke));
     } else {
       try {

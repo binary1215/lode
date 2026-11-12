@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { tools } from "./mcp-server.mjs";
-import { previewContextWorkflow } from "./lib/context-workflow.mjs";
+import { previewContextWorkflow } from "./lib/session/context-workflow.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 

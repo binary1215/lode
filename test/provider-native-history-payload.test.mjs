@@ -4,13 +4,13 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
-import { captureProviderNativeHistory, inspectProviderNativePayload } from "../scripts/lib/provider-native-history-payload.mjs";
-import { inspectClaudeHistoryOriginal, inspectOpenCodeHistoryOriginal, deriveOpenCodeHistoryImport } from "../scripts/lib/provider-native-history-format.mjs";
+import { captureProviderNativeHistory, inspectProviderNativePayload } from "../scripts/lib/session/provider-native-history-payload.mjs";
+import { inspectClaudeHistoryOriginal, inspectOpenCodeHistoryOriginal, deriveOpenCodeHistoryImport } from "../scripts/lib/session/provider-native-history-format.mjs";
 import { fixture as coreFixture, snapshot } from "./helpers/session-work-linkage-fixture.mjs";
-import { exportProjectBundle } from "../scripts/lib/project-portability.mjs";
-import { attachProjectNativeTransfer, readProjectNativeTransfer, projectNativeTransferSummary } from "../scripts/lib/project-native-transfer.mjs";
+import { exportProjectBundle } from "../scripts/lib/storage/project-portability.mjs";
+import { attachProjectNativeTransfer, readProjectNativeTransfer, projectNativeTransferSummary } from "../scripts/lib/session/project-native-transfer.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
-import { operateProjectNativeHistory } from "../scripts/lib/project-native-history.mjs";
+import { operateProjectNativeHistory } from "../scripts/lib/session/project-native-history.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { syntheticNativeCapture } from "./helpers/native-portability-fixture.mjs";
 

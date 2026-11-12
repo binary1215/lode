@@ -5,10 +5,10 @@ import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 const sourceRoot = path.resolve(import.meta.dirname, "..");
-const { initializeOrResumeProject, inspectProjectExperience } = await import(pathToFileURL(sourceRoot + "/scripts/lib/project-bootstrap.mjs").href);
-const { formatProjectBootstrap, formatProjectStatus } = await import("../scripts/lib/cli-presentation.mjs");
+const { initializeOrResumeProject, inspectProjectExperience } = await import(pathToFileURL(sourceRoot + "/scripts/lib/session/project-bootstrap.mjs").href);
+const { formatProjectBootstrap, formatProjectStatus } = await import("../scripts/lib/session/cli-presentation.mjs");
 const { dispatch } = await import("../scripts/mcp-server.mjs");
-const { inspectProject, convergeProjectInstallation } = await import(pathToFileURL(sourceRoot + "/scripts/lib/lode-core.mjs").href);
+const { inspectProject, convergeProjectInstallation } = await import(pathToFileURL(sourceRoot + "/scripts/lib/session/lode-core.mjs").href);
 const read = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
 const bytes = (root) =>
   fs

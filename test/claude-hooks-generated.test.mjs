@@ -4,11 +4,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { CLAUDE_HOOKS_FILE, generateClaudeHooks, renderClaudeHooks } from "../scripts/lib/claude-hooks-generation.mjs";
-import { resolveOperation } from "../scripts/lib/lode-operation-contract.mjs";
-import { sessionCallRequiresBinding } from "../scripts/lib/session-routing.mjs";
+import { CLAUDE_HOOKS_FILE, generateClaudeHooks, renderClaudeHooks } from "../scripts/lib/distribution/claude-hooks-generation.mjs";
+import { resolveOperation } from "../scripts/lib/core/lode-operation-contract.mjs";
+import { sessionCallRequiresBinding } from "../scripts/lib/session/session-routing.mjs";
 import { catalogTools, operationCatalogTools, toolsForSurface } from "../scripts/mcp-server.mjs";
-import { operationGroup } from "../scripts/lib/operation-groups.mjs";
+import { operationGroup } from "../scripts/lib/core/operation-groups.mjs";
 import { legacyOperationName } from "../compat/head/public-names.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");

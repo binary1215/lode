@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   verifyCodexNativeApiHistory,
   readCodexNativeApiHistory,
-} from "../scripts/lib/codex-native-api-evidence.mjs";
+} from "../scripts/lib/distribution/codex-native-api-evidence.mjs";
 
 function fixture() {
   const item = {

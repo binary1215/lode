@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { KIND_PAIRS, LEGACY_FORMAT, LEGACY_KINDS, LEGACY_PROTOCOLS, LEGACY_VALUES, PROTOCOL_PAIRS, VALUE_PAIRS } from "../compat/head/format.mjs";
-import { familyFormatForOriginal, formatForVerifiedOwner, recordedFieldName } from "../scripts/lib/project-storage-format.mjs";
-import { normalizeSessionWorkEvidence } from "../scripts/lib/session-work-evidence-original.mjs";
+import { familyFormatForOriginal, formatForVerifiedOwner, recordedFieldName } from "../scripts/lib/storage/project-storage-format.mjs";
+import { normalizeSessionWorkEvidence } from "../scripts/lib/session/session-work-evidence-original.mjs";
 
 // Stage 3-D follow-up: source names wire values by their Lode spelling. Each
 // dialect still stores its own spelling, and either spelling selects the same value.

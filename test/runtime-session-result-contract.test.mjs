@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CODEX_EXEC_RESULT_SCHEMA, buildCodexExecWireResultSchema, verifyCodexExecWireResultSchema } from "../scripts/lib/runtime-codex-exec.mjs";
-import { CODEX_FRESH_PROPOSAL_RESULT_SCHEMA, buildCodexProposalResultSchema } from "../scripts/lib/runtime-codex-proposal.mjs";
-import { verifyRuntimeStructuredResult } from "../scripts/lib/runtime-invocation-lifecycle.mjs";
+import { CODEX_EXEC_RESULT_SCHEMA, buildCodexExecWireResultSchema, verifyCodexExecWireResultSchema } from "../scripts/lib/runtime/runtime-codex-exec.mjs";
+import { CODEX_FRESH_PROPOSAL_RESULT_SCHEMA, buildCodexProposalResultSchema } from "../scripts/lib/runtime/runtime-codex-proposal.mjs";
+import { verifyRuntimeStructuredResult } from "../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
 
 console.log(
   JSON.stringify({

@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { initializeProject } from "../../../scripts/lib/head-core.mjs";
-import { reviewOnboarding, startOnboarding } from "../../../scripts/lib/onboarding.mjs";
-import { onboardingCanonicalJson, onboardingDigest } from "../../../scripts/lib/onboarding-contract.mjs";
+import { reviewOnboarding, startOnboarding } from "../../../scripts/lib/session/onboarding.mjs";
+import { onboardingCanonicalJson, onboardingDigest } from "../../../scripts/lib/session/onboarding-contract.mjs";
 
 export const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 

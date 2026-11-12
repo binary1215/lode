@@ -6,9 +6,9 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { buildWorldModel } from "../scripts/lib/world-model.mjs";
-import { refreshWorldModel } from "../scripts/lib/incremental-refresh.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
+import { buildWorldModel } from "../scripts/lib/world/world-model.mjs";
+import { refreshWorldModel } from "../scripts/lib/world/incremental-refresh.mjs";
 import {
   inspectConformanceQueue,
   prepareConformanceAssessment,
@@ -16,13 +16,13 @@ import {
   proposeConformanceResolution,
   readConformanceFinding,
   recordConformanceDisposition,
-} from "../scripts/lib/conformance-reconciliation.mjs";
-import { ConformanceTriggerRegistry } from "../scripts/lib/conformance-trigger-adapter.mjs";
+} from "../scripts/lib/runtime/conformance-reconciliation.mjs";
+import { ConformanceTriggerRegistry } from "../scripts/lib/runtime/conformance-trigger-adapter.mjs";
 import { dispatch as dispatchMcp, operationCatalogTools as mcpTools } from "../scripts/mcp-server.mjs";
-import { ingestStructuredObservation } from "../scripts/lib/observation-adapter.mjs";
+import { ingestStructuredObservation } from "../scripts/lib/world/observation-adapter.mjs";
 import { runCommand } from "../scripts/head.mjs";
-import { formatReviewOutcome, formatConformanceFinding, formatConformanceQueue } from "../scripts/lib/cli-presentation.mjs";
-import { conformanceCanonicalJson, createConformanceDispositionReceipt, CONFORMANCE_MAINTENANCE_AUTHORITY } from "../scripts/lib/conformance-contract.mjs";
+import { formatReviewOutcome, formatConformanceFinding, formatConformanceQueue } from "../scripts/lib/session/cli-presentation.mjs";
+import { conformanceCanonicalJson, createConformanceDispositionReceipt, CONFORMANCE_MAINTENANCE_AUTHORITY } from "../scripts/lib/runtime/conformance-contract.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const testParent = process.env.HEAD_AGENT_TEST_TMP || os.tmpdir();

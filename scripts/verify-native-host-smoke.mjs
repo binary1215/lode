@@ -5,11 +5,11 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { installDistribution, inspectDistribution, rollbackDistribution, uninstallDistribution } from "./lib/distribution-lifecycle.mjs";
-import { createGoWorkerManifest } from "./lib/go-worker-adapter.mjs";
-import { createProcessSupervisorManifest } from "./lib/runtime-process-supervisor.mjs";
-import { createArcadeDbNativeBridgeManifest } from "./lib/arcadedb-native-bridge.mjs";
-import { createNativeSmokeCleanup } from "./lib/native-smoke-cleanup.mjs";
+import { installDistribution, inspectDistribution, rollbackDistribution, uninstallDistribution } from "./lib/distribution/distribution-lifecycle.mjs";
+import { createGoWorkerManifest } from "./lib/worker/go-worker-adapter.mjs";
+import { createProcessSupervisorManifest } from "./lib/runtime/runtime-process-supervisor.mjs";
+import { createArcadeDbNativeBridgeManifest } from "./lib/world/arcadedb-native-bridge.mjs";
+import { createNativeSmokeCleanup } from "./lib/distribution/native-smoke-cleanup.mjs";
 
 const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryParent = path.join(sourceRoot, "tmp");

@@ -10,11 +10,11 @@ import {
   inspectRepositoryScanFreshness,
   scanRepositoryReference,
   validateRepositoryScanResult,
-} from "../scripts/lib/repository-scan.mjs";
-import { buildSemanticGraph } from "../scripts/lib/semantic-graph.mjs";
-import { extractSemanticSourceFacts, extractSourceSymbols } from "../scripts/lib/source-analysis.mjs";
-import { buildTemporalProvenanceGraph } from "../scripts/lib/temporal-provenance.mjs";
-import { normalizeProductModelDocument } from "../scripts/lib/product-model.mjs";
+} from "../scripts/lib/world/repository-scan.mjs";
+import { buildSemanticGraph } from "../scripts/lib/world/semantic-graph.mjs";
+import { extractSemanticSourceFacts, extractSourceSymbols } from "../scripts/lib/world/source-analysis.mjs";
+import { buildTemporalProvenanceGraph } from "../scripts/lib/world/temporal-provenance.mjs";
+import { normalizeProductModelDocument } from "../scripts/lib/world/product-model.mjs";
 
 const testParent = process.env.HEAD_AGENT_TEST_TMP || os.tmpdir();
 

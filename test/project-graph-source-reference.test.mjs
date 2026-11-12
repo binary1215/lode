@@ -3,15 +3,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { initializeProject } from "../scripts/lib/lode-core.mjs";
-import { createLodeSession, withSessionRoute, sessionStatePath } from "../scripts/lib/session-routing.mjs";
-import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session-work-context.mjs";
-import { verifySessionWorkEvidenceOwner } from "../scripts/lib/session-work-evidence-original.mjs";
-import { queryProjectGraph, indexProjectGraph } from "../scripts/lib/project-graph.mjs";
-import { withProjectMutation } from "../scripts/lib/project-mutation-lock.mjs";
+import { initializeProject } from "../scripts/lib/session/lode-core.mjs";
+import { createLodeSession, withSessionRoute, sessionStatePath } from "../scripts/lib/session/session-routing.mjs";
+import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session/session-work-context.mjs";
+import { verifySessionWorkEvidenceOwner } from "../scripts/lib/session/session-work-evidence-original.mjs";
+import { queryProjectGraph, indexProjectGraph } from "../scripts/lib/world/project-graph.mjs";
+import { withProjectMutation } from "../scripts/lib/storage/project-mutation-lock.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
-import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
+import { formatCliResult } from "../scripts/lib/session/cli-presentation.mjs";
 import { sha, encoded, exact, link, citation } from "./helpers/session-work-linkage-fixture.mjs";
 import { assertTerminalGraphPresentation } from "./helpers/terminal-graph-assertions.mjs";
 
@@ -647,7 +647,7 @@ test("C1 Core, runCommand CLI and direct/read-router MCP preserve historical bod
 });
 
 test("C1 private predicate is source-backed pure association, separate from lexical text and scoring", () => {
-  const source = fs.readFileSync(path.join(pluginRoot, "scripts/lib/project-graph.mjs"), "utf8");
+  const source = fs.readFileSync(path.join(pluginRoot, "scripts/lib/world/project-graph.mjs"), "utf8");
   const predicate = source.match(/function matchesExplicitPaths\(node, paths\)\s*\{([\s\S]*?)\n\}/u)?.[1];
   assert.ok(predicate, "Keep the helper private; no test export or new API is required");
   assert.match(predicate, /nodePaths\(node\)/u);

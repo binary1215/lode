@@ -5,27 +5,27 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createExecutionContract, createResultPacket, createWholePlanSnapshot } from "../scripts/lib/execution-lineage.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createExecutionContract, createResultPacket, createWholePlanSnapshot } from "../scripts/lib/runtime/execution-lineage.mjs";
 import {
   diffGraphLineage,
   inspectGraphLineage,
   inspectGraphLineageComparison,
   projectExecutionLineageOverlay,
   traceGraphLineage,
-} from "../scripts/lib/graph-lineage.mjs";
-import { buildGraphExplorerSnapshot, exportGraphExplorer } from "../scripts/lib/graph-explorer.mjs";
+} from "../scripts/lib/world/graph-lineage.mjs";
+import { buildGraphExplorerSnapshot, exportGraphExplorer } from "../scripts/lib/world/graph-explorer.mjs";
 import { explorerCodec } from "../scripts/graph-explorer/codec.js";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { normalizeProductModelDocument } from "../scripts/lib/product-model.mjs";
-import { buildTemporalProvenanceGraph, verifyTemporalProvenanceGraph } from "../scripts/lib/temporal-provenance.mjs";
-import { buildWorldModel } from "../scripts/lib/world-model.mjs";
+import { normalizeProductModelDocument } from "../scripts/lib/world/product-model.mjs";
+import { buildTemporalProvenanceGraph, verifyTemporalProvenanceGraph } from "../scripts/lib/world/temporal-provenance.mjs";
+import { buildWorldModel } from "../scripts/lib/world/world-model.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { dispatch as dispatchMcp, operationCatalogTools as mcpTools } from "../scripts/mcp-server.mjs";
-import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
-import { LocalJsonWorldModelStoreAdapter, assertWorldModelStoreAdapter } from "../scripts/lib/world-model-store.mjs";
-import { readWorldModelSnapshot } from "../scripts/lib/world-model.mjs";
-import { temporalRelationIdentity } from "../scripts/lib/temporal-relation-identity.mjs";
+import { formatCliResult } from "../scripts/lib/session/cli-presentation.mjs";
+import { LocalJsonWorldModelStoreAdapter, assertWorldModelStoreAdapter } from "../scripts/lib/world/world-model-store.mjs";
+import { readWorldModelSnapshot } from "../scripts/lib/world/world-model.mjs";
+import { temporalRelationIdentity } from "../scripts/lib/world/temporal-relation-identity.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 

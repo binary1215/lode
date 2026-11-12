@@ -6,9 +6,9 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { startOnboarding, reviewOnboarding } from "../scripts/lib/onboarding.mjs";
-import { normalizeProductModelDocument, productModelDocument, readProductModelCanon } from "../scripts/lib/product-model.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
+import { startOnboarding, reviewOnboarding } from "../scripts/lib/session/onboarding.mjs";
+import { normalizeProductModelDocument, productModelDocument, readProductModelCanon } from "../scripts/lib/world/product-model.mjs";
 import {
   inspectProductPolicyStatus,
   productPolicyCanonicalJson,
@@ -16,14 +16,14 @@ import {
   readProductPolicyCandidate,
   reviewProductPolicy,
   verifyProductPolicyCandidate,
-} from "../scripts/lib/product-policy.mjs";
-import { withProjectMutationAsync } from "../scripts/lib/project-mutation-lock.mjs";
-import { buildWorldModel, inspectWorldModel, queryWorldTemporalGraph } from "../scripts/lib/world-model.mjs";
-import { traceGraphLineage } from "../scripts/lib/graph-lineage.mjs";
+} from "../scripts/lib/world/product-policy.mjs";
+import { withProjectMutationAsync } from "../scripts/lib/storage/project-mutation-lock.mjs";
+import { buildWorldModel, inspectWorldModel, queryWorldTemporalGraph } from "../scripts/lib/world/world-model.mjs";
+import { traceGraphLineage } from "../scripts/lib/world/graph-lineage.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { dispatch, operationCatalogTools as tools } from "../scripts/mcp-server.mjs";
-import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session-work-context.mjs";
-import { queryProjectGraph } from "../scripts/lib/project-graph.mjs";
+import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session/session-work-context.mjs";
+import { queryProjectGraph } from "../scripts/lib/world/project-graph.mjs";
 import { snapshot } from "./helpers/session-work-linkage-fixture.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { coreEntryGuidance } from "../scripts/lib/lode-entry-guidance.mjs";
+import { coreEntryGuidance } from "../scripts/lib/session/lode-entry-guidance.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 function project(t) {

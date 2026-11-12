@@ -4,8 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { withProjectMutation, withProjectMutationAsync } from "../scripts/lib/project-mutation-lock.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
+import { withProjectMutation, withProjectMutationAsync } from "../scripts/lib/storage/project-mutation-lock.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
 
 const host = crypto.createHash("sha256").update(os.hostname()).digest("hex").slice(0, 16);
 const deadPid = 99999999;

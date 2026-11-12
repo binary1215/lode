@@ -1,4 +1,4 @@
-import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
+import { relativeProjectArtifact } from "../scripts/lib/storage/project-storage-format.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
@@ -7,25 +7,25 @@ import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/execution-lineage.mjs";
-import { startRun } from "../scripts/lib/run-lineage.mjs";
-import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
-import { buildRuntimeProtocolEvidence, buildRuntimeProjectBinding } from "../scripts/lib/runtime-protocol-evidence.mjs";
-import { buildRuntimeInvocationAuthorization, prepareRuntimeInvocationExecution } from "../scripts/lib/runtime-invocation-lifecycle.mjs";
-import { RUNTIME_OPERATIONAL_STATE_ENV, inspectRuntimeExecutionLease } from "../scripts/lib/runtime-execution-lease.mjs";
-import { createBoundedWorkerDispatch } from "../scripts/lib/bounded-worker-dispatch.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { startRun } from "../scripts/lib/runtime/run-lineage.mjs";
+import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProtocolEvidence, buildRuntimeProjectBinding } from "../scripts/lib/runtime/runtime-protocol-evidence.mjs";
+import { buildRuntimeInvocationAuthorization, prepareRuntimeInvocationExecution } from "../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
+import { RUNTIME_OPERATIONAL_STATE_ENV, inspectRuntimeExecutionLease } from "../scripts/lib/runtime/runtime-execution-lease.mjs";
+import { createBoundedWorkerDispatch } from "../scripts/lib/worker/bounded-worker-dispatch.mjs";
 import {
   createBoundedWorkerJobHost,
   startBoundedWorkerJob,
   readBoundedWorkerJob,
   reconcileBoundedWorkerJob,
   cancelBoundedWorkerJob,
-} from "../scripts/lib/bounded-worker-job.mjs";
-import { readRuntimeInvocationRecord } from "../scripts/lib/runtime-invocation-record.mjs";
-import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime-process-supervisor.mjs";
-import { captureWorkerSourceBasis } from "../scripts/lib/worker-source-basis.mjs";
-import { prepareWorkerWorkspace, verifyWorkerWorkspace, workerExecutionBoundary } from "../scripts/lib/worker-workspace.mjs";
+} from "../scripts/lib/worker/bounded-worker-job.mjs";
+import { readRuntimeInvocationRecord } from "../scripts/lib/runtime/runtime-invocation-record.mjs";
+import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
+import { captureWorkerSourceBasis } from "../scripts/lib/worker/worker-source-basis.mjs";
+import { prepareWorkerWorkspace, verifyWorkerWorkspace, workerExecutionBoundary } from "../scripts/lib/worker/worker-workspace.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const emit = (value) => console.log(JSON.stringify({ ...value, at: new Date().toISOString() }));

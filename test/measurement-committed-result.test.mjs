@@ -5,13 +5,13 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { observationDigest } from "../scripts/lib/observation-contract.mjs";
-import { defineMetric, recordMetricObservation, compareMetricObservations } from "../scripts/lib/measurement-workflow.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
+import { observationDigest } from "../scripts/lib/world/observation-contract.mjs";
+import { defineMetric, recordMetricObservation, compareMetricObservations } from "../scripts/lib/world/measurement-workflow.mjs";
 import {
   loadObservationArtifacts, readObservation,
-} from "../scripts/lib/observation-store.mjs";
-import { LocalJsonWorldModelStoreAdapter } from "../scripts/lib/world-model-store.mjs";
+} from "../scripts/lib/world/observation-store.mjs";
+import { LocalJsonWorldModelStoreAdapter } from "../scripts/lib/world/world-model-store.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const sha = observationDigest;

@@ -4,20 +4,20 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { recordChangeSet, reviewChangeImpact, inspectChangeSets } from "../scripts/lib/change-set.mjs";
+import { recordChangeSet, reviewChangeImpact, inspectChangeSets } from "../scripts/lib/world/change-set.mjs";
 import {
   verifyChangeSet,
   changeSetCanonicalJson,
   changeSetDigest,
   CHANGE_SET_VERSION,
   CHANGE_SET_RECORD_VERSION,
-} from "../scripts/lib/change-set-projection.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/execution-lineage.mjs";
-import { startFeatureMapping, reviewFeatureMapping } from "../scripts/lib/feature-mapping.mjs";
+} from "../scripts/lib/world/change-set-projection.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { startFeatureMapping, reviewFeatureMapping } from "../scripts/lib/world/feature-mapping.mjs";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/run-lineage.mjs";
-import { buildWorldModel, inspectWorldModel, readWorldModelSnapshot } from "../scripts/lib/world-model.mjs";
+import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/runtime/run-lineage.mjs";
+import { buildWorldModel, inspectWorldModel, readWorldModelSnapshot } from "../scripts/lib/world/world-model.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 

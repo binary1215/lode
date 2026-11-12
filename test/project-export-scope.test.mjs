@@ -5,13 +5,13 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { fixture, pluginRoot, snapshot } from "./helpers/session-work-linkage-fixture.mjs";
-import { createLodeSession, withSessionRoute } from "../scripts/lib/session-routing.mjs";
-import { recordSessionWorkEvidence } from "../scripts/lib/session-work-context.mjs";
+import { createLodeSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
+import { recordSessionWorkEvidence } from "../scripts/lib/session/session-work-context.mjs";
 import {
   exportProjectBundle,
   inspectProjectBundle,
   importProjectBundle,
-} from "../scripts/lib/project-portability.mjs";
+} from "../scripts/lib/storage/project-portability.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { dispatch, operationCatalogTools as catalogTools } from "../scripts/mcp-server.mjs";
 const sha = (raw) => crypto.createHash("sha256").update(raw).digest("hex");

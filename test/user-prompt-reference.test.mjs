@@ -5,8 +5,8 @@ import path from "node:path";
 import childProcess from "node:child_process";
 import { EventEmitter } from "node:events";
 import test from "node:test";
-import { initializeProject } from "../scripts/lib/lode-core.mjs";
-import { createNativeObservationStore } from "../scripts/lib/native-session-observations.mjs";
+import { initializeProject } from "../scripts/lib/session/lode-core.mjs";
+import { createNativeObservationStore } from "../scripts/lib/session/native-session-observations.mjs";
 import {
   appendUserPromptReference,
   captureUserPrompt,
@@ -15,7 +15,7 @@ import {
   prepareUserPromptReference,
   acknowledgeUserPromptReference,
   USER_PROMPT_REFERENCE_LIMITS,
-} from "../scripts/lib/user-prompt-reference.mjs";
+} from "../scripts/lib/session/user-prompt-reference.mjs";
 import { runSessionHostHook, writeSessionHostOutput } from "../scripts/session-host-hook.mjs";
 import plugin from "../scripts/opencode-plugin.mjs";
 
@@ -433,7 +433,7 @@ test("review regression: prompt references are Project scoped and survive explic
   const moved = path.join(base, "moved-project");
   fs.cpSync(root, moved, { recursive: true });
   assert.equal(takeUserPromptReference({ ...caller, root: moved, force: true }), "", "Unverified copies have no Project authority.");
-  const { initializeOrResumeProject } = await import("../scripts/lib/project-bootstrap.mjs");
+  const { initializeOrResumeProject } = await import("../scripts/lib/session/project-bootstrap.mjs");
   await initializeOrResumeProject({ root: moved, pluginRoot, profile: "core" });
   assert.match(takeUserPromptReference({ ...caller, root: moved }), /same Project after move/);
   assert.equal(takeUserPromptReference({ ...caller, root, force: true }), "", "Same Project reference is consumed once.");

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Regenerates the grouped-tool mapping tables in docs/mcp-surface.md and
-// docs/ko/mcp-surface.md from scripts/lib/operation-groups.mjs. Only the text
+// docs/ko/mcp-surface.md from scripts/lib/core/operation-groups.mjs. Only the text
 // between the two generated markers is replaced.
 //
 //   node scripts/generate-mcp-surface-docs.mjs [--check]
@@ -22,8 +22,8 @@ const HEADERS = {
 
 export async function renderMcpSurfaceTable(file) {
   const { operationCatalogTools } = await import("./mcp-server.mjs");
-  const { DEPRECATED_ALIAS_REMOVAL_VERSION, OPERATION_GROUPS } = await import("./lib/operation-groups.mjs");
-  const { isManagedMutation } = await import("./lib/managed-maintenance-surface.mjs");
+  const { DEPRECATED_ALIAS_REMOVAL_VERSION, OPERATION_GROUPS } = await import("./lib/core/operation-groups.mjs");
+  const { isManagedMutation } = await import("./lib/session/managed-maintenance-surface.mjs");
   const operations = new Map(operationCatalogTools.map((tool) => [tool.name, tool]));
   const [group, action, route, alias] = HEADERS[file];
   const lines = [`| ${group} | ${action} | ${route} | ${alias} (${DEPRECATED_ALIAS_REMOVAL_VERSION}) |`, "| --- | --- | --- | --- |"];

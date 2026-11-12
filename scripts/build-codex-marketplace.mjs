@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import path from "node:path";
-import { buildCodexMarketplaceSnapshot } from "./lib/codex-marketplace.mjs";
+import { buildCodexMarketplaceSnapshot } from "./lib/distribution/codex-marketplace.mjs";
 import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
 
 function option(name, fallback = "") {

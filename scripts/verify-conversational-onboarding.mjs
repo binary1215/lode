@@ -6,7 +6,7 @@ import path from "node:path";
 import { dispatch } from "./mcp-server.mjs";
 import { canonicalOperationName } from "../compat/head/public-names.mjs";
 import { publicToolName } from "./lib/lode-artifact-composition.mjs";
-import { groupMembership } from "./lib/operation-groups.mjs";
+import { groupMembership } from "./lib/core/operation-groups.mjs";
 
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "head-agent-conversation-"));
 const projectRoot = path.join(temporaryRoot, "sample-project");

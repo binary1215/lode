@@ -7,8 +7,8 @@ import test from "node:test";
 import { initializeProject } from "../scripts/lib/head-core.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import plugin from "../scripts/opencode-plugin.mjs";
-import { createNativeObservationStore } from "../scripts/lib/native-session-observations.mjs";
-import { buildCodexMarketplaceSnapshot } from "../scripts/lib/codex-marketplace.mjs";
+import { createNativeObservationStore } from "../scripts/lib/session/native-session-observations.mjs";
+import { buildCodexMarketplaceSnapshot } from "../scripts/lib/distribution/codex-marketplace.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const caller = { runtime: "opencode", nativeSessionId: "ses_fixture", agentId: null };

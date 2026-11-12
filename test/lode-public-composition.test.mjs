@@ -6,11 +6,11 @@ import { syncBuiltinESMExports } from "node:module";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { ARTIFACT_COMPOSITION, artifactCompositionForIdentity, publicToolName } from "../scripts/lib/lode-artifact-composition.mjs";
-import { OPERATION_DESCRIPTORS, resolveOperation } from "../scripts/lib/lode-operation-contract.mjs";
+import { OPERATION_DESCRIPTORS, resolveOperation } from "../scripts/lib/core/lode-operation-contract.mjs";
 import { dispatch, tools, toolsForSurface, catalogTools, operationCatalogTools, discoverTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { workerIntegrationFixture } from "./helpers/worker-integration-fixture.mjs";
-import { readRuntimeInvocationResult } from "../scripts/lib/runtime-run-result-application.mjs";
+import { readRuntimeInvocationResult } from "../scripts/lib/runtime/runtime-run-result-application.mjs";
 
 const request = name => dispatch({ jsonrpc: "2.0", id: "lode-composition-contract", method: "tools/call", params: { name, arguments: {} } });
 

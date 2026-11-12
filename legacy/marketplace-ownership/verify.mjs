@@ -2,8 +2,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { validateGoWorkerManifest } from "../../scripts/lib/go-worker-adapter.mjs";
-import { verifyArcadeDbNativeBridgeManifest } from "../../scripts/lib/arcadedb-native-bridge.mjs";
+import { validateGoWorkerManifest } from "../../scripts/lib/worker/go-worker-adapter.mjs";
+import { verifyArcadeDbNativeBridgeManifest } from "../../scripts/lib/world/arcadedb-native-bridge.mjs";
 
 const sha256 = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);

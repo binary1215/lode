@@ -4,18 +4,18 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject } from "../scripts/lib/head-core.mjs";
-import { createHeadSession, withSessionRoute } from "../scripts/lib/session-routing.mjs";
-import { recordSessionWorkEvidence, readSessionWorkEvidenceOwner } from "../scripts/lib/session-work-context.mjs";
-import { createSourceObservation, retainSourceObservation } from "../scripts/lib/source-observation.mjs";
-import { queryProjectGraph } from "../scripts/lib/project-graph.mjs";
-import { prepareWorkDocuments, publishWorkDocuments, configureWorkDocuments, workDocumentStatus } from "../scripts/lib/work-document-publication.mjs";
-import { createNotionWorkDocumentAdapter, createBoundedNotionRequest } from "../scripts/lib/work-document-destinations.mjs";
-import { workDocumentHash } from "../scripts/lib/work-document-source.mjs";
-import { recordSessionWorkAndProjectDocuments } from "../scripts/lib/session-work-document-workflow.mjs";
-import { workDocumentStore } from "../scripts/lib/work-document-store.mjs";
+import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
+import { recordSessionWorkEvidence, readSessionWorkEvidenceOwner } from "../scripts/lib/session/session-work-context.mjs";
+import { createSourceObservation, retainSourceObservation } from "../scripts/lib/world/source-observation.mjs";
+import { queryProjectGraph } from "../scripts/lib/world/project-graph.mjs";
+import { prepareWorkDocuments, publishWorkDocuments, configureWorkDocuments, workDocumentStatus } from "../scripts/lib/world/work-document-publication.mjs";
+import { createNotionWorkDocumentAdapter, createBoundedNotionRequest } from "../scripts/lib/world/work-document-destinations.mjs";
+import { workDocumentHash } from "../scripts/lib/world/work-document-source.mjs";
+import { recordSessionWorkAndProjectDocuments } from "../scripts/lib/session/session-work-document-workflow.mjs";
+import { workDocumentStore } from "../scripts/lib/world/work-document-store.mjs";
 import { dispatch, operationCatalogTools as catalogTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
-import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
+import { formatCliResult } from "../scripts/lib/session/cli-presentation.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 function setup(t) {

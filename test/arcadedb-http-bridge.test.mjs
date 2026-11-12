@@ -9,9 +9,9 @@ import {
   ActivatedArcadeDbGraphProjectionAdapter,
   LocalJsonGraphProjectionAdapter,
   buildGraphProjectionPointer,
-} from "../scripts/lib/graph-projection-adapter.mjs";
-import { buildStorageSelection } from "../scripts/lib/onboarding-contract.mjs";
-import { buildTemporalProvenanceGraph } from "../scripts/lib/temporal-provenance.mjs";
+} from "../scripts/lib/world/graph-projection-adapter.mjs";
+import { buildStorageSelection } from "../scripts/lib/session/onboarding-contract.mjs";
+import { buildTemporalProvenanceGraph } from "../scripts/lib/world/temporal-provenance.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const fixture = new URL("./helpers/arcadedb-fetch-fault-fixture.mjs", import.meta.url).href;

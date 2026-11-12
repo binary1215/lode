@@ -4,12 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { createHeadSession, withSessionRoute } from "../scripts/lib/session-routing.mjs";
-import { recordSessionWorkEvidence, readSessionWorkEvidenceOwner } from "../scripts/lib/session-work-context.mjs";
-import { updateProjectDirection } from "../scripts/lib/project-direction.mjs";
-import { readWorkDocumentBasis, renderWorkDocument, resolveWorkDocumentLinks, workDocumentHash } from "../scripts/lib/work-document-source.mjs";
-import { createSourceObservation, retainSourceObservation } from "../scripts/lib/source-observation.mjs";
-import { createRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
+import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
+import { recordSessionWorkEvidence, readSessionWorkEvidenceOwner } from "../scripts/lib/session/session-work-context.mjs";
+import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
+import { readWorkDocumentBasis, renderWorkDocument, resolveWorkDocumentLinks, workDocumentHash } from "../scripts/lib/world/work-document-source.mjs";
+import { createSourceObservation, retainSourceObservation } from "../scripts/lib/world/source-observation.mjs";
+import { createRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 function setup(t) {

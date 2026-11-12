@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { atomicWriteArtifact, atomicCreateArtifact } from "../scripts/lib/artifact-storage.mjs";
+import { atomicWriteArtifact, atomicCreateArtifact } from "../scripts/lib/storage/artifact-storage.mjs";
 
 function fixture(t, prefix = "head-C-atomic-") {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), prefix));

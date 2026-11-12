@@ -157,7 +157,7 @@ const explicit = [
     'const module = real.slice(libUrl.length).replace(/\\.mjs$/, "").replace(/^.*\\//, "");',
   ],
   // A comment that names its sibling by relative path.
-  ["scripts/lib/artifact-storage.mjs", "// Moved to ./core/fs-atomic.mjs;", "// Moved to ../core/fs-atomic.mjs;"],
+  ["scripts/lib/storage/artifact-storage.mjs", "// Moved to ./core/fs-atomic.mjs;", "// Moved to ../core/fs-atomic.mjs;"],
 ];
 for (const [file, from, to] of explicit) {
   const text = changes.get(file) ?? fs.readFileSync(path.join(root, file), "utf8");

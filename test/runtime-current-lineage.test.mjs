@@ -5,27 +5,27 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { initializeOrResumeProject } from "../scripts/lib/project-bootstrap.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/execution-lineage.mjs";
-import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/run-lineage.mjs";
-import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
-import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime-protocol-evidence.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { initializeOrResumeProject } from "../scripts/lib/session/project-bootstrap.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/runtime/run-lineage.mjs";
+import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime/runtime-protocol-evidence.mjs";
 import {
   buildRuntimeInvocationAuthorization,
   prepareRuntimeInvocationExecution,
   verifyRuntimeInvocationCurrentLineage,
   readRuntimeInvocationAuthorization,
-} from "../scripts/lib/runtime-invocation-lifecycle.mjs";
-import { readProjectDirection, updateProjectDirection } from "../scripts/lib/project-direction.mjs";
-import { createHeadSession, withSessionRoute } from "../scripts/lib/session-routing.mjs";
-import { createBoundedWorkerDispatch, readBoundedWorkerDispatch } from "../scripts/lib/bounded-worker-dispatch.mjs";
-import { withPreparedRuntimeInputView } from "../scripts/lib/runtime-prepared-input-view.mjs";
+} from "../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
+import { readProjectDirection, updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
+import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
+import { createBoundedWorkerDispatch, readBoundedWorkerDispatch } from "../scripts/lib/worker/bounded-worker-dispatch.mjs";
+import { withPreparedRuntimeInputView } from "../scripts/lib/runtime/runtime-prepared-input-view.mjs";
 import { workerIntegrationFixture } from "./helpers/worker-integration-fixture.mjs";
 import { runCommand } from "../scripts/head.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
-import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
+import { formatCliResult } from "../scripts/lib/session/cli-presentation.mjs";
 import { localContinuityCommand } from "./helpers/session-continuity-process.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");

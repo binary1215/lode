@@ -4,12 +4,12 @@ import path from "node:path";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { formatCliResult, formatCliError, formatProjectStatus } from "../scripts/lib/cli-presentation.mjs";
-import { formatTerminalGraph, inertTerminalText, terminalBlock } from "../scripts/lib/terminal-graph.mjs";
-import { initializeOrResumeProject } from "../scripts/lib/project-bootstrap.mjs";
-import { queryProjectGraph } from "../scripts/lib/project-graph.mjs";
-import { buildCodexMarketplaceSnapshot } from "../scripts/lib/codex-marketplace.mjs";
-import { buildClaudeMarketplaceSnapshot } from "../scripts/lib/claude-marketplace.mjs";
+import { formatCliResult, formatCliError, formatProjectStatus } from "../scripts/lib/session/cli-presentation.mjs";
+import { formatTerminalGraph, inertTerminalText, terminalBlock } from "../scripts/lib/world/terminal-graph.mjs";
+import { initializeOrResumeProject } from "../scripts/lib/session/project-bootstrap.mjs";
+import { queryProjectGraph } from "../scripts/lib/world/project-graph.mjs";
+import { buildCodexMarketplaceSnapshot } from "../scripts/lib/distribution/codex-marketplace.mjs";
+import { buildClaudeMarketplaceSnapshot } from "../scripts/lib/distribution/claude-marketplace.mjs";
 import { fixture, snapshot, pluginRoot } from "./helpers/session-work-linkage-fixture.mjs";
 
 const attack = "\u001b]52;c;c3Bvb2Y=\u0007\u001b]8;;https://example.invalid\u001b\\\u001b[2J\r\b\u009b31m\u202e\nSTATUS: SUCCESS";
@@ -179,7 +179,7 @@ test("four actual marketplace packages load the terminal module offline and ever
   const f = fixture(t), value = graph();
   for (const [client, build] of [["codex", buildCodexMarketplaceSnapshot], ["claude", buildClaudeMarketplaceSnapshot]]) for (const name of ["lode-agent-plugin", "head-agent-plugin"]) {
     const outputRoot = path.join(f.base, `${client}-${name}`), built = build({ sourceRoot: pluginRoot, outputRoot, name, repository: "local", commit: "local" });
-    const root = path.join(outputRoot, "plugins", built.pluginName), installed = await import(pathToFileURL(path.join(root, "scripts/lib/cli-presentation.mjs")));
+    const root = path.join(outputRoot, "plugins", built.pluginName), installed = await import(pathToFileURL(path.join(root, "scripts/lib/session/cli-presentation.mjs")));
     assert(installed.formatCliResult("graph-query", value).includes("Selected connections"));
     const skillDirectory = path.join(root, "skills", built.pluginName), skill = fs.readFileSync(path.join(skillDirectory, "SKILL.md"), "utf8");
     assert(fs.existsSync(path.join(root, "README.md")));

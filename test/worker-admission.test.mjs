@@ -6,35 +6,35 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/execution-lineage.mjs";
-import { finishRun, startRun } from "../scripts/lib/run-lineage.mjs";
-import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
-import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime-protocol-evidence.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { finishRun, startRun } from "../scripts/lib/runtime/run-lineage.mjs";
+import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime/runtime-protocol-evidence.mjs";
 import {
   buildRuntimeInvocationAuthorization,
   buildRuntimeInvocationLifecycleReceipt,
   buildRuntimeResultPacketDraft,
-} from "../scripts/lib/runtime-invocation-lifecycle.mjs";
-import { persistRuntimeInvocationRecord } from "../scripts/lib/runtime-invocation-record.mjs";
+} from "../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
+import { persistRuntimeInvocationRecord } from "../scripts/lib/runtime/runtime-invocation-record.mjs";
 import {
   RUNTIME_OPERATIONAL_STATE_ENV,
   createRuntimePreConsumeGateCapability,
   inspectRuntimeExecutionLease,
   withRuntimeExecutionLease,
-} from "../scripts/lib/runtime-execution-lease.mjs";
-import { createBoundedWorkerDispatch, executeBoundedWorkerDispatch, readBoundedWorkerDispatch, waitForBoundedWorkerDispatch, applyBoundedWorkerDispatchResult } from "../scripts/lib/bounded-worker-dispatch.mjs";
-import { createBoundedWorkerWave, readBoundedWorkerWaveStatus } from "../scripts/lib/bounded-worker-wave.mjs";
+} from "../scripts/lib/runtime/runtime-execution-lease.mjs";
+import { createBoundedWorkerDispatch, executeBoundedWorkerDispatch, readBoundedWorkerDispatch, waitForBoundedWorkerDispatch, applyBoundedWorkerDispatchResult } from "../scripts/lib/worker/bounded-worker-dispatch.mjs";
+import { createBoundedWorkerWave, readBoundedWorkerWaveStatus } from "../scripts/lib/worker/bounded-worker-wave.mjs";
 import {
   enqueueWorkerAdmission,
   openWorkerAdmissionHost,
   provisionWorkerAdmissionDomain,
   readWorkerAdmissionProjection,
-} from "../scripts/lib/worker-admission.mjs";
+} from "../scripts/lib/worker/worker-admission.mjs";
 
-import { initialOnboardingDocuments } from "../scripts/lib/onboarding-contract.mjs";
-import { emptyProductModelDocument, normalizeProductModelDocument } from "../scripts/lib/product-model.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
+import { initialOnboardingDocuments } from "../scripts/lib/session/onboarding-contract.mjs";
+import { emptyProductModelDocument, normalizeProductModelDocument } from "../scripts/lib/world/product-model.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
 
 // Synthetic legacy contract seed only; genuine old-producer interoperability is verified separately.
 function seedLegacyProject(root) {

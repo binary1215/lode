@@ -14,8 +14,8 @@ import {
   verifyWorkerFileEffectTerminalProof,
   workerFileEffectNativeIntentId,
   WORKER_FILE_EFFECT_TRANSPORT_MAX_BYTES,
-} from "../scripts/lib/runtime-worker-file-effect.mjs";
-import { createProcessSupervisorManifest } from "../scripts/lib/runtime-process-supervisor.mjs";
+} from "../scripts/lib/runtime/runtime-worker-file-effect.mjs";
+import { createProcessSupervisorManifest } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 function fixture(t) {

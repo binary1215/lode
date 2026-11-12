@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { createCodexWorkerPolicyHost } from "../../scripts/lib/runtime-codex-worker-policy.mjs";
+import { createCodexWorkerPolicyHost } from "../../scripts/lib/runtime/runtime-codex-worker-policy.mjs";
 
 export async function connectCodexWorkerHost({ root, executionRoot, authorization, policy }) {
   assert.equal(policy.evidenceMode, "protocol-fixture");

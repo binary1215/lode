@@ -5,9 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { recordChangeSet } from "../scripts/lib/change-set.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/execution-lineage.mjs";
+import { recordChangeSet } from "../scripts/lib/world/change-set.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/runtime/execution-lineage.mjs";
 import crypto from "node:crypto";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
 import {
@@ -22,15 +22,15 @@ import {
   recordProductSignal,
   reviewProductInitiative,
   verifyProductHypothesis,
-} from "../scripts/lib/product-operating-loop.mjs";
-import * as productOperatingAPI from "../scripts/lib/product-operating-loop.mjs";
-import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/run-lineage.mjs";
-import { buildWorldModel, inspectWorldModel, queryWorldTemporalGraph } from "../scripts/lib/world-model.mjs";
+} from "../scripts/lib/world/product-operating-loop.mjs";
+import * as productOperatingAPI from "../scripts/lib/world/product-operating-loop.mjs";
+import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/runtime/run-lineage.mjs";
+import { buildWorldModel, inspectWorldModel, queryWorldTemporalGraph } from "../scripts/lib/world/world-model.mjs";
 import { dispatch as dispatchMcp } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/head.mjs";
 
 import { seedLegacyProject } from "./helpers/legacy-project-fixture.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const testParent = process.env.HEAD_AGENT_TEST_TMP || os.tmpdir();
@@ -822,7 +822,7 @@ test("serializes competing Product decisions and capacity checks across independ
     fs.rmSync(reviewRoot, { recursive: true, force: true });
     fs.rmSync(countRoot, { recursive: true, force: true });
   });
-  const productUrl = pathToFileURL(path.join(pluginRoot, "scripts", "lib", "product-operating-loop.mjs")).href;
+  const productUrl = pathToFileURL(path.join(pluginRoot, "scripts", "lib", "world", "product-operating-loop.mjs")).href;
   const workerSource = `
     import fs from "node:fs";
     import { setTimeout as delay } from "node:timers/promises";

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertCodexControlledLegacyPrefix as verify } from "../scripts/lib/runtime-codex-legacy-prefix.mjs";
+import { assertCodexControlledLegacyPrefix as verify } from "../scripts/lib/runtime/runtime-codex-legacy-prefix.mjs";
 
 const seedInput = "controlled seed";
 const user = { id: "uuid-user", type: "userMessage", content: [{ type: "text", text: seedInput }] };

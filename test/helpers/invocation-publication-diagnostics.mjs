@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { persistRuntimeInvocationRecord, runtimeInvocationRecordDirectory } from "../../scripts/lib/runtime-invocation-record.mjs";
+import { persistRuntimeInvocationRecord, runtimeInvocationRecordDirectory } from "../../scripts/lib/runtime/runtime-invocation-record.mjs";
 
 const fixtures = new Set();
 const activePublications = new Set();

@@ -5,10 +5,10 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { dispatch } from "../scripts/mcp-server.mjs";
-import { initializeProject } from "../scripts/lib/lode-core.mjs";
-import { resolveProjectStorage } from "../scripts/lib/project-storage-format.mjs";
-import { inspectConversationalOnboarding } from "../scripts/lib/onboarding-conversation.mjs";
-import { validateProjectRootArgument } from "../scripts/lib/mcp-argument-validation.mjs";
+import { initializeProject } from "../scripts/lib/session/lode-core.mjs";
+import { resolveProjectStorage } from "../scripts/lib/storage/project-storage-format.mjs";
+import { inspectConversationalOnboarding } from "../scripts/lib/session/onboarding-conversation.mjs";
+import { validateProjectRootArgument } from "../scripts/lib/core/mcp-argument-validation.mjs";
 
 // These tests pin the documented MCP contract to actual behavior: declared
 // inputSchemas are enforced, library reason codes reach the wire, and a Lode

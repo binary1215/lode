@@ -5,10 +5,10 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { inspectMigration, applyMigration } from "../src/migrator.mjs";
-import { inspectOnboarding, proposeOnboardingSemanticRefresh, reviewOnboarding } from "../../../scripts/lib/onboarding.mjs";
-import { buildWorldModel, inspectWorldModel } from "../../../scripts/lib/world-model.mjs";
-import { stageDistributionRelease } from "../../../scripts/lib/distribution-lifecycle.mjs";
-import { applyHistoricalArtifactBoundary } from "../../../scripts/lib/historical-artifact-boundary.mjs";
+import { inspectOnboarding, proposeOnboardingSemanticRefresh, reviewOnboarding } from "../../../scripts/lib/session/onboarding.mjs";
+import { buildWorldModel, inspectWorldModel } from "../../../scripts/lib/world/world-model.mjs";
+import { stageDistributionRelease } from "../../../scripts/lib/distribution/distribution-lifecycle.mjs";
+import { applyHistoricalArtifactBoundary } from "../../../scripts/lib/world/historical-artifact-boundary.mjs";
 import { runCommand } from "../../../scripts/head.mjs";
 import { legacyReadyFixture, legacyRevisedReadyFixture, pluginRoot, snapshotFiles } from "./fixture.mjs";
 
@@ -130,9 +130,9 @@ test("distribution without migrator supports fresh B to C, cold status/World/Con
     false,
   );
   assert.equal(fs.existsSync(path.join(stage, "legacy")), false, "standalone helper is physically absent from runtime payload");
-  const onboardingUrl = new URL(`file:///${path.join(stage, "scripts/lib/onboarding.mjs").replaceAll("\\", "/")}`).href;
-  const worldUrl = new URL(`file:///${path.join(stage, "scripts/lib/world-model.mjs").replaceAll("\\", "/")}`).href;
-  const contextUrl = new URL(`file:///${path.join(stage, "scripts/lib/context-compiler.mjs").replaceAll("\\", "/")}`).href;
+  const onboardingUrl = new URL(`file:///${path.join(stage, "scripts/lib/session/onboarding.mjs").replaceAll("\\", "/")}`).href;
+  const worldUrl = new URL(`file:///${path.join(stage, "scripts/lib/world/world-model.mjs").replaceAll("\\", "/")}`).href;
+  const contextUrl = new URL(`file:///${path.join(stage, "scripts/lib/session/context-compiler.mjs").replaceAll("\\", "/")}`).href;
   const mcpUrl = new URL(`file:///${path.join(stage, "scripts/mcp-server.mjs").replaceAll("\\", "/")}`).href;
   const childSource = `
     import {inspectOnboarding,reviewOnboarding} from ${JSON.stringify(onboardingUrl)};

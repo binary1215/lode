@@ -4,16 +4,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { initializeProject } from "./lib/head-core.mjs";
-import { startOnboarding } from "./lib/onboarding.mjs";
-import { arcadeDbGraphReservedSchemaFor } from "./lib/graph-projection-adapter.mjs";
-import { arcadeDbRequiredKeysFor } from "./lib/arcadedb-schema-contract.mjs";
-import { formatForVerifiedOwner } from "./lib/project-storage-format.mjs";
+import { startOnboarding } from "./lib/session/onboarding.mjs";
+import { arcadeDbGraphReservedSchemaFor } from "./lib/world/graph-projection-adapter.mjs";
+import { arcadeDbRequiredKeysFor } from "./lib/world/arcadedb-schema-contract.mjs";
+import { formatForVerifiedOwner } from "./lib/storage/project-storage-format.mjs";
 import {
   initializeArcadeDbDatabase,
   inspectArcadeDbDatabaseCompatibility,
   verifyArcadeDbDatabaseCompatibilityAudit,
   verifyArcadeDbDatabaseLifecycleReceipt,
-} from "./lib/arcadedb-database-lifecycle.mjs";
+} from "./lib/world/arcadedb-database-lifecycle.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const root = path.join(pluginRoot, `.test-tmp-arcadedb-database-lifecycle-${process.pid}`);

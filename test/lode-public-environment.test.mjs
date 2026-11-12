@@ -5,20 +5,20 @@ import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import test from "node:test";
-import { pythonExecutable } from "../scripts/lib/python-source-collector.mjs";
+import { pythonExecutable } from "../scripts/lib/world/python-source-collector.mjs";
 import { ENVIRONMENT_NAME_PAIRS } from "../compat/head/public-names.mjs";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
-import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime-protocol-evidence.mjs";
-import { buildRuntimeInvocationAuthorization } from "../scripts/lib/runtime-invocation-lifecycle.mjs";
-import { createBoundedWorkerDispatch } from "../scripts/lib/bounded-worker-dispatch.mjs";
-import { createBoundedWorkerJobHost, startBoundedWorkerJob, readBoundedWorkerJob } from "../scripts/lib/bounded-worker-job.mjs";
-import { RUNTIME_OPERATIONAL_STATE_ENV, RUNTIME_OPERATIONAL_STATE_CANONICAL_ENV } from "../scripts/lib/runtime-execution-lease.mjs";
-import { captureWorkerSourceBasis } from "../scripts/lib/worker-source-basis.mjs";
-import { captureWorkerWriteBasis } from "../scripts/lib/worker-patch-basis.mjs";
-import { prepareWorkerWorkspace } from "../scripts/lib/worker-workspace.mjs";
-import { workerPatchProposalExecutionBoundary } from "../scripts/lib/worker-patch-proposal.mjs";
-import { buildCodexFreshProposalPolicyPlan } from "../scripts/lib/runtime-codex-proposal-policy.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime/runtime-protocol-evidence.mjs";
+import { buildRuntimeInvocationAuthorization } from "../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
+import { createBoundedWorkerDispatch } from "../scripts/lib/worker/bounded-worker-dispatch.mjs";
+import { createBoundedWorkerJobHost, startBoundedWorkerJob, readBoundedWorkerJob } from "../scripts/lib/worker/bounded-worker-job.mjs";
+import { RUNTIME_OPERATIONAL_STATE_ENV, RUNTIME_OPERATIONAL_STATE_CANONICAL_ENV } from "../scripts/lib/runtime/runtime-execution-lease.mjs";
+import { captureWorkerSourceBasis } from "../scripts/lib/worker/worker-source-basis.mjs";
+import { captureWorkerWriteBasis } from "../scripts/lib/worker/worker-patch-basis.mjs";
+import { prepareWorkerWorkspace } from "../scripts/lib/worker/worker-workspace.mjs";
+import { workerPatchProposalExecutionBoundary } from "../scripts/lib/worker/worker-patch-proposal.mjs";
+import { buildCodexFreshProposalPolicyPlan } from "../scripts/lib/runtime/runtime-codex-proposal-policy.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const hash = value => crypto.createHash("sha256").update(value).digest("hex");
@@ -165,7 +165,7 @@ for (const proposal of [false, true]) test(`recorded ${proposal ? "proposal" : "
 
 test("new worker requests emit canonical operational root and preserve no-replay after launcher loss", { skip: process.platform !== "win32" }, async t => {
   const f = await jobFixture(t);
-  const host = createBoundedWorkerJobHost({ runnerFile: path.join(pluginRoot, "scripts/lib/runtime-codex-worker-runner.mjs"),
+  const host = createBoundedWorkerJobHost({ runnerFile: path.join(pluginRoot, "scripts/lib/runtime/runtime-codex-worker-runner.mjs"),
     policy: f.policy, environment: { head_agent_operational_state_root: f.operational, Lode_Agent_Operational_State_Root: f.operational } });
   const selection = { manifest: { manifestHash: hash("synthetic manifest") }, manifestPath: path.join(f.container, "absent.json"), binaryPath: process.execPath };
   let attempts = 0;
@@ -185,7 +185,7 @@ test("new worker launch refuses a conflicting Host alias before dispatch or job 
   const operationalBefore = fs.readdirSync(f.operational, { recursive: true });
   assert.equal(fs.existsSync(f.dispatchFile), false);
   assert.equal(fs.existsSync(f.directory), false);
-  const host = createBoundedWorkerJobHost({ runnerFile: path.join(pluginRoot, "scripts/lib/runtime-codex-worker-runner.mjs"),
+  const host = createBoundedWorkerJobHost({ runnerFile: path.join(pluginRoot, "scripts/lib/runtime/runtime-codex-worker-runner.mjs"),
     policy: f.policy, environment: { lode_agent_operational_state_root: path.join(f.container, "other-root") } });
   await assert.rejects(startBoundedWorkerJob(f.input, { host, supervisorSelection: { manifest: {}, manifestPath: "unused" },
     spawnImplementation: () => { assert.fail("Conflicting alias must not spawn"); } }), { code: "WORKER_JOB_CONFLICT" });
@@ -200,7 +200,7 @@ test("empty or whitespace Host operational aliases retain the resolver's unset s
   for (const name of [RUNTIME_OPERATIONAL_STATE_CANONICAL_ENV, RUNTIME_OPERATIONAL_STATE_ENV]) {
     for (const value of ["", " \t\r\n "]) await t.test(`${name}: ${value ? "whitespace" : "empty"}`, async child => {
       const f = await jobFixture(child, false, { retained: false });
-      const host = createBoundedWorkerJobHost({ runnerFile: path.join(pluginRoot, "scripts/lib/runtime-codex-worker-runner.mjs"),
+      const host = createBoundedWorkerJobHost({ runnerFile: path.join(pluginRoot, "scripts/lib/runtime/runtime-codex-worker-runner.mjs"),
         policy: f.policy, environment: { [name]: value } });
       const selection = { manifest: { manifestHash: hash("synthetic manifest") }, manifestPath: path.join(f.container, "absent.json"), binaryPath: process.execPath };
       let attempts = 0;

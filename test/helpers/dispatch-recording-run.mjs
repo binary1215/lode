@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { OPERATIONS } from "../../scripts/lib/operation-registry.mjs";
+import { OPERATIONS } from "../../scripts/lib/session/operation-registry.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 // An identifiable stand-in, so a recording shows where the host registry is passed on.
@@ -230,7 +230,7 @@ export async function recordDispatch() {
   try {
     const mcp = await import("../../scripts/mcp-server.mjs");
     const cli = await import("../../scripts/lode.mjs");
-    const { isManagedMutation } = await import("../../scripts/lib/managed-maintenance-surface.mjs");
+    const { isManagedMutation } = await import("../../scripts/lib/session/managed-maintenance-surface.mjs");
     const entries = [];
     const capture = async (run) => {
       recorder.calls = [];
@@ -291,8 +291,8 @@ export async function recordGroupedDispatch() {
   const normalize = normalizer(workDirectory);
   try {
     const mcp = await import("../../scripts/mcp-server.mjs");
-    const { operationGroup } = await import("../../scripts/lib/operation-groups.mjs");
-    const { isManagedMutation } = await import("../../scripts/lib/managed-maintenance-surface.mjs");
+    const { operationGroup } = await import("../../scripts/lib/core/operation-groups.mjs");
+    const { isManagedMutation } = await import("../../scripts/lib/session/managed-maintenance-surface.mjs");
     const operations = new Map(mcp.operationCatalogTools.map((tool) => [tool.name, tool]));
     const entries = [];
     const capture = async (request, surface) => {

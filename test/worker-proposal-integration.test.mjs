@@ -1,4 +1,4 @@
-import { relativeProjectArtifact, formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
+import { relativeProjectArtifact, formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
@@ -6,37 +6,37 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/execution-lineage.mjs";
-import { startRun } from "../scripts/lib/run-lineage.mjs";
-import { artifactAuthorityBoundary } from "../scripts/lib/authority-plane-contract.mjs";
-import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
-import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime-protocol-evidence.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { startRun } from "../scripts/lib/runtime/run-lineage.mjs";
+import { artifactAuthorityBoundary } from "../scripts/lib/core/authority-plane-contract.mjs";
+import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../scripts/lib/runtime/runtime-protocol-evidence.mjs";
 import {
   buildRuntimeInvocationAuthorization,
   buildRuntimeInvocationLifecycleReceipt,
   buildRuntimeResultPacketDraft,
   normalizeRuntimeEvent,
-} from "../scripts/lib/runtime-invocation-lifecycle.mjs";
-import { withRuntimeExecutionLease, RUNTIME_OPERATIONAL_STATE_ENV } from "../scripts/lib/runtime-execution-lease.mjs";
-import { persistRuntimeInvocationRecord } from "../scripts/lib/runtime-invocation-record.mjs";
-import { applyRuntimeRunResult } from "../scripts/lib/runtime-run-result-application.mjs";
-import { createBoundedWorkerDispatch } from "../scripts/lib/bounded-worker-dispatch.mjs";
-import { captureWorkerSourceBasis } from "../scripts/lib/worker-source-basis.mjs";
-import { captureWorkerWriteBasis, buildWorkerPatchCandidate } from "../scripts/lib/worker-patch-basis.mjs";
-import { workerPatchProposalExecutionBoundary, buildWorkerPatchProposalCandidate } from "../scripts/lib/worker-patch-proposal.mjs";
-import { prepareWorkerWorkspace } from "../scripts/lib/worker-workspace.mjs";
-import { workerMemberKey } from "../scripts/lib/worker-member-registry.mjs";
-import { composeWorkerPatchCandidates } from "../scripts/lib/worker-patch-composition.mjs";
-import { verifyWorkerPatchIntegrationIntent, readWorkerPatchIntegration, prepareWorkerPatchIntegration } from "../scripts/lib/worker-patch-integration.mjs";
-import { applyWorkerPatchIntegration, readWorkerPatchApplication } from "../scripts/lib/worker-integration-application.mjs";
-import { prepareWorkerIntegrationResult, publishWorkerIntegrationResult } from "../scripts/lib/worker-integration-result.mjs";
+} from "../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
+import { withRuntimeExecutionLease, RUNTIME_OPERATIONAL_STATE_ENV } from "../scripts/lib/runtime/runtime-execution-lease.mjs";
+import { persistRuntimeInvocationRecord } from "../scripts/lib/runtime/runtime-invocation-record.mjs";
+import { applyRuntimeRunResult } from "../scripts/lib/runtime/runtime-run-result-application.mjs";
+import { createBoundedWorkerDispatch } from "../scripts/lib/worker/bounded-worker-dispatch.mjs";
+import { captureWorkerSourceBasis } from "../scripts/lib/worker/worker-source-basis.mjs";
+import { captureWorkerWriteBasis, buildWorkerPatchCandidate } from "../scripts/lib/worker/worker-patch-basis.mjs";
+import { workerPatchProposalExecutionBoundary, buildWorkerPatchProposalCandidate } from "../scripts/lib/worker/worker-patch-proposal.mjs";
+import { prepareWorkerWorkspace } from "../scripts/lib/worker/worker-workspace.mjs";
+import { workerMemberKey } from "../scripts/lib/worker/worker-member-registry.mjs";
+import { composeWorkerPatchCandidates } from "../scripts/lib/worker/worker-patch-composition.mjs";
+import { verifyWorkerPatchIntegrationIntent, readWorkerPatchIntegration, prepareWorkerPatchIntegration } from "../scripts/lib/worker/worker-patch-integration.mjs";
+import { applyWorkerPatchIntegration, readWorkerPatchApplication } from "../scripts/lib/worker/worker-integration-application.mjs";
+import { prepareWorkerIntegrationResult, publishWorkerIntegrationResult } from "../scripts/lib/worker/worker-integration-result.mjs";
 import {
   integrationDigest as hash,
   integrationJson as json,
   workerIntegrationDirectory,
   publishIntegrationJson,
-} from "../scripts/lib/worker-integration-store.mjs";
+} from "../scripts/lib/worker/worker-integration-store.mjs";
 
 console.log(
   JSON.stringify({

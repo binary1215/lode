@@ -5,23 +5,23 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { initializeProject, inspectProject } from "./lib/head-core.mjs";
-import { compileContext } from "./lib/context-compiler.mjs";
-import { createExecutionContract, createWholePlanSnapshot } from "./lib/execution-lineage.mjs";
-import { getPendingReviewContext, reviewRun, startRun } from "./lib/run-lineage.mjs";
-import { buildRuntimeVersionEvidence } from "./lib/runtime-machine-execution.mjs";
-import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "./lib/runtime-protocol-evidence.mjs";
-import { buildRuntimeInvocationAuthorization } from "./lib/runtime-invocation-lifecycle.mjs";
-import { RUNTIME_OPERATIONAL_STATE_ENV } from "./lib/runtime-execution-lease.mjs";
-import { executeRuntimeInvocation } from "./lib/runtime-one-shot-exec.mjs";
-import { readRuntimeInvocationResult } from "./lib/runtime-run-result-application.mjs";
-import { resolveVerifiedProcessSupervisor } from "./lib/runtime-process-supervisor.mjs";
+import { compileContext } from "./lib/session/context-compiler.mjs";
+import { createExecutionContract, createWholePlanSnapshot } from "./lib/runtime/execution-lineage.mjs";
+import { getPendingReviewContext, reviewRun, startRun } from "./lib/runtime/run-lineage.mjs";
+import { buildRuntimeVersionEvidence } from "./lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "./lib/runtime/runtime-protocol-evidence.mjs";
+import { buildRuntimeInvocationAuthorization } from "./lib/runtime/runtime-invocation-lifecycle.mjs";
+import { RUNTIME_OPERATIONAL_STATE_ENV } from "./lib/runtime/runtime-execution-lease.mjs";
+import { executeRuntimeInvocation } from "./lib/runtime/runtime-one-shot-exec.mjs";
+import { readRuntimeInvocationResult } from "./lib/runtime/runtime-run-result-application.mjs";
+import { resolveVerifiedProcessSupervisor } from "./lib/runtime/runtime-process-supervisor.mjs";
 import {
   applyBoundedWorkerDispatchResult,
   createBoundedWorkerDispatch,
   executeBoundedWorkerDispatch,
   waitForBoundedWorkerDispatch,
-} from "./lib/bounded-worker-dispatch.mjs";
-import { integrateReviewedRunCheckpoint } from "./lib/session-recovery.mjs";
+} from "./lib/worker/bounded-worker-dispatch.mjs";
+import { integrateReviewedRunCheckpoint } from "./lib/session/session-recovery.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nonce = `${process.pid}-${Date.now()}`;

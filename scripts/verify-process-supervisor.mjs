@@ -3,8 +3,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { processExists } from "./lib/process-exists.mjs";
-import { resolveVerifiedProcessSupervisor, spawnBoundedRuntimeOneShot, spawnSupervisedProcess } from "./lib/runtime-process-supervisor.mjs";
+import { processExists } from "./lib/core/process-exists.mjs";
+import { resolveVerifiedProcessSupervisor, spawnBoundedRuntimeOneShot, spawnSupervisedProcess } from "./lib/runtime/runtime-process-supervisor.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 

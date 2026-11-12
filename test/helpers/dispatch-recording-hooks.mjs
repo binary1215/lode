@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const libUrl = pathToFileURL(path.join(pluginRoot, "scripts/lib")).href + "/";
 const DISPATCH_MODULES = new Set(
-  ["scripts/mcp-server.mjs", "scripts/lode.mjs", "scripts/lib/operation-registry.mjs", "scripts/lib/dispatch-adapters.mjs"].map((file) => pathToFileURL(path.join(pluginRoot, file)).href),
+  ["scripts/mcp-server.mjs", "scripts/lode.mjs", "scripts/lib/session/operation-registry.mjs", "scripts/lib/session/dispatch-adapters.mjs"].map((file) => pathToFileURL(path.join(pluginRoot, file)).href),
 );
 const RECORD = "lode-dispatch-record";
 
@@ -25,7 +25,7 @@ export async function load(url, context, nextLoad) {
   if (!url.endsWith(`?${RECORD}`)) return nextLoad(url, context);
   const real = url.slice(0, -RECORD.length - 1);
   const names = Object.keys(await import(real));
-  const module = real.slice(libUrl.length).replace(/\.mjs$/, "");
+  const module = real.slice(libUrl.length).replace(/\.mjs$/, "").replace(/^.*\//, "");
   const lines = [
     `import * as real from ${JSON.stringify(real)};`,
     "const wrap = (name, value) => {",

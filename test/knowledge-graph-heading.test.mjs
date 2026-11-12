@@ -12,9 +12,9 @@ import {
   documentProjectionCanonicalJson,
   inspectMarkdownProjection,
   materializeMarkdownProjection,
-} from "../scripts/lib/document-projection-adapter.mjs";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { buildTemporalProvenanceGraph } from "../scripts/lib/temporal-provenance.mjs";
+} from "../scripts/lib/world/document-projection-adapter.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { buildTemporalProvenanceGraph } from "../scripts/lib/world/temporal-provenance.mjs";
 
 // User decision of 2026-11-10: the derived knowledge-graph index is headed
 // "LODE Agent derived knowledge graph" in every dialect. Projections stored with

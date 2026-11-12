@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject } from "../scripts/lib/head-core.mjs";
-import { buildGraphExplorerSnapshot } from "../scripts/lib/graph-explorer.mjs";
-import { portableMcpDocument } from "../scripts/lib/portable-client-command.mjs";
-import { TRACKED_HOME_PATH_ALLOWLIST, absoluteLaunchValues, findHomePathFindings, trackedFiles } from "../scripts/lib/path-purity.mjs";
+import { buildGraphExplorerSnapshot } from "../scripts/lib/world/graph-explorer.mjs";
+import { portableMcpDocument } from "../scripts/lib/distribution/portable-client-command.mjs";
+import { TRACKED_HOME_PATH_ALLOWLIST, absoluteLaunchValues, findHomePathFindings, trackedFiles } from "../scripts/lib/core/path-purity.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const clients = ["claude", "codex", "opencode"];

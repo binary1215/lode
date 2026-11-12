@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
-import { coreEntryGuidance } from "./lib/lode-entry-guidance.mjs";
+import { coreEntryGuidance } from "./lib/session/lode-entry-guidance.mjs";
 // Node >=24 supports synchronous ESM module loading. Load readers lazily so an
 // End-only Hook does not import recovery/prompt readers; Start awaits storage I/O.
 const require = createRequire(import.meta.url);
@@ -25,7 +25,7 @@ export async function sessionStartContext({ runtime, event, environment = proces
   if (runtime === "codex" && event.agent_id) return {};
   let entry;
   try {
-    const { createSessionHostAdapter } = require("./lib/session-host-adapter.mjs");
+    const { createSessionHostAdapter } = require("./lib/session/session-host-adapter.mjs");
     const adapter = createSessionHostAdapter({
       runtime,
       nativeSessionId: event.session_id,
@@ -41,7 +41,7 @@ export async function sessionStartContext({ runtime, event, environment = proces
     let relocation = null;
     if (code === "NOT_INITIALIZED" && typeof event?.cwd === "string") {
       try {
-        relocation = require("./lib/compaction-lifecycle.mjs").projectRelocationHint(event.cwd);
+        relocation = require("./lib/session/compaction-lifecycle.mjs").projectRelocationHint(event.cwd);
       } catch {
         relocation = null;
       }
@@ -62,7 +62,7 @@ export async function sessionStartContext({ runtime, event, environment = proces
       },
     };
   }
-  const { startupProjection } = require("./lib/session-host-context-projection.mjs");
+  const { startupProjection } = require("./lib/session/session-host-context-projection.mjs");
   return { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: startupProjection(entry, event.cwd, runtime) } };
 }
 
@@ -78,7 +78,7 @@ function noteNativePrompt(runtime, event, environment) {
   if (!["UserPromptSubmit", "Stop", "PreCompact"].includes(event?.hook_event_name)) return;
   const caller = promptCaller(runtime, event);
   if (!caller) return;
-  const { captureUserPrompt, captureVisibleAssistantReference, freezeUserPromptReference } = require("./lib/user-prompt-reference.mjs");
+  const { captureUserPrompt, captureVisibleAssistantReference, freezeUserPromptReference } = require("./lib/session/user-prompt-reference.mjs");
   if (event.hook_event_name === "UserPromptSubmit" && typeof event.prompt === "string") {
     captureUserPrompt({
       root: event.cwd,
@@ -106,7 +106,7 @@ export async function runSessionHostHook({
   const promptDeadlineAt = Math.min(deadlineAt ?? Infinity, startedAt + 10_000);
   let nativeOutcome;
   try {
-    const { observeNativeHook } = await import("./lib/native-session-observations.mjs");
+    const { observeNativeHook } = await import("./lib/session/native-session-observations.mjs");
     nativeOutcome = await observeNativeHook({ runtime, event, environment, processObserver, deadlineAt });
   } catch {
     /* Observations cannot block native flow or existing recovery. */
@@ -119,7 +119,7 @@ export async function runSessionHostHook({
   let promptOperation, referenceTransfer;
   if (!observeOnly && event?.hook_event_name === "SessionStart" && ["clear", "compact"].includes(event.source))
     try {
-      const helpers = require("./lib/user-prompt-reference.mjs");
+      const helpers = require("./lib/session/user-prompt-reference.mjs");
       promptOperation = helpers.createUserPromptReferenceOperation({ deadlineAt: promptDeadlineAt });
       if (event.source === "clear" && nativeOutcome?.clearHandoff)
         referenceTransfer = helpers.transferNativeClearPromptReference({
@@ -137,8 +137,8 @@ export async function runSessionHostHook({
     prepared;
   if (context.hookSpecificOutput?.additionalContext && ["compact", "clear"].includes(event?.source))
     try {
-      const { prepareUserPromptReference, appendUserPromptReference } = require("./lib/user-prompt-reference.mjs");
-      const { MAX_CONTEXT_CHARACTERS } = require("./lib/session-host-context-projection.mjs");
+      const { prepareUserPromptReference, appendUserPromptReference } = require("./lib/session/user-prompt-reference.mjs");
+      const { MAX_CONTEXT_CHARACTERS } = require("./lib/session/session-host-context-projection.mjs");
       const caller = promptCaller(runtime, event);
       prepared =
         caller &&
@@ -165,7 +165,7 @@ export async function runSessionHostHook({
   // stdout callback instead. Neither boundary proves Host or model reception.
   let injection = null;
   try {
-    const messaging = require("./lib/conversation-messaging.mjs");
+    const messaging = require("./lib/session/conversation-messaging.mjs");
     messaging.registerHookPresence({ runtime, event, environment, initialize: !observeOnly });
     if (event?.hook_event_name === "UserPromptSubmit") injection = messaging.prepareHookInjection({ runtime, event, environment });
   } catch {
@@ -189,7 +189,7 @@ export async function runSessionHostHook({
     throw error;
   }
   if (injection) injection.commit();
-  if (prepared) require("./lib/user-prompt-reference.mjs").acknowledgeUserPromptReference(prepared);
+  if (prepared) require("./lib/session/user-prompt-reference.mjs").acknowledgeUserPromptReference(prepared);
   if (referenceTransfer) Object.defineProperty(context, "referenceTransfer", { value: referenceTransfer });
   return context;
 }

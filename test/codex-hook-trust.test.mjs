@@ -3,10 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { formatCodexHookTrust, inspectCodexHookTrust } from "../scripts/lib/codex-hook-trust.mjs";
-import { formatProjectBootstrap, formatProjectStatus } from "../scripts/lib/cli-presentation.mjs";
-import { initializeProject } from "../scripts/lib/lode-core.mjs";
-import { inspectProjectExperience } from "../scripts/lib/project-bootstrap.mjs";
+import { formatCodexHookTrust, inspectCodexHookTrust } from "../scripts/lib/distribution/codex-hook-trust.mjs";
+import { formatProjectBootstrap, formatProjectStatus } from "../scripts/lib/session/cli-presentation.mjs";
+import { initializeProject } from "../scripts/lib/session/lode-core.mjs";
+import { inspectProjectExperience } from "../scripts/lib/session/project-bootstrap.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const projectRoot = path.join(os.tmpdir(), "한글 café (team)'s codex");

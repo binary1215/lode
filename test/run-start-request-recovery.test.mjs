@@ -5,9 +5,9 @@ import path from "node:path";
 import test from "node:test";
 import { spawn } from "node:child_process";
 import { pathToFileURL } from "node:url";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/execution-lineage.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/runtime/execution-lineage.mjs";
 import {
   startRun,
   finishRun,
@@ -16,8 +16,8 @@ import {
   inspectRunStorageTransition,
   reconcileRunStorageTransition,
   sessionStateHash,
-} from "../scripts/lib/run-lineage.mjs";
-import { createHeadSession, withSessionRoute } from "../scripts/lib/session-routing.mjs";
+} from "../scripts/lib/runtime/run-lineage.mjs";
+import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 console.log(
@@ -179,7 +179,7 @@ for (const boundary of ["run", "session"])
 
 test("two hidden concurrent exact-key callers converge on one Run without a duplicate launch authorization", async (t) => {
   const { root, storage, input } = await fixture(t);
-  const module = pathToFileURL(path.join(pluginRoot, "scripts/lib/run-lineage.mjs")).href;
+  const module = pathToFileURL(path.join(pluginRoot, "scripts/lib/runtime/run-lineage.mjs")).href;
   const child = () =>
     new Promise((resolve, reject) => {
       const code = `import {startRun} from ${JSON.stringify(module)}; console.log(JSON.stringify({event:'owned-start-child',pid:process.pid,parentPid:process.ppid,command:process.execPath,cwd:process.cwd(),at:new Date().toISOString(),ports:[]})); console.log(JSON.stringify(startRun(${JSON.stringify(input)})));`;

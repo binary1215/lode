@@ -11,7 +11,7 @@ import { createHasher, sha256CanonicalJson, sha256Hex, sha256Json } from "../scr
 import { fail, failCode, failWith, REASON_CODES } from "../scripts/lib/core/errors.mjs";
 import { atomicWriteText, renamePath } from "../scripts/lib/core/fs-atomic.mjs";
 import { escapesRoot, escapesRootByPrefix } from "../scripts/lib/core/path-safety.mjs";
-import { validateInstructionIntegration } from "../scripts/lib/project-instruction-link.mjs";
+import { validateInstructionIntegration } from "../scripts/lib/storage/project-instruction-link.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const libRoot = path.join(pluginRoot, "scripts/lib");
@@ -38,7 +38,7 @@ const FORBIDDEN = [
 
 // distribution-lifecycle serializes its verifier functions with toString() into the
 // standalone launcher, which cannot import scripts/lib/core; its sha256() stays inline.
-const EXEMPT = new Map([["scripts/lib/distribution-lifecycle.mjs", new Set(["raw createHash("])]]);
+const EXEMPT = new Map([["scripts/lib/distribution/distribution-lifecycle.mjs", new Set(["raw createHash("])]]);
 
 // Only executable code counts: source text embedded in strings or templates (for
 // example a child-process fixture script) is a separate program.

@@ -3,10 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { captureWorkerSourceBasis } from "../scripts/lib/worker-source-basis.mjs";
-import { buildWorkerPatchCandidate, captureWorkerWriteBasis } from "../scripts/lib/worker-patch-basis.mjs";
-import { composeWorkerPatchCandidates } from "../scripts/lib/worker-patch-composition.mjs";
-import { observeWorkerIntegrationReadBasis, readWorkerIntegrationBasis } from "../scripts/lib/worker-integration-basis.mjs";
+import { captureWorkerSourceBasis } from "../scripts/lib/worker/worker-source-basis.mjs";
+import { buildWorkerPatchCandidate, captureWorkerWriteBasis } from "../scripts/lib/worker/worker-patch-basis.mjs";
+import { composeWorkerPatchCandidates } from "../scripts/lib/worker/worker-patch-composition.mjs";
+import { observeWorkerIntegrationReadBasis, readWorkerIntegrationBasis } from "../scripts/lib/worker/worker-integration-basis.mjs";
 
 console.log(
   JSON.stringify({

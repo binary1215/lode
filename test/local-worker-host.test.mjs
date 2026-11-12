@@ -8,12 +8,12 @@ import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { effectiveToolCall } from "../scripts/lib/operation-groups.mjs";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
-import { compileContext } from "../scripts/lib/context-compiler.mjs";
-import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/execution-lineage.mjs";
-import { startRun } from "../scripts/lib/run-lineage.mjs";
-import { isManagedMutation } from "../scripts/lib/managed-maintenance-surface.mjs";
+import { effectiveToolCall } from "../scripts/lib/core/operation-groups.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
+import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
+import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/runtime/execution-lineage.mjs";
+import { startRun } from "../scripts/lib/runtime/run-lineage.mjs";
+import { isManagedMutation } from "../scripts/lib/session/managed-maintenance-surface.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const nativeRoot = process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT;
@@ -288,7 +288,7 @@ function prepareInChild(f) {
     const {pathToFileURL}=await import('node:url'); const path=await import('node:path');
     const {EventEmitter}=await import('node:events'); const schemaSpawn=${schemaSpawn.toString()};
     const [installed,home,root,inputText]=process.argv.slice(1); const input=JSON.parse(inputText);
-    const host=await import(pathToFileURL(path.join(installed,'scripts/lib/local-worker-host.mjs')).href);
+    const host=await import(pathToFileURL(path.join(installed,'scripts/lib/worker/local-worker-host.mjs')).href);
     const cli=await import(pathToFileURL(path.join(installed,'scripts/head.mjs')).href);
     const environment={...process.env,PATH:path.join(path.dirname(root),'schema')}; delete environment.Path; delete environment.path;
     const backend=host.createLocalWorkerProtocolFixtureBackend({codexHome:home,environment,spawnImplementation:schemaSpawn});
@@ -625,7 +625,7 @@ test("public preparation recovers a proven dead unconsumed owner without changin
   f.prepared.push(first);
   const lifecycle = await f.importLocal("lib/runtime-invocation-lifecycle.mjs");
   const authorization = lifecycle.readRuntimeInvocationAuthorization({ root: f.root, authorizationId: first.authorizationId }).authorization;
-  const moduleUrl = pathToFileURL(path.join(f.installed, "scripts/lib/runtime-execution-lease.mjs")).href;
+  const moduleUrl = pathToFileURL(path.join(f.installed, "scripts/lib/runtime/runtime-execution-lease.mjs")).href;
   const script = `const {withRuntimeExecutionLease,createRuntimePreConsumeGateCapability}=await import(process.argv[1]);
     process.on('message',message=>{if(message==='exit')process.exit(0);});
     const preConsumeGate=createRuntimePreConsumeGateCapability(async()=>{process.send({claimed:true});await new Promise(()=>{});});

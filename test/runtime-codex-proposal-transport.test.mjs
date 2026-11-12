@@ -5,41 +5,41 @@ import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
 import test from "node:test";
-import { initializeProject, inspectProject } from "../scripts/lib/lode-core.mjs";
-import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime-machine-execution.mjs";
-import { buildRuntimeProtocolEvidence, buildRuntimeProjectBinding } from "../scripts/lib/runtime-protocol-evidence.mjs";
-import { buildRuntimeInvocationAuthorization, prepareRuntimeInvocationExecution } from "../scripts/lib/runtime-invocation-lifecycle.mjs";
-import { createBoundedWorkerDispatch } from "../scripts/lib/bounded-worker-dispatch.mjs";
-import { captureWorkerSourceBasis } from "../scripts/lib/worker-source-basis.mjs";
-import { captureWorkerWriteBasis } from "../scripts/lib/worker-patch-basis.mjs";
-import { prepareWorkerWorkspace } from "../scripts/lib/worker-workspace.mjs";
-import { workerPatchProposalExecutionBoundary } from "../scripts/lib/worker-patch-proposal.mjs";
-import { RUNTIME_OPERATIONAL_STATE_ENV, withRuntimeExecutionLease } from "../scripts/lib/runtime-execution-lease.mjs";
-import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime-process-supervisor.mjs";
+import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
+import { buildRuntimeVersionEvidence } from "../scripts/lib/runtime/runtime-machine-execution.mjs";
+import { buildRuntimeProtocolEvidence, buildRuntimeProjectBinding } from "../scripts/lib/runtime/runtime-protocol-evidence.mjs";
+import { buildRuntimeInvocationAuthorization, prepareRuntimeInvocationExecution } from "../scripts/lib/runtime/runtime-invocation-lifecycle.mjs";
+import { createBoundedWorkerDispatch } from "../scripts/lib/worker/bounded-worker-dispatch.mjs";
+import { captureWorkerSourceBasis } from "../scripts/lib/worker/worker-source-basis.mjs";
+import { captureWorkerWriteBasis } from "../scripts/lib/worker/worker-patch-basis.mjs";
+import { prepareWorkerWorkspace } from "../scripts/lib/worker/worker-workspace.mjs";
+import { workerPatchProposalExecutionBoundary } from "../scripts/lib/worker/worker-patch-proposal.mjs";
+import { RUNTIME_OPERATIONAL_STATE_ENV, withRuntimeExecutionLease } from "../scripts/lib/runtime/runtime-execution-lease.mjs";
+import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
 import {
   buildCodexFreshProposalPolicyPlan,
   codexFreshProposalStartupArguments,
   codexFreshProposalThreadParams,
   codexFreshProposalTurnParams,
-} from "../scripts/lib/runtime-codex-proposal-policy.mjs";
+} from "../scripts/lib/runtime/runtime-codex-proposal-policy.mjs";
 import {
   buildCodexNativePrefixPolicyPlan,
   verifyCodexNativePrefixPolicyPlan,
   codexNativePrefixStartupArguments,
-} from "../scripts/lib/runtime-codex-prefix-policy.mjs";
-import { createCodexNativePrefixSession } from "../scripts/lib/runtime-codex-prefix-session.mjs";
+} from "../scripts/lib/runtime/runtime-codex-prefix-policy.mjs";
+import { createCodexNativePrefixSession } from "../scripts/lib/runtime/runtime-codex-prefix-session.mjs";
 import {
   createCodexFreshProposalTransport,
   createCodexFreshProposalFixtureCapability,
   inspectCodexFreshProposalFixtureCapability,
   createCodexFreshProposalProtocolFixtureTransport,
   startCodexFreshProposalTransport,
-} from "../scripts/lib/runtime-codex-app-server-transport.mjs";
+} from "../scripts/lib/runtime/runtime-codex-app-server-transport.mjs";
 import {
   createCodexNativePrefixProposalTransport,
   createCodexNativePrefixProposalFixtureTransport,
-} from "../scripts/lib/runtime-codex-app-server-transport.mjs";
-import { buildCodexProposalResultSchema } from "../scripts/lib/runtime-codex-proposal.mjs";
+} from "../scripts/lib/runtime/runtime-codex-app-server-transport.mjs";
+import { buildCodexProposalResultSchema } from "../scripts/lib/runtime/runtime-codex-proposal.mjs";
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const installedExecutable = process.env.LODE_AGENT_PREFIX_CAPTURE_EXECUTABLE || process.env.HEAD_AGENT_PREFIX_CAPTURE_EXECUTABLE;
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");

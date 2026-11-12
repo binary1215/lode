@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { EventEmitter } from "node:events";
 import { pathToFileURL } from "node:url";
-import { formatForVerifiedOwner } from "../scripts/lib/project-storage-format.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
 
 // Optional source override runs these same synthetic cases against the frozen
 // pre-patch source; it never executes a real provider or changes that source.

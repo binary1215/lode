@@ -1,4 +1,4 @@
-import { relativeProjectArtifact } from "../scripts/lib/project-storage-format.mjs";
+import { relativeProjectArtifact } from "../scripts/lib/storage/project-storage-format.mjs";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -6,16 +6,16 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
-import { createHeadSession, sessionStatePath, withSessionRoute } from "../scripts/lib/session-routing.mjs";
-import { inspectRecoveryCheckpointBasis, syncRecoveryCheckpoint, readRecoveryCheckpoint } from "../scripts/lib/compaction-recovery.mjs";
-import { enterConversationRecovery } from "../scripts/lib/compaction-lifecycle.mjs";
-import { readProjectDirection, updateProjectDirection } from "../scripts/lib/project-direction.mjs";
-import { readSessionWorkContext, recordSessionWorkEvidence } from "../scripts/lib/session-work-context.mjs";
+import { createHeadSession, sessionStatePath, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
+import { inspectRecoveryCheckpointBasis, syncRecoveryCheckpoint, readRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
+import { enterConversationRecovery } from "../scripts/lib/session/compaction-lifecycle.mjs";
+import { readProjectDirection, updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
+import { readSessionWorkContext, recordSessionWorkEvidence } from "../scripts/lib/session/session-work-context.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/head.mjs";
-import { createSessionCallContext } from "../scripts/lib/session-routing.mjs";
-import { formatCliResult } from "../scripts/lib/cli-presentation.mjs";
-import { startupProjection } from "../scripts/lib/session-host-context-projection.mjs";
+import { createSessionCallContext } from "../scripts/lib/session/session-routing.mjs";
+import { formatCliResult } from "../scripts/lib/session/cli-presentation.mjs";
+import { startupProjection } from "../scripts/lib/session/session-host-context-projection.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const sha = (value) => crypto.createHash("sha256").update(value).digest("hex");
@@ -510,7 +510,7 @@ test("Todo zero remains scoped knowledge while unavailable or undiscovered origi
 test("Todo scan counts belong to the inspected original page before display limits", async t => {
   const { root, storage } = project(t), session = createHeadSession({ root, purpose: "Synthetic bounded Todo pages" });
   await withSessionRoute(root, session.sessionId, async () => {
-    const { normalizeSessionWorkEvidence, inputIdentity, encoded, verifySessionWorkEvidenceOriginal } = await import("../scripts/lib/session-work-evidence-original.mjs");
+    const { normalizeSessionWorkEvidence, inputIdentity, encoded, verifySessionWorkEvidenceOriginal } = await import("../scripts/lib/session/session-work-evidence-original.mjs");
     const seed = recordSessionWorkEvidence({ root, input: { todos: [{ todoId: "todo-scan-seed", task: "Synthetic terminal seed", status: "completed", origin: "lode-proposed" }] } });
     const { evidenceDigest: unusedDigest, ...template } = seed.evidence;
     const owner = { root, storage, projectId: seed.evidence.projectId, sessionId: session.sessionId };

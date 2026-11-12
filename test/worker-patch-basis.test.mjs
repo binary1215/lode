@@ -9,7 +9,7 @@ import {
   buildWorkerPatchCandidate,
   verifyWorkerPatchCandidate,
   inspectWorkerPatchCandidate,
-} from "../scripts/lib/worker-patch-basis.mjs";
+} from "../scripts/lib/worker/worker-patch-basis.mjs";
 
 console.log(
   JSON.stringify({
