@@ -5,12 +5,12 @@ const semanticToolName = (name) => resolveOperation(name)?.semanticName ?? name;
 const helperName = (name) => semanticToolName(name) === "lode_session_host_request_prepare";
 const routerName = (name) => ["lode_tools_read", "lode_tools_call"].includes(semanticToolName(name));
 const hasProjectMarker = (root) => [".head", ".lode"].some((directory) => fs.existsSync(path.join(root, directory, "project.json")));
-import { sessionCallRequiresBinding } from "./session-routing.mjs";
+import { projectHasSingleSession, sessionCallRequiresBinding } from "./session-routing.mjs";
 import { createSessionHostRequestRegistry, parseClaudeNativeToolName } from "./session-host-request.mjs";
 import { subagentWriteGuardEnabled } from "./subagent-write-guard.mjs";
 import { effectiveToolCall } from "../core/operation-groups.mjs";
 import { createRecoveryBasisMemory } from "./recovery-basis-memory.mjs";
-import { recordedRootSpelling, withRecordedProjectRoot } from "../storage/project-root-spelling.mjs";
+import { recordedRootSpelling, withRecordedProjectRoot, withRequestSpellingRetry } from "../storage/project-root-spelling.mjs";
 
 // Held recovery basis views the bridge itself issued to a verified caller. The
 // dispatcher honours only these, so no embedder option can supply one.
@@ -273,6 +273,31 @@ export function createNativeSessionHostBridge({
           };
         return response;
       }
+      // A Claude Code call the PreToolUse hook did not prepare, in a Project
+      // whose only Session is its default: this request uses that Session, as
+      // an unverified MCP caller does. Nothing is bound or claimed.
+      if (
+        transportRuntime === "claude" &&
+        !Object.hasOwn(args, "session_id") &&
+        hasProjectMarker(args.project_root) &&
+        projectHasSingleSession(args.project_root)
+      ) {
+        const response = await handler(request, route());
+        if (response?.result)
+          response.result._meta = {
+            ...response.result._meta,
+            headSessionBinding: {
+              status: "unavailable",
+              reasonCode: "NATIVE_SESSION_CALLER_UNAVAILABLE",
+              sessionSelection: "single-project-session",
+              retained: false,
+              persisted: false,
+              recoveryAuthority: false,
+              executionReplayAllowed: false,
+            },
+          };
+        return response;
+      }
       return handler(request, route({ resolveSessionContext: missingCaller }));
     }
     let adapter;
@@ -307,7 +332,9 @@ export function createNativeSessionHostBridge({
       // resume can still select the default, and exact request routes work
       // independently. Never infer continuity from recency or other callers.
       requestContext = adapter.resolveSessionContext(original, {
-        allowAbsentDefault: caller.runtime !== "claude" || selecting,
+        // ...unless the Project has only that one Session: there is no other
+        // Session to switch away from, so the request uses it (no binding).
+        allowAbsentDefault: caller.runtime !== "claude" || selecting || (() => projectHasSingleSession(args.project_root)),
         onBindingRead: (binding) => {
           selectionBasis = { expectedRevision: binding.revision, expectedBindingDigest: binding.bindingDigest || null };
         },
@@ -426,7 +453,7 @@ export function createNativeSessionHostBridge({
       // that differs from the recorded one only in drive-letter case uses the
       // recorded spelling, so Host keys and Session routing see one Project.
       request = withRecordedProjectRoot(request);
-      try {
+      const routeKnownRequest = async (request) => {
         // Non-binding tools keep their previous result. The visible caller is
         // only a write-guard signal and does not select a Session.
         if (semanticToolName(targetName) === "lode_project_direction_update" && caller.status === "known") {
@@ -442,6 +469,11 @@ export function createNativeSessionHostBridge({
         }
         if (!sessionCallRequiresBinding(targetName)) return handler(request, { caller: visibleCaller(caller), hostEnvironment: environment });
         return await dispatchProjectRequest(request, handler, caller);
+      };
+      try {
+        // A directory-name case miss is retried once with the recorded spelling
+        // for this already matched caller (the hook preparation is not reused).
+        return await withRequestSpellingRetry(request, routeKnownRequest);
       } finally {
         caller.release?.();
       }

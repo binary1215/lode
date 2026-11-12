@@ -153,6 +153,32 @@ export function routedSessionId(root) {
   return read(defaultSessionStatePath(base, resolveProjectStorage(base)))?.sessionId ?? null;
 }
 
+// True when the Project's default Session is its only Session: the default
+// state record exists and `sessions/by-id` is absent or empty. The check is
+// bounded (one directory entry at most is read), never enumerates Sessions and
+// never selects or writes one. Any doubt answers false.
+export function projectHasSingleSession(root) {
+  try {
+    const base = canonicalRoot(root);
+    const storage = resolveProjectStorage(base);
+    if (!storage) return false;
+    fs.lstatSync(defaultSessionStatePath(base, storage));
+    let directory;
+    try {
+      directory = fs.opendirSync(safeSessionPath(base, formatForVerifiedOwner(storage).directory, "sessions", "by-id"));
+    } catch (error) {
+      return error.code === "ENOENT";
+    }
+    try {
+      return directory.readSync() === null;
+    } finally {
+      directory.closeSync();
+    }
+  } catch {
+    return false;
+  }
+}
+
 // A trusted embedding Host owns one context per caller, not per Project or
 // shared MCP process. No provider identity or selector is written into Canon.
 export function createSessionCallContext() {
@@ -199,7 +225,7 @@ export function withSessionCallContext({ root, sessionId, context = null }, oper
   return withSessionRoute(root, binding.sessionId, operation);
 }
 
-export function sessionSelectionUnresolved(root, { includeProjectFacts = false, reasonCode = "SESSION_SELECTION_LOST" } = {}) {
+export function sessionSelectionUnresolved(root, { includeProjectFacts = false, reasonCode = "SESSION_SELECTION_LOST", singleSessionEntry = false } = {}) {
   // Do not inspect a default Session and redact it. These are the only original
   // records needed for the unavailable-selection response, including mixed reads.
   const storage = resolveProjectStorage(root);
@@ -227,9 +253,14 @@ export function sessionSelectionUnresolved(root, { includeProjectFacts = false, 
     affectedOperations: ["selected-session-read", "selected-session-mutation"],
     nextHeadAction:
       "Continue independent Project/source work. For missing dependent context, reuse verified same-Project candidates already supplied or use sessionDiscovery.call when needed; discovery never selects a Session. Ask only if a material selection remains ambiguous.",
+    // A new Claude Code conversation in a Project with one Session: entry
+    // answers with that Session for the request (no binding is written), so
+    // the next call is entry itself, not a Session list.
     sessionDiscovery: {
       status: "not_queried",
-      call: { name: publicToolName("lode_session_list"), arguments: { project_root: project.projectRoot } },
+      call: singleSessionEntry
+        ? { name: publicToolName("lode_conversation_enter"), arguments: { project_root: project.projectRoot } }
+        : { name: publicToolName("lode_session_list"), arguments: { project_root: project.projectRoot } },
       automatic: false,
       selectsSession: false,
     },

@@ -22,7 +22,7 @@
 | 출처 | 전달 방식 | 문자 수 | 금지 표현 |
 | --- | --- | ---: | ---: |
 | 진입 문단(`coreEntryGuidance`) | MCP `initialize` instructions | 822 | 1 |
-| SessionStart 맥락, 새 core 프로젝트 | Claude Code와 Codex Hook `additionalContext`, OpenCode 시스템 프롬프트의 같은 시작 맥락 | 1,857 | 2 |
+| SessionStart 맥락, 새 core 프로젝트 | Claude Code와 Codex Hook `additionalContext`, OpenCode 시스템 프롬프트의 같은 시작 맥락 | 1,909 | 2 |
 | `lode-agent-core` Skill 설명 | Skill 목록 | 342 | 0 |
 | `lode-agent-onboarding` Skill 설명 | Skill 목록 | 408 | 1 |
 | `lode-conversation` Skill 설명 | Skill 목록 | 219 | 0 |
@@ -30,10 +30,10 @@
 
 | 합계 | 문자 수 | 금지 표현 |
 | --- | ---: | ---: |
-| 기본(앞의 다섯 행) | 3,648 | 4 |
-| 기본, 진입 문단을 한 번만 셈 | 2,826 | |
-| 루트 지침 파일 포함(여섯 행 전부) | 5,949 | 5 |
-| 루트 지침 파일 포함, 진입 문단을 한 번만 셈 | 4,305 | |
+| 기본(앞의 다섯 행) | 3,700 | 4 |
+| 기본, 진입 문단을 한 번만 셈 | 2,878 | |
+| 루트 지침 파일 포함(여섯 행 전부) | 6,001 | 5 |
+| 루트 지침 파일 포함, 진입 문단을 한 번만 셈 | 4,357 | |
 
 참고:
 
@@ -46,9 +46,9 @@
 - 진입 문단은 SessionStart 맥락과 프로젝트 지침 안에 다시 들어 있습니다. "한 번만
   셈" 행은 그 반복을 뺀 값입니다.
 - SessionStart 맥락에는 프로젝트 경로가 JSON 이스케이프된 채로 두 번 들어 있습니다.
-  그래서 1,857과 이를 포함한 모든 합계는 프로젝트 위치에 따라 달라집니다. 측정에는
-  Windows에서 이스케이프 후 73자인 임시 경로를 썼고, 7자 짧은 경로에서는 1,843자
-  였습니다. 스크립트는 자신이 본 경로 길이를 함께 출력합니다.
+  그래서 1,909와 이를 포함한 모든 합계는 프로젝트 위치에 따라 달라집니다. 측정에는
+  Windows에서 이스케이프 후 73자인 임시 경로를 썼고, 7자 짧은 경로에서는 1,895자
+  입니다. 스크립트는 자신이 본 경로 길이를 함께 출력합니다.
 - SessionStart 맥락은 기록된 방향이 늘면 커집니다. 저장을 한 번 한 뒤에는 3,842자
   였습니다.
 - 기본 도구 목록도 세션마다 전달됩니다. 이 합계에는 들어 있지 않으며, 아래 도구
@@ -111,14 +111,18 @@ CLI 행은 스크립트가 실행하지 않으며, 검증되지 않은 MCP 호�
 | 저장 | Host가 검증한 호출자, 진입 후 | 1 | `lode_checkpoint_sync` |
 | 재개 | 새 대화, 검증되지 않은 MCP 호출자 | 1 | `lode_conversation_enter` |
 | 재개 | 새 Codex 스레드 | 1 | `lode_conversation_enter` |
-| 재개 | 새 Claude Code 대화 | 2 | `lode_project_initialize_or_resume` 다음 `lode_conversation_enter`, 또는 `lode_session_list` 다음 `session_id`를 준 `lode_conversation_enter` |
+| 재개 | 새 Claude Code 대화, Session이 하나인 Project | 1 | `lode_conversation_enter` |
+| 재개 | 새 Claude Code 대화, Session이 여럿인 Project | 2 | `lode_session_list` 다음 사용자가 고른 `session_id`를 준 `lode_conversation_enter` |
 | 재개 | 압축 뒤 같은 Codex 스레드, SessionStart Hook 사용 | 0 | Hook이 저장된 방향을 전달 |
 
-새 Claude Code 대화에서 SessionStart Hook은 방향 안내만
-주고(`session_selection_unresolved`), `lode_conversation_enter`만 부르면 저장된 방향
-없이 `session_selection_unresolved`로 답합니다. 새 Claude Code 대화는 기본으로
-Session을 고르지 않기 때문입니다. 지금의 동작이며, 이 감사는 기록만 하고 바꾸지
-않습니다.
+Claude Code 행은 Skill 진입 표대로 각 단계가 돌려준 상태를 따라간 결과입니다. 새
+Claude Code 대화에는 Session 연결이 없고, SessionStart Hook은 여전히 아무것도 고르지
+않습니다(`session_selection_unresolved`). Project에 Session이 하나면 Hook의
+`reasonCode`는 `SINGLE_SESSION_ENTRY_AVAILABLE`이고 `sessionDiscovery.call`은
+`lode_conversation_enter`입니다. 진입은 그 요청에 한해 그 Session으로 답해 저장된
+방향을 돌려주며, 연결은 쓰지 않습니다. Session이 여럿이면 Hook은
+`SESSION_SELECTION_LOST`와 `lode_session_list`를 주고 사용자가 고릅니다
+(0.3.0-beta.118부터. 그 전에는 새 Claude Code 대화가 어느 경우든 두 번 호출했습니다).
 
 위임은 문서화된 경로를 손으로 센 값입니다. worker 실행에는 모델 제공자가 필요해서
 스크립트로 재지 않습니다. 4-E 단계(가벼운 managed worker 경로)는 만들지 않았으므로
@@ -238,7 +242,7 @@ GraphDB 없는 core 동작의 전제 조건이 아닙니다.
 
 ## 결론
 
-기본으로 항상 읽히는 지침 글은 측정 경로에서 3,648자이고 금지 표현은 4개입니다. 함께
+기본으로 항상 읽히는 지침 글은 측정 경로에서 3,700자이고 금지 표현은 4개입니다. 함께
 전달되는 기본 도구 목록에는 31개가 있습니다. 남은 런타임 규칙은
 권한 분리, 자격 증명과 개인정보 보호, 정확한 범위와 식별자, 복구 가능성, 프로세스
 소유 가운데 하나에 대응합니다. 선택 어댑터는 범위 안에 머뭅니다. 새 필수 규칙을

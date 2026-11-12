@@ -439,11 +439,20 @@ test("cold Claude missing preparation cannot silently select default; explicit a
 });
 
 test("unavailable Claude linkage is not a new-Project initialization gate or a claimed automatic binding", async t => {
-  const {root,storage,environment}=fixture(t,false),native=createNativeSessionHostBridge({runtime:"claude",environment});
+  const {root,storage,environment,operational}=fixture(t,false),native=createNativeSessionHostBridge({runtime:"claude",environment});
   const result=await invoke(native,claudeRequest(root,"head_project_initialize_or_resume",{runtimes:["codex"]}));
   assert.equal(result.result.structuredContent.projectAction,"initialized");
   assert.equal(result.result._meta.headSessionBinding.retained,false);
-  assert.equal((await invoke(native,claudeRequest(root,"head_conversation_enter",{},"later"))).result.structuredContent.status,"session_selection_unresolved");
+  // beta.118: the new Project has one Session, so an unprepared call is
+  // answered by it for this request; nothing is bound or claimed.
+  const later=(await invoke(native,claudeRequest(root,"head_conversation_enter",{},"later"))).result;
+  assert.equal(later.structuredContent.workContext.sessionId,inspectProject(root).state.sessionId);
+  assert.equal(later._meta.headSessionBinding.status,"unavailable");
+  assert.equal(later._meta.headSessionBinding.persisted,false);
+  assert.equal(fs.existsSync(operational),false);
+  // A second Session restores the previous answer: the choice is the user's.
+  createHeadSession({root,purpose:"Second"});
+  assert.equal((await invoke(native,claudeRequest(root,"head_conversation_enter",{},"later-two"))).result.structuredContent.status,"session_selection_unresolved");
 });
 
 test("model direct helper/router/nested fake metadata and unexpanded templates cannot mint claims", async t => {
@@ -530,6 +539,9 @@ test("Claude matcher derives Session and effectful coverage from the catalog, ex
 
 test("Claude observed native marker cannot degrade to legacy/default when the next metadata is missing", async t => {
   const {root,storage,environment,operational}=fixture(t),native=createNativeSessionHostBridge({environment});
+  // With more than one Session there is a choice to lose (beta.118: a single
+  // Session answers an unprepared call; see the single-Session tests).
+  createHeadSession({root,purpose:"Another"});
   await invoke(native,{id:1,method:"initialize",params:{clientInfo:{name:"claude-code",version:"synthetic"},protocolVersion:"2024-11-05",capabilities:{}}});
   const before=snapshot(root);
   assert.equal((await invoke(native,claudeRequest(root,"head_conversation_enter"))).result.structuredContent.status,"session_selection_unresolved");
@@ -634,6 +646,18 @@ test("P3 unresolved entry has owner-verified lazy discovery; startup enumerates 
     if (rel === ".lode/sessions" || rel.startsWith(".lode/sessions/")) enumeration++;
     return original(directory, ...args);
   };
+  // beta.118: the single-Session check opens sessions/by-id and reads at most
+  // one entry per check, whatever the inventory size. Count every entry read.
+  const originalOpendir = fs.opendirSync; let entriesRead = 0, checks = 0;
+  fs.opendirSync = (directory, ...args) => {
+    const dir = originalOpendir(directory, ...args);
+    const rel = path.relative(root, String(directory)).replaceAll("\\", "/");
+    if (rel !== ".lode/sessions/by-id") return dir;
+    checks++;
+    const readSync = dir.readSync.bind(dir);
+    dir.readSync = () => { entriesRead++; return readSync(); };
+    return dir;
+  };
   let value;
   try {
     value = (await claudeCall(native, claudeRequest(root, "head_conversation_enter", {}, "p3-unselected"), "new-unbound-chat")).result.structuredContent;
@@ -655,7 +679,8 @@ test("P3 unresolved entry has owner-verified lazy discovery; startup enumerates 
       event: { hook_event_name: "SessionStart", source: "clear", cwd: root, session_id: "new-no-clear-witness" } }));
     assert.equal(JSON.parse(hook.hookSpecificOutput.additionalContext).sessionDiscovery.status, "not_queried");
     assert.equal(enumeration, 0, "Returning a 16-row list would still enumerate all names; do not call it here.");
-  } finally { fs.readdirSync = original; }
+    assert(checks >= 1 && entriesRead <= checks, `The single-Session check ran (${checks}) and read at most one entry each (${entriesRead}).`);
+  } finally { fs.readdirSync = original; fs.opendirSync = originalOpendir; }
   assert.deepEqual(snapshot(root).concat(snapshot(operational)), before);
   // Follow only on demand, through the exact returned public call. It remains
   // a read-only preview and does not resolve, select or persist a binding.

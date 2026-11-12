@@ -402,7 +402,14 @@ ACL을 다시 확인하며 POSIX mode를 Windows 근거로 삼지 않습니다. 
 
 Claude native 호출자 연결이 없을 때 Project 기본 Session을 통해 다른 논리
 Session을 조용히 고르지 않습니다. 정확한 논리 Session을 명시한 요청과 명시적인
-initialize/resume은 계속 사용할 수 있습니다. 최근 시각이나 다른 호출자로부터
+initialize/resume은 계속 사용할 수 있습니다. 예외는 바뀔 대상이 없는 경우 하나입니다.
+Project에 Session이 정확히 하나일 때(`sessions/by-id`가 없거나 비어 있음, 디렉터리
+항목을 많아야 하나만 읽어 확인), 연결이 없거나 PreToolUse 훅이 준비하지 못한 Claude
+Code 호출은 Codex 스레드처럼 그 요청에 한해 그 Session으로 답합니다. 연결은 쓰지
+않습니다. SessionStart Hook은 여전히 아무것도 고르지 않고
+`reasonCode: SINGLE_SESSION_ENTRY_AVAILABLE`과 다음 호출 `lode_conversation_enter`를
+알려 주므로, 진입 한 번으로 저장된 방향이 돌아옵니다. Session이 둘 이상이거나 연결이
+lost, pending, corrupt 또는 로컬 미확인 상태이면 결과는 그대로입니다. 최근 시각이나 다른 호출자로부터
 old→new native ID 연속성을 추정하지 않습니다. 합성 라우팅 검사는 실제 Claude
 `/clear`의 ID 변경이나 ID 간 자동 복원 성공을 의미하지 않습니다.
 

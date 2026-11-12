@@ -20,7 +20,7 @@ These are the texts a model receives in every session without asking for them.
 | Source | Delivered as | Characters | Prohibitions |
 | --- | --- | ---: | ---: |
 | Entry paragraph (`coreEntryGuidance`) | MCP `initialize` instructions | 822 | 1 |
-| SessionStart context, fresh core project | Claude Code and Codex Hook `additionalContext`; the same start context in OpenCode's system prompt | 1,857 | 2 |
+| SessionStart context, fresh core project | Claude Code and Codex Hook `additionalContext`; the same start context in OpenCode's system prompt | 1,909 | 2 |
 | `lode-agent-core` Skill description | Skill list | 342 | 0 |
 | `lode-agent-onboarding` Skill description | Skill list | 408 | 1 |
 | `lode-conversation` Skill description | Skill list | 219 | 0 |
@@ -28,10 +28,10 @@ These are the texts a model receives in every session without asking for them.
 
 | Total | Characters | Prohibitions |
 | --- | ---: | ---: |
-| By default (first five rows) | 3,648 | 4 |
-| By default, entry paragraph counted once | 2,826 | |
-| With root instruction files (all six rows) | 5,949 | 5 |
-| With root instruction files, entry paragraph counted once | 4,305 | |
+| By default (first five rows) | 3,700 | 4 |
+| By default, entry paragraph counted once | 2,878 | |
+| With root instruction files (all six rows) | 6,001 | 5 |
+| With root instruction files, entry paragraph counted once | 4,357 | |
 
 Notes:
 
@@ -45,9 +45,9 @@ Notes:
 - The entry paragraph is repeated inside the SessionStart context and inside the
   project instructions. The "counted once" rows subtract the repeats.
 - The SessionStart context contains the project path twice (JSON-escaped), so
-  1,857 and every total that includes it depend on where the project is. The
+  1,909 and every total that includes it depend on where the project is. The
   measurement used a 73-character escaped temporary path on Windows; a shorter
-  path gives a smaller number (7 characters shorter gave 1,843). The script
+  path gives a smaller number (7 characters shorter gives 1,895). The script
   prints the path length it saw.
 - The SessionStart context grows with recorded direction. After one save it was
   3,842 characters.
@@ -117,14 +117,20 @@ caller.
 | Save | Caller the Host verified, after entry | 1 | `lode_checkpoint_sync` |
 | Resume | New conversation, unverified MCP caller | 1 | `lode_conversation_enter` |
 | Resume | New Codex thread | 1 | `lode_conversation_enter` |
-| Resume | New Claude Code conversation | 2 | `lode_project_initialize_or_resume`, then `lode_conversation_enter`; or `lode_session_list`, then `lode_conversation_enter` with `session_id` |
+| Resume | New Claude Code conversation, Project with one Session | 1 | `lode_conversation_enter` |
+| Resume | New Claude Code conversation, Project with several Sessions | 2 | `lode_session_list`, then `lode_conversation_enter` with the `session_id` the user chose |
 | Resume | Same Codex thread after compaction, with the SessionStart Hook | 0 | The Hook delivers the saved direction |
 
-In a new Claude Code conversation the SessionStart Hook gives orientation only
-(`session_selection_unresolved`), and `lode_conversation_enter` alone answers
-`session_selection_unresolved` without the saved direction: a new Claude Code
-conversation does not select a Session by default. That is today's behaviour;
-this audit records it and does not change it.
+The Claude Code rows follow the state each step returns, as the Skill entry
+table says. A new Claude Code conversation has no Session binding, and its
+SessionStart Hook still selects nothing (`session_selection_unresolved`).
+When the Project has one Session, the Hook's `reasonCode` is
+`SINGLE_SESSION_ENTRY_AVAILABLE` and `sessionDiscovery.call` is
+`lode_conversation_enter`: entry answers with that Session for the request and
+returns its saved direction, and no binding is written. With several Sessions
+the Hook gives `SESSION_SELECTION_LOST` and `lode_session_list`, and the user
+chooses (since 0.3.0-beta.118; before it a new Claude Code conversation took
+two calls in either case).
 
 Delegation is a hand count from the documented paths. It is not scripted
 because a worker run needs a model provider. Step 4-E (a lightweight managed
@@ -252,7 +258,7 @@ without Git or GraphDB.
 
 ## Verdict
 
-The default always-read instruction text is 3,648 characters (on the measuring
+The default always-read instruction text is 3,700 characters (on the measuring
 path) with 4 prohibition phrases; the default tool list sent beside it has 31. The
 retained runtime rules map to authority separation, credential and privacy
 protection, exact scope and identity, recoverability, or process ownership.
