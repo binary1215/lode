@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { recordedRootSpelling } from "./project-root-spelling.mjs";
 
 // 4-D (user decision 4-2 (a)): the recovery basis id this server last handed a
 // verified caller, per (caller, Project root, logical Session), so the caller
@@ -17,7 +18,7 @@ export function createRecoveryBasisMemory({ maxEntries = 1024 } = {}) {
   const directions = new Map();
   const canonicalRoot = (root) => {
     try {
-      return fs.realpathSync(path.resolve(root));
+      return fs.realpathSync(path.resolve(recordedRootSpelling(root)));
     } catch {
       return path.resolve(root);
     }

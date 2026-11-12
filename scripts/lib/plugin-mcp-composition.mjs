@@ -5,6 +5,7 @@ import { ARTIFACT_COMPOSITION } from "./lode-artifact-composition.mjs";
 import { verifyClaudePluginPayload } from "./claude-marketplace.mjs";
 import { resolveProjectStorage } from "./project-storage-format.mjs";
 import { parseClaudeNativeToolName } from "./session-host-request.mjs";
+import { sameRootSpelling } from "./project-root-spelling.mjs";
 
 // Private, request-scoped installation composition, not an authorization or a
 // model-supplied loaded flag. No native identity is written into Project state.
@@ -68,7 +69,12 @@ export function createPluginInitializationContext({ launch, servingModuleUrl, ca
     )
       return null;
     const canonical = fs.realpathSync(path.resolve(root));
-    if (fs.realpathSync(caller.nativeProjectRoot) !== canonical || !fs.statSync(canonical).isDirectory() || verifyOwnPackage() !== known.releaseId) return null;
+    if (
+      !sameRootSpelling(fs.realpathSync(caller.nativeProjectRoot), canonical) ||
+      !fs.statSync(canonical).isDirectory() ||
+      verifyOwnPackage() !== known.releaseId
+    )
+      return null;
     const context = Object.freeze({});
     requests.set(context, { root: canonical, projectId: ownerAt(canonical), launch });
     return context;

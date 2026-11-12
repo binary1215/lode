@@ -10,6 +10,7 @@ import { createSessionHostRequestRegistry, parseClaudeNativeToolName } from "./s
 import { subagentWriteGuardEnabled } from "./subagent-write-guard.mjs";
 import { effectiveToolCall } from "./operation-groups.mjs";
 import { createRecoveryBasisMemory } from "./recovery-basis-memory.mjs";
+import { withRecordedProjectRoot } from "./project-root-spelling.mjs";
 
 // Held recovery basis views the bridge itself issued to a verified caller. The
 // dispatcher honours only these, so no embedder option can supply one.
@@ -426,6 +427,10 @@ export function createNativeSessionHostBridge({
       const targetName = effectiveToolCall(routed ? outer?.name : request.params?.name, routed ? outer?.arguments : outer).name;
       if (helperName(targetName)) return reply(request, Object.assign(new Error(), { code: "NATIVE_HOOK_DIRECT_INGRESS_REQUIRED" }));
       const caller = callerFor(request);
+      // After the caller is matched against its exact hook preparation, a root
+      // that differs from the recorded one only in drive-letter case uses the
+      // recorded spelling, so Host keys and Session routing see one Project.
+      request = withRecordedProjectRoot(request);
       try {
         // Non-binding tools keep their previous result. The visible caller is
         // only a write-guard signal and does not select a Session.

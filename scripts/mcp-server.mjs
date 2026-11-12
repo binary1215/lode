@@ -32,6 +32,7 @@ import { sessionCallRequiresBinding } from "./lib/session-routing.mjs";
 import { createNativeSessionHostBridge } from "./lib/session-native-host.mjs";
 import { SESSION_HOST_REQUEST_HELPER } from "./lib/session-host-request.mjs";
 import { assessSubagentStateWrite, subagentWriteGuardEnabled } from "./lib/subagent-write-guard.mjs";
+import { withRecordedProjectRoot } from "./lib/project-root-spelling.mjs";
 import fs from "node:fs";
 
 const protocolVersion = "2024-11-05";
@@ -302,6 +303,9 @@ export async function dispatch(request, options = {}) {
 }
 
 async function dispatchSessionRequest(request, options = {}) {
+  // A root that differs from the recorded one only in drive-letter case is the
+  // same Project (Windows only; a read of project.json, never a write).
+  request = withRecordedProjectRoot(request);
   try {
     request = ungroupedRequest(request);
   } catch (error) {

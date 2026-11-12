@@ -162,6 +162,7 @@ Thumbs.db
 !test/hint-grouped-calls.test.mjs
 !test/held-direction-id.test.mjs
 !test/held-recovery-basis.test.mjs
+!test/project-root-drive-case.test.mjs
 !test/legacy-reason-codes.test.mjs
 !test/legacy-wire-spellings.test.mjs
 !test/operation-groups.test.mjs
