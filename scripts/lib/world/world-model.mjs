@@ -1904,9 +1904,9 @@ async function buildWorldModelLocked({
       projectionInputHash: documentChangeProjection.projectionInputHash,
       candidateSetIds: documentChangeProjection.candidateSets.map((item) => item.candidateSetId),
       reviewDecisionIds: documentChangeProjection.reviewDecisions.map((item) => item.reviewDecisionId),
-      productModelRevisionIds: documentChangeProjection.productModelRevisions.map(
-        (item) => `document-product-model-revision-${item.revisionHash.slice(0, 24)}`,
-      ),
+      productModelRevisionIds: documentChangeProjection.productModelRevisions
+        .map((item) => `document-product-model-revision-${item.revisionHash.slice(0, 24)}`)
+        .sort(),
       applicationReceiptIds: documentChangeProjection.applicationReceipts.map((item) => item.applicationReceiptId),
       authority: "derived-projection-manifest-not-document-authority",
       instructionAuthority: false,

@@ -5,8 +5,17 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs";
 import { buildWorldModel, materializeWorldMarkdownProjection, captureWorldMarkdownChanges, inspectWorldModel } from "../scripts/lib/world/world-model.mjs";
-import { applyDocumentChangeReview, reviewDocumentChanges, inspectDocumentChangeReviewStatus } from "../scripts/lib/world/document-change-review.mjs";
-import { readProductModelCanon } from "../scripts/lib/world/product-model.mjs";
+import {
+  applyDocumentChangeReview,
+  reviewDocumentChanges,
+  inspectDocumentChangeReviewStatus,
+  readDocumentChangeReviewDecision,
+  verifyDocumentChangeApplicationReceipt,
+  documentChangeReviewCanonicalJson,
+} from "../scripts/lib/world/document-change-review.mjs";
+import { readProductModelCanon, normalizeProductModelDocument, productModelDocument } from "../scripts/lib/world/product-model.mjs";
+import { artifactAuthorityBoundary } from "../scripts/lib/core/authority-plane-contract.mjs";
+import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
 import crypto from "node:crypto";
 import { recordSessionWorkEvidence, readSessionWorkContext } from "../scripts/lib/session/session-work-context.mjs";
 
@@ -174,4 +183,89 @@ test("durable reject resumes partial publication before and after receipt withou
       fs.rmSync(root, { recursive: true, force: true });
     }
   }
+});
+
+test("document receipt requires full predecessor and resulting hashes from its reviewed originals", async (t) => {
+  const { root, layout, review } = await fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const applied = await applyDocumentChangeReview({ root, reviewDecisionId: review.reviewDecisionId });
+  const detailed = readDocumentChangeReviewDecision({ root, reviewDecisionId: review.reviewDecisionId });
+  for (const field of ["previousProductModelHash", "resultingProductModelHash"]) {
+    const changed = structuredClone(applied.applicationReceipt);
+    delete changed.applicationReceiptId;
+    delete changed.applicationReceiptHash;
+    changed[field] = "f".repeat(64);
+    const hash = crypto.createHash("sha256").update(documentChangeReviewCanonicalJson(changed)).digest("hex");
+    changed.applicationReceiptId = `document-change-application-${hash.slice(0, 24)}`;
+    changed.applicationReceiptHash = hash;
+    assert.throws(() => verifyDocumentChangeApplicationReceipt(changed, review, detailed.candidateSet, inspectProject(root).project.projectId, layout), {
+      code: "DOCUMENT_CHANGE_APPLICATION_REVIEW_MISMATCH",
+    });
+  }
+});
+
+test("inverse document revision descriptor pair recovers the same second approval after Canon publication", async (t) => {
+  const { root, layout, review } = await fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  await applyDocumentChangeReview({ root, reviewDecisionId: review.reviewDecisionId });
+  const firstRevision = readDocumentChangeReviewDecision({ root, reviewDecisionId: review.reviewDecisionId }).resultingProductModelRevision;
+  const projectId = inspectProject(root).project.projectId;
+  let chosen = null;
+  // Select a pathological input by its independently checkable recorded
+  // revision identity. Pass the actual storage dialect when normalizing.
+  for (let index = 0; index < 256; index++) {
+    const proposed = structuredClone(firstRevision.document);
+    proposed.capabilities[0].description = `Synthetic inverse-order successor ${index}.`;
+    const model = normalizeProductModelDocument(proposed, layout);
+    const revision = {
+      schemaVersion: 1,
+      kind: "ProductModelRevision",
+      protocol: { name: formatForVerifiedOwner(layout).protocol("lode-agent-core-document-change-product-revision"), version: "0.1.0" },
+      projectId,
+      authorityBoundary: artifactAuthorityBoundary("ProductModelRevision"),
+      productModelId: model.productModelId,
+      productModelHash: model.productModelHash,
+      document: productModelDocument(model),
+      authority: "explicit-user-reviewed-product-canon-revision",
+      instructionAuthority: true,
+      promotionAuthority: true,
+    };
+    const revisionHash = crypto.createHash("sha256").update(documentChangeReviewCanonicalJson(revision)).digest("hex");
+    const pair = [firstRevision, { ...revision, revisionHash }].sort((a, b) => a.productModelId.localeCompare(b.productModelId));
+    const mapped = pair.map((item) => `document-product-model-revision-${item.revisionHash.slice(0, 24)}`);
+    if (mapped[0] > mapped[1]) {
+      chosen = { proposed, revisionHash, mapped };
+      break;
+    }
+  }
+  assert.ok(chosen, "A bounded search must select an actually inverse descriptor pair");
+  await materializeWorldMarkdownProjection({ root });
+  fs.appendFileSync(path.join(root, layout.directory, "generated/knowledge/index.md"), "\nSecond synthetic reviewed contract.\n");
+  const captured = await captureWorldMarkdownChanges({ root, persist: true });
+  const second = await reviewDocumentChanges({
+    root,
+    candidateSetId: captured.candidateSet.candidateSetId,
+    disposition: "accept-all",
+    rationale: "Synthetic exact second approval.",
+    resultingProductModel: chosen.proposed,
+    apply: false,
+  });
+  const detailed = readDocumentChangeReviewDecision({ root, reviewDecisionId: second.reviewDecision.reviewDecisionId });
+  assert.equal(detailed.resultingProductModelRevision.revisionHash, chosen.revisionHash, "Selected pathological hash matches the actual public writer");
+  t.diagnostic(JSON.stringify({ inverseDescriptorPair: chosen.mapped }));
+  crash(root, second.reviewDecision.reviewDecisionId, "canon", layout);
+  const partial = await inspectDocumentChangeReviewStatus({ root, candidateSetId: captured.candidateSet.candidateSetId });
+  assert.equal(partial.canonApplied, true);
+  assert.equal(partial.applicationReceiptId, null);
+  assert.equal(partial.projectionsReady, false);
+  const reviewsBefore = fs.readdirSync(path.join(root, layout.directory, "document-changes/review-decisions")).sort();
+  const recovered = await applyDocumentChangeReview({ root, reviewDecisionId: second.reviewDecision.reviewDecisionId });
+  assert.equal(recovered.status, "applied");
+  assert.deepEqual(fs.readdirSync(path.join(root, layout.directory, "document-changes/review-decisions")).sort(), reviewsBefore);
+  const world = await inspectWorldModel({ root });
+  assert.equal(world.status, "current");
+  assert.deepEqual(world.snapshot.documentChangeProjection.productModelRevisionIds, [...chosen.mapped].sort());
+  assert.deepEqual(world.snapshot.temporalProvenanceGraph.documentChangeProjection.productModelRevisionIds, [...chosen.mapped].sort());
+  assert.equal((await inspectDocumentChangeReviewStatus({ root, candidateSetId: captured.candidateSet.candidateSetId })).projectionsReady, true);
+  assert.equal((await applyDocumentChangeReview({ root, reviewDecisionId: second.reviewDecision.reviewDecisionId })).status, "already-applied");
 });

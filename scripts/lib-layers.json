@@ -128,6 +128,7 @@
     "onboarding-conversation.mjs": "session",
     "onboarding-projection.mjs": "session",
     "onboarding.mjs": "session",
+    "onboarding-product-successor.mjs": "session",
     "opencode-atomic-history-host.mjs": "session",
     "opencode-atomic-history-profile.json": "session",
     "opencode-atomic-history-store.mjs": "session",

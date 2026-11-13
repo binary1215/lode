@@ -14,7 +14,9 @@ import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-f
 import { initializeOrResumeProject, inspectProjectExperience } from "../scripts/lib/session/project-bootstrap.mjs";
 import {
   inspectOptionalOnboarding,
+  inspectOptionalOnboardingForEntry,
   inspectOnboarding,
+  proposeOnboardingSemanticRefresh,
   recoverOnboardingPromotion,
   refreshOnboardingCandidates,
   restoreOnboardingCandidate,
@@ -24,11 +26,20 @@ import {
 import crypto from "node:crypto";
 import { inspectConversationalOnboarding } from "../scripts/lib/session/onboarding-conversation.mjs";
 import { enterConversationRecovery } from "../scripts/lib/session/compaction-lifecycle.mjs";
-import { readProductModelCanon } from "../scripts/lib/world/product-model.mjs";
+import { readProductModelCanon, normalizeProductModelDocument } from "../scripts/lib/world/product-model.mjs";
+import { readOnboardingProductSuccessor } from "../scripts/lib/session/onboarding-product-successor.mjs";
 import { inspectWorldModel } from "../scripts/lib/world/world-model.mjs";
 import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
 import { createRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
 import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
+import { buildWorldModel, materializeWorldMarkdownProjection, captureWorldMarkdownChanges } from "../scripts/lib/world/world-model.mjs";
+import { reviewDocumentChanges, inspectDocumentChangeReviewStatus, documentChangeReviewCanonicalJson } from "../scripts/lib/world/document-change-review.mjs";
+import { loadDocumentChangeProjection } from "../scripts/lib/world/document-change-projection.mjs";
+import {
+  captureHistoricalBoundaryApplicationBasis,
+  createVerifiedHistoricalInventoryCapability,
+  applyHistoricalArtifactBoundary,
+} from "../scripts/lib/world/historical-artifact-boundary.mjs";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const moduleUrl = new URL("../scripts/lib/session/onboarding.mjs", import.meta.url).href;
@@ -1032,4 +1043,527 @@ test("physical composition and part damage remain strict Product errors without 
         });
       await inspectOnboarding({ root });
     });
+});
+
+function recordSuccessorTestEvidence(name, evidence) {
+  if (!process.env.LODE_CANON_LINEAGE_TEST_EVIDENCE) return;
+  const directory = path.join(pluginRoot, "tmp/canon-lineage-review/implementation");
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(path.join(directory, name), JSON.stringify(evidence, null, 2) + "\n");
+}
+
+// Public application and read regressions, independent of generated graphs as
+// approval evidence. Optional diagnostics never overwrite baseline evidence.
+async function approvedDocumentSuccessorFixture(t, historical, hops) {
+  const f = await fixture();
+  t.after(() => fs.rmSync(f.root, { recursive: true, force: true }));
+  await reviewOnboarding(f.request);
+  if (historical) {
+    // Synthetic boundary uses exact current fixture originals; no real legacy
+    // bytes are parsed, migrated or rewritten by this regression.
+    const basis = captureHistoricalBoundaryApplicationBasis({ root: f.root });
+    const state = basis.onboardingState;
+    const entries = [
+      ["historical-candidate-set", "candidate-sets", state.candidateSetId],
+      ["historical-review", "review-decisions", state.latestReviewDecisionId],
+      ["historical-product-revision", "product-model-revisions", state.productModelId],
+    ]
+      .map(([role, directory, artifactId]) => {
+        const relative = `${f.layout.directory}/onboarding/${directory}/${artifactId}.json`;
+        const raw = fs.readFileSync(path.join(f.root, relative));
+        const doc = JSON.parse(raw);
+        return {
+          path: relative,
+          role,
+          artifactId,
+          protocolFamily: doc.protocol?.name || doc.kind,
+          protocolVersion: doc.protocol?.version || String(doc.schemaVersion || ""),
+          byteLength: raw.length,
+          sha256: crypto.createHash("sha256").update(raw).digest("hex"),
+          interpretationMode: role === "historical-product-revision" ? "current-typed-with-historical-provenance" : "opaque-historical",
+        };
+      })
+      .sort((a, b) => a.path.localeCompare(b.path, "en"));
+    const capability = createVerifiedHistoricalInventoryCapability({
+      root: f.root,
+      projectId: basis.projectId,
+      storage: f.storage,
+      entries,
+      validation: {
+        status: "complete-ready-verified",
+        instructionAuthority: false,
+        promotionAuthority: false,
+        supportedCandidateVersions: ["0.3.0"],
+        historicalReadyCandidateSetId: state.candidateSetId,
+        historicalReadyReviewDecisionId: state.latestReviewDecisionId,
+        historicalResultingProductModelId: state.productModelId,
+      },
+    });
+    applyHistoricalArtifactBoundary({ root: f.root, verifiedInventory: capability, hostMode: "explicit-one-shot" });
+    await buildWorldModel({ root: f.root });
+  }
+  assert.equal((await inspectOnboarding({ root: f.root })).status, "ready");
+  const beforeState = fs.readFileSync(path.join(f.root, f.statePath));
+  const applications = [];
+  for (let hop = 1; hop <= hops; hop++) {
+    await materializeWorldMarkdownProjection({ root: f.root });
+    fs.appendFileSync(path.join(f.root, f.layout.directory, "generated/knowledge/index.md"), `\nSynthetic reviewed successor ${hop}.\n`);
+    const captured = await captureWorldMarkdownChanges({ root: f.root, persist: true });
+    const model = JSON.parse(fs.readFileSync(path.join(f.root, f.canonPath)));
+    model.capabilities[0].description = `Explicitly reviewed delivery contract ${hop}.`;
+    let applied;
+    try {
+      applied = await reviewDocumentChanges({
+        root: f.root,
+        candidateSetId: captured.candidateSet.candidateSetId,
+        disposition: "accept-all",
+        rationale: `Synthetic explicit successor ${hop} approval.`,
+        resultingProductModel: model,
+        apply: true,
+      });
+    } catch (error) {
+      const projection = loadDocumentChangeProjection({ projectRoot: f.root, projectId: inspectProject(f.root).project.projectId, storage: f.storage });
+      recordSuccessorTestEvidence(`application-failure-${historical ? "historical" : "modern"}-${hops}.json`, {
+        historical,
+        hops,
+        failingHop: hop,
+        error: { code: error.code, message: error.message, projectionPending: error.projectionPending },
+        completedPriorApplications: applications,
+        projectionProductRevisions: projection.productModelRevisions.map((item) => ({
+          productModelId: item.productModelId,
+          revisionHash: item.revisionHash,
+          descriptorId: `document-product-model-revision-${item.revisionHash.slice(0, 24)}`,
+        })),
+        review: await inspectDocumentChangeReviewStatus({ root: f.root, candidateSetId: captured.candidateSet.candidateSetId }),
+        onboardingPointerUnchanged: fs.readFileSync(path.join(f.root, f.statePath)).equals(beforeState),
+      });
+      throw error;
+    }
+    const status = await inspectDocumentChangeReviewStatus({ root: f.root, candidateSetId: captured.candidateSet.candidateSetId });
+    assert.equal(status.canonApplied, true);
+    assert.equal(status.projectionsReady, true);
+    assert.equal(status.status, "applied");
+    applications.push({ status, application: applied.applicationReceipt });
+  }
+  assert.deepEqual(fs.readFileSync(path.join(f.root, f.statePath)), beforeState);
+  assert.equal((await inspectWorldModel({ root: f.root })).status, "current");
+  const guide = await inspectConversationalOnboarding({ root: f.root });
+  const evidence = {
+    historical,
+    hops,
+    applications,
+    guide,
+    onboardingPointerUnchanged: true,
+    worldStatus: "current",
+    expected: "Read verified approved successor without replacing the historical onboarding pointer.",
+  };
+  recordSuccessorTestEvidence(`reproduction-${historical ? "historical" : "modern"}-${hops}.json`, evidence);
+  return { ...f, beforeState, guide, applications };
+}
+
+for (const historical of [false, true])
+  for (const hops of [1, 2])
+    test(`approved document successor lineage: ${historical ? "historical" : "modern"} ready with ${hops} hop(s) remains readable`, async (t) => {
+      const f = await approvedDocumentSuccessorFixture(t, historical, hops);
+      // Canon ownership is established by the public document review/application,
+      // not by a direct file write or by this status assertion.
+      const status = await inspectOnboarding({ root: f.root });
+      assert.equal(status.status, "ready");
+      assert.equal(status.productModel.productModelId, f.applications.at(-1).status.resultingProductModelId);
+      assert.deepEqual(fs.readFileSync(path.join(f.root, f.statePath)), f.beforeState);
+    });
+
+test("approved document successor lineage: historical fresh semantic proposal uses current reviewed base", async (t) => {
+  const f = await approvedDocumentSuccessorFixture(t, true, 1);
+  const world = (await inspectWorldModel({ root: f.root })).snapshot;
+  const proposed = await proposeOnboardingSemanticRefresh({
+    root: f.root,
+    semanticProposal: {
+      schemaVersion: 1,
+      sourceSnapshotId: world.temporalProvenanceGraph.sourceSnapshotId,
+      candidates: [
+        {
+          productKind: "Capability",
+          proposedEntity: { key: "fresh-delivery", name: "Fresh delivery", description: "Fresh explicitly unreviewed proposal." },
+          evidence: [{ path: "README.md", line: 1 }],
+          explanation: "Synthetic current source evidence.",
+          confidence: 0.9,
+        },
+      ],
+    },
+  });
+  assert.equal(proposed.candidateSet.productModelId, f.applications.at(-1).status.resultingProductModelId);
+  assert.equal(proposed.state.latestReviewDecisionId, null);
+  assert.deepEqual(proposed.candidateSet.parentCandidateSetIds, []);
+});
+
+function successorTreeObservation(root) {
+  const result = {};
+  const walk = (relative) => {
+    for (const entry of fs.readdirSync(path.join(root, relative), { withFileTypes: true })) {
+      const next = path.join(relative, entry.name);
+      if (entry.isDirectory()) walk(next);
+      else if (entry.isFile()) {
+        const file = path.join(root, next),
+          raw = fs.readFileSync(file),
+          stat = fs.statSync(file);
+        result[next] = { hash: crypto.createHash("sha256").update(raw).digest("hex"), mtimeMs: stat.mtimeMs, mode: stat.mode };
+      }
+    }
+  };
+  walk(inspectProject(root).storage.directory);
+  return result;
+}
+
+async function appendReviewedDocument(root, layout, description, { apply = true, disposition = "accept-all" } = {}) {
+  await materializeWorldMarkdownProjection({ root });
+  fs.appendFileSync(path.join(root, layout.directory, "generated/knowledge/index.md"), `\nSynthetic proposal: ${description}.\n`);
+  const captured = await captureWorldMarkdownChanges({ root, persist: true });
+  const model = JSON.parse(fs.readFileSync(path.join(root, layout.directory, "context/product-model.json")));
+  model.capabilities[0].description = description;
+  const result = await reviewDocumentChanges({
+    root,
+    candidateSetId: captured.candidateSet.candidateSetId,
+    disposition,
+    rationale: "Synthetic explicit decision.",
+    ...(disposition === "reject" ? {} : { resultingProductModel: model }),
+    apply,
+  });
+  return { captured, result, model };
+}
+
+test("approved document successor rejects damaged or incomplete original closure without read effects", async (t) => {
+  const f = await approvedDocumentSuccessorFixture(t, false, 1);
+  const status = f.applications[0].status;
+  const paths = {
+    application: `${f.layout.directory}/document-changes/applications/${status.applicationReceiptId}.json`,
+    review: `${f.layout.directory}/document-changes/review-decisions/${status.reviewDecisionId}.json`,
+    candidate: `${f.layout.directory}/document-changes/candidate-sets/${status.candidateSetId}.json`,
+    revision: `${f.layout.directory}/document-changes/product-model-revisions/${status.resultingProductModelId}.json`,
+  };
+  const healthy = successorTreeObservation(f.root);
+  const entry = await inspectOptionalOnboardingForEntry({ root: f.root });
+  assert.equal(entry.status, "ready_world_unchecked");
+  assert.equal(entry.productCanonLineage.hops.length, 1);
+  assert.equal(entry.productCanonLineage.current.family, "document-change");
+  assert.deepEqual(successorTreeObservation(f.root), healthy);
+  for (const [kind, relative] of Object.entries(paths)) {
+    for (const mutation of ["missing", "tampered"])
+      await t.test(`${kind}-${mutation}`, async () => {
+        const file = path.join(f.root, relative),
+          original = fs.readFileSync(file);
+        try {
+          if (mutation === "missing") fs.unlinkSync(file);
+          else {
+            const changed = JSON.parse(original);
+            changed.projectId = "lode-" + "f".repeat(20);
+            fs.writeFileSync(file, JSON.stringify(changed));
+          }
+          const before = successorTreeObservation(f.root);
+          const diagnostic = await inspectOptionalOnboardingForEntry({ root: f.root });
+          assert.equal(diagnostic.status, "integrity_attention");
+          assert.deepEqual(successorTreeObservation(f.root), before);
+        } finally {
+          fs.writeFileSync(file, original);
+        }
+      });
+  }
+  await t.test("direct-canon-edit", async () => {
+    const file = path.join(f.root, f.canonPath),
+      original = fs.readFileSync(file);
+    try {
+      const changed = JSON.parse(original);
+      changed.capabilities[0].description = "Unreviewed edit";
+      fs.writeFileSync(file, JSON.stringify(changed));
+      const before = successorTreeObservation(f.root);
+      assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).status, "integrity_attention");
+      assert.deepEqual(successorTreeObservation(f.root), before);
+    } finally {
+      fs.writeFileSync(file, original);
+    }
+  });
+  await t.test("distinct-completed-receipt-ambiguity", async () => {
+    const receipt = JSON.parse(fs.readFileSync(path.join(f.root, paths.application)));
+    delete receipt.applicationReceiptId;
+    delete receipt.applicationReceiptHash;
+    receipt.after.documentProjectionHash = "f".repeat(64);
+    const hash = crypto.createHash("sha256").update(documentChangeReviewCanonicalJson(receipt)).digest("hex");
+    receipt.applicationReceiptId = `document-change-application-${hash.slice(0, 24)}`;
+    receipt.applicationReceiptHash = hash;
+    const file = path.join(f.root, f.layout.directory, "document-changes/applications", receipt.applicationReceiptId + ".json");
+    fs.writeFileSync(file, JSON.stringify(receipt));
+    try {
+      const before = successorTreeObservation(f.root);
+      const diagnostic = await inspectOptionalOnboardingForEntry({ root: f.root });
+      assert.equal(diagnostic.reasonCode, "ONBOARDING_PRODUCT_SUCCESSOR_AMBIGUOUS");
+      assert.deepEqual(successorTreeObservation(f.root), before);
+    } finally {
+      fs.unlinkSync(file);
+    }
+  });
+  await t.test("byte-bound", async () => {
+    const file = path.join(f.root, paths.application),
+      original = fs.readFileSync(file);
+    try {
+      fs.truncateSync(file, 8 * 1024 * 1024 + 1);
+      assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).reasonCode, "ONBOARDING_PRODUCT_SUCCESSOR_LIMIT");
+    } finally {
+      fs.writeFileSync(file, original);
+    }
+  });
+  await t.test("record-bound", async () => {
+    const files = [];
+    try {
+      for (let index = 0; index < 128; index++) {
+        const file = path.join(
+          f.root,
+          f.layout.directory,
+          "document-changes/applications",
+          `document-change-application-${index.toString(16).padStart(24, "0")}.json`,
+        );
+        fs.writeFileSync(file, "{}");
+        files.push(file);
+      }
+      assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).reasonCode, "ONBOARDING_PRODUCT_SUCCESSOR_LIMIT");
+    } finally {
+      for (const file of files) fs.unlinkSync(file);
+    }
+  });
+});
+
+test("ready existing Canon without onboarding revision uses only its recorded World base", async (t) => {
+  const root = fs.mkdtempSync(path.join(pluginRoot, ".qa-onboarding-existing-canon-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "README.md"), "# Existing reviewed service\n");
+  initializeProject({ root, pluginRoot, runtimes: ["codex"] });
+  const layout = inspectProject(root).storage;
+  await buildWorldModel({ root });
+  await materializeWorldMarkdownProjection({ root });
+  fs.appendFileSync(path.join(root, layout.directory, "generated/knowledge/index.md"), "\nInitial reviewed delivery.\n");
+  const captured = await captureWorldMarkdownChanges({ root, persist: true });
+  await reviewDocumentChanges({
+    root,
+    candidateSetId: captured.candidateSet.candidateSetId,
+    disposition: "accept-all",
+    rationale: "Synthetic initial Canon approval.",
+    apply: true,
+    resultingProductModel: {
+      schemaVersion: 1,
+      featureGroups: [],
+      capabilities: [{ key: "delivery", name: "Delivery", description: "Initial delivery." }],
+      features: [],
+      requirements: [],
+      constraints: [],
+      decisions: [],
+    },
+  });
+  const started = await startOnboarding({ root, mode: "existing" });
+  assert.equal(started.status, "ready_existing_product_canon");
+  assert.equal(started.state.candidateSetId, null);
+  assert.equal(started.state.latestReviewDecisionId, null);
+  assert.equal(fs.existsSync(path.join(root, layout.directory, "onboarding/product-model-revisions", started.state.productModelId + ".json")), false);
+  await appendReviewedDocument(root, layout, "Successor to existing Canon");
+  const before = successorTreeObservation(root);
+  const status = await inspectOnboarding({ root });
+  assert.equal(status.status, "ready");
+  assert.equal(status.productCanonLineage.base.family, "recorded-world");
+  assert.deepEqual(successorTreeObservation(root), before);
+  const snapshotFile = worldSnapshotFile(root, started.state.worldModelId),
+    original = fs.readFileSync(snapshotFile);
+  fs.unlinkSync(snapshotFile);
+  try {
+    assert.equal((await inspectOptionalOnboardingForEntry({ root })).status, "integrity_attention");
+  } finally {
+    fs.writeFileSync(snapshotFile, original);
+  }
+});
+
+test("reject receipts and later projection drift do not erase applied successor proof", async (t) => {
+  const f = await approvedDocumentSuccessorFixture(t, false, 1);
+  await appendReviewedDocument(f.root, f.layout, "Do not adopt this proposal", { disposition: "reject" });
+  const status = await inspectOnboarding({ root: f.root });
+  assert.equal(status.status, "ready");
+  assert.equal(status.productCanonLineage.hops.length, 1);
+  fs.appendFileSync(path.join(f.root, "README.md"), "\nLater source change.\n");
+  const changed = await inspectOnboarding({ root: f.root });
+  assert.equal(changed.status, "ready_world_changed");
+  assert.equal(changed.productCanonLineage.hops.length, 1);
+});
+
+test("pending onboarding candidates are never rebased by a separate document approval", async (t) => {
+  const f = await fixture();
+  t.after(() => fs.rmSync(f.root, { recursive: true, force: true }));
+  await materializeWorldMarkdownProjection({ root: f.root });
+  fs.appendFileSync(path.join(f.root, f.layout.directory, "generated/knowledge/index.md"), "\nSeparate reviewed contract.\n");
+  const captured = await captureWorldMarkdownChanges({ root: f.root, persist: true });
+  await reviewDocumentChanges({
+    root: f.root,
+    candidateSetId: captured.candidateSet.candidateSetId,
+    disposition: "accept-all",
+    rationale: "Synthetic separate approval.",
+    apply: true,
+    resultingProductModel: {
+      schemaVersion: 1,
+      featureGroups: [],
+      capabilities: [{ key: "separate", name: "Separate", description: "Separately reviewed contract." }],
+      features: [],
+      requirements: [],
+      constraints: [],
+      decisions: [],
+    },
+  });
+  const before = successorTreeObservation(f.root);
+  assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).status, "integrity_attention");
+  assert.deepEqual(successorTreeObservation(f.root), before);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(f.root, f.statePath))).phase, "awaiting-review");
+});
+
+test("public no-op document approval is rejected without granting another successor", async (t) => {
+  const f = await approvedDocumentSuccessorFixture(t, false, 1);
+  await materializeWorldMarkdownProjection({ root: f.root });
+  fs.appendFileSync(path.join(f.root, f.layout.directory, "generated/knowledge/index.md"), "\nConfirm the existing contract without changing Canon.\n");
+  const captured = await captureWorldMarkdownChanges({ root: f.root, persist: true });
+  const current = JSON.parse(fs.readFileSync(path.join(f.root, f.canonPath)));
+  const applicationDirectory = path.join(f.root, f.layout.directory, "document-changes/applications");
+  const reviewDirectory = path.join(f.root, f.layout.directory, "document-changes/review-decisions");
+  const originalApplications = fs.readdirSync(applicationDirectory).sort();
+  const originalReviews = fs.readdirSync(reviewDirectory).sort();
+  await assert.rejects(
+    reviewDocumentChanges({
+      root: f.root,
+      candidateSetId: captured.candidateSet.candidateSetId,
+      disposition: "accept-all",
+      rationale: "Synthetic approval retains exactly the current Product contract.",
+      resultingProductModel: current,
+      apply: true,
+    }),
+    { code: "DOCUMENT_CHANGE_CANON_CHANGE_REQUIRED" },
+  );
+  assert.deepEqual(fs.readdirSync(applicationDirectory).sort(), originalApplications);
+  assert.deepEqual(fs.readdirSync(reviewDirectory).sort(), originalReviews);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(f.root, f.canonPath))), current);
+  const before = successorTreeObservation(f.root);
+  const inspected = await inspectOnboarding({ root: f.root });
+  assert.equal(inspected.status, "ready_world_changed");
+  assert.equal(inspected.productCanonLineage.hops.length, 1);
+  assert.deepEqual(successorTreeObservation(f.root), before);
+  assert.deepEqual(fs.readFileSync(path.join(f.root, f.statePath)), f.beforeState);
+});
+
+function identifiedSuccessorArtifact(document, idField, hashField, prefix) {
+  const payload = structuredClone(document);
+  delete payload[idField];
+  delete payload[hashField];
+  const hash = crypto.createHash("sha256").update(documentChangeReviewCanonicalJson(payload)).digest("hex");
+  return { ...payload, [idField]: `${prefix}-${hash.slice(0, 24)}`, [hashField]: hash };
+}
+
+test("rehashed foreign owner and wrong predecessor cannot borrow an approved successor", async (t) => {
+  const f = await approvedDocumentSuccessorFixture(t, false, 1),
+    status = f.applications[0].status;
+  const appDir = path.join(f.root, f.layout.directory, "document-changes/applications"),
+    reviewDir = path.join(f.root, f.layout.directory, "document-changes/review-decisions");
+  const appFile = path.join(appDir, status.applicationReceiptId + ".json"),
+    originalApp = fs.readFileSync(appFile);
+  const review = JSON.parse(fs.readFileSync(path.join(reviewDir, status.reviewDecisionId + ".json")));
+  for (const kind of ["foreign-project", "wrong-predecessor"])
+    await t.test(kind, async () => {
+      const created = [];
+      try {
+        const changed = JSON.parse(originalApp);
+        if (kind === "foreign-project") changed.projectId = "lode-" + "f".repeat(20);
+        else {
+          const forgedReview = identifiedSuccessorArtifact(
+            { ...review, reviewedProductModelId: "product-model-" + "f".repeat(24), reviewedProductModelHash: "f".repeat(64) },
+            "reviewDecisionId",
+            "reviewDecisionHash",
+            "document-change-review-decision",
+          );
+          const file = path.join(reviewDir, forgedReview.reviewDecisionId + ".json");
+          fs.writeFileSync(file, JSON.stringify(forgedReview));
+          created.push(file);
+          changed.reviewDecisionId = forgedReview.reviewDecisionId;
+          changed.reviewDecisionHash = forgedReview.reviewDecisionHash;
+          changed.previousProductModelId = forgedReview.reviewedProductModelId;
+          changed.previousProductModelHash = forgedReview.reviewedProductModelHash;
+        }
+        const receipt = identifiedSuccessorArtifact(changed, "applicationReceiptId", "applicationReceiptHash", "document-change-application");
+        const file = path.join(appDir, receipt.applicationReceiptId + ".json");
+        fs.writeFileSync(file, JSON.stringify(receipt));
+        created.push(file);
+        fs.unlinkSync(appFile);
+        const before = successorTreeObservation(f.root);
+        assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).status, "integrity_attention");
+        assert.deepEqual(successorTreeObservation(f.root), before);
+      } finally {
+        for (const file of created) fs.unlinkSync(file);
+        fs.writeFileSync(appFile, originalApp);
+      }
+    });
+});
+
+test("a reviewed but unapplied successor is not completed lineage even with its exact Canon bytes", async (t) => {
+  const f = await approvedDocumentSuccessorFixture(t, false, 1);
+  const pending = await appendReviewedDocument(f.root, f.layout, "Reviewed but not applied", { apply: false });
+  assert.equal(pending.result.status, "reviewed-awaiting-application");
+  assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).status, "ready_world_unchecked");
+  // Synthetic partial publication: approval exists but completion receipt does
+  // not. The reader must not complete this application or create a new review.
+  fs.writeFileSync(path.join(f.root, f.canonPath), JSON.stringify(pending.model));
+  const before = successorTreeObservation(f.root);
+  assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).status, "integrity_attention");
+  assert.deepEqual(successorTreeObservation(f.root), before);
+});
+
+test("successor traversal rejects a closed cycle that cannot reach its supplied verified base", async (t) => {
+  const f = await approvedDocumentSuccessorFixture(t, false, 1);
+  const baseState = JSON.parse(f.beforeState);
+  const originalBase = JSON.parse(
+    fs.readFileSync(path.join(f.root, f.layout.directory, "onboarding/product-model-revisions", baseState.productModelId + ".json")),
+  );
+  await appendReviewedDocument(f.root, f.layout, originalBase.document.capabilities[0].description);
+  // Isolated traversal test: public approvals now provide real A→B→A edges.
+  // Supply a distinct synthetic typed base to exercise cycle rejection rather
+  // than the public equal-Canon fast path. This is not an approval fixture.
+  const unreachableDocument = structuredClone(originalBase.document);
+  unreachableDocument.capabilities[0].description = "Unreachable synthetic typed base.";
+  const model = normalizeProductModelDocument(unreachableDocument, f.storage);
+  const baseRevision = { ...originalBase, document: unreachableDocument, productModelId: model.productModelId, productModelHash: model.productModelHash };
+  const before = successorTreeObservation(f.root);
+  await assert.rejects(
+    readOnboardingProductSuccessor({
+      root: f.root,
+      storage: f.storage,
+      projectId: inspectProject(f.root).project.projectId,
+      state: { ...baseState, productModelId: model.productModelId },
+      currentModel: readProductModelCanon({ projectRoot: f.root, storage: f.storage }).model,
+      baseRevision,
+    }),
+    { code: "ONBOARDING_PRODUCT_SUCCESSOR_CYCLE" },
+  );
+  assert.deepEqual(successorTreeObservation(f.root), before);
+});
+
+test("completed Canon receipt before projection audit remains distinct from ready projections", async (t) => {
+  const f = await approvedDocumentSuccessorFixture(t, false, 1);
+  const pending = await appendReviewedDocument(f.root, f.layout, "Second reviewed receipt before audit", { apply: false });
+  const id = pending.result.reviewDecision.reviewDecisionId;
+  const source = `import fs from 'node:fs';import path from 'node:path';import {syncBuiltinESMExports} from 'node:module';
+    const root=${JSON.stringify(f.root)}, prefix=${JSON.stringify(f.layout.directory + "/document-changes/applications/")};
+    const rename=fs.renameSync;fs.renameSync=function(from,to){const result=rename.apply(this,arguments);if(path.relative(root,String(to)).replaceAll('\\\\','/').startsWith(prefix))process.exit(44);return result;};syncBuiltinESMExports();
+    const {applyDocumentChangeReview}=await import(${JSON.stringify(new URL("../scripts/lib/world/document-change-review.mjs", import.meta.url).href)});
+    await applyDocumentChangeReview({root,reviewDecisionId:${JSON.stringify(id)}});`;
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", source], { cwd: pluginRoot, encoding: "utf8", timeout: 45000, windowsHide: true });
+  t.diagnostic(JSON.stringify({ event: "document-receipt-interruption-child-closed", pid: child.pid, exitCode: child.status }));
+  assert.equal(child.error, undefined);
+  assert.equal(child.status, 44, child.stderr);
+  const before = successorTreeObservation(f.root);
+  const status = await inspectOnboarding({ root: f.root });
+  assert.equal(status.productCanonLineage.hops.length, 2);
+  assert.equal(status.status, "ready_world_changed");
+  assert.equal(
+    (await inspectDocumentChangeReviewStatus({ root: f.root, candidateSetId: pending.captured.candidateSet.candidateSetId })).projectionsReady,
+    false,
+  );
+  assert.deepEqual(successorTreeObservation(f.root), before);
 });
