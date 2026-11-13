@@ -121,6 +121,8 @@ export function createObsidianWorkDocumentAdapter({ vaultRoot, directory }) {
         return { complete: true, matches: sameDocumentText(value.markdown, markdown) ? [value] : [], occupied: !sameDocumentText(value.markdown, markdown) };
       } catch (error) {
         if (error.code === "ENOENT") return { complete: true, matches: [] };
+        // A folder or other non-file at the name is occupied, not Lode's document.
+        if (fs.existsSync(file(documentId))) return { complete: true, matches: [], occupied: true };
         throw error;
       }
     },
@@ -242,7 +244,11 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
   };
   const read = async (id) => {
     if (!pageId(id)) documentFailure("Invalid exact page identity.");
-    const page = await call("GET", `/pages/${id}`);
+    // A page that is gone is told apart from other failures (async task, listing).
+    const page = await call("GET", `/pages/${id}`).catch((error) => {
+      if (error.httpStatus === 404) error.pageMissing = true;
+      throw error;
+    });
     if (compact(page?.id || "") !== compact(id) || compact(page.parent?.page_id || "") !== compact(parentPageId) || page.archived || page.in_trash)
       documentFailure("Page parent or identity differs.", "WORK_DOCUMENT_REMOTE_DRIFT");
     const value = await call("GET", `/pages/${id}/markdown?markdown_version=v2`);
@@ -309,25 +315,31 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
       if (title !== undefined) {
         // Layout v2: list the exact parent to its end and read only children
         // whose listed title is this title (or not given). One complete listing
-        // decides; no slice of it is ever bound.
+        // decides; no slice of it is ever bound. A parent too large to list and
+        // read within one call's request budget cannot be decided: that is
+        // reported as such, not as a repeat that would restart the listing.
         const candidates = [];
         let pageCursor = null;
-        for (;;) {
-          const children = await call(
-            "GET",
-            "/blocks/" + parentPageId + "/children?page_size=100" + (pageCursor ? "&start_cursor=" + encodeURIComponent(pageCursor) : ""),
-          );
-          if (!Array.isArray(children.results) || children.results.length > 100) documentFailure("Parent enumeration is incomplete.");
-          for (const child of children.results)
-            if (child.type === "child_page" && (typeof child.child_page?.title !== "string" || child.child_page.title === title)) candidates.push(child.id);
-          if (children.has_more === false) break;
-          if (typeof children.next_cursor !== "string" || !children.next_cursor || children.next_cursor.length > 500) return { complete: false, matches };
-          pageCursor = children.next_cursor;
-        }
-        if (candidates.length > 12) return { complete: false, matches };
-        for (const id of candidates) {
-          const value = await read(id);
-          if (value.complete && !value.warnings.length && sameDocumentText(value.markdown, markdown) && value.title === title) matches.push({ id: value.id });
+        try {
+          for (;;) {
+            const children = await call(
+              "GET",
+              "/blocks/" + parentPageId + "/children?page_size=100" + (pageCursor ? "&start_cursor=" + encodeURIComponent(pageCursor) : ""),
+            );
+            if (!Array.isArray(children.results) || children.results.length > 100) documentFailure("Parent enumeration is incomplete.");
+            for (const child of children.results)
+              if (child.type === "child_page" && (typeof child.child_page?.title !== "string" || child.child_page.title === title)) candidates.push(child.id);
+            if (children.has_more === false) break;
+            if (typeof children.next_cursor !== "string" || !children.next_cursor || children.next_cursor.length > 500) return { complete: false, matches };
+            pageCursor = children.next_cursor;
+          }
+          for (const id of candidates) {
+            const value = await read(id);
+            if (value.complete && !value.warnings.length && sameDocumentText(value.markdown, markdown) && value.title === title) matches.push({ id: value.id });
+          }
+        } catch (error) {
+          if (error.code !== "WORK_DOCUMENT_TRANSPORT_BUDGET") throw error;
+          return { complete: false, matches: [], limit: "parent-listing-exceeds-one-call-budget" };
         }
         return { complete: true, matches };
       }

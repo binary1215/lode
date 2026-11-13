@@ -12,6 +12,7 @@ import { projectDocumentStore, workDocumentStore } from "../scripts/lib/world/wo
 import { configureWorkDocuments, prepareWorkDocuments, publishWorkDocuments, workDocumentStatus } from "../scripts/lib/world/work-document-publication.mjs";
 import { prepareProjectDocuments, publishProjectDocuments, projectDocumentStatus } from "../scripts/lib/world/project-document-publication.mjs";
 import { readableName } from "../scripts/lib/world/work-document-tree.mjs";
+import { createDocumentEffectWriter } from "../scripts/lib/world/work-document-effect-writer.mjs";
 import { createNotionWorkDocumentAdapter, documentDestinationIdentity } from "../scripts/lib/world/work-document-destinations.mjs";
 import { workDocumentHash } from "../scripts/lib/world/work-document-source.mjs";
 
@@ -805,6 +806,8 @@ test("Notion recovery lists the exact parent to its end and binds the single tit
       assert.equal(again.published.status, "published", JSON.stringify(again.published));
       assert.equal([...fake.pages.values()].filter((page) => page.title === "샘플 제품").length, 1, "no duplicate product page");
       assert.ok(fake.calls.filter((call) => call.method === "POST").length > posts, "the rest of the tree follows");
+      // Every POST made exactly one page: the lost one was bound, none was repeated.
+      assert.equal(fake.calls.filter((call) => call.method === "POST").length, fake.pages.size - others);
     });
 });
 
@@ -944,4 +947,199 @@ test("earlier layout: the same result is not copied again; old receipts are labe
     assert.equal(again.oldLayoutLink.status, "linked-to-new-location");
     assert.equal(again.personEdited, undefined);
   });
+});
+
+// ---- Review round 3: failed updates, fixed names, the in-progress line ----
+
+test("a failed vault update is settled by the file's text: applied, or kept and reported when a person changed or deleted it", async (t) => {
+  for (const mode of ["unchanged", "person-appended", "person-deleted"])
+    await t.test(mode, async (t) => {
+      const f = fixture(t);
+      f.connect();
+      await f.publish(f.save("todo-a", "첫 작업"), "todo-a", "첫 작업", ["fb"]);
+      const target = path.join(f.vault, ...featureDoc.split("/"));
+      const rename = fs.renameSync;
+      // A file held by an editor, sync tool or antivirus: every rename over it fails.
+      t.mock.method(fs, "renameSync", function (from, to) {
+        if (String(to) === target) throw Object.assign(new Error("Synthetic busy file"), { code: "EBUSY" });
+        return rename.call(this, from, to);
+      });
+      const second = f.save("todo-b", "둘째 작업");
+      const failed = (await f.publish(second, "todo-b", "둘째 작업", ["fb"])).published.destinations[0];
+      assert.equal(failed.status, "publication-unconfirmed");
+      t.mock.restoreAll();
+      if (mode === "person-appended") fs.appendFileSync(target, "\n사람이 덧붙인 줄\n");
+      if (mode === "person-deleted") fs.unlinkSync(target);
+      const again = (await f.publish(second, "todo-b", "둘째 작업", ["fb"])).published.destinations[0];
+      assert.equal(again.status, "current", JSON.stringify(again));
+      const other = (await f.publish(f.save("todo-c", "셋째 작업"), "todo-c", "셋째 작업", ["fb"])).published.destinations[0];
+      assert.equal(other.status, "current", JSON.stringify(other));
+      if (mode === "unchanged") {
+        assert.equal(again.personEdited, undefined);
+        assert.match(fs.readFileSync(target, "utf8"), /\[둘째 작업 결과 1\][\s\S]*\[첫 작업 결과 1\]/);
+      } else if (mode === "person-appended") {
+        assert.deepEqual(
+          again.personEdited.map((value) => value.status),
+          ["person-edited-not-overwritten"],
+        );
+        assert.ok(fs.readFileSync(target, "utf8").endsWith("사람이 덧붙인 줄\n"));
+      } else {
+        assert.deepEqual(again.personEdited, [{ document: "만료 안내", status: "document-missing-not-recreated" }]);
+        assert.ok(!fs.existsSync(target));
+      }
+    });
+});
+
+test("the Notion request budget is checked before an attempt is journaled", async (t) => {
+  const f = fixture(t),
+    fake = notion();
+  const adapter = createNotionWorkDocumentAdapter({ parentPageId: fake.parent, request: fake.request, requestBudget: 1 });
+  adapter.beginPublication();
+  await adapter.childTitles();
+  const writer = createDocumentEffectWriter({
+    store: f.store,
+    adapter,
+    key: "budget-probe",
+    target: { id: "budget-probe" },
+    configurationDigest: "a".repeat(64),
+    prepared: { projectionId: "b".repeat(64) },
+    previous: null,
+  });
+  await assert.rejects(writer.create("page", "Page", "Page", "Body"), { code: "WORK_DOCUMENT_TRANSPORT_BUDGET" });
+  assert.equal(fs.existsSync(f.store.file("attempts")), false, "no attempt is left behind");
+  assert.equal(fake.calls.filter((call) => call.method === "POST").length, 0);
+});
+
+test("result publication keeps Project narratives and follows a group rename", async (t) => {
+  const f = fixture(t);
+  f.connect([{ id: "vault", kind: "obsidian", vaultRoot: f.vault, automatic: false, todoIds: [], projectDocuments: true }]);
+  const prepared = await prepareProjectDocuments({
+    root: f.root,
+    sessionId: f.sessionId,
+    narratives: [{ kind: "Feature", key: "fa", sourceKeys: ["Feature:fa"], useFlow: "계정을 입력한 뒤 로그인합니다." }],
+  });
+  for (let i = 0; i < 60; i++)
+    if (
+      (await publishProjectDocuments({ root: f.root, sessionId: f.sessionId, projectionId: prepared.projectionId, targetIds: ["vault"] })).status !==
+      "continuation-required"
+    )
+      break;
+  const login = path.join(f.vault, "Lode", "샘플 제품", "계정", "로그인", "로그인.md");
+  assert.match(fs.readFileSync(login, "utf8"), /## 사용 흐름\n\n계정을 입력한 뒤 로그인합니다\./);
+  const model = sampleModel();
+  model.featureGroups[0].name = "회원";
+  f.write(model);
+  const out = (await f.publish(f.save("todo-a", "로그인 문구"), "todo-a", "로그인 문구", ["fa"])).published.destinations[0];
+  assert.equal(out.status, "current", JSON.stringify(out));
+  const text = fs.readFileSync(login, "utf8");
+  assert.match(text, /## 사용 흐름\n\n계정을 입력한 뒤 로그인합니다\./, "the narrative survives a result publication");
+  assert.match(text, /아래 설명은 이전에 선택한 원문에 대한 것입니다/, "and is marked once the model changed");
+  assert.match(text, /\n상위: \[회원\]\([^)]+\)/);
+  assert.match(read(f.vault, "Lode/샘플 제품/계정/계정.md"), /^# 회원\n/);
+  assert.match(read(f.vault, "Lode/샘플 제품/샘플 제품.md"), /- \[회원\]\(%EA%B3%84%EC%A0%95\/[^)]+\) — 기능군/);
+  assertLinksResolve(f.vault);
+});
+
+test("non-BMP names keep every vault path within 180 UTF-16 units", async (t) => {
+  const wide = (label) => `${label} ${"😀".repeat(30)}`;
+  const model = sampleModel();
+  model.featureGroups = [0, 1, 2].map((index) => ({
+    key: `deep${index}`,
+    name: wide(`단계${index}`),
+    parentFeatureGroupKeys: index ? [`deep${index - 1}`] : [],
+  }));
+  model.features = [{ key: "leaf", name: wide("기능"), featureGroupKeys: ["deep2"], capabilityKeys: [], governedBy: [] }];
+  const f = fixture(t, { model, name: "넓은 제품" });
+  f.connect();
+  await f.publish(f.save("todo-w", wide("작업")), "todo-w", wide("작업"), ["leaf"]);
+  for (const file of files(f.vault)) assert.ok(file.length <= 180, `${file.length}: ${file}`);
+  assertLinksResolve(f.vault);
+});
+
+test("a person's folder already named like a fixed folder is left alone; Lode uses a suffixed folder beside it", async (t) => {
+  const f = fixture(t);
+  f.connect();
+  // Lode made the product folder earlier; the person then made a folder with a fixed name.
+  await f.publish(f.save("todo-a", "알림 정리"), "todo-a", "알림 정리", ["fc"]);
+  const personal = path.join(f.vault, "Lode", "샘플 제품", "소속 미확인");
+  fs.mkdirSync(personal, { recursive: true });
+  fs.writeFileSync(path.join(personal, "메모.md"), "사람의 메모\n");
+  const out = (await f.publish(f.save("todo-n", "기능 없음"), "todo-n", "기능 없음")).published.destinations[0];
+  assert.equal(out.status, "current", JSON.stringify(out));
+  assert.match(out.result.url, /^Lode\/샘플 제품\/소속 미확인 \([a-f0-9]{4}\)\/기능 없음 결과 1\.md$/);
+  assert.deepEqual(fs.readdirSync(personal), ["메모.md"]);
+});
+
+test("a vault name held by a folder is reported with its path", async (t) => {
+  const f = fixture(t);
+  f.connect();
+  const target = path.join(f.vault, ...featureDoc.split("/"));
+  const link = fs.linkSync;
+  let fired = false;
+  t.mock.method(fs, "linkSync", function (from, to) {
+    if (!fired && String(to) === target) {
+      fired = true;
+      throw Object.assign(new Error("Synthetic transient failure"), { code: "EBUSY" });
+    }
+    return link.call(this, from, to);
+  });
+  const evidence = f.save("todo-expiry", "만료 안내 문구");
+  await f.publish(evidence, "todo-expiry", "만료 안내 문구", ["fb"]);
+  t.mock.restoreAll();
+  fs.mkdirSync(target);
+  const out = (await f.publish(evidence, "todo-expiry", "만료 안내 문구", ["fb"])).published.destinations[0];
+  assert.equal(out.reasonCode, "WORK_DOCUMENT_NAME_OCCUPIED");
+  assert.equal(out.occupiedPath, featureDoc);
+  assert.ok(fs.statSync(target).isDirectory());
+});
+
+test("the in-progress line leaves an edited product document and an abandoned publication", async (t) => {
+  for (const mode of ["person-edited", "abandoned"])
+    await t.test(mode, async (t) => {
+      const f = fixture(t);
+      f.connect([{ id: "vault", kind: "obsidian", vaultRoot: f.vault, automatic: false, todoIds: [], projectDocuments: true }]);
+      const prepared = await prepareProjectDocuments({ root: f.root, sessionId: f.sessionId });
+      const product = path.join(f.vault, "Lode", "샘플 제품", "샘플 제품.md");
+      const call = () => publishProjectDocuments({ root: f.root, sessionId: f.sessionId, projectionId: prepared.projectionId, targetIds: ["vault"] });
+      assert.equal((await call()).status, "continuation-required");
+      assert.match(fs.readFileSync(product, "utf8"), /문서를 갱신하는 중입니다/);
+      if (mode === "person-edited") {
+        fs.appendFileSync(product, "\n사람의 메모\n");
+        let last;
+        for (let i = 0; i < 60; i++) if ((last = await call()).status !== "continuation-required") break;
+        assert.equal(last.status, "published");
+        assert.ok(fs.readFileSync(product, "utf8").endsWith("사람의 메모\n"));
+      } else {
+        const model = sampleModel();
+        model.features[0].description = "다른 세션이 바꾼 설명";
+        f.write(model);
+        assert.equal((await call()).destinations[0].reasonCode, "PROJECT_DOCUMENT_SOURCE_CHANGED");
+      }
+      assert.doesNotMatch(fs.readFileSync(product, "utf8"), /문서를 갱신하는 중입니다/);
+    });
+});
+
+test("Notion recovery reads every same-title child; a parent too large for one call is reported, not repeated", async (t) => {
+  for (const [count, exact] of [
+    [13, true],
+    [40, false],
+  ])
+    await t.test(`${count} children with the same title`, async () => {
+      const fake = notion();
+      for (let i = 0; i < count; i++) {
+        const id = "20000000-0000-4000-8000-" + String(7000 + i).padStart(12, "0");
+        fake.pages.set(id, { id, parent: { page_id: fake.parent }, title: "같은 제목", markdown: exact && i === count - 1 ? "정확한 본문" : `다른 본문 ${i}` });
+      }
+      const adapter = fake.adapter();
+      adapter.beginPublication();
+      const found = await adapter.find({ title: "같은 제목", markdown: "정확한 본문" });
+      if (exact) {
+        assert.equal(found.complete, true);
+        assert.equal(found.matches.length, 1);
+      } else {
+        assert.equal(found.complete, false);
+        assert.equal(found.limit, "parent-listing-exceeds-one-call-budget");
+        assert.equal(found.cursor, undefined, "no partial position is kept or offered for a repeat");
+      }
+    });
 });

@@ -72,7 +72,9 @@ reading link only: the Product model is never changed.
 A folder's place is fixed when it is first created and recorded per destination
 (a feature-to-folder table). When the Product model renames or moves a feature,
 its folder and files stay; titles and link text follow the new name, and new
-results keep landing in the existing folder.
+results keep landing in the existing folder. A result publication brings the
+feature's own document and its current parents along; a parent it left and the
+decision documents that list it are refreshed by the next Project publication.
 
 ### What a person reads
 
@@ -97,8 +99,13 @@ nothing. A folder document a person deleted or renamed is reported as
 recreate it. Restoring the file (from the vault's trash or by undoing the rename)
 brings it back, and Lode updates its lists again once their last text is found.
 Files people create inside Lode folders are never touched, and a person's file
-at a name Lode was about to create is reported (`WORK_DOCUMENT_NAME_OCCUPIED`),
-not overwritten. There are no per-task Start or Notes documents.
+at a name Lode was about to create is reported (`WORK_DOCUMENT_NAME_OCCUPIED`
+with `occupiedPath`), not overwritten; it clears when the person moves or renames
+that file. Until then that document cannot be written: for the product document
+this holds back every publication to that vault. A change that cannot be confirmed
+on a vault file is settled by its text: old text still there means it is written
+now, Lode's new text means it happened, anything else is a person's edit (kept and
+reported). There are no per-task Start or Notes documents.
 
 ### Project documentation
 
@@ -123,7 +130,10 @@ One tree is shared across Sessions and aliases for the same actual Notion parent
 or physical vault. Different Projects with the same title get separate folders.
 Large products continue in bounded calls: `continuation-required` is Lode's to
 follow, never a user task. While a publication spans several calls, the product
-document says that it is being updated until the last call; documents are
+document says that it is being updated until the last call, or until that
+publication is refused because its source, selection or destination changed; the
+line is part of a Lode list region, so it is removed from an edited product
+document too. Documents are
 otherwise updated in place without history copies, since results are never
 rewritten. Completion requires observing every selected document.
 This is **not simultaneous remote CAS**: receipts state the last verified scope.
@@ -143,7 +153,9 @@ creates a duplicate. If a lost-create search spans several calls, matches stay
 candidate observations without establishing current uniqueness. The first
 publication of a new tree can exceed one call's request budget: the result is
 `continuation-required`, and publishing the same projection again continues with
-completed steps kept.
+completed steps kept. Recovery of an unknown page creation must list and read the
+parent within one call; a parent too large for that is reported with
+`recoveryLimit` instead of a repeat that would restart the listing.
 
 ### Earlier publications
 

@@ -255,7 +255,6 @@ export async function publishProjectDocuments({ root, sessionId, projectionId, t
           if (basis.basisId !== prepared.basisId) fail("Source basis changed.", "PROJECT_DOCUMENT_SOURCE_CHANGED");
           return basis;
         };
-        const basis = await check();
         adapter.beginPublication?.();
         const retryRef = retryRejectedWrites.find((ref) => ref.targetId === targetId)?.attemptId;
         if (retryRef) {
@@ -279,6 +278,14 @@ export async function publishProjectDocuments({ root, sessionId, projectionId, t
           attemptContext: { configurationDigest: configuration.configurationDigest },
           check,
         });
+        // A publication refused as stale cannot finish: its in-progress line goes.
+        const stale = (error) =>
+          ["PROJECT_DOCUMENT_SOURCE_CHANGED", "PROJECT_DOCUMENT_SELECTION_CHANGED", "WORK_DOCUMENT_CONFIGURATION_CHANGED"].includes(error?.code);
+        const endIfStale = async (error) => {
+          if (stale(error)) await tree.endProgress().catch(() => {});
+          throw error;
+        };
+        const basis = await check().catch(endIfStale);
         const records = recordsInput(basis);
         tree.setExtras({
           narratives: new Map(basis.nodes.filter((node) => node.narrative).map((node) => [node.kind + "/" + node.key, node.narrative])),
@@ -303,7 +310,7 @@ export async function publishProjectDocuments({ root, sessionId, projectionId, t
           }
         } catch (error) {
           // The bounded Notion request budget ends this call; journaled steps continue next time.
-          if (error.code !== "WORK_DOCUMENT_TRANSPORT_BUDGET" || error.rejectedWrite) throw error;
+          if (error.code !== "WORK_DOCUMENT_TRANSPORT_BUDGET" || error.rejectedWrite) return endIfStale(error);
           noteEdits();
           saveState();
           return {
@@ -359,6 +366,10 @@ export async function publishProjectDocuments({ root, sessionId, projectionId, t
         id: targetId,
         status: error.rejectedWrite ? "request-rejected-no-write" : "publication-unconfirmed",
         reasonCode: error.code || "WORK_DOCUMENT_TRANSPORT_UNKNOWN",
+        // A name held by a file Lode did not write: it clears when the person
+        // moves or renames that file.
+        ...(error.occupiedPath ? { occupiedPath: error.occupiedPath } : {}),
+        ...(error.recoveryLimit ? { recoveryLimit: error.recoveryLimit } : {}),
         ...(error.primaryReasonCode ? { primaryReasonCode: error.primaryReasonCode } : {}),
         executionReplayAllowed: false,
         ...(error.candidateObservations

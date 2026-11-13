@@ -66,7 +66,7 @@
 
 | 파일 | 문자 수 | 금지 표현 |
 | --- | ---: | ---: |
-| `skills/lode-agent-core/SKILL.md` | 11,939 | 15 |
+| `skills/lode-agent-core/SKILL.md` | 12,078 | 16 |
 | `skills/lode-agent-onboarding/SKILL.md` | 11,411 | 25 |
 | `skills/lode-conversation/SKILL.md` | 3,887 | 3 |
 | `references/authority-and-roles.md` | 4,496 | 11 |

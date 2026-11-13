@@ -222,8 +222,13 @@ export function createDocumentEffectWriter({
         store.write(["recovered", `${operationKey}.json`], { id: found.matches[0].id, scope: "exact-name-and-content-readback" });
         return found.matches[0].id;
       }
-      if (found.occupied || found.matches.length)
-        documentFailure("Another file already uses this document name; it was not overwritten.", "WORK_DOCUMENT_NAME_OCCUPIED");
+      if (found.occupied || found.matches.length) {
+        const occupiedPath = adapter.directory ? `${adapter.directory}/${documentId}` : documentId;
+        throw Object.assign(
+          new Error(`${occupiedPath} already exists and is not Lode's document; it was not overwritten. Moving or renaming it lets Lode create its document.`),
+          { code: "WORK_DOCUMENT_NAME_OCCUPIED", occupiedPath },
+        );
+      }
       const response = await adapter.create(input);
       store.write(["outcomes", `${operationKey}.json`], response, true);
       if (response.objectIdentity) store.write(bindingParts(response.id), { objectIdentity: response.objectIdentity }, true);
@@ -312,7 +317,10 @@ export function createDocumentEffectWriter({
         });
         return id;
       }
-      documentFailure("A previous create is unresolved; no duplicate create was attempted.", "WORK_DOCUMENT_CREATE_UNKNOWN");
+      throw Object.assign(new Error("A previous create is unresolved; no duplicate create was attempted."), {
+        code: "WORK_DOCUMENT_CREATE_UNKNOWN",
+        ...(found.limit ? { recoveryLimit: found.limit } : {}),
+      });
     }
     const response = await perform(op, input, (input) => adapter.create(input), {
       role,
@@ -358,6 +366,14 @@ export function createDocumentEffectWriter({
     if (read.markdown.indexOf(oldText) < 0 || read.markdown.indexOf(oldText) !== read.markdown.lastIndexOf(oldText))
       documentFailure("Managed text changed or matches ambiguously.", "WORK_DOCUMENT_REMOTE_DRIFT");
     if (op.existing) {
+      // A vault rewrite is one atomic rename: the old text still present exactly
+      // once (checked above) with the new text absent means it did not happen.
+      if (adapter.exclusiveCreate) {
+        const response = await adapter.replace(input);
+        store.write(["outcomes", `${op.attemptId}.json`], response, true);
+        if (response.objectIdentity) store.write(bindingParts(id), { objectIdentity: response.objectIdentity }, true);
+        return;
+      }
       documentFailure("An earlier change remains unverified; it was not replayed.", "WORK_DOCUMENT_UPDATE_UNKNOWN");
     }
     const response = await perform(op, input, (input) => adapter.replace(input), {

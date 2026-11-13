@@ -136,8 +136,9 @@ messaging authority; see
   `lode_project_document` (`prepare`/`publish`/`status`). On prepare, choose `feature_keys`
   from the Product model's features (a feature the user named wins); none fits means
   소속 미확인. Follow `continuation-required` by publishing again. Retry a verified rejected write
-  only through `retry_rejected_writes` with the returned attempt reference; unknown
-  outcomes allow readback only. See [work documents](../../docs/work-document-projection.md).
+  only through `retry_rejected_writes` with the returned attempt reference. An unknown
+  Notion outcome allows readback only, never a new create; a vault file is settled by its
+  exact name and text. `occupiedPath` clears when the person moves that file. See [work documents](../../docs/work-document-projection.md).
 - A `lode_session` (`work_record`) result with document status `lode-selection-required`
   (`headActionRequired: true`, `userActionRequired: false`) keeps the successful save;
   finish prepare and publish in the same turn from its returned prior selection and

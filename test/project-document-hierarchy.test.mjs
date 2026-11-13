@@ -459,9 +459,8 @@ test("many documents progress without restarting; a stale basis is refused; a pe
   assert.equal(vaultFiles(path.join(productDir(f), "계정")).filter((file) => /항목 \d+\.md$/.test(file)).length, 35);
   const home = path.join(productDir(f), "same-name.md");
   fs.appendFileSync(home, "\nUser edit\n");
-  f.model.features[1].name = "또 바뀐 이름";
-  f.write();
-  const next = await prepareProjectDocuments({ root: f.root, sessionId: f.a });
+  // A list change reaches an edited document; a title change is withheld and reported.
+  const next = await prepareProjectDocuments({ root: f.root, sessionId: f.a, projectTitle: "새 제품 이름" });
   const edited = await finish(f, next);
   assert.ok(edited.destinations[0].personEdited.some((value) => value.document === "same-name"));
   assert.ok(fs.readFileSync(home, "utf8").endsWith("User edit\n"));

@@ -320,18 +320,27 @@ test("explicit retry rechecks projection/configuration and exact PATCH text befo
   const page = fake.pages.get(attempt.id),
     old = page.markdown;
   page.markdown = "User edited this managed body.";
-  assert.equal((await publishWorkDocuments({ ...options, retryRejectedWrites: [denied.retry] })).destinations[0].reasonCode, "WORK_DOCUMENT_REMOTE_DRIFT");
-  assert.equal(mutations(), before);
+  const callsBefore = fake.calls.length;
+  // The page no longer holds the text the refused change was made from: a
+  // person's edit, kept and reported, while the rest still publishes.
+  const edited = (await publishWorkDocuments({ ...options, retryRejectedWrites: [denied.retry] })).destinations[0];
+  assert.ok(
+    edited.personEdited?.some((value) => value.status === "person-edited-not-overwritten"),
+    JSON.stringify(edited),
+  );
+  assert.equal(page.markdown, "User edited this managed body.");
+  assert.ok(!fake.calls.slice(callsBefore).some((call) => call.method === "PATCH" && call.url.includes(attempt.id)), "the edited page is not changed");
   page.markdown = old;
+  const settled = mutations();
   configureWorkDocuments({ root, sessionId, targets: [{ ...target, automatic: true }], expectedConfigurationDigest: config.configurationDigest });
   assert.equal(
     (await publishWorkDocuments({ ...options, retryRejectedWrites: [denied.retry] })).destinations[0].reasonCode,
     "WORK_DOCUMENT_RETRY_SCOPE_CHANGED",
   );
-  assert.equal(mutations(), before);
+  assert.equal(mutations(), settled);
   await prepare(save("partial", evidence));
   assert.equal((await publishWorkDocuments({ ...options, retryRejectedWrites: [denied.retry] })).status, "source-basis-changed");
-  assert.equal(mutations(), before);
+  assert.equal(mutations(), settled);
 });
 
 test("failure to persist rejection leaves an unknown attempt, preserves primary error and cannot enable retry", async (t) => {

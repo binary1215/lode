@@ -309,6 +309,10 @@ export async function publishWorkDocuments({ root, sessionId, projectionId, targ
             ? "permission-denied"
             : "publication-unconfirmed",
         reasonCode: error.code || "WORK_DOCUMENT_TRANSPORT_UNKNOWN",
+        // A name held by a file Lode did not write: it clears when the person
+        // moves or renames that file.
+        ...(error.occupiedPath ? { occupiedPath: error.occupiedPath } : {}),
+        ...(error.recoveryLimit ? { recoveryLimit: error.recoveryLimit } : {}),
         executionReplayAllowed: false,
         ...(error.rejectedWrite
           ? {

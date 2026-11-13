@@ -80,6 +80,11 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
   };
   if (state.layoutVersion !== DOCUMENT_LAYOUT_VERSION) fail("Unknown document layout record.", "WORK_DOCUMENT_RECORD_TAMPER");
   const report = { personEdited: [], created: [], updated: [] };
+  // One entry per document and finding within a publication.
+  const note = (entry) => {
+    const same = (value) => value.document === entry.document && value.status === entry.status && value.region === entry.region;
+    if (!report.personEdited.some(same)) report.personEdited.push(entry);
+  };
   const save = () => store.write(["tree", key + ".json"], state, true);
   const canonRead = readProductModelCanon({ projectRoot: owner.root, storage: owner.storage });
   const canon = canonRead.model;
@@ -238,44 +243,74 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
   // pending async task, rejected request) is settled through the same journal
   // before anything else is decided about the document: never replayed blindly
   // and never mistaken for a person's edit.
-  const send = async (doc, writer, pending) => {
-    await check();
+  // The document no longer holds the text a change was made from: a person's
+  // edit. It is kept and reported; the publication goes on.
+  const keptAsEdited = (doc) => {
+    delete doc.pending;
+    doc.edited = true;
+    save();
+    note({ document: doc.name, status: "person-edited-not-overwritten" });
+    return false;
+  };
+  const send = async (doc, writer, pending, { skipCheck = false } = {}) => {
+    if (!skipCheck) await check();
     if (pending.occurrence === undefined) pending = { ...pending, occurrence: (doc.changes = (doc.changes || 0) + 1) };
     doc.pending = pending;
     save();
-    await writer.change(doc.id, pending.oldText, pending.newText, pending.occurrence);
+    try {
+      await writer.change(doc.id, pending.oldText, pending.newText, pending.occurrence);
+    } catch (error) {
+      if (error.code !== "WORK_DOCUMENT_REMOTE_DRIFT") throw error;
+      return keptAsEdited(doc);
+    }
     const after = await writer.readBound(doc.id);
     if (!after.complete || after.warnings?.length) fail("Document read is incomplete.", "WORK_DOCUMENT_REMOTE_DRIFT");
-    if (pending.whole ? !sameDocumentText(after.markdown, pending.lastWritten) : after.markdown.split(pending.newText).length !== 2)
-      fail("Document readback differs.", "WORK_DOCUMENT_REMOTE_DRIFT");
+    if (pending.whole ? !sameDocumentText(after.markdown, pending.lastWritten) : after.markdown.split(pending.newText).length !== 2) {
+      // Lode's text is in place once, next to a person's addition: applied, and
+      // the document is a person's from now on.
+      if (!pending.whole || after.markdown.split(pending.newText).length !== 2) return keptAsEdited(doc);
+      Object.assign(doc, { lastWritten: pending.lastWritten, regions: pending.regions, edited: true });
+      delete doc.pending;
+      save();
+      note({ document: doc.name, status: "person-edited-not-overwritten" });
+      return true;
+    }
     doc.lastWritten = pending.lastWritten;
     doc.regions = pending.regions;
     doc.edited = pending.edited;
     delete doc.pending;
     save();
     report.updated.push(doc.name);
+    return true;
   };
+  const missing = (error) => error?.code === "ENOENT" || error?.pageMissing === true;
   // Every unfinished change is settled before a publication writes anything
-  // else, so a rejection or an unfinished async change stops it first.
+  // else, so a rejection or an unfinished async change stops it first. A
+  // document a person deleted meanwhile is reported, not a stop.
   const settlePending = async () => {
-    for (const doc of Object.values(state.documents).filter((value) => value.pending && value.id)) await send(doc, writerFor(doc), doc.pending);
+    for (const doc of Object.values(state.documents).filter((value) => value.pending && value.id))
+      try {
+        await send(doc, writerFor(doc), doc.pending);
+      } catch (error) {
+        if (!missing(error)) throw error;
+        note({ document: doc.name, status: "document-missing-not-recreated" });
+      }
   };
-  const missing = (error) => error?.code === "ENOENT" || error?.httpStatus === 404;
   // A file's own line endings are kept when Lode rewrites part of it.
   const eol = (text, observed) => (observed.includes("\r\n") ? text.replace(/\r?\n/g, "\r\n") : text);
-  const refresh = async (docKey, { whole = null, regions = {} } = {}) => {
+  const refresh = async (docKey, { whole = null, regions = {}, skipCheck = false } = {}) => {
     const doc = state.documents[docKey];
     if (!doc?.id) return;
     const writer = writerFor(doc);
     let observed;
     try {
-      if (doc.pending) await send(doc, writer, doc.pending);
+      if (doc.pending) await send(doc, writer, doc.pending, { skipCheck });
       observed = await writer.readBound(doc.id);
     } catch (error) {
       if (!missing(error)) throw error;
       // A deleted or renamed document is a person's choice: it is reported and
       // not recreated; the publication goes on.
-      report.personEdited.push({ document: doc.name, status: "document-missing-not-recreated" });
+      note({ document: doc.name, status: "document-missing-not-recreated" });
       return;
     }
     if (!observed.complete || observed.warnings?.length) fail("Document read is incomplete.", "WORK_DOCUMENT_REMOTE_DRIFT");
@@ -284,14 +319,19 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
       if (next === null) fail("Managed list text is ambiguous.", "WORK_DOCUMENT_REMOTE_DRIFT");
       const nextRegions = whole ? whole.regions || {} : { ...doc.regions, ...regions };
       if (!sameDocumentText(observed.markdown, next))
-        await send(doc, writer, {
-          whole: true,
-          oldText: observed.markdown.trimEnd(),
-          newText: eol(next.trimEnd(), observed.markdown),
-          lastWritten: next,
-          regions: nextRegions,
-          edited: false,
-        });
+        await send(
+          doc,
+          writer,
+          {
+            whole: true,
+            oldText: observed.markdown.trimEnd(),
+            newText: eol(next.trimEnd(), observed.markdown),
+            lastWritten: next,
+            regions: nextRegions,
+            edited: false,
+          },
+          { skipCheck },
+        );
       else {
         doc.lastWritten = next;
         doc.regions = nextRegions;
@@ -307,7 +347,7 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
       regions = whole.regions || {};
       // Only a change outside the lists is withheld from a person's document.
       if (applyRegions(doc.lastWritten || "", doc.regions, regions) !== whole.text)
-        report.personEdited.push({ document: doc.name, status: "person-edited-not-overwritten", listsUpdated: Object.keys(regions) });
+        note({ document: doc.name, status: "person-edited-not-overwritten", listsUpdated: Object.keys(regions) });
     }
     for (const [name, value] of Object.entries(regions)) {
       const before = doc.regions[name];
@@ -316,17 +356,22 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
       const oldText = eol(before, current.markdown),
         newText = eol(value, current.markdown);
       if (current.markdown.split(oldText).length !== 2) {
-        report.personEdited.push({ document: doc.name, region: name, status: "person-edited-not-overwritten" });
+        note({ document: doc.name, region: name, status: "person-edited-not-overwritten" });
         continue;
       }
-      await send(doc, writer, {
-        whole: false,
-        oldText,
-        newText,
-        lastWritten: applyRegions(doc.lastWritten || "", { [name]: before }, { [name]: value }) ?? doc.lastWritten,
-        regions: { ...doc.regions, [name]: value },
-        edited: true,
-      });
+      await send(
+        doc,
+        writer,
+        {
+          whole: false,
+          oldText,
+          newText,
+          lastWritten: applyRegions(doc.lastWritten || "", { [name]: before }, { [name]: value }) ?? doc.lastWritten,
+          regions: { ...doc.regions, [name]: value },
+          edited: true,
+        },
+        { skipCheck },
+      );
     }
   };
 
@@ -366,8 +411,13 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
       // the hierarchy stays visible through links.
       while (parent.parent && !fits(parent, base)) parent = state.folders[parent.parent];
       parentKey = parent.key;
+      // The fixed folder names under a product are kept for those folders: a
+      // Product entity named like one gets a suffix. The fixed folders themselves
+      // still check the disk like any other name.
+      const reserved = (candidate) =>
+        !SPECIAL[kind] && parent.kind === "product" && Object.values(SPECIAL).some((special) => lower(special.name) === lower(candidate));
       name = allocate(parent.dirs, folderKey, base, folderDir(parent), "", (candidate) =>
-        Boolean(/\.md$/i.test(candidate) && parent.files[lower(candidate.slice(0, -3))]),
+        Boolean((/\.md$/i.test(candidate) && parent.files[lower(candidate.slice(0, -3))]) || reserved(candidate)),
       );
       segments = [...parent.segments, name];
     }
@@ -382,10 +432,6 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
       files: { [lower(name)]: { owner: "doc:" + folderKey, name } },
       evidenceFiles: { [lower(name + " 근거")]: { owner: "ev:" + folderKey, name: name + " 근거" } },
     };
-    // 12: the fixed folders under a product keep their names; a feature named
-    // like one of them gets a suffix instead of merging with it.
-    if (kind === "product")
-      for (const [specialKey, special] of Object.entries(SPECIAL)) folder.dirs[lower(special.name)] = { owner: specialKey, name: special.name };
     state.folders[folderKey] = folder;
     if (kind === "feature") state.featureFolders[entityKey] = folderDir(folder);
     declare("doc:" + folderKey, { folder: folderKey, role: "folder", name });
@@ -471,10 +517,15 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
   let extras = { narratives: new Map(), records: null };
   let recordsRegion = null;
   const narrativeSections = (kind, entityKey) => {
-    const narrative = extras.narratives.get(kind + "/" + entityKey) || state.narratives?.[kind + "/" + entityKey];
+    const fresh = extras.narratives.get(kind + "/" + entityKey),
+      kept = state.narratives?.[kind + "/" + entityKey];
+    const narrative = fresh || kept;
     if (!narrative) return [];
     const out = [];
-    if (narrative.historical) out.push("아래 설명은 이전에 선택한 원문에 대한 것입니다. 현재 원문과 달라졌으며 현재 동작은 다시 확인해야 합니다.");
+    // A kept explanation is about the model it was written for; once the model
+    // changed it is marked until the next Project publication checks it again.
+    if (narrative.historical || (!fresh && state.narrativesModelHash !== canon.productModelHash))
+      out.push("아래 설명은 이전에 선택한 원문에 대한 것입니다. 현재 원문과 달라졌으며 현재 동작은 다시 확인해야 합니다.");
     for (const [field, label] of [
       ["purpose", "목적"],
       ["useFlow", "사용 흐름"],
@@ -514,12 +565,13 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
       sections = [`# ${line(displayName(folder))}`],
       regions = {};
     if (folder.kind === "product") {
-      if (state.inProgress) sections.push("문서를 갱신하는 중입니다. 다 끝날 때까지 일부 문서는 이전 내용일 수 있습니다.");
-      sections.push(
+      // A managed region, so the in-progress line can be removed under the same
+      // exactly-once rule as the lists, also from a document a person edited.
+      const intro =
         canon.features.length || canon.featureGroups.length
           ? "제품 구성과 기능별 작업 결과를 아래에서 찾아볼 수 있습니다."
-          : "제품 설명 원문이 아직 없습니다. 결과는 소속 미확인 폴더에서 읽을 수 있습니다.",
-      );
+          : "제품 설명 원문이 아직 없습니다. 결과는 소속 미확인 폴더에서 읽을 수 있습니다.";
+      sections.push((regions.intro = state.inProgress ? `문서를 갱신하는 중입니다. 다 끝날 때까지 일부 문서는 이전 내용일 수 있습니다.\n\n${intro}` : intro));
     }
     if (SPECIAL[folder.kind])
       sections.push(
@@ -752,7 +804,7 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
     // Readback of an existing result: a person's edit is reported, not replaced.
     const observed = await writerFor(humanDoc).readBound(humanDoc.id);
     const humanCurrent = observed.complete && !observed.warnings?.length && sameDocumentText(observed.markdown, humanDoc.lastWritten);
-    if (!humanCurrent) report.personEdited.push({ document: humanDoc.name, status: "person-edited-not-overwritten" });
+    if (!humanCurrent) note({ document: humanDoc.name, status: "person-edited-not-overwritten" });
     const folders = [...new Set([result.folder, ...result.features.map((featureKey) => "feature:" + featureKey)])];
     const seen = new Set();
     for (const folderKey of folders) await syncChain(folderKey, seen);
@@ -811,7 +863,7 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
     }
     state.oldLayout[result.logicalKey] = outcome;
     save();
-    if (outcome.status === "person-edited-not-overwritten") report.personEdited.push(outcome);
+    if (outcome.status === "person-edited-not-overwritten") note(outcome);
     return outcome;
   };
 
@@ -847,6 +899,7 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
     const body = value?.statement || value?.description;
     if (body && body !== doc.display) sections.push(readableText(body).replace(/^/gm, "> "));
     sections.push(...narrativeSections(kind, entityKey));
+    sections.push(`상위: ${anchor(doc, folderDoc("conditions"), SPECIAL.conditions.name)}`);
     const features = canon.features.filter(
       (feature) =>
         feature.governedBy?.some((ref) => ref.kind === kind && ref.key === entityKey) ||
@@ -863,7 +916,6 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
             })
             .join("\n"),
       );
-    sections.push(`상위: ${anchor(doc, folderDoc("conditions"), SPECIAL.conditions.name)}`);
     sections.push(`---\n\n${anchor(doc, state.documents[`entity:${kind}:${entityKey}:ev`], "근거 문서")}`);
     return { text: sections.join("\n\n") + "\n" };
   };
@@ -971,10 +1023,20 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
     publishResult,
     projectSteps,
     runProjectStep,
+    // The publication that set the in-progress line can no longer finish (its
+    // source, selection or destination changed): the line is removed, so a
+    // person is never told an update is running when none is.
+    async endProgress() {
+      if (!state.inProgress || !folderDoc("product")?.id) return;
+      state.inProgress = false;
+      save();
+      await refresh("doc:product", { whole: renderFolder("product"), skipCheck: true });
+    },
     setExtras(value) {
       extras = { ...extras, ...value };
       if (value.narratives) {
         state.narratives = Object.fromEntries(value.narratives);
+        state.narrativesModelHash = canon.productModelHash;
         save();
       }
     },
