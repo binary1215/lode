@@ -150,7 +150,11 @@ it. Page titles are the vault file names without `.md`, and human pages carry no
 identity line. When the outcome of a page creation is unknown, Lode binds a page
 only if exactly one page under the exact parent matches both title and body and
 is not recorded for another document; otherwise it stops and reports. It never
-creates a duplicate. If a lost-create search spans several calls, matches stay
+creates a duplicate. A page update whose outcome is unknown is not sent again
+either: that document is reported as `update-unconfirmed` while the rest of the
+publication goes on, and the next publication that wants a different text for it
+sends a new change made from the page as it is, which carries the earlier text
+too. If a lost-create search spans several calls, matches stay
 candidate observations without establishing current uniqueness. The first
 publication of a new tree can exceed one call's request budget: the result is
 `continuation-required`, and publishing the same projection again continues with

@@ -503,6 +503,16 @@ function notion() {
       page = pages.get(match?.[1]);
     if (!page) return { status: 404, body: { object: "error" } };
     if (call.method === "PATCH") {
+      // The update never arrives, or Notion answers with an error: not applied.
+      if (fault.failPatchId === page.id) {
+        fault.failPatchId = null;
+        throw Object.assign(new Error("Synthetic connection reset"), { code: "ECONNRESET" });
+      }
+      if (fault.errorPatch?.id === page.id) {
+        const status = fault.errorPatch.status;
+        fault.errorPatch = null;
+        return { status, body: { object: "error", status, code: "rate_limited", message: "Synthetic error answer" } };
+      }
       const { old_str, new_str } = call.body.update_content.content_updates[0];
       if (page.markdown.split(old_str).length !== 2) return { status: 400, body: { object: "error" } };
       page.markdown = page.markdown.replace(old_str, new_str);
@@ -515,7 +525,13 @@ function notion() {
       status: 200,
       body: match[2]
         ? { object: "page_markdown", id: page.id, markdown: page.markdown, truncated: false, unknown_block_ids: [] }
-        : { object: "page", id: page.id, parent: page.parent, properties: { title: { title: [{ plain_text: page.title }] } } },
+        : {
+            object: "page",
+            id: page.id,
+            parent: page.parent,
+            ...(page.in_trash ? { in_trash: true } : {}),
+            properties: { title: { title: [{ plain_text: page.title }] } },
+          },
     };
   };
   return { parent, pages, calls, fault, request, adapter: () => createNotionWorkDocumentAdapter({ parentPageId: parent, request }) };
@@ -1318,4 +1334,115 @@ test("two documents with the same name in different folders are reported separat
   const out = (await f.publish(f.save("todo-b", "다음 작업"), "todo-b", "다음 작업", ["fa", "fb"])).published.destinations[0];
   assert.equal(out.status, "current");
   assert.equal(out.personEdited.filter((value) => value.document === "같은 이름").length, 2);
+});
+
+// ---- Review round 5: an unconfirmed Notion update stays with its document ----
+
+test("an unconfirmed Notion update holds back only its document; the next different text goes out from the page as it is", async (t) => {
+  for (const mode of ["never arrived", "error answer 429", "applied, answer lost"])
+    await t.test(mode, async (t) => {
+      const f = fixture(t),
+        fake = notion();
+      f.connect([notionTarget(fake)]);
+      const go = async (todo, title, keys) =>
+        (await f.publish(f.save(todo, title), todo, title, keys, ["notion"], { notion: fake.adapter() })).published.destinations[0];
+      assert.equal((await go("todo-a", "첫 작업", ["fa"])).status, "current");
+      const login = [...fake.pages.values()].find((page) => page.title === "로그인");
+      if (mode === "never arrived") fake.fault.failPatchId = login.id;
+      else if (mode === "error answer 429") fake.fault.errorPatch = { id: login.id, status: 429 };
+      else fake.fault.losePatchId = login.id;
+      const second = f.save("todo-b", "둘째 작업");
+      const failed = (await f.publish(second, "todo-b", "둘째 작업", ["fa"], ["notion"], { notion: fake.adapter() })).published.destinations[0];
+      assert.equal(failed.status, "publication-unconfirmed");
+      const sent = JSON.stringify(fake.calls.filter((call) => call.method === "PATCH" && call.url.includes(login.id)).at(-1)?.body);
+      // Another feature still publishes; the held document is named.
+      const other = await go("todo-c", "알림 정리", ["fc"]);
+      assert.equal(other.status, "current", JSON.stringify(other));
+      if (mode === "applied, answer lost") assert.equal(other.personEdited, undefined);
+      else assert.deepEqual(other.personEdited, [{ document: "로그인", status: "update-unconfirmed" }]);
+      assert.equal(
+        fake.calls.filter((call) => call.method === "PATCH" && JSON.stringify(call.body) === sent).length,
+        1,
+        "the unconfirmed change itself is never sent again",
+      );
+      // The next result of the same feature brings its own line and the earlier one.
+      const next = await go("todo-d", "넷째 작업", ["fa"]);
+      assert.equal(next.status, "current", JSON.stringify(next));
+      const text = fake.pages.get(login.id).markdown;
+      for (const name of ["첫 작업 결과 1", "둘째 작업 결과 1", "넷째 작업 결과 1"]) assert.equal(text.split(`[${name}]`).length - 1, 1, name);
+      assert.equal(next.personEdited, undefined);
+    });
+});
+
+test("a person who restores Lode's exact text is no longer reported", async (t) => {
+  const f = fixture(t);
+  f.connect([{ id: "vault", kind: "obsidian", vaultRoot: f.vault, automatic: false, todoIds: [], projectDocuments: true }]);
+  const prepared = await prepareProjectDocuments({ root: f.root, sessionId: f.sessionId });
+  const call = () => publishProjectDocuments({ root: f.root, sessionId: f.sessionId, projectionId: prepared.projectionId, targetIds: ["vault"] });
+  const product = path.join(f.vault, ...productDoc.split("/"));
+  await call();
+  fs.writeFileSync(product, fs.readFileSync(product, "utf8").replace(/문서를 갱신하는 중입니다\.[^\n]*\n\n/, ""));
+  for (let i = 0; i < 60; i++) if ((await call()).status !== "continuation-required") break;
+  for (const [todo, title] of [
+    ["todo-a", "알림 정리"],
+    ["todo-b", "알림 문구"],
+  ]) {
+    const out = (await f.publish(f.save(todo, title), todo, title, ["fc"])).published.destinations[0];
+    assert.equal(out.status, "current");
+    assert.ok(!(out.personEdited || []).some((value) => value.document === "샘플 제품"), JSON.stringify(out.personEdited));
+  }
+});
+
+test("Notion pages in the trash: a same-title candidate is skipped in recovery; an old Start page in the trash is reported as missing", async (t) => {
+  await t.test("recovery", async () => {
+    const fake = notion();
+    for (const [index, body, trashed] of [
+      [0, "정확한 본문", true],
+      [1, "정확한 본문", false],
+    ]) {
+      const id = "20000000-0000-4000-8000-" + String(8000 + index).padStart(12, "0");
+      fake.pages.set(id, { id, parent: { page_id: fake.parent }, title: "같은 제목", markdown: body, in_trash: trashed });
+    }
+    const adapter = fake.adapter();
+    adapter.beginPublication();
+    const found = await adapter.find({ title: "같은 제목", markdown: "정확한 본문" });
+    assert.equal(found.complete, true);
+    assert.deepEqual(
+      found.matches.map((value) => value.id),
+      ["20000000-0000-4000-8000-000000008001"],
+    );
+  });
+  await t.test("old Start page", async (t) => {
+    const f = fixture(t),
+      fake = notion();
+    f.connect([notionTarget(fake)]);
+    const first = f.save("todo-expiry", "만료 안내 문구");
+    const owner = f.store.caller;
+    const logicalKey = workDocumentHash([owner.projectId, f.sessionId, "todo-expiry", "work-document"]);
+    const startId = "20000000-0000-4000-8000-000000009100";
+    const currentText = "Lode current links begin\n\n[사람용](human-old.md)\n\nLode current links end";
+    fake.pages.set(startId, { id: startId, parent: { page_id: fake.parent }, title: "Lode work", markdown: `# Lode work\n\n${currentText}\n`, in_trash: true });
+    const key = workDocumentHash(["notion", "notion", fake.parent, logicalKey]);
+    workDocumentStore({ root: f.root, sessionId: f.sessionId }).write(
+      ["current", `${key}.json`],
+      {
+        kind: "WorkDocumentPublicationReceipt",
+        authorityPlane: "P5",
+        basisId: "b".repeat(64),
+        projectionId: "c".repeat(64),
+        logicalKey,
+        startId,
+        currentText,
+        views: [{ audience: "human", id: "human-old.md", url: "https://www.notion.so/20000000000040008000000000009101" }],
+        taskRevision: { evidenceId: first.evidenceId, evidenceDigest: first.evidenceDigest },
+        title: "만료 안내 문구",
+        executionReplayAllowed: false,
+      },
+      true,
+    );
+    const second = f.save("todo-expiry", "만료 안내 문구", "partial", first);
+    const out = (await f.publish(second, "todo-expiry", "만료 안내 문구", ["fb"], ["notion"], { notion: fake.adapter() })).published.destinations[0];
+    assert.equal(out.status, "current", JSON.stringify(out));
+    assert.equal(out.oldLayoutLink.status, "old-start-document-missing");
+  });
 });

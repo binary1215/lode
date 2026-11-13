@@ -81,12 +81,19 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
   if (state.layoutVersion !== DOCUMENT_LAYOUT_VERSION) fail("Unknown document layout record.", "WORK_DOCUMENT_RECORD_TAMPER");
   const report = { personEdited: [], created: [], updated: [] };
   // One entry per document and finding within a publication.
-  const noted = new Set();
+  const noted = new Map();
   const note = (entry, documentKey) => {
     const id = JSON.stringify([documentKey, entry.status, entry.region ?? null]);
     if (noted.has(id)) return;
-    noted.add(id);
+    noted.set(id, entry);
     report.personEdited.push(entry);
+  };
+  // A finding settled later in the same publication is not reported.
+  const unnote = (documentKey, status) => {
+    const id = JSON.stringify([documentKey, status, null]);
+    if (!noted.has(id)) return;
+    report.personEdited.splice(report.personEdited.indexOf(noted.get(id)), 1);
+    noted.delete(id);
   };
   const save = () => store.write(["tree", key + ".json"], state, true);
   const canonRead = readProductModelCanon({ projectRoot: owner.root, storage: owner.storage });
@@ -271,6 +278,12 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
     try {
       await writer.change(doc.id, pending.oldText, pending.newText, pending.occurrence);
     } catch (error) {
+      // A Notion change whose outcome is unknown is never sent again. It stays
+      // pending for this one document, which is reported; other documents go on.
+      if (error.code === "WORK_DOCUMENT_UPDATE_UNKNOWN") {
+        note({ document: doc.name, status: "update-unconfirmed" }, doc.key);
+        return false;
+      }
       if (error.code !== "WORK_DOCUMENT_REMOTE_DRIFT") throw error;
       const now = await writer.readBound(doc.id).catch(() => null);
       return keptAsEdited(doc, pending, now?.markdown ?? null);
@@ -317,6 +330,20 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
     let observed;
     try {
       if (doc.pending) await send(doc, writer, doc.pending, { skipCheck });
+      if (doc.pending) {
+        // Still unconfirmed. The same text is not asked for again; a different
+        // text (a new result line) is a new change made from the page as it is
+        // now, which also brings the earlier text along.
+        const wanted = whole ? whole.regions || {} : regions;
+        const same =
+          whole && doc.pending.whole
+            ? sameDocumentText(whole.text, doc.pending.lastWritten)
+            : Object.entries(wanted).every(([name, value]) => doc.pending.regions?.[name] === value);
+        if (same) return;
+        delete doc.pending;
+        save();
+        unnote(doc.key, "update-unconfirmed");
+      }
       observed = await writer.readBound(doc.id);
     } catch (error) {
       if (!missing(error)) throw error;
@@ -349,6 +376,12 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
         doc.regions = nextRegions;
         save();
       }
+      return;
+    }
+    // A document a person brought back to exactly Lode's text is Lode's again.
+    if (whole && sameDocumentText(observed.markdown, whole.text)) {
+      Object.assign(doc, { edited: false, lastWritten: whole.text, regions: whole.regions || {} });
+      save();
       return;
     }
     if (!doc.edited) {
@@ -875,7 +908,7 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
         outcome = { status: "linked-to-new-location", document: old.startName };
       }
     } catch (error) {
-      if (error.code !== "ENOENT" && error.httpStatus !== 404) throw error;
+      if (error.code !== "ENOENT" && error.httpStatus !== 404 && !error.pageMissing) throw error;
       outcome = { status: "old-start-document-missing", document: old.startName };
     }
     state.oldLayout[result.logicalKey] = outcome;

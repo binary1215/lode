@@ -338,7 +338,12 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
             pageCursor = children.next_cursor;
           }
           for (const id of candidates) {
-            const value = await read(id);
+            // A same-title page in the trash is not a candidate.
+            const value = await read(id).catch((error) => {
+              if (error.pageMissing) return null;
+              throw error;
+            });
+            if (!value) continue;
             if (value.complete && !value.warnings.length && sameDocumentText(value.markdown, markdown) && value.title === title) matches.push({ id: value.id });
           }
         } catch (error) {
