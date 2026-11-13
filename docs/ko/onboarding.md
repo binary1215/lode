@@ -398,11 +398,19 @@ base에서 시작하므로, 디스크의 Canon은 가장 마지막 변경의 결
 넘으면 `DOCUMENT_CHANGE_PROJECTION_LIMIT`입니다. 진입은 두 경우 모두 일반 작업을
 막지 않고 `integrity_attention`으로 보고합니다.
 
-한계: 마지막 결과와 정확히 같은 바이트를 손으로 쓴 경우는 review 변경 자체와 기록으로
-구별할 수 없습니다. Canon이 base와 같고 변경 기록을 읽을 수 없으면 그 기록을 보고하지
-않고 이전처럼 ready로 둡니다. 온보딩 상태와 함께 기록된 World가 없으면 어떤 변경도
-base 이전으로 보지 않으므로, base 이전 변경이 기록된 project는 World를 다시 만들
-때까지 drift로 읽힙니다.
+한계:
+- 마지막 결과와 정확히 같은 바이트를 손으로 쓴 경우는 review 변경 자체와 기록으로
+  구별할 수 없습니다.
+- World snapshot은 로컬에만 있고 git으로 추적하지 않으므로 새로 clone한 project에는
+  없습니다. 온보딩 상태와 함께 기록된 World를 읽을 수 없으면 어떤 변경이 base 이전인지
+  알 수 없습니다.
+  - Canon이 base와 같으면 변경 기록과 대조하지 않습니다(이전처럼 ready).
+  - Canon이 base와 다르면 모든 변경을 base 이후로 보므로, base 이전 변경이 기록된
+    project는 drift로 읽힙니다.
+  다시 만든 World가 기록된 World와 같을 때(source가 그대로일 때)만 도움이 됩니다.
+  source가 바뀐 뒤 다시 만든 World는 id가 다릅니다.
+- Canon이 base와 같고 변경 기록을 읽을 수 없으면 그 기록을 보고하지 않고 이전처럼
+  ready로 둡니다.
 
 읽기 전용 MCP tool `lode_onboarding` (`status`)는 state pointer, Session record, storage
 selection, current candidate set, successor-producing ReviewDecision, 최신 phase-appropriate

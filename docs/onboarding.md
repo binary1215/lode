@@ -356,12 +356,20 @@ more than 128 records of one document-change kind report
 `DOCUMENT_CHANGE_PROJECTION_LIMIT`. Entry reports both as `integrity_attention`
 without blocking ordinary work.
 
-Limits: the records cannot tell a hand edit that writes exactly the latest
-result from the reviewed change itself. When the Canon equals the base and
-change records cannot be read, the answer stays ready (as before) rather than
-reporting them. When the World recorded with the onboarding state is missing,
-no change is treated as preceding the base, so a project with changes recorded
-before its base reads as drift until its World is rebuilt.
+Limits:
+- The records cannot tell a hand edit that writes exactly the latest result
+  from the reviewed change itself.
+- World snapshots are local and not tracked by git, so a fresh clone has none.
+  When the World recorded with the onboarding state is unavailable, it is
+  unknown which changes precede the base:
+  - Canon equal to the base is not checked against the changes (it reads
+    ready, as before);
+  - Canon different from the base treats every change as after the base, so a
+    project with changes recorded before its base reads as drift.
+  A rebuild helps only when it reproduces that recorded World (unchanged
+  sources); after a source change the rebuilt World has another id.
+- When the Canon equals the base and change records cannot be read, the answer
+  stays ready (as before) rather than reporting them.
 
 The read-only MCP tool `lode_onboarding` (`status`) verifies the state pointer, Session record, storage selection, current candidate set, successor-producing ReviewDecision, latest phase-appropriate ReviewDecision, Product Model revisions, Product Canon identity, and World Model freshness. For a review-pending successor the producer is also the latest decision; for `ready` or `rejected`, the latest decision must directly review the current successor and carry the matching acceptance or rejection disposition. The separate `lode_onboarding` (`review`) transaction accepts only an explicit user-authored disposition against the exact current candidate-set identity and delegates every promotion check to Core.
 

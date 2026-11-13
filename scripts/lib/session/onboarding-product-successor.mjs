@@ -186,7 +186,11 @@ function sequenceFrom(start, end, edges) {
 // existing Canon adopted as the base, or a later onboarding review that moved
 // the base). The World recorded with the onboarding state names exactly those
 // records; without that World nothing is treated as preceding the base.
+// A World id names immutable content, so its list is kept per process.
+const listsBeforeBase = new Map();
 async function recordsBeforeBase(root, state, snapshot = null) {
+  const key = state.worldModelId ? `${root}\n${state.worldModelId}` : null;
+  if (key && listsBeforeBase.has(key)) return new Set(listsBeforeBase.get(key));
   let world = snapshot;
   if (!world) {
     if (!state.worldModelId) return null;
@@ -201,7 +205,12 @@ async function recordsBeforeBase(root, state, snapshot = null) {
   const receipts = graph.documentChangeProjection?.applicationReceiptIds;
   const policies = graph.productPolicyProjection?.reviewDecisionIds;
   if (!Array.isArray(receipts) && !Array.isArray(policies)) return null;
-  return new Set([...(Array.isArray(receipts) ? receipts : []), ...(Array.isArray(policies) ? policies : [])]);
+  const listed = [...(Array.isArray(receipts) ? receipts : []), ...(Array.isArray(policies) ? policies : [])];
+  if (key) {
+    if (listsBeforeBase.size >= MAX_CACHED) listsBeforeBase.delete(listsBeforeBase.keys().next().value);
+    listsBeforeBase.set(key, listed);
+  }
+  return new Set(listed);
 }
 const afterBase = (edges, before) => (before ? edges.filter((edge) => !before.has(edge.id)) : edges);
 
@@ -305,6 +314,9 @@ export async function verifyOnboardingCanonAtBase({ root, storage, projectId, st
   } catch {
     return;
   }
+  // Unknown which records precede the base (World snapshots are local and
+  // untracked, so a fresh clone has none): keep the previous answer.
+  if (!before) return;
   const remaining = afterBase(raw, before);
   if (!remaining.length || sequenceFrom(base, base, remaining)) return;
   let edges;

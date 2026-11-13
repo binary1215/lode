@@ -1728,3 +1728,66 @@ test("a reviewed change after an accepted fresh onboarding proposal reads ready 
   assert.equal(status.productCanonLineage.hops[0].previousProductModelId, newBase);
   assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).status, "ready_world_unchecked");
 });
+
+// World snapshots are local and untracked (a fresh clone has none). Without the
+// World recorded with the onboarding state it is unknown which records precede
+// the base, so Canon equal to the base keeps its previous answer. Each read runs
+// in a fresh process so no per-process cache stands in for the missing World.
+test("Canon equal to a moved base reads ready when the recorded World is not on disk", async (t) => {
+  const f = await approvedDocumentSuccessorFixture(t, true, 1);
+  const world = (await inspectWorldModel({ root: f.root })).snapshot;
+  const proposed = await proposeOnboardingSemanticRefresh({
+    root: f.root,
+    semanticProposal: {
+      schemaVersion: 1,
+      sourceSnapshotId: world.temporalProvenanceGraph.sourceSnapshotId,
+      candidates: [
+        {
+          productKind: "Capability",
+          proposedEntity: { key: "fresh-delivery", name: "Fresh delivery", description: "Fresh explicitly reviewed proposal." },
+          evidence: [{ path: "README.md", line: 1 }],
+          explanation: "Synthetic current source evidence.",
+          confidence: 0.9,
+        },
+      ],
+    },
+  });
+  await reviewOnboarding({
+    root: f.root,
+    candidateSetId: proposed.candidateSet.candidateSetId,
+    disposition: "accept-all",
+    rationale: "Adopt the fresh proposal.",
+  });
+  const state = JSON.parse(fs.readFileSync(path.join(f.root, f.statePath)));
+  const read = () => {
+    const source = `const { inspectOnboarding, inspectOptionalOnboardingForEntry } = await import(${JSON.stringify(
+      new URL("../scripts/lib/session/onboarding.mjs", import.meta.url).href,
+    )});
+      const root = ${JSON.stringify(f.root)};
+      let strict;
+      try { strict = (await inspectOnboarding({ root })).status; } catch (error) { strict = error.code; }
+      const entry = await inspectOptionalOnboardingForEntry({ root });
+      console.log(JSON.stringify({ strict, entry: entry.status, reasonCode: entry.reasonCode ?? null }));`;
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", source], { cwd: pluginRoot, encoding: "utf8", timeout: 60000, windowsHide: true });
+    assert.equal(child.status, 0, child.stderr);
+    return JSON.parse(child.stdout.trim().split("\n").at(-1));
+  };
+  // With the World present: Canon is the new base and the earlier change precedes it.
+  const present = read();
+  assert.equal(present.strict, "ready");
+  assert.equal(present.reasonCode, null);
+  // Without it (as in a fresh clone): the previous answer, not drift.
+  const file = worldSnapshotFile(f.root, state.worldModelId),
+    original = fs.readFileSync(file);
+  fs.unlinkSync(file);
+  try {
+    const missing = read();
+    assert.notEqual(missing.strict, "ONBOARDING_PRODUCT_CANON_DRIFT");
+    assert.ok(["ready", "ready_world_changed"].includes(missing.strict), missing.strict);
+    assert.equal(missing.entry, "ready_world_unchecked");
+  } finally {
+    fs.writeFileSync(file, original);
+  }
+  // With the World back the check runs again and reads ready.
+  assert.equal(read().strict, "ready");
+});
