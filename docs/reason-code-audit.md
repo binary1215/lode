@@ -39,18 +39,18 @@ candidate to check, not a proven unused one.
 
 | Measure | Codes |
 | --- | --- |
-| Listed in `REASON_CODES` | 2,725 |
-| Consumed in shipped code or Go | 359 |
-| — compared directly | 186 |
+| Listed in `REASON_CODES` | 2,727 |
+| Consumed in shipped code or Go | 360 |
+| — compared directly | 187 |
 | — covered by a prefix branch | 20 |
 | — only keyed in a map | 5 |
 | — only listed in an array or `Set` | 147 |
 | — named in Go sources | 17 |
 | Documented in English docs or skills | 34 (10 in skills) |
 | Asserted by tests or verifiers | 841 |
-| **Quiet** | **2,350** (86%) |
-| — quiet but asserted by a test | 621 |
-| — quiet and never asserted | 1,729 |
+| **Quiet** | **2,351** (86%) |
+| — quiet but asserted by a test | 620 |
+| — quiet and never asserted | 1,731 |
 | With a legacy `HEAD_*` spelling still carried | 121 |
 
 **Prefix branches.** Four prefixes branch on a group of codes:
@@ -75,7 +75,7 @@ The area is the code's first word. Areas with at least 20 codes:
 | `INVALID_*` | 576 | 60 | 4 | 515 | 100 |
 | `NATIVE_*` | 252 | 40 | 3 | 209 | 61 |
 | `CODEX_*` | 180 | 13 | 0 | 167 | 69 |
-| `PROJECT_*` | 139 | 22 | 4 | 115 | 29 |
+| `PROJECT_*` | 140 | 22 | 4 | 116 | 29 |
 | `RUNTIME_*` | 92 | 10 | 1 | 82 | 29 |
 | `ARCADEDB_*` | 83 | 12 | 0 | 71 | 15 |
 | `DOCUMENT_*` | 78 | 6 | 2 | 71 | 10 |
@@ -90,9 +90,9 @@ The area is the code's first word. Areas with at least 20 codes:
 | `CHANGE_*` | 35 | 2 | 0 | 33 | 2 |
 | `CLAUDE_*` | 34 | 1 | 0 | 33 | 6 |
 | `FEATURE_*` | 33 | 4 | 0 | 29 | 7 |
+| `WORK_*` | 33 | 5 | 0 | 28 | 7 |
 | `CONVERSATION_*` | 32 | 7 | 1 | 24 | 7 |
 | `GRAPH_*` | 32 | 2 | 2 | 28 | 10 |
-| `WORK_*` | 32 | 4 | 0 | 28 | 8 |
 | `DISTRIBUTION_*` | 31 | 0 | 0 | 31 | 10 |
 | `DUPLICATE_*` | 30 | 3 | 0 | 27 | 7 |
 | `HISTORICAL_*` | 30 | 0 | 0 | 30 | 2 |
@@ -151,12 +151,12 @@ a separate response field for two minor versions.
 
 1. **Keep as is.** Keep all 356 consumed codes and the 28 documented ones. Inside
    the four prefix-branch groups, keep at least the prefix.
-2. **First candidates.** These are the 1,729 quiet codes that no test asserts.
+2. **First candidates.** These are the 1,731 quiet codes that no test asserts.
    Group each area's codes by their last word into one area code, for example
    `PRODUCT_*_MISMATCH` → `PRODUCT_MISMATCH` and `CODEX_*_INVALID` →
    `CODEX_INVALID`. No test needs to change; only the registry list and the emit
    sites do.
-3. **Second candidates.** These are the 621 quiet codes that tests assert. They
+3. **Second candidates.** These are the 620 quiet codes that tests assert. They
    are the same kind of grouping, but each test assertion has to move to the area
    code or the old-code field.
 4. **`INVALID_*` (576).** This is the largest family and mostly input or record

@@ -93,7 +93,7 @@ export const OPERATIONS = Object.freeze([
       flags: [],
       handle: async (context) => {
         const { root } = context;
-        return (await import("../storage/project-document-publication.mjs")).projectDocumentStatus({ root });
+        return (await import("../world/project-document-publication.mjs")).projectDocumentStatus({ root });
       },
     },
     tool: workDocumentTools.find((tool) => tool.name === "lode_project_document_status"),
@@ -5720,7 +5720,7 @@ export const OPERATIONS = Object.freeze([
       flags: ["input"],
       handle: async (context) => {
         const { root, options, command, inputJson } = context;
-        const api = await import("../storage/project-document-publication.mjs");
+        const api = await import("../world/project-document-publication.mjs");
         const input = inputJson(options, "Lode-selected Project documents");
         return api[command === "project-document-prepare" ? "prepareProjectDocuments" : "publishProjectDocuments"]({ ...input, root });
       },

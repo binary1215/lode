@@ -5,6 +5,7 @@ node_modules/
 test/*
 !test/work-document-source.test.mjs
 !test/work-document-publication.test.mjs
+!test/work-document-tree.test.mjs
 !test/native-session-observations.test.mjs
 !test/native-session-process.test.mjs
 !test/opencode-native-observations.test.mjs

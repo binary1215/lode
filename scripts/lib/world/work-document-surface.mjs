@@ -31,7 +31,8 @@ export const workDocumentCompositionSchema = {
       featureKeys: {
         type: "array",
         items: text,
-        description: "Lode-authored reading associations for the saved work, never Canon membership or implementation proof.",
+        description:
+          "Product model feature keys this result belongs to (a feature the user named wins); the first decides the published folder. Reading associations only, never Canon membership or implementation proof.",
       },
     },
     [],
@@ -130,9 +131,16 @@ export const workDocumentTools = [
   ),
   definition(
     "prepare",
-    "Prepare human and agent Markdown from exact selected work originals and current common conditions. No Product, World, export, Run or Todo adoption required; use task_evidence_id for existing work without Todos. Lode selects evidence, related proposals and exact source pairs. A completed label is not completion or approval proof. No external posting.",
+    "Prepare human and agent Markdown from exact selected work originals and current common conditions. No Product, World, export, Run or Todo adoption required; use task_evidence_id for existing work without Todos. Lode selects evidence, related proposals and exact source pairs. Choose feature_keys from the Product model's features (a feature the user named wins); the result is published into that feature's folder, or 소속 미확인 when none fits. A completed label is not completion or approval proof. No external posting.",
     {
       title: text,
+      feature_keys: {
+        type: "array",
+        maxItems: 16,
+        items: text,
+        description:
+          "Keys of Product model features this result belongs to; the first one decides the folder. A key that is not a Product feature is reported and the result goes to 소속 미확인. A reading link only: never Canon membership or implementation proof.",
+      },
       evidence_ids: { type: "array", minItems: 1, maxItems: 16, items: evidenceId },
       todo_id: todoId,
       task_evidence_id: evidenceId,
@@ -184,7 +192,7 @@ export const workDocumentTools = [
 ];
 export async function workDocumentFromMcp(name, args) {
   if (name.startsWith("lode_project_document_")) {
-    const api = await import("../storage/project-document-publication.mjs"),
+    const api = await import("./project-document-publication.mjs"),
       root = args.project_root;
     if (name === "lode_project_document_prepare")
       return api.prepareProjectDocuments({
@@ -219,6 +227,7 @@ export async function workDocumentFromMcp(name, args) {
       diffs: args.diffs || [],
       excerpts: args.excerpts || [],
       graphAnchors: args.graph_anchors || [],
+      featureKeys: args.feature_keys,
     });
   if (name === "lode_work_document_publish")
     return api.publishWorkDocuments({

@@ -15,6 +15,13 @@ export function createDocumentEffectWriter({
   retryAttemptId,
   stableContainerIds = ["Start.md", "Notes.md"],
   recordInputs = false,
+  // Layout v2: recovery matches title and body, and never binds a page already
+  // recorded for another document.
+  recoverByTitle = false,
+  recordedElsewhere = () => false,
+  // Caller context kept with each attempt (not part of the write scope), e.g.
+  // the Session configuration an explicit retry must still match.
+  attemptContext = null,
 }) {
   if (retryAttemptId) {
     const attempt = store.read("attempts", `${retryAttemptId}.json`),
@@ -106,7 +113,12 @@ export function createDocumentEffectWriter({
     documentFailure("Rejected-write history needs bounded inspection.", "WORK_DOCUMENT_RETRY_HISTORY_PARTIAL");
   };
   const perform = async (op, input, effect, extra) => {
-    store.write(["attempts", `${op.attemptId}.json`], { ...op.record, ...extra, ...(recordInputs ? { input } : {}) });
+    store.write(["attempts", `${op.attemptId}.json`], {
+      ...op.record,
+      ...extra,
+      ...(recordInputs ? { input } : {}),
+      ...(attemptContext ? { context: attemptContext } : {}),
+    });
     let response;
     try {
       response = await effect(input);
@@ -256,8 +268,10 @@ export function createDocumentEffectWriter({
         });
       };
       if (search?.complete && search.paged) return candidateFailure(search);
-      const found = await adapter.find({ documentId, markdown, cursor: search?.cursor || null });
-      const matches = [...new Map([...(search?.matches || []), ...found.matches].map((value) => [value.id, value])).values()];
+      const found = await adapter.find({ documentId, markdown, cursor: search?.cursor || null, ...(recoverByTitle ? { title } : {}) });
+      const matches = [...new Map([...(search?.matches || []), ...found.matches].map((value) => [value.id, value])).values()].filter(
+        (value) => !recordedElsewhere(value.id),
+      );
       const paged = Boolean(pagedHistory || search?.paged || search?.cursor || found.cursor);
       if (paged) store.write(["paged-search", operationKey + ".json"], { operationKey, scope: "multi-call-observations-never-auto-bound" });
       if (found.cursor) store.write(["search", operationKey + ".json"], { cursor: found.cursor, matches, paged }, true);

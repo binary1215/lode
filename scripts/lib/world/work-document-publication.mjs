@@ -1,17 +1,24 @@
 import fs from "node:fs";
-import { createDocumentEffectWriter } from "./work-document-effect-writer.mjs";
-import { workDocumentStore, documentFailure } from "./work-document-store.mjs";
+import { workDocumentStore, projectDocumentStore, documentFailure } from "./work-document-store.mjs";
 import { withLocalMutation, withLocalMutationAsync } from "../storage/project-mutation-lock.mjs";
-import { readWorkDocumentBasis, renderWorkDocument, resolveWorkDocumentLinks, workDocumentHash } from "./work-document-source.mjs";
-import { createNotionWorkDocumentAdapter, createObsidianWorkDocumentAdapter, createBoundedNotionRequest } from "./work-document-destinations.mjs";
+import { readWorkDocumentBasis, renderWorkDocument, workDocumentHash } from "./work-document-source.mjs";
+import { createNotionWorkDocumentAdapter, createBoundedNotionRequest, documentDestinationIdentity } from "./work-document-destinations.mjs";
+import { DOCUMENT_LAYOUT_VERSION, documentTreeKey, openDocumentTree } from "./work-document-tree.mjs";
+import { readProductModelCanon } from "./product-model.mjs";
+import { readSessionWorkEvidenceOwner } from "../session/session-work-context.mjs";
 import { readSessionWorkContext } from "../session/session-work-context.mjs";
 import { withSessionRoute } from "../session/session-routing.mjs";
 
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const HEX = /^[a-f0-9]{64}$/;
-const marker = (key) => `Lode document identity: ${key}`;
-const managed = (text) => `Lode current links begin\n\n${text}\n\nLode current links end`;
-const body = (markdown, key) => `${markdown.trimEnd()}\n\n${marker(key)}\n`;
+// The pair identity covers the exact views and the Lode-selected feature keys.
+const pairId = (basis, views, featureKeys) => workDocumentHash([basis.basisId, views.map((view) => view.viewId), ...(featureKeys.length ? [featureKeys] : [])]);
+function selectedFeatureKeys(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > 16 || value.some((key) => typeof key !== "string" || !key.trim() || key.length > 200))
+    documentFailure("Select at most 16 Product feature keys.", "WORK_DOCUMENT_FEATURE_SELECTION_INVALID");
+  return [...new Set(value)];
+}
 
 export function configureWorkDocuments({ root, sessionId, targets, expectedConfigurationDigest = null } = {}) {
   const store = workDocumentStore({ root, sessionId });
@@ -85,7 +92,13 @@ export function workDocumentStatus(options = {}) {
 export async function prepareWorkDocuments(options = {}) {
   const basis = await readWorkDocumentBasis(options);
   const views = ["human", "agent"].map((audience) => renderWorkDocument(basis, { audience, title: options.title }));
-  const projection = { kind: "WorkDocumentPair", basis, views, projectionId: workDocumentHash([basis.basisId, views.map((view) => view.viewId)]) };
+  const featureKeys = selectedFeatureKeys(options.featureKeys);
+  const projection = { kind: "WorkDocumentPair", basis, views, featureKeys, projectionId: pairId(basis, views, featureKeys) };
+  // Feature keys are checked against the current Product model; a key that is
+  // not a Product feature is reported and never becomes a feature (or Canon).
+  const owner = readSessionWorkEvidenceOwner({ root: options.root, sessionId: basis.sessionId });
+  const features = new Set(readProductModelCanon({ projectRoot: owner.root, storage: owner.storage }).model.features.map((feature) => feature.key));
+  const featureCheck = { accepted: featureKeys.filter((key) => features.has(key)), rejected: featureKeys.filter((key) => !features.has(key)) };
   const store = workDocumentStore({ root: options.root, sessionId: basis.sessionId });
   store.write(["prepared", `${projection.projectionId}.json`], projection);
   withLocalMutation({ directory: store.file("selection-locks", `${basis.logicalKey}.lock`) }, () =>
@@ -95,14 +108,26 @@ export async function prepareWorkDocuments(options = {}) {
         projectionId: projection.projectionId,
         logicalKey: basis.logicalKey,
         title: options.title,
-        sourceSelection: basis.selection,
+        sourceSelection: { ...basis.selection, ...(featureKeys.length ? { featureKeys } : {}) },
         taskRevision: selectedRevision(basis),
         authority: "replaceable-HEAD-reading-selection-not-direction-or-publication",
       },
       true,
     ),
   );
-  return { status: "prepared", ...projection, publication: "not-attempted", ordinaryWorkBlocked: false };
+  return {
+    status: "prepared",
+    ...projection,
+    featureCheck,
+    ...(featureCheck.rejected.length
+      ? {
+          rejectedFeatureKeys: featureCheck.rejected,
+          rejectedFeatureKeysMeaning: "not-Product-features-result-goes-to-unclassified-unless-another-key-is-accepted",
+        }
+      : {}),
+    publication: "not-attempted",
+    ordinaryWorkBlocked: false,
+  };
 }
 
 export function readWorkDocumentSelections({ root, sessionId, logicalKey, targetIds }) {
@@ -118,8 +143,7 @@ export function readWorkDocumentSelections({ root, sessionId, logicalKey, target
 
 async function configuredAdapter(target, basis, supplied) {
   if (supplied?.[target.id]) return supplied[target.id];
-  if (target.kind === "obsidian")
-    return createObsidianWorkDocumentAdapter({ vaultRoot: target.vaultRoot, directory: `Lode/${basis.projectId}/${basis.sessionId}/${basis.logicalKey}` });
+  if (target.kind === "obsidian") return { kind: "obsidian", identity: workDocumentHash(["obsidian-tree", documentDestinationIdentity(target)]) };
   // Only an explicitly connected environment reference is read, at effect time.
   const token = process.env[target.tokenEnvironment];
   if (!token) documentFailure("The configured Notion connection is unavailable.", "WORK_DOCUMENT_UNCONNECTED");
@@ -229,10 +253,7 @@ export async function publishWorkDocuments({ root, sessionId, projectionId, targ
     documentFailure("Prepared document owner differs.");
   const current = await readWorkDocumentBasis({ root, ...prepared.basis.selection });
   const regenerated = ["human", "agent"].map((audience) => renderWorkDocument(current, { audience, title: prepared.views[0].title }));
-  if (
-    workDocumentHash([current.basisId, regenerated.map((view) => view.viewId)]) !== projectionId ||
-    workDocumentHash(regenerated) !== workDocumentHash(prepared.views)
-  )
+  if (pairId(current, regenerated, prepared.featureKeys || []) !== projectionId || workDocumentHash(regenerated) !== workDocumentHash(prepared.views))
     return { status: "source-basis-changed", localDocumentsAvailable: true, destinations: [], ordinaryWorkBlocked: false };
   const eligibility = currentEligibility(current);
   if (!eligibility.eligible)
@@ -262,6 +283,20 @@ export async function publishWorkDocuments({ root, sessionId, projectionId, targ
       );
       results.push({ id, ...result });
     } catch (error) {
+      // A Notion publication has a bounded number of requests. Completed steps are
+      // journaled, so publishing the same projection again continues the tree.
+      if (error.code === "WORK_DOCUMENT_TRANSPORT_BUDGET" && !error.rejectedWrite) {
+        results.push({
+          id,
+          status: "continuation-required",
+          reasonCode: error.code,
+          followUp: { action: "publish-the-same-projection-again", projectionId, targetIds: [id] },
+          headActionRequired: true,
+          userActionRequired: false,
+          executionReplayAllowed: false,
+        });
+        continue;
+      }
       results.push({
         id,
         status: error.rejectedWrite
@@ -287,7 +322,11 @@ export async function publishWorkDocuments({ root, sessionId, projectionId, targ
   return {
     kind: "WorkDocumentPublicationOutcome",
     authorityPlane: "P5",
-    status: results.every((value) => value.status === "current") ? "published" : "partial-or-unconfirmed",
+    status: results.every((value) => value.status === "current")
+      ? "published"
+      : results.every((value) => ["current", "continuation-required"].includes(value.status))
+        ? "continuation-required"
+        : "partial-or-unconfirmed",
     projectionId,
     destinations: results,
     ordinaryWorkBlocked: false,
@@ -296,104 +335,114 @@ export async function publishWorkDocuments({ root, sessionId, projectionId, targ
   };
 }
 
+// Old-layout records (no layoutVersion) are read as "published in the old
+// layout": their documents stay where they are and are never re-recorded.
+function oldLayoutReference(previous, basis) {
+  if (!previous || previous.layoutVersion) return null;
+  const human = previous.views?.find((view) => view.audience === "human");
+  return {
+    directory: `Lode/${basis.projectId}/${basis.sessionId}/${basis.logicalKey}`,
+    file: human?.id || null,
+    url: human?.url || null,
+    startId: previous.startId,
+    startName: "Start.md",
+    currentText: previous.currentText,
+  };
+}
+
 async function publishPair({ root, store, prepared, adapter, key, target, configurationDigest, retryAttemptId }) {
   adapter.beginPublication?.();
-  const { basis, views } = prepared;
+  const { basis } = prepared;
   const previous = store.read("current", `${key}.json`);
   if (!(await advances(root, basis, previous))) return { status: "historical-no-current-change", reasonCode: "WORK_DOCUMENT_NOT_EXPLICIT_SUCCESSOR" };
-  const { create, change, verify, readBound } = createDocumentEffectWriter({
-    store,
-    adapter,
-    key,
-    target,
-    configurationDigest,
-    prepared,
-    previous,
-    retryAttemptId,
-  });
-  const initial = managed("게시 확인 대기 중입니다. 작업 완료나 외부 배포 완료를 뜻하지 않습니다.");
-  const startId = await create("start", "Start.md", "Lode work", body(`# Lode work\n\n${initial}`, basis.logicalKey));
-  const notesId = await create(
-    "notes",
-    "Notes.md",
-    "Personal notes",
-    body("# Personal notes\n\n개인 메모는 여기에 보관합니다. Lode는 이 문서를 갱신하지 않습니다.", `${basis.logicalKey}-notes`),
-  );
-  const pages = [];
-  for (const view of views) {
-    const provisional = body(view.markdown.replace(/\[다른 읽기 뷰\][^\n]+/, "읽기 뷰 연결 준비 중입니다."), view.viewId);
-    const id = await create(view.audience, `${view.audience}-${view.viewId}.md`, `${view.title} · ${view.audience}`, provisional);
-    pages.push({ view, id, provisional });
-  }
-  const verified = [];
-  for (let index = 0; index < pages.length; index++) {
-    const { view, id, provisional } = pages[index];
-    const resolved = resolveWorkDocumentLinks(view, { peer: adapter.url(pages[1 - index].id), start: adapter.url(startId) });
-    const expected = body(resolved.markdown, view.viewId);
-    await change(id, provisional.trimEnd(), expected.trimEnd());
-    verified.push({ audience: view.audience, viewId: view.viewId, url: adapter.url(id), ...(await verify(id, expected)) });
-  }
-  // Recheck the exact source and user-selected destination after all async work.
-  const refreshed = await readWorkDocumentBasis({ root, ...basis.selection });
-  if (refreshed.basisId !== basis.basisId || store.read("configuration.json")?.configurationDigest !== configurationDigest)
-    return {
-      status: "views-verified-current-not-updated",
-      reasonCode: "WORK_DOCUMENT_SOURCE_OR_DESTINATION_CHANGED",
-      views: verified,
+  const projectStore = projectDocumentStore({ root, sessionId: basis.sessionId });
+  const destination = documentDestinationIdentity(target);
+  const treeKey = documentTreeKey(basis.projectId, destination);
+  return withLocalMutationAsync({ directory: projectStore.file("locks", `${treeKey}.lock`), timeoutMs: 10000 }, async () => {
+    // An explicit retry stays bound to the exact Session configuration it was
+    // rejected under.
+    if (retryAttemptId && projectStore.read("attempts", `${retryAttemptId}.json`)?.context?.configurationDigest !== configurationDigest)
+      documentFailure("Explicit retry does not match the current rejected request.", "WORK_DOCUMENT_RETRY_SCOPE_CHANGED");
+    const tree = openDocumentTree({
+      store: projectStore,
+      key: treeKey,
+      target,
+      adapter,
+      permissionDigest: workDocumentHash([basis.projectId, destination, "explicit-document-destination-scope"]),
+      retryAttemptId,
+      attemptContext: { configurationDigest },
+    });
+    const published = await tree.publishResult({
+      prepared,
+      featureKeys: prepared.featureKeys || [],
+      oldLayout: oldLayoutReference(previous, basis),
+    });
+    const { result, humanDoc, evidenceDoc } = published;
+    const views = [
+      {
+        audience: "human",
+        viewId: prepared.views[0].viewId,
+        id: humanDoc.id,
+        url: published.url(humanDoc),
+        payloadDigest: workDocumentHash(humanDoc.lastWritten),
+      },
+      {
+        audience: "agent",
+        viewId: prepared.views[1].viewId,
+        id: evidenceDoc.id,
+        url: published.url(evidenceDoc),
+        payloadDigest: workDocumentHash(evidenceDoc.lastWritten),
+      },
+    ];
+    const featureKeys = { accepted: result.features, rejected: result.rejectedFeatureKeys };
+    // Recheck the exact source and user-selected destination after all async work.
+    const refreshed = await readWorkDocumentBasis({ root, ...basis.selection });
+    if (refreshed.basisId !== basis.basisId || store.read("configuration.json")?.configurationDigest !== configurationDigest)
+      return {
+        status: "views-verified-current-not-updated",
+        reasonCode: "WORK_DOCUMENT_SOURCE_OR_DESTINATION_CHANGED",
+        views,
+      };
+    const receipt = {
+      kind: "WorkDocumentPublicationReceipt",
+      authorityPlane: "P5",
+      layoutVersion: DOCUMENT_LAYOUT_VERSION,
+      basisId: basis.basisId,
+      projectionId: prepared.projectionId,
+      selectedEvidenceIds: basis.records.filter((record) => record.role === "selected-task").map((record) => record.evidenceId),
+      logicalKey: basis.logicalKey,
+      adapterIdentity: adapter.identity,
+      treeKey,
+      result: { number: result.number, name: result.name, folder: result.folder, humanUrl: views[0].url, evidenceUrl: views[1].url },
+      featureKeys,
+      views,
+      taskRevision: selectedRevision(basis),
+      sourceSelection: { ...basis.selection, ...(prepared.featureKeys?.length ? { featureKeys: prepared.featureKeys } : {}) },
+      title: prepared.views[0].title,
+      readbackScope: "result-documents-and-folder-list-regions",
+      remoteCAS: false,
+      currentMeans: "last-verified-published-basis-not-all-unpublished-changes",
+      executionReplayAllowed: false,
     };
-  const currentText =
-    previous?.projectionId === prepared.projectionId
-      ? previous.currentText
-      : managed(
-          `마지막으로 게시·조회 확인한 근거: ${basis.basisId}\n\n[사람용](${verified[0].url}) · [에이전트용](${verified[1].url}) · [개인 메모](${adapter.url(notesId)})\n\n${basis.taskState ? `기록된 작업 상태: ${basis.taskState.items[0].status}` : "명시적으로 선택한 작업 원문"}. 현재 미게시 변경 전체를 뜻하지 않습니다.${previous && previous.basisId !== basis.basisId ? `\n\n[이전 게시 문서](${previous.views[0].url})` : ""}`,
-        );
-  const oldText = previous?.currentText || initial;
-  await change(startId, oldText, currentText);
-  const start = await readBound(startId);
-  if (!start.complete || start.warnings?.length || start.markdown.split(currentText).length !== 2)
-    documentFailure("Current links are not uniquely readback-verified.");
-  await adapter.read(notesId); // Existence/parent only: personal notes may change.
-  // A user edit to either view between link updates is not silently accepted.
-  for (let index = 0; index < pages.length; index++)
-    await verify(
-      pages[index].id,
-      body(
-        resolveWorkDocumentLinks(pages[index].view, { peer: adapter.url(pages[1 - index].id), start: adapter.url(startId) }).markdown,
-        pages[index].view.viewId,
-      ),
-    );
-  if ((await readWorkDocumentBasis({ root, ...basis.selection })).basisId !== basis.basisId)
-    return { status: "current-observation-unknown", reasonCode: "WORK_DOCUMENT_SOURCE_CHANGED_DURING_LINK_UPDATE" };
-  const receipt = {
-    kind: "WorkDocumentPublicationReceipt",
-    authorityPlane: "P5",
-    basisId: basis.basisId,
-    projectionId: prepared.projectionId,
-    selectedEvidenceIds: basis.records.filter((record) => record.role === "selected-task").map((record) => record.evidenceId),
-    logicalKey: basis.logicalKey,
-    adapterIdentity: adapter.identity,
-    startId,
-    notesId,
-    currentText,
-    views: verified,
-    taskRevision: selectedRevision(basis),
-    sourceSelection: basis.selection,
-    title: views[0].title,
-    startReadbackDigest: workDocumentHash(start.markdown),
-    readbackScope: "two-full-views-and-required-links",
-    remoteCAS: false,
-    currentMeans: "last-verified-published-basis-not-all-unpublished-changes",
-    executionReplayAllowed: false,
-  };
-  store.write(["receipts", `${workDocumentHash(receipt)}.json`], receipt);
-  store.write(["current", `${key}.json`], receipt, true);
-  return {
-    status: "current",
-    start: adapter.url(startId),
-    basisId: basis.basisId,
-    views: verified,
-    remoteCAS: false,
-    crossDestinationAtomicity: false,
-    completionAuthority: false,
-  };
+    store.write(["receipts", `${workDocumentHash(receipt)}.json`], receipt);
+    store.write(["current", `${key}.json`], receipt, true);
+    return {
+      status: "current",
+      result: { number: result.number, name: result.name, url: views[0].url, evidenceUrl: views[1].url },
+      basisId: basis.basisId,
+      views,
+      featureKeys,
+      ...(featureKeys.rejected.length
+        ? {
+            rejectedFeatureKeys: featureKeys.rejected,
+            rejectedFeatureKeysMeaning: "not-Product-features-result-placed-in-unclassified-or-first-accepted-feature",
+          }
+        : {}),
+      ...(tree.report.personEdited.length ? { personEdited: tree.report.personEdited } : {}),
+      ...(published.oldLayoutLink ? { oldLayoutLink: published.oldLayoutLink } : {}),
+      remoteCAS: false,
+      crossDestinationAtomicity: false,
+      completionAuthority: false,
+    };
+  });
 }

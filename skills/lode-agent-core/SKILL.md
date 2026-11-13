@@ -133,7 +133,9 @@ messaging authority; see
   `executionObservation` and `workTopics` reuse returned exact selectors.
   No per-turn save, save approval or user JSON.
 - Work documents: `lode_work_document` (`prepare`/`publish`/`status`); Project documents:
-  `lode_project_document` (`prepare`/`publish`/`status`). Retry a verified rejected write
+  `lode_project_document` (`prepare`/`publish`/`status`). On prepare, choose `feature_keys`
+  from the Product model's features (a feature the user named wins); none fits means
+  소속 미확인. Follow `continuation-required` by publishing again. Retry a verified rejected write
   only through `retry_rejected_writes` with the returned attempt reference; unknown
   outcomes allow readback only. See [work documents](../../docs/work-document-projection.md).
 - A `lode_session` (`work_record`) result with document status `lode-selection-required`

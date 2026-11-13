@@ -8,6 +8,16 @@ import { documentFailure } from "./work-document-store.mjs";
 const normalize = (text) => text.replaceAll("\r\n", "\n").trimEnd();
 export const sameDocumentText = (a, b) => typeof a === "string" && typeof b === "string" && normalize(a) === normalize(b);
 const safeId = (value) => typeof value === "string" && /^[a-zA-Z0-9_-]{1,180}$/.test(value);
+// Readable vault names: no path separators, reserved or link-breaking characters,
+// control characters, leading dot/space or trailing dot/space.
+export const safeVaultName = (value) =>
+  typeof value === "string" &&
+  value.length >= 1 &&
+  value.length <= 180 &&
+  value === value.normalize("NFC") &&
+  !/[\x00-\x1f\x7f\\/:*?"<>|#^[\]]/.test(value) &&
+  !/^[.\s]/.test(value) &&
+  !/[.\s]$/.test(value);
 const pageId = (value) => typeof value === "string" && /^(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(value);
 const notionPublicationBudgets = new WeakSet();
 
@@ -62,12 +72,13 @@ export function createBoundedNotionRequest({ token, fetchFunction = fetch, maxBy
 }
 
 export function createObsidianWorkDocumentAdapter({ vaultRoot, directory }) {
-  if (!fs.statSync(vaultRoot).isDirectory() || !/^Lode\/[a-zA-Z0-9_/-]+$/.test(directory))
+  const segments = typeof directory === "string" ? directory.split("/") : [];
+  if (!fs.statSync(vaultRoot).isDirectory() || segments[0] !== "Lode" || segments.length < 2 || !segments.slice(1).every(safeVaultName))
     documentFailure("Select an existing vault and Lode-owned relative area.");
   const vault = fs.realpathSync(vaultRoot),
     target = safeSessionPath(vault, directory);
   const file = (id) => {
-    if (!/^[a-zA-Z0-9_-]{1,180}\.md$/.test(id || "")) documentFailure("Invalid vault document identity.");
+    if (!/\.md$/.test(id || "") || !safeVaultName(id.slice(0, -3))) documentFailure("Invalid vault document identity.");
     return safeSessionPath(vault, directory, id);
   };
   const read = async (id) => {
@@ -89,11 +100,15 @@ export function createObsidianWorkDocumentAdapter({ vaultRoot, directory }) {
     url: (id) => encodeURIComponent(id),
     directory,
     scoped(segment) {
-      if (!/^[a-zA-Z0-9_-]{1,180}$/.test(segment || "")) documentFailure("Invalid child document directory.");
+      if (!safeVaultName(segment)) documentFailure("Invalid child document directory.");
       return createObsidianWorkDocumentAdapter({ vaultRoot: vault, directory: `${directory}/${segment}` });
     },
     async read(id) {
       return read(id);
+    },
+    // A name in this folder that Lode has not recorded is never reused.
+    occupied(name) {
+      return fs.existsSync(path.join(target, name));
     },
     async find({ documentId, markdown }) {
       try {
@@ -227,6 +242,7 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
       documentFailure("Page body is unavailable.");
     return {
       id,
+      title: (page.properties?.title?.title || []).map((part) => part.plain_text ?? part.text?.content ?? "").join(""),
       markdown: value.markdown,
       complete:
         value.object === "page_markdown" &&
@@ -275,7 +291,9 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
       return `https://www.notion.so/${compact(id)}`;
     },
     read,
-    async find({ markdown, cursor = null }) {
+    // With a title, a candidate must match both title and body (layout v2 bodies
+    // carry no identity line; titles are unique within one exact parent).
+    async find({ title, markdown, cursor = null }) {
       const matches = [];
       if (
         cursor &&
@@ -305,7 +323,8 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
           if (child.type !== "child_page") continue;
           if (inspected++ >= 12) return { complete: false, matches, cursor: { pageCursor, offset: index, listingDigest: digest } };
           const value = await read(child.id);
-          if (value.complete && !value.warnings.length && sameDocumentText(value.markdown, markdown)) matches.push({ id: value.id });
+          if (value.complete && !value.warnings.length && sameDocumentText(value.markdown, markdown) && (title === undefined || value.title === title))
+            matches.push({ id: value.id });
         }
         if (children.has_more === false) return { complete: true, matches };
         if (typeof children.next_cursor !== "string" || !children.next_cursor || children.next_cursor.length > 500) return { complete: false, matches };
@@ -321,6 +340,25 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
         matches,
         cursor: { pageCursor, offset: 0, listingDigest: workDocumentHash(next.results.map((child) => [child.id, child.type])) },
       };
+    },
+    // Child page titles under this exact parent, from at most three listing pages.
+    // complete:false means the titles are not all known.
+    async childTitles() {
+      const titles = [];
+      let pageCursor = null;
+      for (let page = 0; page < 3; page++) {
+        const children = await call(
+          "GET",
+          "/blocks/" + parentPageId + "/children?page_size=100" + (pageCursor ? "&start_cursor=" + encodeURIComponent(pageCursor) : ""),
+        );
+        if (!Array.isArray(children.results) || children.results.length > 100) return { complete: false, titles };
+        for (const child of children.results)
+          if (child.type === "child_page") titles.push(typeof child.child_page?.title === "string" ? child.child_page.title : null);
+        if (children.has_more === false) return { complete: !titles.includes(null), titles: titles.filter((title) => title !== null) };
+        if (typeof children.next_cursor !== "string" || !children.next_cursor) return { complete: false, titles };
+        pageCursor = children.next_cursor;
+      }
+      return { complete: false, titles: titles.filter((title) => title !== null) };
     },
     async create({ title, markdown }) {
       const result = await call("POST", "/pages", createBody({ title, markdown }));

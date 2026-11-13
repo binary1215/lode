@@ -69,7 +69,7 @@ texts.
 
 | File | Characters | Prohibitions |
 | --- | ---: | ---: |
-| `skills/lode-agent-core/SKILL.md` | 11,758 | 15 |
+| `skills/lode-agent-core/SKILL.md` | 11,939 | 15 |
 | `skills/lode-agent-onboarding/SKILL.md` | 11,411 | 25 |
 | `skills/lode-conversation/SKILL.md` | 3,887 | 3 |
 | `references/authority-and-roles.md` | 4,496 | 11 |

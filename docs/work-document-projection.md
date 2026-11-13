@@ -15,80 +15,153 @@ an explicitly chosen Host environment-variable reference, never a token or ambie
 credential discovery. Missing connections never block ordinary work. Real posting
 requires current user authorization for the destination and content scope.
 
-## Reading the result
+## Where documents go
 
-### Browse a Project by product and feature
+Every publication goes into one readable tree per product, inside `Lode/` in the
+vault or under the configured Notion parent:
+
+```
+Lode/
+└─ <product>/
+   ├─ <product>.md
+   ├─ 근거/
+   ├─ <feature group>/
+   │  ├─ <feature group>.md
+   │  ├─ 근거/
+   │  └─ <feature>/
+   │     ├─ <feature>.md
+   │     ├─ <task title> 결과 1.md
+   │     ├─ <task title> 결과 2.md
+   │     └─ 근거/
+   ├─ 소속 미확인/
+   ├─ 결정과 조건/
+   └─ 작업 기록/
+```
+
+Each folder has a document named like the folder: the product, feature group or
+feature document. Each published result is a new file, `<task title> 결과 N.md`,
+written once and never rewritten; a later result links back with 이전 결과. The
+agent counterpart of every document sits in the same folder's `근거/` as
+`<document name> 근거.md`.
+
+Names: the product is the Project title chosen for Project documentation,
+otherwise the Project folder name; groups and features use Product model names.
+Characters a file name cannot hold are removed, names stop at 40 characters, and a
+short suffix such as `(d403)` is added only when the name is already taken in
+that folder, by another Lode document or by a file a person made there. Page
+titles already used under the Notion parent are never reused either. Vault paths
+stay within 180 characters: deeper groups are placed higher and links keep the
+hierarchy.
+
+Placement:
+- A feature in several groups (or a group with several parents) gets one folder,
+  under the parent listed first in the Product model file; the others link to it.
+- A result for several features is a file in the first feature's folder and is
+  listed in the others.
+- A result with no feature, or with a key that is not a Product feature, goes to
+  `소속 미확인/`. Prepare and publish report the keys that were not accepted.
+- A feature without a group gets a folder directly under the product. Without a
+  Product model only the product folder and `소속 미확인/` exist.
+
+Lode chooses the features while preparing: `feature_keys` on
+`lode_work_document_prepare` (or `featureKeys` in `document_selection`), picked
+from the Product model's features; a feature the user named wins. This is a
+reading link only: the Product model is never changed.
+
+A folder's place is fixed when it is first created and recorded per destination
+(a feature-to-folder table). When the Product model renames or moves a feature,
+its folder and files stay; titles and link text follow the new name, and new
+results keep landing in the existing folder.
+
+### What a person reads
+
+A result document has a title, the status and recorded time (UTC), 한 일, 판단과
+이유, 남은 일, 확인하지 못한 것 and one closing link line (이전 결과, the feature,
+the 근거 document). Human documents carry no identity lines, markers, hashes, IDs,
+internal codes, repeated notices or comments. The 근거 document starts with a
+`관리 정보` section: the read-only notice, both document identities, Project,
+Session and task, result number, evidence, basis digest, previous result and the
+renderer and layout versions. Exact sources, comparisons, quotes and graph
+evidence follow. Lode never reads `관리 정보` back to decide anything: its own
+records stay the source, and readback compares whole documents.
+
+Lists such as a feature's 이 기능의 결과 need no markers. Lode records the last
+list text it wrote and replaces it only where that text occurs exactly once. If a
+person changed the list, it is kept and reported as `personEdited`, and the
+result still publishes. A document still exactly as Lode last wrote it may be
+rewritten whole (title, description). Files people create inside Lode folders
+are never touched. There are no per-task Start or Notes documents.
+
+### Project documentation
 
 Ask: “Organize this Project's documentation by product, feature group and
-feature, with a human view and an agent view.” Lode copies actual Product Canon
-membership, including nested groups and multiple parents. Product here is a
-reading root for the existing Project, not an invented Canon entity. Shared
-decisions and work link one original from several features; a Session is not
-forced under one feature. Unconfirmed associations remain unclassified.
+feature.” With the optional `projectDocuments` scope, Project publication fills
+the product, group and feature documents (descriptions, related decisions,
+source-linked narrative), `결정과 조건/` (one document per decision, requirement,
+constraint, capability and policy) and `작업 기록/` (the selected work records,
+newest first). Product here is a reading root for the existing Project, not an
+invented Canon entity. Shared decisions and work link one original from several
+features. Explanations keep their source bindings: after a Model change they are
+marked as about an earlier original until Lode updates them.
 
-Both audiences use the same facts. Humans see purpose, flow, conditions, results
-and useful links; agents also see exact IDs, sources and selected code/diff/graph
-evidence. Lode explains exact selected sources; Core never invents prose or
-implementation mappings. Explanations retain their original source bindings:
-after a Canon change they are historical until Lode deliberately updates them.
-Missing code, comparisons or execution evidence stays unknown.
+Task readings selected for Project documentation are linked to their published
+results. Lode publishes results with `lode_work_document_publish`; automatic
+publication does both. Enable `projectDocuments` through the existing connection
+conversation; upgrading does not widen a task-only connection. No user JSON, Todo
+or onboarding step is added. A rich prior selection is kept or deliberately
+revised by Lode, never silently shrunk to the last note.
 
-Enable optional projectDocuments scope through the existing connection
-conversation; upgrading does not expand a task-only connection. No extra user
-JSON, Todo or onboarding step is needed. Automatic Project scope can document
-meaningful saved analysis without a Todo. A rich prior selection is kept or
-deliberately revised by Lode, never silently shrunk to the last note.
+One tree is shared across Sessions and aliases for the same actual Notion parent
+or physical vault. Different Projects with the same title get separate folders.
+Large products continue in bounded calls: `continuation-required` is Lode's to
+follow, never a user task. Completion requires observing every selected document.
+This is **not simultaneous remote CAS**: receipts state the last verified scope.
+A stale source or configuration is refused, and Canon read failures keep their
+primary failure. Unreadable or unselected Sessions never silently delete their
+contributions.
 
-One Project home is shared across Sessions and aliases for the same actual Notion
-parent or physical vault. Different Projects with the same title remain separate.
-Notion creates an owned Project home under the selected parent, with reader homes
-and linked entity pages; every child still checks its exact parent. Obsidian adds
-Lode/<Project>/ProjectDocuments/. Existing task documents are not moved or deleted.
-Stable page identities survive renames; prior reading bodies remain linked
-history, and personal notes are never rewritten.
+### Notion
 
-Large hierarchies continue in bounded publication calls, including beyond the
-65th page. Lode follows continuation-required without asking the user to run a
-script or resave work. Publication completion requires observing every selected
-page and required link. This is **not simultaneous remote CAS**: receipts state
-the last verified scope. Source/config changes and user edits preserve prior
-current receipts. A successor update first marks the home as in progress, before
-changing linked child bodies; readers are told that links may span update times.
-Only the fully observed publication clears that notice. Failed or cancelled
-updates do not silently present a mixed scope as completed. Unreadable or unselected Sessions cannot silently delete their
-known contributions. Malformed or denied Canon reads retain their primary failure.
+Notion gets the same tree as pages under the configured parent: product, group,
+feature and result pages, with each page's 근거 pages under a `근거` page below
+it. Page titles are the vault file names without `.md`, and human pages carry no
+identity line. When the outcome of a page creation is unknown, Lode binds a page
+only if exactly one page under the exact parent matches both title and body and
+is not recorded for another document; otherwise it stops and reports. It never
+creates a duplicate. If a lost-create search spans several calls, matches stay
+candidate observations without establishing current uniqueness. The first
+publication of a new tree can exceed one call's request budget: the result is
+`continuation-required`, and publishing the same projection again continues with
+completed steps kept.
 
-If a lost-create search spans multiple calls, matching pages remain candidate
-observations. Different-time slices cannot establish current global uniqueness.
-The attempt retains that limit across restart, source changes and target aliases.
-Candidate readback reports changed, missing-at-read or unavailable bodies without
-automatically binding a page or repeating POST. Exact provider terminal result
-IDs keep their separate validated recovery path. The existing single bounded
-parent observation is also not an atomic remote snapshot or authorship proof.
+### Earlier publications
 
-Typed MCP: lode_project_document (prepare, publish, status).
-CLI: project-document-prepare,
-project-document-publish, project-document-status. Lode supplies exact work
-references, optional feature reading associations, saved task reading selections
-and source-linked narrative. Project delivery records are P5 under
-document-projection/project/<Project>/; they never combine Session P2 direction.
+Documents published before this layout (`Lode/<Project>/<Session>/<task-key>/` and
+`Lode/<Project>/ProjectDocuments/`) are never moved, renamed, deleted or
+re-recorded; their records read as published in the old layout. The next result
+of such a task goes into the new tree with 이전 결과 pointing at the old human
+document, and the old Start document's Lode list region is replaced once with a
+link to the new location. If a person edited that region it is skipped and
+reported.
 
-A stable Lode-owned start document links the last verified human and agent views,
-separate personal notes and the prior published view. “Current” means the last
-basis whose two views and required links were read back successfully. It does not
-mean all unpublished local changes, task completion, deployment or every source.
+### Meaning
 
-Both views preserve important cancellations, missing tests and contradictions.
+“Current” means the last basis whose documents and required links were read back.
+It does not mean all unpublished local changes, task completion, deployment or
+every source. Typed MCP: lode_project_document (prepare, publish, status). CLI:
+project-document-prepare, project-document-publish, project-document-status.
+Delivery records are P5 under document-projection/project/<Project>/; they never
+combine Session P2 direction.
+
+Both documents keep important cancellations, missing tests and contradictions.
 An author's agreement summary is not an original user utterance. A matching hash
 is not semantic freshness; old test success is not a test of today's revision.
-Exact before/after bytes permit a bounded comparison; missing bytes are disclosed,
-never replaced by an invented diff. Graph relationships support navigation, not
-approval, implementation fulfillment or causality.
-
-Selected content and comparisons are readable inside the view. Local paths identify
-evidence without promising remote access. No full transcript, provider session
-identity or absolute local root is automatically copied. A Session checkpoint may
-describe another task and is not automatically exported.
+Exact before/after bytes permit a bounded comparison in the 근거 document; missing
+bytes are disclosed, never replaced by an invented diff. Graph relationships
+support navigation, not approval, implementation fulfillment or causality. Local
+paths identify evidence without promising remote access. No full transcript,
+provider session identity or absolute local root is copied, and a Session
+checkpoint is not automatically exported.
 
 ## Updates and retries
 
@@ -145,8 +218,8 @@ Lode uses the returned exact attempt reference in `retry_rejected_writes`
 Prior attempts and outcomes remain create-only. Repeated refusal needs its new
 reference; repeated clicks cannot launch another successor. Parent, method,
 content, configuration, source basis and current managed text must still match.
-When sources change, Lode prepares a fresh pair. An identical stable start/notes
-creation can retain its rejected-attempt reference under that verified new basis;
+When sources change, Lode prepares a fresh pair. An identical creation of a tree
+document can retain its rejected-attempt reference under that verified new basis;
 this does not reuse an old view, changed write body or stale prepared source.
 Users need not write JSON or re-run the original task. This never bypasses a Host
 denial, switches accounts or silently retries from the automatic record hook.
@@ -164,9 +237,9 @@ effects. There is no daemon; a subsequent request can continue known pending wor
 
 ## Ownership and concurrency
 
-Task-mode Obsidian writes only the configured `Lode/<Project>/<Session>/<task-key>/` area.
-Revision files use exclusive create. Personal notes are separate. Managed start
-text changes only while exact old text remains. Notion uses one `update_content`
+Obsidian writes only inside `Lode/` of the selected vault. New documents use
+exclusive create. A Lode document changes only while the text Lode recorded is
+still there: the whole document, or exactly one list region. Notion uses one `update_content`
 exact-text edit rather than full-page replacement. Unmanaged content is preserved;
 edits to generated views produce drift, not silent overwrite or Canon ingestion.
 
@@ -184,7 +257,9 @@ routing. Status reads local receipts; it is not a live network freshness probe.
 Common basis/views are P4. Configuration, attempts, async progress, receipts and
 replaceable current pointers are P5 in existing
 `document-projection/work/<Session>/` storage. Logical key, basis, rendered view,
-resolved payload and readback digests are distinct. The existing synchronous
+resolved payload and readback digests are distinct. The tree record (layout version,
+feature-to-folder table, file names, last written list text) is P5 under
+document-projection/project/<Project>/. The existing synchronous
 GraphSnapshot Markdown adapter and byte-equality contract remain unchanged.
 
 Validation uses synthetic vaults and fake HTTP. Actual Notion normalization,
