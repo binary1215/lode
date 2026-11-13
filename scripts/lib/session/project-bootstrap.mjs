@@ -23,7 +23,7 @@ import { inspectRecoveryCheckpointDiagnosis } from "./recovery-checkpoint-diagno
 import { actionability, withExperienceProjections } from "./experience-projection.mjs";
 import { linkProjectInstructions, validateInstructionIntegration } from "../storage/project-instruction-link.mjs";
 import { inspectPendingProjectImport } from "../storage/project-portability.mjs";
-import { resumeProjectLocation, repairProjectBytesForResume } from "../storage/project-relocation.mjs";
+import { resumeProjectLocation, inspectProjectResumeLocation, repairProjectBytesForResume } from "../storage/project-relocation.mjs";
 import {
   withSessionCallContext,
   validateRelocationSessionSelection,
@@ -948,7 +948,7 @@ export async function initializeOrResumeProject(options = {}) {
   };
   const validateSelection = (owner) => validateRelocationSessionSelection(owner, route ?? {});
   // Decide the explicit copy scope before even an exact-byte repair.
-  const locationPreview = resumeProjectLocation({ root, pluginRoot, runtimes, copiedProject, validateSelection, inspectOnly: true });
+  const locationPreview = inspectProjectResumeLocation({ root, pluginRoot, runtimes, copiedProject, validateSelection });
   if (locationPreview?.requiredChoice && copiedProject !== "verified-copy")
     fail(
       "The initial origin cannot be proved. Choose copiedProject=verified-copy for this exact local copy; no file has been changed.",

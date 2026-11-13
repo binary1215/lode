@@ -65,6 +65,29 @@ export function repairProjectBytesForResume(options = {}) {
   return repairManagedProjectBytes({ root, directory: input.directory, manifest: input.manifest });
 }
 
+// Explicit resume may reach the recorded-byte repair after a read-only
+// preflight. Ordinary status and relocation publication still require exact
+// on-disk digests. Do not treat arbitrary drift or a pending journal as repair.
+export function inspectProjectResumeLocation(options = {}) {
+  try {
+    return resumeProjectLocation({ ...options, inspectOnly: true });
+  } catch (error) {
+    if (error.code !== "PROJECT_NOT_READY") throw error;
+    const input = inspectProjectCopyInput(options);
+    if (fs.existsSync(safeLocationFile(input.currentRoot, input.directory, locationJournalRelative))) throw error;
+    verifyProjectLocation(input.currentRoot, input.directory, input.project);
+    const plan = inspectManagedByteRepairs({ root: input.currentRoot, directory: input.directory, manifest: input.manifest });
+    if (!plan.repairs.length || plan.unresolved.length) throw error;
+    return {
+      status: "relocation-byte-repair-needed",
+      projectId: input.project.projectId,
+      projectRoot: input.currentRoot,
+      previousRoot: input.project.projectRoot,
+      persisted: false,
+    };
+  }
+}
+
 // An explicit initialize/resume may adopt only the local copied owner. No old
 // directory is probed, no Session history is rewritten, and no effect is replayed.
 export function resumeProjectLocation({
