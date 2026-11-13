@@ -10,10 +10,10 @@ import {
   safeDirectory,
   retryLockRead,
   attempt,
-  release,
   cleanInterruptedStaging,
   nestedOwner,
   withLocalMutation,
+  finishMutation,
 } from "./local-mutation-lock.mjs";
 
 // The lock primitives live in local-mutation-lock.mjs, below the snapshot
@@ -58,14 +58,19 @@ async function withProjectMutationAsyncUncoordinated({ root = ".", scope, storag
     if (Date.now() >= deadline) fail(`The ${scope} operation is busy; retry this operation shortly.`);
     await delay(10);
   }
+  let result,
+    error,
+    failed = false;
   try {
     recheck();
     const active = new Map(context.getStore() || []);
     active.set(directory, owner);
-    return await context.run(active, operation);
-  } finally {
-    release(owner);
+    result = await context.run(active, operation);
+  } catch (caught) {
+    failed = true;
+    error = caught;
   }
+  return finishMutation(owner, failed, error, result);
 }
 
 function prepareProjectMutation(options) {

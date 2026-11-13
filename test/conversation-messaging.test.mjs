@@ -90,6 +90,176 @@ function register(root, environment, who, channel, now = fixedNow) {
   return registerConversationPresence({ root, identity: identity(who.runtime, who.nativeSessionId, who), channel, environment, now });
 }
 
+for (const phase of ["retention", "claim"]) {
+  for (const kind of ["frozen", "refused", "primitive"]) {
+    test(`dual operation and cleanup failure preserves ${kind} at ${phase}`, async (t) => {
+      const { root, environment } = isolated(t);
+      const address = "codex:dual-failure-target";
+      const slot = crypto.createHash("sha256").update(address).digest("hex");
+      register(root, environment, caller("codex", "dual-failure-target"), { kind: "codex-next-prompt" });
+      const args = { root, environment, caller: caller("claude", "dual-failure-sender"), to: address, now: fixedNow, waitMs: 0 };
+      if (phase === "retention")
+        await sendProjectConversation({ ...args, body: "existing synthetic queue", deliver: async () => ({ outcome: "unavailable" }) });
+      const directory = path.join(root, ".lode", "messaging", ".delivery-locks", slot + ".lock");
+      const marker = path.join(root, ".lode", "project.json");
+      const original =
+        kind === "primitive"
+          ? "original primitive fixture failure"
+          : Object.freeze(
+              Object.assign(new Error("private operation details"), {
+                code: "CONVERSATION_PATH_CHANGED",
+                ...(kind === "refused" ? { conversationTargetRefused: true } : {}),
+              }),
+            );
+      const originalRename = fs.renameSync;
+      const originalStat = fs.lstatSync;
+      const originalUnlink = fs.unlinkSync;
+      let admitted = false,
+        deliveries = 0,
+        cleanupCalls = 0;
+      t.mock.method(fs, "renameSync", (from, to) => {
+        const result = originalRename(from, to);
+        if (to === directory) admitted = true;
+        return result;
+      });
+      t.mock.method(fs, "lstatSync", (file, ...rest) => {
+        if (admitted && file === marker) throw original;
+        return originalStat(file, ...rest);
+      });
+      t.mock.method(fs, "unlinkSync", (file, ...rest) => {
+        if (path.dirname(String(file)) === directory) {
+          cleanupCalls++;
+          throw Object.assign(new Error("fixture retained nonce"), { code: "UNKNOWN" });
+        }
+        return originalUnlink(file, ...rest);
+      });
+      const send = () =>
+        sendProjectConversation({
+          ...args,
+          body: "new private synthetic message",
+          deliver: async () => {
+            deliveries++;
+            return { outcome: "delivered" };
+          },
+        });
+      if (kind === "primitive") {
+        try {
+          await send();
+          assert.fail("expected original primitive");
+        } catch (error) {
+          assert.equal(error, original);
+        }
+      } else {
+        const result = await send();
+        assert.equal(result.originalOperationFailed, true);
+        assert.equal(result.reasonCode, "CONVERSATION_PATH_CHANGED");
+        assert.equal(result.state, kind === "refused" ? "refused" : "unknown");
+        assert.equal(result.persisted, false);
+        assert.equal(result.id === null, phase === "retention");
+        assert.doesNotMatch(JSON.stringify(result), /private operation details|new private synthetic message/);
+      }
+      assert.equal(deliveries, 0);
+      assert.equal(cleanupCalls, 3);
+      t.mock.restoreAll();
+    });
+  }
+}
+
+for (const phase of [
+  "before-enqueue",
+  "before-delivery",
+  "terminal",
+  "conflict",
+  "read-denied",
+  "wrong-claim",
+  "wrong-attempt",
+  "wrong-project",
+  "wrong-id",
+  "wrong-from",
+  "wrong-to",
+]) {
+  test(`lock cleanup readback at ${phase} never repeats a message effect`, async (t) => {
+    const { root, environment } = isolated(t);
+    const sender = caller("claude", "cleanup-sender");
+    const target = caller("codex", "cleanup-recipient");
+    const address = "codex:cleanup-recipient";
+    const slot = crypto.createHash("sha256").update(address).digest("hex");
+    register(root, environment, target, { kind: "codex-next-prompt" });
+    const messaging = path.join(root, ".lode", "messaging");
+    const args = { root, environment, caller: sender, to: address, now: fixedNow, waitMs: 0 };
+    if (phase === "before-enqueue") {
+      await sendProjectConversation({ ...args, body: "existing fixture", deliver: async () => ({ outcome: "unavailable" }) });
+    }
+    const originalUnlink = fs.unlinkSync;
+    const originalRead = fs.readFileSync;
+    const directory = path.join(messaging, ".delivery-locks", slot + ".lock");
+    let releases = 0,
+      deliveries = 0;
+    let injected = false;
+    let archived;
+    t.mock.method(fs, "unlinkSync", (file, ...rest) => {
+      if (path.dirname(String(file)) !== directory) return originalUnlink(file, ...rest);
+      releases++;
+      const failAt = ["before-enqueue", "before-delivery"].includes(phase) ? 1 : 2;
+      if (releases >= failAt) {
+        if (!injected) {
+          injected = true;
+          const archive = path.join(messaging, "archive", slot);
+          if (fs.existsSync(archive)) archived = fs.readdirSync(archive).find((name) => name.startsWith("msg-"));
+          if (phase === "conflict") {
+            const inflight = path.join(messaging, "inflight", slot);
+            fs.mkdirSync(inflight, { recursive: true });
+            fs.copyFileSync(path.join(archive, archived), path.join(inflight, archived + ".owned"));
+          }
+          if (phase.startsWith("wrong-")) {
+            const file = path.join(archive, archived);
+            const record = JSON.parse(originalRead(file, "utf8"));
+            if (phase === "wrong-claim") record.claim.token = "different-fixture-claim";
+            if (phase === "wrong-attempt") record.externalAttempt.token = "different-fixture-attempt";
+            if (phase === "wrong-project") record.projectRoot = root + "-other";
+            if (phase === "wrong-id") record.id = "msg-" + "0".repeat(24);
+            if (phase === "wrong-from") record.from.address = "claude:other-fixture-sender";
+            if (phase === "wrong-to") record.to.address = "codex:other-fixture-recipient";
+            fs.writeFileSync(file, JSON.stringify(record));
+          }
+        }
+        throw Object.assign(new Error("fixture release failure"), { code: "UNKNOWN" });
+      }
+      return originalUnlink(file, ...rest);
+    });
+    const originalOpen = fs.openSync;
+    if (phase === "read-denied")
+      t.mock.method(fs, "openSync", (file, ...rest) => {
+        if (injected && String(file).includes(path.join("archive", slot))) throw Object.assign(new Error("fixture read denied"), { code: "EACCES" });
+        return originalOpen(file, ...rest);
+      });
+    const result = await sendProjectConversation({
+      ...args,
+      body: "private fixture body",
+      deliver: async () => {
+        deliveries++;
+        return { outcome: "delivered", evidence: "fixture-receipt", receipt: { turnId: "fixture-turn" } };
+      },
+    });
+    assert.ok(injected);
+    assert.equal(deliveries, ["before-enqueue", "before-delivery"].includes(phase) ? 0 : 1);
+    assert.equal(result.state, phase === "terminal" ? "delivered" : "unknown");
+    assert.equal(result.persisted, ["before-delivery", "terminal"].includes(phase));
+    assert.equal(result.id === null, phase === "before-enqueue");
+    assert.equal(result.cleanup.ownerReleased, false);
+    assert.doesNotMatch(JSON.stringify(result), /private fixture body|different-fixture-claim|claim|externalAttempt/);
+    if (phase === "before-delivery") {
+      const inflight = path.join(messaging, "inflight", slot, result.id + ".json");
+      const record = JSON.parse(originalRead(inflight, "utf8"));
+      assert.ok(record.externalAttempt);
+      assert.equal(record.handedToHost, false);
+      assert.equal(record.state, "unknown");
+      assert.equal(fs.existsSync(path.join(messaging, "inbox", slot, result.id + ".json")), false);
+    }
+    t.mock.restoreAll();
+  });
+}
+
 test("three clients are listed with addresses and current reachability inside isolated homes", (t) => {
   const { root, environment, home } = isolated(t);
   const claude = caller("claude", "claude-live");
