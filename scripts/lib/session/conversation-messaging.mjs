@@ -9,6 +9,7 @@ import {
   assertConversationTarget,
 } from "./conversation-mailbox-storage.mjs";
 import { withLocalMutation } from "../storage/project-mutation-lock.mjs";
+import { mutationCleanupFailure } from "../storage/local-mutation-lock.mjs";
 import { resolveProjectStorage } from "../storage/project-storage-format.mjs";
 import { recordedRootSpelling } from "../storage/project-root-spelling.mjs";
 import { claudeChannel, claudeDeliver, claudeLive } from "./conversation-messaging-claude.mjs";
@@ -1381,21 +1382,97 @@ function resultOf(message, state, evidence) {
   };
 }
 
-export async function sendProjectConversation({
-  root,
-  caller = null,
-  environment = process.env,
-  to,
-  body,
-  replyTo = null,
-  hostTicket = null,
-  now = Date.now,
-  waitClock = Date.now,
-  platform = process.platform,
-  deliver = null,
-  waitMs = 0,
-  signal,
-} = {}) {
+// A cleanup error must be handled before the ordinary delivery catch performs
+// queue/preservation writes. Readback never restarts a handoff or repairs a lock.
+function cleanupConversationResult(observation, cleanup, error) {
+  const { project, message, from, target, owned } = observation;
+  const operationFailed = cleanup.operationReturned === false;
+  const reasonCode = operationFailed && /^[A-Z][A-Z0-9_]{0,63}$/.test(error?.code) ? error.code : null;
+  const base = {
+    ...resultOf(
+      message || { from, to: target },
+      operationFailed && error?.conversationTargetRefused === true ? "refused" : "unknown",
+      reasonCode || (message ? "lock-cleanup-outcome-unconfirmed" : "lock-cleanup-before-enqueue"),
+    ),
+    persisted: false,
+    cleanup: cleanup.diagnostic,
+    ...(operationFailed ? { originalOperationFailed: true, reasonCode } : {}),
+  };
+  if (!message) return base;
+  try {
+    project.io.assertCurrent();
+    const records = [];
+    for (const kind of ["archive", "inbox", "inflight"]) {
+      const file = messageFile(project, kind, message.to.address, message.id);
+      for (const candidate of kind === "inflight" ? [file, file + ".owned"] : [file]) {
+        let text;
+        try {
+          text = project.io.readFileSync(candidate, "utf8");
+        } catch (error) {
+          if (error.code === "ENOENT") continue;
+          throw error;
+        }
+        if (text.length > CONVERSATION_LIMITS.maxJsonBytes) return base;
+        const record = JSON.parse(text);
+        if (
+          record.schemaVersion !== 1 ||
+          record.projectRoot !== project.root ||
+          record.id !== message.id ||
+          record.body !== message.body ||
+          record.createdAt !== message.createdAt ||
+          record.replyTo !== message.replyTo ||
+          JSON.stringify(record.from) !== JSON.stringify(message.from) ||
+          JSON.stringify(record.to) !== JSON.stringify(message.to)
+        )
+          return base;
+        records.push(record);
+      }
+    }
+    // Conflicting copies or an unreadable location cannot prove a receipt.
+    if (records.length !== 1) return base;
+    const record = records[0];
+    const persisted = { ...base, persisted: true };
+    if (!owned) return persisted;
+    if (JSON.stringify(record.claim) !== JSON.stringify(owned.claim) || JSON.stringify(record.externalAttempt) !== JSON.stringify(owned.externalAttempt))
+      return base;
+    if (operationFailed) return persisted;
+    if (record.handedToHost === true && ["delivered", "sent"].includes(record.state))
+      return { ...resultOf(record, record.state, record.evidence), cleanup: cleanup.diagnostic };
+    return persisted;
+  } catch {
+    return base;
+  }
+}
+
+export async function sendProjectConversation(args = {}) {
+  const observation = {};
+  try {
+    return await sendProjectConversationObserved(args, observation);
+  } catch (error) {
+    const cleanup = mutationCleanupFailure(error);
+    if (!cleanup) throw error;
+    return cleanupConversationResult(observation, cleanup, error);
+  }
+}
+
+async function sendProjectConversationObserved(
+  {
+    root,
+    caller = null,
+    environment = process.env,
+    to,
+    body,
+    replyTo = null,
+    hostTicket = null,
+    now = Date.now,
+    waitClock = Date.now,
+    platform = process.platform,
+    deliver = null,
+    waitMs = 0,
+    signal,
+  } = {},
+  observation,
+) {
   if (signal?.aborted) fail("CONVERSATION_DELIVERY_CANCELLED");
   const project = openProject(root);
   const args = { project_root: root, to, body, reply_to: replyTo };
@@ -1404,6 +1481,7 @@ export async function sendProjectConversation({
   if (!validBody(body)) fail("CONVERSATION_BODY", "The message must be text of at most 6000 characters.");
   const target = parseAddress(to);
   if (!target) fail("CONVERSATION_ADDRESS", "Use runtime:id or runtime:id/agent.");
+  Object.assign(observation, { project, from, target });
   let original = null;
   if (replyTo != null) {
     original = findMessage(project, replyTo);
@@ -1442,10 +1520,13 @@ export async function sendProjectConversation({
     evidence: "inbox",
     handedToHost: false,
   };
+  observation.message = message;
   enqueue(project, message);
   let owned = withMailboxSlot(project, slot(target.address), () => {
     const claimed = claimMessage(project, message, now);
-    return claimed?.claim?.token ? beginAttempt(project, claimed, now) : null;
+    const attempted = claimed?.claim?.token ? beginAttempt(project, claimed, now) : null;
+    observation.owned = attempted;
+    return attempted;
   });
   if (!owned?.claim?.token) return resultOf(message, "queued", "inbox");
   try {
@@ -1475,6 +1556,7 @@ export async function sendProjectConversation({
     }
     if (!releaseClaim(project, owned)) return resultOf(owned, "unknown", "queue-handback-not-confirmed");
   } catch (error) {
+    if (mutationCleanupFailure(error)) throw error;
     if (owned.externalAttempt) {
       const state = error.conversationTargetRefused ? "refused" : "unknown";
       try {

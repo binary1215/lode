@@ -16,6 +16,88 @@ const READ_ATTEMPTS = 6;
 const READ_RETRY_MS = 10;
 const HOST = sha256Hex(os.hostname()).slice(0, 16);
 const OWNER = /^owner-([a-f0-9]{16})-([1-9][0-9]*)-([a-f0-9]{32})\.json$/;
+const cleanupFailures = new WeakMap();
+const sameEntry = (left, right) => left.dev === right.dev && left.ino === right.ino && left.isFile() && !left.isSymbolicLink();
+
+// Cleanup classification and returned values stay in private process memory.
+// They are never attached to errors (which an MCP host may serialize), and a
+// returned value is never proof that an operation persisted its effect.
+export function mutationCleanupFailure(error) {
+  return error !== null && (typeof error === "object" || typeof error === "function") ? (cleanupFailures.get(error) ?? null) : null;
+}
+
+function releaseCompletedOwner(owner) {
+  const validateNamespace = () => {
+    for (const [directory, identity] of owner.namespace) {
+      const current = safeDirectory(directory);
+      if (current.dev !== identity.dev || current.ino !== identity.ino) fail("Changed mutation namespace was preserved.", "INVALID_PROJECT_MUTATION_LOCK");
+    }
+  };
+  let first;
+  for (let index = 0; index < 3; index += 1) {
+    // Revalidate the namespace and the exact inode before every cleanup attempt.
+    // A changed/unreadable namespace is never permission to remove anything.
+    try {
+      validateNamespace();
+      let current;
+      try {
+        safeDirectory(owner.directory);
+        const directory = fs.lstatSync(owner.directory);
+        if (directory.dev !== owner.directoryIdentity.dev || directory.ino !== owner.directoryIdentity.ino)
+          fail("Changed mutation directory was preserved.", "INVALID_PROJECT_MUTATION_LOCK");
+        current = fs.lstatSync(owner.file);
+      } catch (error) {
+        if (error.code === "ENOENT") return;
+        throw error;
+      }
+      if (!owner.identity || !sameEntry(current, owner.identity)) fail("Changed mutation owner was preserved.", "INVALID_PROJECT_MUTATION_LOCK");
+      release(owner);
+      return;
+    } catch (error) {
+      first ??= error;
+      // Readback distinguishes a retained nonce from a completed unlink. Do not
+      // retry rmdir or unlink after ownership has already been released.
+      try {
+        validateNamespace();
+        const directory = fs.lstatSync(owner.directory, { throwIfNoEntry: false });
+        if (!directory) throw Object.assign(new Error("Lock cleanup failed after owner release."), { code: first.code, ownerReleased: true });
+        safeDirectory(owner.directory);
+        if (directory.dev !== owner.directoryIdentity.dev || directory.ino !== owner.directoryIdentity.ino) throw first;
+        const current = fs.lstatSync(owner.file, { throwIfNoEntry: false });
+        if (!current) throw Object.assign(new Error("Lock cleanup failed after owner release."), { code: first.code, ownerReleased: true });
+        if (!sameEntry(current, owner.identity)) throw first;
+      } catch (readback) {
+        throw readback;
+      }
+      if (!new Set(["UNKNOWN", "EPERM", "EACCES", "EBUSY"]).has(error.code) || index === 2) throw first;
+    }
+  }
+}
+
+export function finishMutation(owner, failed, error, result) {
+  try {
+    releaseCompletedOwner(owner);
+  } catch (cleanup) {
+    const diagnostic = Object.freeze({
+      code: /^[A-Z][A-Z0-9_]{0,63}$/.test(cleanup.code) ? cleanup.code : "UNKNOWN",
+      ownerReleased: cleanup.ownerReleased === true,
+    });
+    if (failed) {
+      // Frozen errors and primitive throws must survive with their identity.
+      if (error !== null && (typeof error === "object" || typeof error === "function")) cleanupFailures.set(error, { diagnostic, operationReturned: false });
+    } else {
+      const failure = Object.assign(new Error("The operation returned, but its local lock cleanup could not be confirmed. Do not repeat the operation."), {
+        code: "LOCAL_MUTATION_CLEANUP_FAILED",
+        cleanup: diagnostic,
+        operationReturned: true,
+      });
+      cleanupFailures.set(failure, { diagnostic, operationReturned: true, result });
+      throw failure;
+    }
+  }
+  if (failed) throw error;
+  return result;
+}
 
 export function fail(message, code = "PROJECT_MUTATION_BUSY") {
   throw Object.assign(new Error(message), { code });
@@ -134,6 +216,9 @@ export function attempt(directory) {
     // Publish a fully populated directory. The visible lock never has a gap
     // without owner identity, even when the publishing process exits abruptly.
     publishing = true;
+    owner.identity = fs.lstatSync(path.join(staging, name));
+    owner.directoryIdentity = fs.lstatSync(staging);
+    owner.namespace = [path.dirname(directory), path.dirname(path.dirname(directory))].map((entry) => [entry, safeDirectory(entry)]);
     renamePath(staging, directory);
     return owner;
   } catch (error) {
@@ -216,16 +301,20 @@ export function withLocalMutation({ directory, timeoutMs = WAIT_MS }, operation)
     if (Date.now() >= deadline) fail(`The ${path.basename(directory, ".lock")} operation is busy; retry this operation shortly.`);
     Atomics.wait(pause, 0, 0, 10);
   }
+  let result,
+    error,
+    failed = false;
   try {
     const active = new Map(context.getStore() || []);
     active.set(directory, owner);
-    const result = context.run(active, operation);
+    result = context.run(active, operation);
     if (result && typeof result.then === "function")
       fail("Use the asynchronous mutation coordinator for asynchronous operations.", "INVALID_PROJECT_MUTATION_OPERATION");
-    return result;
-  } finally {
-    release(owner);
+  } catch (caught) {
+    failed = true;
+    error = caught;
   }
+  return finishMutation(owner, failed, error, result);
 }
 
 // Destination-local coordination. It deliberately does not acquire a Project
@@ -241,11 +330,16 @@ export async function withLocalMutationAsync({ directory, timeoutMs = WAIT_MS },
     if (Date.now() >= deadline) fail("This document destination is busy; ordinary work remains available.");
     await delay(10);
   }
+  let result,
+    error,
+    failed = false;
   try {
     const active = new Map(context.getStore() || []);
     active.set(directory, owner);
-    return await context.run(active, operation);
-  } finally {
-    release(owner);
+    result = await context.run(active, operation);
+  } catch (caught) {
+    failed = true;
+    error = caught;
   }
+  return finishMutation(owner, failed, error, result);
 }
