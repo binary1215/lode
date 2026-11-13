@@ -9,6 +9,44 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.119 — 게시 결과는 별도 확인
+
+- 관리 파일이 기록된 바이트와 줄 끝만 다른 경우(예: checkout이 LF를 CRLF로 바꾼
+  경우) 명시적 resume이 원래 바이트로 복구합니다. 폴더를 옮긴 Project도 같습니다.
+  이전에는 이런 Project가 drift로 읽혔고, 옮긴 Project는 relocation할 수
+  없었습니다.
+  - 읽기 전용 status가 다음 단계를 알려 줍니다. 옮기지 않은 Project는
+    `core_drifted`와 `byteRepair`, 다음 단계 `resume_line_ending_repair`를,
+    옮긴 Project는 `relocation_available`(`PROJECT_RELOCATION_AVAILABLE`)과
+    `projectLocation.byteRepair`를 보고합니다. status와 대화 진입은 아무것도 쓰지
+    않습니다. resume 결과의 `byteRepair`가 복구한 내용을 보고합니다.
+  - 관리 파일이 줄 끝 이외의 내용까지 바뀌었거나 없으면 옮겼든 아니든 아무것도
+    복구하지 않습니다. resume은 그 파일을 알려 주는 `PROJECT_NOT_READY`로
+    거절하고, 옮긴 Project의 대화 진입도 같은 코드와 다음 단계
+    `review_managed_projection_drift`로 답합니다.
+  - 옮긴 Project의 status와 대화 진입은 이제 hook이 준비하지 않은 Claude Code
+    호출을 포함해 모든 호출자에게 `relocation_available`로 답합니다. 이전에는
+    그 경우 진입이 `NOT_INITIALIZED`로 답했습니다. 변경 tool은 resume이 새 위치를
+    채택하기 전까지 여전히 `NOT_INITIALIZED`로 답합니다.
+- 온보딩이 `ready`가 된 뒤 review하고 적용한 문서 변경이나 수락된 Product Policy
+  review로 Product Canon이 바뀌어도 status와 대화 진입은 ready 계열 상태를
+  유지합니다. 이전에는 온보딩 base와 다른 Canon이 모두
+  `ONBOARDING_PRODUCT_CANON_DRIFT`로 읽혔습니다.
+  - 온보딩 base 이후에 기록된 review 변경이 base에서 디스크의 Canon까지 하나씩,
+    각각 정확히 한 번 쓰이며 이어져야 합니다. `productCanonLineage`가 단계를
+    보여 줍니다. 온보딩 pointer는 다시 쓰지 않으며 저장된 기록 형식은 바뀌지
+    않았습니다. review된 되돌리기(A→B→C→B, A→B→A→B)도 인정합니다.
+  - 여전히 drift인 경우: 손으로 고친 Canon(이전 review 결과로 손으로 되돌린
+    경우와, review 변경은 다른 곳에서 끝났는데 손으로 base로 되돌린 경우 포함),
+    review했지만 적용하지 않은 변경, Canon 쓰기를 마치지 못한 수락된 Product
+    Policy review, base에서 시작하지 않는 변경. 읽거나 검증할 수 없는 기록은
+    `ONBOARDING_PRODUCT_SUCCESSOR_UNVERIFIABLE`입니다.
+  - 한계: 마지막 review 결과와 정확히 같은 바이트를 손으로 쓴 경우는 review
+    변경과 구별할 수 없습니다. World snapshot은 로컬에만 있고 git으로 추적하지
+    않으므로 새로 clone한 project에서는 어떤 변경이 base 이전인지 알 수 없습니다.
+    이때 Canon이 base와 같으면 이전처럼 ready로 읽히고, base 이전 변경이 기록된
+    project의 Canon이 base와 다르면 drift로 읽힙니다.
+
 ## 0.3.0-beta.118 — 게시 결과는 별도 확인
 
 - 대소문자를 구분하지 않는 파일 시스템에서, 디렉터리 이름이 기록된 Project

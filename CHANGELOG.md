@@ -11,6 +11,47 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.119 — publication tracked separately
+
+- Managed files whose only difference from the recorded bytes is their line
+  endings (for example after a checkout that converted LF to CRLF) are restored
+  by explicit resume, also for a Project whose folder moved. Before, such a
+  Project read as drifted and a moved one could not be relocated.
+  - Read-only status names the step: `core_drifted` with `byteRepair` and the
+    next action `resume_line_ending_repair` for a Project that did not move;
+    `relocation_available` (`PROJECT_RELOCATION_AVAILABLE`) with
+    `projectLocation.byteRepair` for a moved one. Status and conversation
+    entry write nothing. The resume result reports what it restored in
+    `byteRepair`.
+  - When a managed file changed beyond line endings or is missing, nothing is
+    repaired, moved or not: resume refuses with `PROJECT_NOT_READY` naming
+    those files, and conversation entry for a moved Project answers the same
+    code with the next action `review_managed_projection_drift`.
+  - Status and conversation entry for a moved Project now answer
+    `relocation_available` for every caller, including a Claude Code call that
+    no hook prepared. Before, entry answered `NOT_INITIALIZED` there. Mutating
+    tools still answer `NOT_INITIALIZED` until resume adopts the new location.
+- After onboarding is `ready`, Product Canon changed by a reviewed and applied
+  document change or by an accepted Product Policy review keeps the ready
+  family in status and conversation entry. Before, any Canon other than the
+  onboarding base read as `ONBOARDING_PRODUCT_CANON_DRIFT`.
+  - The reviewed changes recorded after the onboarding base must lead, one
+    after another, from the base to the Canon on disk, each used exactly once.
+    `productCanonLineage` lists the steps; the onboarding pointer is not
+    rewritten and no stored record format changed. Reviewed reverts
+    (A→B→C→B, A→B→A→B) are recognised.
+  - Still drift: a Canon edited by hand (including one restored by hand to an
+    earlier reviewed result, or to the base while the reviewed changes end
+    elsewhere), a change reviewed but not applied, an accepted Product Policy
+    review whose Canon write did not complete, and changes that do not start
+    from the base. Records that cannot be read or verified report
+    `ONBOARDING_PRODUCT_SUCCESSOR_UNVERIFIABLE`.
+  - Limits: a hand edit that writes exactly the latest reviewed result cannot
+    be told from the reviewed change. World snapshots are local and untracked,
+    so on a fresh clone it is unknown which changes precede the base: Canon
+    equal to the base then reads ready as before, and a Project with changes
+    recorded before its base whose Canon differs from the base reads as drift.
+
 ## 0.3.0-beta.118 — publication tracked separately
 
 - On a case-insensitive filesystem, a root whose directory names differ from
