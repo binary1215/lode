@@ -269,7 +269,8 @@ activation 실패 시 완전한 local graph mirror가 recovery path로 남으며
 `onboarding-status` 또는 `onboarding-candidates`로 current candidate set을 읽으세요.
 Review input은 정확한 current `candidateSetId`를 명시해야 합니다. stale source,
 Product Canon drift, candidate tampering 또는 다른 set이면 fail-closed 방식으로
-실패합니다.
+실패합니다. 완료된(`ready`) 온보딩은 다릅니다. 이후 Product Canon은 review된 변경으로
+바뀔 수 있습니다(아래 승격과 복구 참고).
 
 모든 candidate를 수락합니다.
 
@@ -370,6 +371,46 @@ snapshot ID를 바꾸거나 다시 승인받지 않고 준비 상태로 돌아�
 refresh도 준비 상태를 유지합니다. World base가 없으면 명시적 `world-index`로
 재구축하고, 기존 base가 stale이면 `world-refresh`를 사용합니다.
 Status는 어느 작업도 암묵적으로 실행하지 않습니다.
+
+온보딩이 `ready`가 된 뒤에는 새 온보딩 review 없이도 review·적용된 문서 변경
+(`world-docs-review`, `world-docs-apply`)이나 수락된 Product Policy review로
+Product Canon이 바뀔 수 있습니다. 이때 status와 대화 진입은 온보딩 base 이후에
+기록된 review 변경을 읽고, 그 변경들이 base에서 디스크의 Canon까지 하나씩 이어지면
+ready 계열 상태를 유지합니다. base 이전에 기록된 변경(base로 채택된 기존 Canon,
+또는 나중에 수락된 새 온보딩 제안)은 온보딩 상태와 함께 기록된 World에 나열된
+변경이며 단계로 세지 않습니다. base 이후 변경은 모두 정확히 한 번씩 쓰이고 순서는
+base에서 시작하므로, 디스크의 Canon은 가장 마지막 변경의 결과이거나 변경이 base로
+돌아온 경우 base 자체여야 합니다. 온보딩 pointer는 다시 쓰지 않습니다.
+`productCanonLineage`는 base부터의 단계를, `productModelRevisions.current`는 마지막
+단계의 revision을 보여 줍니다. review된 되돌리기(A→B→C→B, A→B→A→B)도 인정합니다.
+기록에는 변경 순서가 저장되지 않으므로 여러 순서가 가능하면 `hops`는 그중 하나를
+보여 줍니다(`hopOrder`).
+
+다음은 `ONBOARDING_PRODUCT_CANON_DRIFT`입니다.
+- 손으로 고친 Canon. 이전 review 결과로 손으로 되돌린 경우와, review 변경은 다른
+  곳에서 끝났는데 손으로 base로 되돌린 경우를 포함합니다.
+- review했지만 적용하지 않은 변경
+- Canon 쓰기를 마치지 못한 수락된 Product Policy review(그 review를 재시도)
+- 온보딩 base에서 시작하지 않는 변경
+
+읽거나 검증할 수 없는 기록(누락·변조·예상하지 않은 파일·읽는 도중 변경)은
+`ONBOARDING_PRODUCT_SUCCESSOR_UNVERIFIABLE`, 한 종류의 문서 변경 기록이 128개를
+넘으면 `DOCUMENT_CHANGE_PROJECTION_LIMIT`입니다. 진입은 두 경우 모두 일반 작업을
+막지 않고 `integrity_attention`으로 보고합니다.
+
+한계:
+- 마지막 결과와 정확히 같은 바이트를 손으로 쓴 경우는 review 변경 자체와 기록으로
+  구별할 수 없습니다.
+- World snapshot은 로컬에만 있고 git으로 추적하지 않으므로 새로 clone한 project에는
+  없습니다. 온보딩 상태와 함께 기록된 World를 읽을 수 없으면 어떤 변경이 base 이전인지
+  알 수 없습니다.
+  - Canon이 base와 같으면 변경 기록과 대조하지 않습니다(이전처럼 ready).
+  - Canon이 base와 다르면 모든 변경을 base 이후로 보므로, base 이전 변경이 기록된
+    project는 drift로 읽힙니다.
+  다시 만든 World가 기록된 World와 같을 때(source가 그대로일 때)만 도움이 됩니다.
+  source가 바뀐 뒤 다시 만든 World는 id가 다릅니다.
+- Canon이 base와 같고 변경 기록을 읽을 수 없으면 그 기록을 보고하지 않고 이전처럼
+  ready로 둡니다.
 
 읽기 전용 MCP tool `lode_onboarding` (`status`)는 state pointer, Session record, storage
 selection, current candidate set, successor-producing ReviewDecision, 최신 phase-appropriate

@@ -173,8 +173,10 @@ export function projectRelocationHint(root) {
   try {
     const location = inspectProjectLocationExperience({ root });
     if (!location || !["relocation_available", "relocation_pending"].includes(location.status)) return null;
+    let reasonCode = "PROJECT_RELOCATION_AVAILABLE";
+    if (location.status === "relocation_pending") reasonCode = "PROJECT_RELOCATION_PENDING";
     return {
-      reasonCode: location.status === "relocation_pending" ? "PROJECT_RELOCATION_PENDING" : "PROJECT_RELOCATION_AVAILABLE",
+      reasonCode,
       projectLocation: {
         status: location.status,
         projectId: location.retainedProject?.projectId ?? null,
@@ -183,8 +185,19 @@ export function projectRelocationHint(root) {
       },
       nextAction: location.nextAction,
     };
-  } catch {
-    return null;
+  } catch (error) {
+    // A moved Project whose managed files block relocation is still an existing
+    // Project: name the files (the status read answers the same), not "not initialized".
+    if (error?.code !== "PROJECT_NOT_READY") return null;
+    return {
+      reasonCode: "PROJECT_NOT_READY",
+      projectLocation: { status: "relocation_blocked", adopted: false, reason: error.message },
+      nextAction: {
+        id: "review_managed_projection_drift",
+        summary: error.message,
+        entrypoint: { tool: "lode_project_status" },
+      },
+    };
   }
 }
 

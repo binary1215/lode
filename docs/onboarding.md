@@ -219,7 +219,7 @@ Unrelated existing schema is compatible and preserved. Reset is available only f
 
 ## Batch review
 
-Read the current candidate set with `onboarding-status` or `onboarding-candidates`. Review input must name the exact current `candidateSetId`; stale source, Product Canon drift, candidate tampering, or a different set fails closed.
+Read the current candidate set with `onboarding-status` or `onboarding-candidates`. Review input must name the exact current `candidateSetId`; stale source, Product Canon drift, candidate tampering, or a different set fails closed. A completed (`ready`) onboarding is different: Product Canon may later change through reviewed changes (see Promotion and recovery below).
 
 Accept all candidates:
 
@@ -325,6 +325,51 @@ decision projection, readiness returns to ready without replacing historical
 approval snapshot IDs or asking for another approval. An unchanged refresh stays
 ready. A missing World base is rebuilt with explicit `world-index`; an existing
 stale base uses `world-refresh`. Status never runs either operation implicitly.
+
+Product Canon may change after onboarding is `ready` without a new onboarding
+review, through a reviewed and applied document change (`world-docs-review`,
+`world-docs-apply`) or an accepted Product Policy review. Status and
+conversation entry then read the reviewed changes recorded after the onboarding
+base and stay in the ready family when they lead, one after another, from the
+base to the Canon on disk. Changes recorded before the base (an existing Canon
+adopted as the base, or a fresh onboarding proposal accepted later) are the ones
+listed in the World recorded with the onboarding state; they are not steps.
+Every change after the base is used exactly once and the sequence starts at the
+base, so the Canon on disk must be the result of the latest change, or the base
+itself when the changes return to it. The onboarding pointer is not rewritten;
+`productCanonLineage` lists the steps from the base and
+`productModelRevisions.current` is the revision of the latest one. A reviewed
+revert (A→B→C→B, A→B→A→B) is recognised. Records do not store the order of
+changes, so when several orders fit, `hops` shows one of them (`hopOrder`).
+
+Reported as `ONBOARDING_PRODUCT_CANON_DRIFT`:
+- a Canon edited by hand, including one restored by hand to an earlier reviewed
+  result or to the base while the reviewed changes end elsewhere;
+- a change reviewed but not applied;
+- an accepted Product Policy review whose Canon write did not complete (retry
+  that review);
+- changes that do not start from the onboarding base.
+
+Records that cannot be read or verified (missing, altered, unexpected files, or
+changed while being read) report `ONBOARDING_PRODUCT_SUCCESSOR_UNVERIFIABLE`;
+more than 128 records of one document-change kind report
+`DOCUMENT_CHANGE_PROJECTION_LIMIT`. Entry reports both as `integrity_attention`
+without blocking ordinary work.
+
+Limits:
+- The records cannot tell a hand edit that writes exactly the latest result
+  from the reviewed change itself.
+- World snapshots are local and not tracked by git, so a fresh clone has none.
+  When the World recorded with the onboarding state is unavailable, it is
+  unknown which changes precede the base:
+  - Canon equal to the base is not checked against the changes (it reads
+    ready, as before);
+  - Canon different from the base treats every change as after the base, so a
+    project with changes recorded before its base reads as drift.
+  A rebuild helps only when it reproduces that recorded World (unchanged
+  sources); after a source change the rebuilt World has another id.
+- When the Canon equals the base and change records cannot be read, the answer
+  stays ready (as before) rather than reporting them.
 
 The read-only MCP tool `lode_onboarding` (`status`) verifies the state pointer, Session record, storage selection, current candidate set, successor-producing ReviewDecision, latest phase-appropriate ReviewDecision, Product Model revisions, Product Canon identity, and World Model freshness. For a review-pending successor the producer is also the latest decision; for `ready` or `rejected`, the latest decision must directly review the current successor and carry the matching acceptance or rejection disposition. The separate `lode_onboarding` (`review`) transaction accepts only an explicit user-authored disposition against the exact current candidate-set identity and delegates every promotion check to Core.
 

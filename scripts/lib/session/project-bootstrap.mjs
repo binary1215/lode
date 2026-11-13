@@ -23,7 +23,12 @@ import { inspectRecoveryCheckpointDiagnosis } from "./recovery-checkpoint-diagno
 import { actionability, withExperienceProjections } from "./experience-projection.mjs";
 import { linkProjectInstructions, validateInstructionIntegration } from "../storage/project-instruction-link.mjs";
 import { inspectPendingProjectImport } from "../storage/project-portability.mjs";
-import { resumeProjectLocation, repairProjectBytesForResume } from "../storage/project-relocation.mjs";
+import {
+  resumeProjectLocation,
+  inspectProjectResumeLocation,
+  inspectProjectByteRepairForResume,
+  repairProjectBytesForResume,
+} from "../storage/project-relocation.mjs";
 import {
   withSessionCallContext,
   validateRelocationSessionSelection,
@@ -386,6 +391,12 @@ function entrypoint(action, onboardingInspection = null) {
       mcpTool: publicToolName("lode_project_initialize_or_resume"),
       mcpArguments: { profile: "core" },
     },
+    resume_line_ending_repair: {
+      cli: `${CLI_DISPLAY} resume <project>`,
+      mcpTool: publicToolName("lode_project_initialize_or_resume"),
+      mcpArguments: { profile: "core" },
+      note: "Explicit resume restores the recorded bytes; status never repairs.",
+    },
     review_managed_projection_drift: {
       cli: `${CLI_DISPLAY} doctor <project>`,
       mcpTool: publicToolName("lode_project_status"),
@@ -718,14 +729,19 @@ function projectExperience(projectInspection, onboardingInspection = null, recov
   const unrelatedDefaultProductLoss = onboardingInspection?.unavailableDependency === "default-session";
   const context = contextReadiness({ coreState, productState: product.state, onboardingInspection });
   const recovery = recoveryOverride || recoveryReadiness(projectInspection);
+  // Same read-only preflight as resume: drift that is only line endings.
+  const lineEndingRepair =
+    coreState === "drifted" ? inspectProjectByteRepairForResume({ root: projectInspection.project.projectRoot, pluginRoot: activePluginRoot }) : null;
   const action =
     coreState === "ready"
       ? unrelatedDefaultProductLoss
         ? "work_directly"
         : product.action
-      : projectionDriftOnly
-        ? "work_directly"
-        : "review_managed_projection_drift";
+      : lineEndingRepair
+        ? "resume_line_ending_repair"
+        : projectionDriftOnly
+          ? "work_directly"
+          : "review_managed_projection_drift";
   return withExperienceProjections(
     {
       kind: "HeadProjectExperienceProjection",
@@ -736,6 +752,7 @@ function projectExperience(projectInspection, onboardingInspection = null, recov
       state: projectInspection.state,
       ...readProjectDirectionView({ root: projectInspection.project.projectRoot }),
       drift: projectInspection.drift,
+      ...(lineEndingRepair ? { byteRepair: lineEndingRepair } : {}),
       readiness: {
         core: { state: coreState, managedProjectionDriftCount: projectInspection.drift.length, ...(projectionDriftOnly ? { projectionDriftOnly: true } : {}) },
         product: {
@@ -766,9 +783,11 @@ function projectExperience(projectInspection, onboardingInspection = null, recov
           ? "Continue from the selected Session. Optional Product facts depending on the damaged default Session are unavailable; they are not a prerequisite for this work."
           : coreState === "ready"
             ? product.summary
-            : projectionDriftOnly
-              ? "Continue the task from verified records. Generated projection differences remain untouched; review them only before an affected managed mutation."
-              : "Review managed-file drift before any mutating Lode operation. No automatic repair is attempted.",
+            : lineEndingRepair
+              ? "Managed files differ from their recorded bytes only in line endings. Explicit resume restores the recorded bytes and keeps backups; ordinary work is not blocked."
+              : projectionDriftOnly
+                ? "Continue the task from verified records. Generated projection differences remain untouched; review them only before an affected managed mutation."
+                : "Review managed-file drift before any mutating Lode operation. No automatic repair is attempted.",
         entrypoint: entrypoint(action, onboardingInspection),
       },
       capabilities: capabilityGuide({ coreState, productState: product.state, contextState: context, runtimes: projectInspection.project.runtimes }),
@@ -812,10 +831,9 @@ export function inspectProjectLocationExperience({ root = ".", sessionId } = {})
       },
       authority: { plane: "P4", advisoryOnly: true, persisted: false, mutatesProject: false, grantsAuthorization: false, writesRecoveryDirection: false },
     });
-  const location = resumeProjectLocation({
+  const location = inspectProjectResumeLocation({
     root,
     pluginRoot: activePluginRoot,
-    inspectOnly: true,
     validateSelection:
       sessionId === undefined
         ? null
@@ -842,7 +860,9 @@ export function inspectProjectLocationExperience({ root = ".", sessionId } = {})
     },
     nextAction: {
       id: "resume_existing_project",
-      summary: "Explicitly resume this existing Project at the new folder; do not initialize a replacement. This read has not selected or restored a Session.",
+      summary: `Explicitly resume this existing Project at the new folder; do not initialize a replacement.${
+        location.byteRepair ? " Resume first restores the recorded bytes of managed files whose line endings changed (backups are kept)." : ""
+      } This read has not selected or restored a Session.`,
       entrypoint: { cli: "resume", tool: "lode_project_initialize_or_resume", profile: "core" },
     },
     authority: { plane: "P4", advisoryOnly: true, persisted: false, mutatesProject: false, grantsAuthorization: false, writesRecoveryDirection: false },
@@ -900,6 +920,7 @@ function bootstrapResponse({ root, profile, before, installation, onboardingActi
     projectAction: before.status === "not_initialized" ? "initialized" : "resumed",
     installationAction: installation.status,
     ...(installation.location ? { projectLocation: installation.location } : {}),
+    ...(installation.byteRepair ? { byteRepair: installation.byteRepair } : {}),
     ...(installation.instructionIntegration ? { instructionIntegration: installation.instructionIntegration } : {}),
     onboardingAction,
     inputDisposition,
@@ -948,7 +969,7 @@ export async function initializeOrResumeProject(options = {}) {
   };
   const validateSelection = (owner) => validateRelocationSessionSelection(owner, route ?? {});
   // Decide the explicit copy scope before even an exact-byte repair.
-  const locationPreview = resumeProjectLocation({ root, pluginRoot, runtimes, copiedProject, validateSelection, inspectOnly: true });
+  const locationPreview = inspectProjectResumeLocation({ root, pluginRoot, runtimes, copiedProject, validateSelection });
   if (locationPreview?.requiredChoice && copiedProject !== "verified-copy")
     fail(
       "The initial origin cannot be proved. Choose copiedProject=verified-copy for this exact local copy; no file has been changed.",
@@ -968,15 +989,16 @@ export async function initializeOrResumeProject(options = {}) {
   }
   const location = resumeProjectLocation({ root, pluginRoot, runtimes, copiedProject, validateSelection });
   if (location && byteRepair) location.byteRepair = byteRepair;
-  const operation = async () => await initializeOrResumeCurrentProject({ ...options, root, profile, onboardingInput, location });
+  const operation = async () => await initializeOrResumeCurrentProject({ ...options, root, profile, onboardingInput, location, byteRepair });
   if (!projectSessionRoute) return await operation();
   const unresolved = (reasonCode) => {
     const value = sessionSelectionUnresolved(root, { reasonCode });
-    if (!location) return value;
+    if (!location) return byteRepair ? { ...value, byteRepair } : value;
     const summary = "Project folder location recovery was applied. Logical Session selection and Host linkage remain unconfirmed; no execution was replayed.";
     return {
       ...value,
       projectLocation: location,
+      ...(byteRepair ? { byteRepair } : {}),
       nextHeadAction: `${summary} ${value.nextHeadAction}`,
       presentation: { ...value.presentation, mode: "exception", summary },
     };
@@ -1000,6 +1022,7 @@ async function initializeOrResumeCurrentProject({
   instructionIntegration = null,
   onValidatedSessionSelection = null,
   location = null,
+  byteRepair = null,
   installationContext = null,
   writeRootInstructionFiles = false,
 }) {
@@ -1024,6 +1047,8 @@ async function initializeOrResumeCurrentProject({
     installation = convergeProjectInstallation({ root, pluginRoot, runtimes, onValidatedSessionSelection, installationContext, writeRootInstructionFiles });
   }
   if (location) installation.location = location;
+  // A repair is reported whether or not the folder moved.
+  if (byteRepair) installation.byteRepair = byteRepair;
 
   if (instructionIntegration != null) installation.instructionIntegration = linkProjectInstructions({ root, choice: instructionIntegration });
   if (profile === "product") await recoverOnboardingPromotion({ root });

@@ -27,6 +27,16 @@ original recorded digest is reproduced exactly. Lode preserves the observed
 before bytes and checks each immediate before/after state. It never removes a
 BOM, rewrites historical paths, edits arbitrary JSON or changes hashes to accept
 a divergent record. Partial publication is recoverable, not globally atomic.
+Only explicit resume repairs. Read-only status and conversation entry for a moved
+Project in that state report `relocation_available`
+(`PROJECT_RELOCATION_AVAILABLE`) with `projectLocation.byteRepair` and name
+resume as the next step; for a Project that did not move, status reports
+`core_drifted` with `byteRepair` and the next action `resume_line_ending_repair`.
+A repair is reported in the resume result's `byteRepair`, also when the folder
+did not move. When a managed file changed beyond line endings or is missing,
+nothing is repaired, moved or not: resume refuses with `PROJECT_NOT_READY`
+naming those files, and conversation entry for a moved Project answers the same
+code.
 
 ## A selected portable bundle
 

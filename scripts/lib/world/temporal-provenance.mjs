@@ -2250,7 +2250,7 @@ function documentChangeProjectionDescriptor(projection) {
     projectionInputHash: projection.projectionInputHash,
     candidateSetIds: projection.candidateSets.map((item) => item.candidateSetId),
     reviewDecisionIds: projection.reviewDecisions.map((item) => item.reviewDecisionId),
-    productModelRevisionIds: projection.productModelRevisions.map((item) => `document-product-model-revision-${item.revisionHash.slice(0, 24)}`),
+    productModelRevisionIds: projection.productModelRevisions.map((item) => `document-product-model-revision-${item.revisionHash.slice(0, 24)}`).sort(),
     applicationReceiptIds: projection.applicationReceipts.map((item) => item.applicationReceiptId),
   };
 }

@@ -46,8 +46,32 @@ function validateManifest(root, directory, projectBytes, manifestBytes) {
   return manifest;
 }
 
+const blockingFiles = (unresolved) =>
+  fail(
+    `Managed file drift prevents relocation: ${unresolved.map((item) => `${item.path} (${item.reasonCode})`).join(", ")}. ` +
+      "Resume restores only files whose line endings changed; no file has been changed.",
+    "PROJECT_NOT_READY",
+  );
+
+// Read-only: the managed files that explicit resume would restore, when every
+// difference is a line-ending change it can restore. Otherwise null.
+export function inspectProjectByteRepairForResume(options = {}) {
+  try {
+    const root = fs.realpathSync(path.resolve(options.root || "."));
+    if (![".lode", ".head"].some((directory) => fs.existsSync(path.join(root, directory, "project.json")))) return null;
+    const input = inspectProjectCopyInput({ ...options, root, validateSelection: null });
+    if (fs.existsSync(safeLocationFile(root, input.directory, locationJournalRelative))) return null;
+    const plan = inspectManagedByteRepairs({ root, directory: input.directory, manifest: input.manifest });
+    if (!plan.repairs.length || plan.unresolved.length) return null;
+    return { status: "available-on-resume", paths: plan.repairs.map((item) => item.path), transformation: "exact-recorded-digest-line-ending-repair" };
+  } catch {
+    return null;
+  }
+}
+
 // Exact recorded bytes can be restored during explicit resume, after the same
-// pure owner/Session/runtime checks. Missing and edited files remain untouched.
+// pure owner/Session/runtime checks. When any managed file is missing or
+// changed beyond line endings, nothing is repaired and the refusal names it.
 export function repairProjectBytesForResume(options = {}) {
   const root = fs.realpathSync(path.resolve(options.root || "."));
   const local = [".lode", ".head"].filter((directory) => fs.existsSync(path.join(root, directory, "project.json")));
@@ -61,8 +85,36 @@ export function repairProjectBytesForResume(options = {}) {
   else inspectProjectCopyOrigin(root, input.directory, input.project);
   const plan = inspectManagedByteRepairs({ root, directory: input.directory, manifest: input.manifest });
   if (!plan.repairs.length) return null;
+  if (plan.unresolved.length) blockingFiles(plan.unresolved);
   options.validateSelection?.({ root, storage: { dialect: input.dialect, directory: input.directory }, project: input.project });
   return repairManagedProjectBytes({ root, directory: input.directory, manifest: input.manifest });
+}
+
+// Explicit resume may reach the recorded-byte repair after a read-only
+// preflight; status uses the same preflight to name resume as the next step.
+// Relocation publication still requires exact on-disk digests. Do not treat
+// arbitrary drift or a pending journal as repair.
+export function inspectProjectResumeLocation(options = {}) {
+  try {
+    return resumeProjectLocation({ ...options, inspectOnly: true });
+  } catch (error) {
+    if (error.code !== "PROJECT_NOT_READY") throw error;
+    const input = inspectProjectCopyInput(options);
+    if (fs.existsSync(safeLocationFile(input.currentRoot, input.directory, locationJournalRelative))) throw error;
+    verifyProjectLocation(input.currentRoot, input.directory, input.project);
+    const plan = inspectManagedByteRepairs({ root: input.currentRoot, directory: input.directory, manifest: input.manifest });
+    // Name the files that block the repair, not the first file that differs.
+    if (plan.unresolved.length) blockingFiles(plan.unresolved);
+    if (!plan.repairs.length) throw error;
+    return {
+      status: "relocation-byte-repair-needed",
+      projectId: input.project.projectId,
+      projectRoot: input.currentRoot,
+      previousRoot: input.project.projectRoot,
+      byteRepair: { status: "available-on-resume", paths: plan.repairs.map((item) => item.path), transformation: "exact-recorded-digest-line-ending-repair" },
+      persisted: false,
+    };
+  }
 }
 
 // An explicit initialize/resume may adopt only the local copied owner. No old

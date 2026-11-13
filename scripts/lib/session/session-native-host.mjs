@@ -6,6 +6,17 @@ const helperName = (name) => semanticToolName(name) === "lode_session_host_reque
 const routerName = (name) => ["lode_tools_read", "lode_tools_call"].includes(semanticToolName(name));
 const hasProjectMarker = (root) => [".head", ".lode"].some((directory) => fs.existsSync(path.join(root, directory, "project.json")));
 import { projectHasSingleSession, sessionCallRequiresBinding } from "./session-routing.mjs";
+import { resolveProjectStorage } from "../storage/project-storage-format.mjs";
+// A marker recorded for another root (a moved Project) is not a Project here.
+// Selection errors other than that keep the existing route and its answer.
+const markerOwnedElsewhere = (root) => {
+  try {
+    return !resolveProjectStorage(root);
+  } catch (error) {
+    if (error.code === "PROJECT_ROOT_SPELLING_RETRY") throw error;
+    return false;
+  }
+};
 import { createSessionHostRequestRegistry, parseClaudeNativeToolName } from "./session-host-request.mjs";
 import { subagentWriteGuardEnabled } from "./subagent-write-guard.mjs";
 import { effectiveToolCall } from "../core/operation-groups.mjs";
@@ -298,6 +309,10 @@ export function createNativeSessionHostBridge({
           };
         return response;
       }
+      // A moved Project has no Session here to claim: status and entry read it
+      // without one, as an unverified caller does, and name the explicit resume.
+      if (name !== "lode_project_initialize_or_resume" && hasProjectMarker(args.project_root) && markerOwnedElsewhere(args.project_root))
+        return handler(request, route());
       return handler(request, route({ resolveSessionContext: missingCaller }));
     }
     let adapter;
@@ -318,13 +333,17 @@ export function createNativeSessionHostBridge({
       name === "lode_project_initialize_or_resume" &&
       semanticToolName(request.params?.name) !== "lode_tools_read" &&
       (args.profile === undefined || ["core", "product"].includes(args.profile));
+    // Status and entry for a moved Project read it without a Session, as an
+    // unverified caller does, so they can name the explicit resume. Resume
+    // itself keeps its own selection path.
+    const relocated = initialized && !selecting && markerOwnedElsewhere(args.project_root);
     let prepared = null,
       preparationFailure = null,
       selectionBasis = null,
       requestContext = null;
     const resolveSessionContext = (original) => {
       if (prepared) return prepared.context;
-      if (!initialized) return null;
+      if (!initialized || relocated) return null;
       if (requestContext) return requestContext;
       // A Claude /clear may replace its native ID without an authenticated
       // old→new continuity edge. An absent binding must not silently switch
