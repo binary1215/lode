@@ -309,6 +309,10 @@ export function createNativeSessionHostBridge({
           };
         return response;
       }
+      // A moved Project has no Session here to claim: status and entry read it
+      // without one, as an unverified caller does, and name the explicit resume.
+      if (name !== "lode_project_initialize_or_resume" && hasProjectMarker(args.project_root) && markerOwnedElsewhere(args.project_root))
+        return handler(request, route());
       return handler(request, route({ resolveSessionContext: missingCaller }));
     }
     let adapter;

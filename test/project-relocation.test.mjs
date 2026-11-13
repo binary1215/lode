@@ -85,13 +85,14 @@ test("public resume restores exact recorded newline bytes before strict relocati
   assert.equal(result.projectLocation.byteRepair.status, "original-bytes-restored");
   assert.equal(result.projectLocation.nativeBindingTransferred, false);
   assert.equal(result.projectLocation.executionReplayAllowed, false);
+  assert.ok(result.projectLocation.byteRepair.applied.length > 0);
   for (const repair of result.projectLocation.byteRepair.applied) {
     assert.deepEqual(fs.readFileSync(path.join(f.moved, repair.backup)), f.observed.get(repair.path));
   }
   assert.equal(inspectProject(f.moved).status, "ready");
 });
 
-test("resume reports a line-ending repair in a Project that did not move", async (t) => {
+async function inPlaceNewlineFixture(t) {
   const base = fs.mkdtempSync(path.join(pluginRoot, ".qa-newline-in-place-"));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const root = path.join(base, "project");
@@ -101,6 +102,19 @@ test("resume reports a line-ending repair in a Project that did not move", async
     const file = path.join(root, entry.path);
     fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(/\r?\n/g, "\r\n"));
   }
+  return { base, root };
+}
+
+test("resume reports a line-ending repair in a Project that did not move", async (t) => {
+  const { root } = await inPlaceNewlineFixture(t);
+  // Status reads the same preflight as resume and names it; it repairs nothing.
+  const before = snapshot(root);
+  const status = await runCommand(["status", root]);
+  assert.equal(status.status, "core_drifted");
+  assert.equal(status.nextAction.id, "resume_line_ending_repair");
+  assert.equal(status.nextAction.entrypoint.mcpTool.endsWith("lode_project_initialize_or_resume"), true);
+  assert.equal(status.byteRepair.status, "available-on-resume");
+  assert.deepEqual(snapshot(root), before);
   const result = await initializeOrResumeProject({ root, pluginRoot, instructionIntegration: "preserve" });
   assert.equal(result.projectLocation, undefined, "the folder did not move");
   assert.equal(result.byteRepair.status, "original-bytes-restored");
@@ -112,6 +126,44 @@ test("resume reports a line-ending repair in a Project that did not move", async
     undefined,
     "a second resume repairs nothing",
   );
+});
+
+test("a Project that did not move, with line endings changed and one file edited, is refused unchanged", async (t) => {
+  const { root } = await inPlaceNewlineFixture(t);
+  fs.appendFileSync(path.join(root, ".lode/roles/developer.md"), "user edit\r\n");
+  const status = await runCommand(["status", root]);
+  assert.equal(status.nextAction.id, "review_managed_projection_drift", "real edits keep the previous answer");
+  const before = snapshot(root);
+  await assert.rejects(initializeOrResumeProject({ root, pluginRoot, instructionIntegration: "preserve" }), {
+    code: "PROJECT_NOT_READY",
+    message: /\.lode\/roles\/developer\.md \(MANAGED_CONTENT_EDITED\)/,
+  });
+  assert.deepEqual(snapshot(root), before, "nothing is repaired");
+});
+
+test("entry for a moved Project names what blocks it, for every caller", async (t) => {
+  const f = await newlineRelocationFixture(t);
+  const call = async (name, meta = null, bridge = null) => {
+    const response = await dispatch(
+      { jsonrpc: "2.0", id: name, method: "tools/call", params: { ...(meta ? { _meta: meta } : {}), name, arguments: { project_root: f.moved } } },
+      bridge ? { nativeSessionBridge: bridge } : {},
+    );
+    return response.error ? { error: response.error.data?.reasonCode, message: response.error.message } : response.result.structuredContent;
+  };
+  // A Claude Code call the PreToolUse hook did not prepare.
+  const claude = createNativeSessionHostBridge({ runtime: "claude", environment: { HEAD_AGENT_OPERATIONAL_STATE_ROOT: path.join(f.base, "host") } });
+  t.after(() => claude.dispose());
+  const unprepared = await call("lode_conversation_enter", { "claudecode/toolUseId": "unprepared-entry" }, claude);
+  assert.equal(unprepared.reasonCode, "PROJECT_RELOCATION_AVAILABLE");
+  // One managed file also edited: status refuses naming it, and entry says the same.
+  fs.appendFileSync(path.join(f.moved, ".lode/roles/developer.md"), "user edit\r\n");
+  const status = await call("lode_project_status");
+  assert.equal(status.error, "PROJECT_NOT_READY");
+  assert.match(status.message, /developer\.md \(MANAGED_CONTENT_EDITED\)/);
+  const entered = await call("lode_conversation_enter");
+  assert.equal(entered.status, "conversation_recovery_unavailable");
+  assert.equal(entered.reasonCode, "PROJECT_NOT_READY");
+  assert.match(entered.nextAction.summary, /developer\.md/);
 });
 
 test("newline relocation refuses edited, missing and invalid owner inputs without repair", async (t) => {

@@ -1633,3 +1633,98 @@ for (const order of ["policy only", "document then policy", "policy then documen
     assert.equal(status.productCanonLineage.current.revision.productModelHash, status.productModel.productModelHash);
     assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).status, "ready_world_unchecked");
   });
+
+const canonBytes = (f) => fs.readFileSync(path.join(f.root, f.canonPath));
+async function expectDrift(f, message) {
+  await assert.rejects(() => inspectOnboarding({ root: f.root }), { code: "ONBOARDING_PRODUCT_CANON_DRIFT" }, message);
+  const entry = await inspectOptionalOnboardingForEntry({ root: f.root });
+  assert.equal(entry.status, "integrity_attention", message);
+  assert.equal(entry.reasonCode, "ONBOARDING_PRODUCT_CANON_DRIFT", message);
+}
+
+// The sequence starts at the onboarding base, so a reviewed history that
+// returns to the base fixes its end at the base.
+for (const [name, steps, restore] of [
+  ["A→B→A, then B by hand", ["Contract B", null], 0],
+  ["A→B→C→A, then B by hand", ["Contract B", "Contract C", null], 0],
+  ["A→B→C→A, then C by hand", ["Contract B", "Contract C", null], 1],
+])
+  test(`a reviewed history back at the base, then an earlier result restored by hand, is drift: ${name}`, async (t) => {
+    const f = await fixture();
+    t.after(() => fs.rmSync(f.root, { recursive: true, force: true }));
+    await reviewOnboarding(f.request);
+    const original = JSON.parse(canonBytes(f)).capabilities[0].description;
+    const results = [];
+    for (const step of steps) {
+      await appendReviewedDocument(f.root, f.layout, step ?? original);
+      results.push(canonBytes(f));
+    }
+    assert.equal((await inspectOnboarding({ root: f.root })).status, "ready", "the reviewed history itself is ready");
+    fs.writeFileSync(path.join(f.root, f.canonPath), results[restore]);
+    await expectDrift(f, name);
+  });
+
+test("Canon equal to the onboarding base is checked against the reviewed changes after the base", async (t) => {
+  const f = await fixture();
+  t.after(() => fs.rmSync(f.root, { recursive: true, force: true }));
+  await reviewOnboarding(f.request);
+  const base = canonBytes(f);
+  // Reviewed A→B→A stays ready.
+  const original = JSON.parse(base).capabilities[0].description;
+  await appendReviewedDocument(f.root, f.layout, "Contract B");
+  await appendReviewedDocument(f.root, f.layout, original);
+  assert.equal((await inspectOnboarding({ root: f.root })).status, "ready");
+  // An accepted Product Policy change from the base whose Canon is not on disk
+  // (here put back by hand, the same state as an unfinished Canon write).
+  const proposed = await proposeProductPolicy({
+    root: f.root,
+    operation: "create",
+    key: "exact-evidence",
+    name: "Exact evidence",
+    statement: "Use exact evidence.",
+  });
+  await reviewProductPolicy({ root: f.root, candidateId: proposed.candidate.candidateId, disposition: "accept", rationale: "Synthetic acceptance." });
+  assert.notDeepEqual(canonBytes(f), base);
+  fs.writeFileSync(path.join(f.root, f.canonPath), base);
+  const before = successorTreeObservation(f.root);
+  await expectDrift(f, "accepted change from the base not on disk");
+  assert.deepEqual(successorTreeObservation(f.root), before);
+});
+
+test("a reviewed change after an accepted fresh onboarding proposal reads ready from the new base", async (t) => {
+  const f = await approvedDocumentSuccessorFixture(t, true, 1);
+  const world = (await inspectWorldModel({ root: f.root })).snapshot;
+  const proposed = await proposeOnboardingSemanticRefresh({
+    root: f.root,
+    semanticProposal: {
+      schemaVersion: 1,
+      sourceSnapshotId: world.temporalProvenanceGraph.sourceSnapshotId,
+      candidates: [
+        {
+          productKind: "Capability",
+          proposedEntity: { key: "fresh-delivery", name: "Fresh delivery", description: "Fresh explicitly reviewed proposal." },
+          evidence: [{ path: "README.md", line: 1 }],
+          explanation: "Synthetic current source evidence.",
+          confidence: 0.9,
+        },
+      ],
+    },
+  });
+  await reviewOnboarding({
+    root: f.root,
+    candidateSetId: proposed.candidateSet.candidateSetId,
+    disposition: "accept-all",
+    rationale: "Adopt the fresh proposal.",
+  });
+  const rebased = await inspectOnboarding({ root: f.root });
+  assert.equal(rebased.status, "ready");
+  const newBase = rebased.state.productModelId;
+  assert.equal(rebased.productModel.productModelId, newBase);
+  assert.equal((await appendReviewedDocument(f.root, f.layout, "Contract after the new base")).result.status, "applied");
+  const status = await inspectOnboarding({ root: f.root });
+  assert.ok(["ready", "ready_world_changed"].includes(status.status), status.status);
+  // The change before the new base precedes it; only the change after it is a step.
+  assert.equal(status.productCanonLineage.hops.length, 1);
+  assert.equal(status.productCanonLineage.hops[0].previousProductModelId, newBase);
+  assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).status, "ready_world_unchecked");
+});

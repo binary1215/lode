@@ -23,7 +23,12 @@ import { inspectRecoveryCheckpointDiagnosis } from "./recovery-checkpoint-diagno
 import { actionability, withExperienceProjections } from "./experience-projection.mjs";
 import { linkProjectInstructions, validateInstructionIntegration } from "../storage/project-instruction-link.mjs";
 import { inspectPendingProjectImport } from "../storage/project-portability.mjs";
-import { resumeProjectLocation, inspectProjectResumeLocation, repairProjectBytesForResume } from "../storage/project-relocation.mjs";
+import {
+  resumeProjectLocation,
+  inspectProjectResumeLocation,
+  inspectProjectByteRepairForResume,
+  repairProjectBytesForResume,
+} from "../storage/project-relocation.mjs";
 import {
   withSessionCallContext,
   validateRelocationSessionSelection,
@@ -386,6 +391,12 @@ function entrypoint(action, onboardingInspection = null) {
       mcpTool: publicToolName("lode_project_initialize_or_resume"),
       mcpArguments: { profile: "core" },
     },
+    resume_line_ending_repair: {
+      cli: `${CLI_DISPLAY} resume <project>`,
+      mcpTool: publicToolName("lode_project_initialize_or_resume"),
+      mcpArguments: { profile: "core" },
+      note: "Explicit resume restores the recorded bytes; status never repairs.",
+    },
     review_managed_projection_drift: {
       cli: `${CLI_DISPLAY} doctor <project>`,
       mcpTool: publicToolName("lode_project_status"),
@@ -718,14 +729,19 @@ function projectExperience(projectInspection, onboardingInspection = null, recov
   const unrelatedDefaultProductLoss = onboardingInspection?.unavailableDependency === "default-session";
   const context = contextReadiness({ coreState, productState: product.state, onboardingInspection });
   const recovery = recoveryOverride || recoveryReadiness(projectInspection);
+  // Same read-only preflight as resume: drift that is only line endings.
+  const lineEndingRepair =
+    coreState === "drifted" ? inspectProjectByteRepairForResume({ root: projectInspection.project.projectRoot, pluginRoot: activePluginRoot }) : null;
   const action =
     coreState === "ready"
       ? unrelatedDefaultProductLoss
         ? "work_directly"
         : product.action
-      : projectionDriftOnly
-        ? "work_directly"
-        : "review_managed_projection_drift";
+      : lineEndingRepair
+        ? "resume_line_ending_repair"
+        : projectionDriftOnly
+          ? "work_directly"
+          : "review_managed_projection_drift";
   return withExperienceProjections(
     {
       kind: "HeadProjectExperienceProjection",
@@ -736,6 +752,7 @@ function projectExperience(projectInspection, onboardingInspection = null, recov
       state: projectInspection.state,
       ...readProjectDirectionView({ root: projectInspection.project.projectRoot }),
       drift: projectInspection.drift,
+      ...(lineEndingRepair ? { byteRepair: lineEndingRepair } : {}),
       readiness: {
         core: { state: coreState, managedProjectionDriftCount: projectInspection.drift.length, ...(projectionDriftOnly ? { projectionDriftOnly: true } : {}) },
         product: {
@@ -766,9 +783,11 @@ function projectExperience(projectInspection, onboardingInspection = null, recov
           ? "Continue from the selected Session. Optional Product facts depending on the damaged default Session are unavailable; they are not a prerequisite for this work."
           : coreState === "ready"
             ? product.summary
-            : projectionDriftOnly
-              ? "Continue the task from verified records. Generated projection differences remain untouched; review them only before an affected managed mutation."
-              : "Review managed-file drift before any mutating Lode operation. No automatic repair is attempted.",
+            : lineEndingRepair
+              ? "Managed files differ from their recorded bytes only in line endings. Explicit resume restores the recorded bytes and keeps backups; ordinary work is not blocked."
+              : projectionDriftOnly
+                ? "Continue the task from verified records. Generated projection differences remain untouched; review them only before an affected managed mutation."
+                : "Review managed-file drift before any mutating Lode operation. No automatic repair is attempted.",
         entrypoint: entrypoint(action, onboardingInspection),
       },
       capabilities: capabilityGuide({ coreState, productState: product.state, contextState: context, runtimes: projectInspection.project.runtimes }),

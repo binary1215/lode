@@ -135,28 +135,26 @@ function policyEdges(root, observed, projectId, storage, readPolicyRevision) {
 }
 
 // Each reviewed change is written only while Canon equals its previous model,
-// so the changes actually applied form one sequence, each starting where the
-// previous one ended. Receipts carry no order of their own; this finds such a
-// sequence that uses every recorded change exactly once. Its end is fixed by
-// the records (the one model entered once more than it is left), so the Canon
-// on disk must be the result of the latest change: a later Canon restored by
-// hand, or any change made outside review, is drift. Changes recorded before
-// the onboarding base (an existing Canon adopted as the base) are a prefix of
-// the same sequence; the steps from the base onward are returned.
-function sequenceThrough(base, end, edges) {
+// so the changes actually applied after the onboarding base form one sequence
+// from that base, each starting where the previous one ended. Receipts carry
+// no order of their own; this finds such a sequence that uses every recorded
+// change exactly once. Its start is the base and its end is fixed by the
+// records (the one model entered once more than it is left, or the base when
+// every model is entered as often as it is left), so the Canon on disk must be
+// the result of the latest change: a Canon restored by hand to an earlier
+// reviewed result, or any change made outside review, is drift.
+function sequenceFrom(start, end, edges) {
   const balance = new Map();
   const shift = (node, by) => balance.set(node, (balance.get(node) || 0) + by);
   for (const edge of edges) {
     shift(edge.previous, 1);
     shift(edge.resulting, -1);
   }
-  const unbalanced = [...balance].filter(([, value]) => value !== 0);
-  let start = end;
-  if (unbalanced.length) {
-    const first = unbalanced.find(([, value]) => value === 1);
-    if (unbalanced.length !== 2 || !first || balance.get(end) !== -1) return null;
-    start = first[0];
+  for (const [node, value] of balance) {
+    const expected = start === end ? 0 : node === start ? 1 : node === end ? -1 : 0;
+    if (value !== expected) return null;
   }
+  if (start !== end && (balance.get(start) !== 1 || balance.get(end) !== -1)) return null;
   // Hierholzer: deterministic order (by record id) among equally valid sequences.
   const outgoing = new Map();
   for (const edge of [...edges].sort((left, right) => right.id.localeCompare(left.id))) {
@@ -176,23 +174,48 @@ function sequenceThrough(base, end, edges) {
   }
   sequence.reverse();
   if (sequence.length !== edges.length) return null;
-  let cursor = start,
-    fromBase = cursor === base ? 0 : -1;
-  for (const [index, edge] of sequence.entries()) {
+  let cursor = start;
+  for (const edge of sequence) {
     if (edge.previous !== cursor) return null;
     cursor = edge.resulting;
-    if (fromBase < 0 && cursor === base) fromBase = index + 1;
   }
-  if (cursor !== end || fromBase < 0 || fromBase === sequence.length) return null;
-  return sequence.slice(fromBase);
+  return cursor === end ? sequence : null;
 }
+
+// Changes already on record when the base was established precede it (an
+// existing Canon adopted as the base, or a later onboarding review that moved
+// the base). The World recorded with the onboarding state names exactly those
+// records; without that World nothing is treated as preceding the base.
+async function recordsBeforeBase(root, state, snapshot = null) {
+  let world = snapshot;
+  if (!world) {
+    if (!state.worldModelId) return null;
+    try {
+      world = (await readWorldModelSnapshot({ root, worldModelId: state.worldModelId })).snapshot;
+    } catch (error) {
+      if (["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING"].includes(error.code)) return null;
+      throw error;
+    }
+  }
+  const graph = world.temporalProvenanceGraph || {};
+  const receipts = graph.documentChangeProjection?.applicationReceiptIds;
+  const policies = graph.productPolicyProjection?.reviewDecisionIds;
+  if (!Array.isArray(receipts) && !Array.isArray(policies)) return null;
+  return new Set([...(Array.isArray(receipts) ? receipts : []), ...(Array.isArray(policies) ? policies : [])]);
+}
+const afterBase = (edges, before) => (before ? edges.filter((edge) => !before.has(edge.id)) : edges);
+
+// Per process: the same records, base and Canon give the same verified answer.
+const verifiedSequences = new Map();
+const MAX_CACHED = 32;
 
 // The caller has verified the completed onboarding review or opaque historical
 // boundary. Its base remains unchanged; only reviewed changes on record can
 // explain today's different Canon. No projection grants approval.
 export async function readOnboardingProductSuccessor({ root, storage, projectId, state, currentModel, baseRevision = null, readPolicyRevision }) {
   if (state.phase !== "ready" || state.projectId !== projectId) fail("Only a completed ready onboarding base can have a reviewed successor.");
-  let base;
+  let base,
+    baseWorld = null;
   if (baseRevision) {
     verifyProductModelRevisionForProjection(baseRevision, storage);
     if (baseRevision.productModelId !== state.productModelId || (baseRevision.projectId && baseRevision.projectId !== projectId))
@@ -203,6 +226,7 @@ export async function readOnboardingProductSuccessor({ root, storage, projectId,
     const { snapshot } = await readWorldModelSnapshot({ root, worldModelId: state.worldModelId });
     if (snapshot.projectId !== projectId || snapshot.productModel.productModelId !== state.productModelId)
       fail("Recorded onboarding World does not prove its original Product base.");
+    baseWorld = snapshot;
     base = {
       family: "recorded-world",
       worldModelId: state.worldModelId,
@@ -210,21 +234,33 @@ export async function readOnboardingProductSuccessor({ root, storage, projectId,
       productModelHash: snapshot.productModel.productModelHash,
     };
   }
+  const start = identity(base.productModelId, base.productModelHash),
+    end = identity(currentModel.productModelId, currentModel.productModelHash);
   const observed = verifiable(() => observeOriginals(root, storage));
-  const edges = verifiable(() => [...documentEdges(root, observed, projectId), ...policyEdges(root, observed, projectId, storage, readPolicyRevision)]);
-  const sequence = sequenceThrough(
-    identity(base.productModelId, base.productModelHash),
-    identity(currentModel.productModelId, currentModel.productModelHash),
-    edges,
+  const key = JSON.stringify([root, storage.directory, projectId, state.worldModelId || null, start, end, observed]);
+  if (verifiedSequences.has(key)) {
+    const cached = structuredClone(verifiedSequences.get(key));
+    // A Policy result revision lives outside the observed records: reread it.
+    if (cached.current.family === "product-policy") {
+      const revision = verifiable(() => readPolicyRevision(currentModel.productModelId));
+      if (revision.productModelHash !== currentModel.productModelHash) fail("Reviewed successor revision does not match current Canon.");
+    }
+    return cached;
+  }
+  const before = await recordsBeforeBase(root, state, baseWorld);
+  const edges = afterBase(
+    verifiable(() => [...documentEdges(root, observed, projectId), ...policyEdges(root, observed, projectId, storage, readPolicyRevision)]),
+    before,
   );
-  if (!sequence) fail("The reviewed Product Canon changes on record do not lead from the onboarding base to the current Canon.");
+  const sequence = start === end ? null : sequenceFrom(start, end, edges);
+  if (!sequence || !sequence.length) fail("The reviewed Product Canon changes on record do not lead from the onboarding base to the current Canon.");
   const last = sequence[sequence.length - 1];
   const currentRevision = verifiable(last.revision);
   if (currentRevision.productModelId !== currentModel.productModelId || currentRevision.productModelHash !== currentModel.productModelHash)
     fail("Reviewed successor revision does not match current Canon.");
   if (JSON.stringify(verifiable(() => observeOriginals(root, storage))) !== JSON.stringify(observed))
     fail("Product successor records changed while being verified.", "ONBOARDING_PRODUCT_SUCCESSOR_UNVERIFIABLE");
-  return {
+  const result = {
     status: "verified-reviewed-successor",
     base,
     current: { family: last.hop.family, revision: currentRevision },
@@ -234,4 +270,49 @@ export async function readOnboardingProductSuccessor({ root, storage, projectId,
     instructionAuthority: false,
     promotionAuthority: false,
   };
+  if (verifiedSequences.size >= MAX_CACHED) verifiedSequences.delete(verifiedSequences.keys().next().value);
+  verifiedSequences.set(key, structuredClone(result));
+  return result;
+}
+
+// Canon equal to the onboarding base is ready unless the reviewed changes on
+// record after the base end elsewhere (a later Canon put back by hand, or an
+// accepted Product Policy review whose Canon write did not complete). Records
+// are first read as plain JSON; only an apparent mismatch is verified in full.
+// Records that cannot be read here keep the previous answer (ready).
+export async function verifyOnboardingCanonAtBase({ root, storage, projectId, state, currentModel, readPolicyRevision }) {
+  if (state.phase !== "ready" || state.projectId !== projectId) return;
+  const base = identity(currentModel.productModelId, currentModel.productModelHash);
+  let observed, raw;
+  try {
+    observed = observeOriginals(root, storage);
+    raw = [];
+    for (const file of observed) {
+      if (!["applications", "policy-review-decisions"].includes(file.kind)) continue;
+      const record = JSON.parse(fs.readFileSync(copiedProjectFile(root, file.path), "utf8"));
+      const accepted = file.kind === "applications" ? record.canonChanged === true : record.disposition === "accept";
+      const previous = identity(record.previousProductModelId, record.previousProductModelHash);
+      const resulting = identity(record.resultingProductModelId, record.resultingProductModelHash);
+      if (accepted && previous !== resulting) raw.push({ id: path.basename(file.path, ".json"), previous, resulting });
+    }
+  } catch {
+    return;
+  }
+  if (!raw.length || sequenceFrom(base, base, raw)) return;
+  let before;
+  try {
+    before = await recordsBeforeBase(root, state);
+  } catch {
+    return;
+  }
+  const remaining = afterBase(raw, before);
+  if (!remaining.length || sequenceFrom(base, base, remaining)) return;
+  let edges;
+  try {
+    edges = afterBase([...documentEdges(root, observed, projectId), ...policyEdges(root, observed, projectId, storage, readPolicyRevision)], before);
+  } catch {
+    return;
+  }
+  if (edges.length && !sequenceFrom(base, base, edges))
+    fail("Product Canon equals the onboarding base, but the reviewed changes on record after the base end at another Canon.");
 }

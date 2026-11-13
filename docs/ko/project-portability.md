@@ -29,10 +29,12 @@ Project ID가 있는 모든 파일을 신뢰한다는 뜻은 아닙니다.
 모든 파일을 한꺼번에 바꾸는 원자적 트랜잭션은 아닙니다.
 복구는 명시적 resume만 합니다. 이 상태인 옮긴 Project에 대해 읽기 전용 status와 대화
 진입은 `relocation_available`(`PROJECT_RELOCATION_AVAILABLE`)과
-`projectLocation.byteRepair`를 보고하고 다음 단계로 resume을 안내합니다. 복구 결과는
-폴더를 옮기지 않은 경우에도 resume 결과의 `byteRepair`에 나옵니다. 관리 파일이 줄 끝
-이외의 내용까지 바뀌었거나 없으면 아무것도 복구하지 않고, 거절(`PROJECT_NOT_READY`)
-메시지가 그 파일을 알려 줍니다.
+`projectLocation.byteRepair`를 보고하고 다음 단계로 resume을 안내합니다. 옮기지 않은
+Project의 status는 `core_drifted`와 `byteRepair`, 다음 단계
+`resume_line_ending_repair`를 보고합니다. 복구 결과는 폴더를 옮기지 않은 경우에도
+resume 결과의 `byteRepair`에 나옵니다. 관리 파일이 줄 끝 이외의 내용까지 바뀌었거나
+없으면 옮겼든 아니든 아무것도 복구하지 않습니다. resume은 그 파일을 알려 주는
+`PROJECT_NOT_READY`로 거절하고, 옮긴 Project의 대화 진입도 같은 코드로 답합니다.
 
 ## 선택한 기록을 번들로 옮기기
 

@@ -1,7 +1,7 @@
 # Reason code audit
 
 Surveyed: 2026-11-12, on 0.3.0-beta.115 (`main` b466613). The summary and area
-counts were re-run for 0.3.0-beta.119, which adds one code (beta.118 added two). The script does not
+counts were re-run for 0.3.0-beta.119, which adds two codes (beta.118 added two). The script does not
 count this report itself.
 
 This audit counts, for every reason code in `REASON_CODES`
@@ -39,15 +39,15 @@ candidate to check, not a proven unused one.
 
 | Measure | Codes |
 | --- | --- |
-| Listed in `REASON_CODES` | 2,724 |
+| Listed in `REASON_CODES` | 2,725 |
 | Consumed in shipped code or Go | 359 |
 | — compared directly | 186 |
 | — covered by a prefix branch | 20 |
 | — only keyed in a map | 5 |
 | — only listed in an array or `Set` | 147 |
 | — named in Go sources | 17 |
-| Documented in English docs or skills | 33 (9 in skills) |
-| Asserted by tests or verifiers | 840 |
+| Documented in English docs or skills | 34 (10 in skills) |
+| Asserted by tests or verifiers | 841 |
 | **Quiet** | **2,350** (86%) |
 | — quiet but asserted by a test | 621 |
 | — quiet and never asserted | 1,729 |
@@ -75,7 +75,7 @@ The area is the code's first word. Areas with at least 20 codes:
 | `INVALID_*` | 576 | 60 | 4 | 515 | 100 |
 | `NATIVE_*` | 252 | 40 | 3 | 209 | 61 |
 | `CODEX_*` | 180 | 13 | 0 | 167 | 69 |
-| `PROJECT_*` | 138 | 22 | 3 | 115 | 29 |
+| `PROJECT_*` | 139 | 22 | 4 | 115 | 29 |
 | `RUNTIME_*` | 92 | 10 | 1 | 82 | 29 |
 | `ARCADEDB_*` | 83 | 12 | 0 | 71 | 15 |
 | `DOCUMENT_*` | 78 | 6 | 2 | 71 | 10 |

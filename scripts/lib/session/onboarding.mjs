@@ -35,7 +35,7 @@ import { readRepositorySourceScope, writeRepositorySourceScope } from "../world/
 import { withProjectMutation, withProjectMutationAsync } from "../storage/project-mutation-lock.mjs";
 import { historicalEntryForPath, readCommittedHistoricalArtifactBoundary } from "../world/historical-artifact-boundary-store.mjs";
 import { publishHistoricalContinuityReceipt } from "./historical-continuity.mjs";
-import { readOnboardingProductSuccessor } from "./onboarding-product-successor.mjs";
+import { readOnboardingProductSuccessor, verifyOnboardingCanonAtBase } from "./onboarding-product-successor.mjs";
 import { sha256Hex } from "../core/digest.mjs";
 import { failWith } from "../core/errors.mjs";
 import { atomicWriteText as atomicWrite } from "../core/fs-atomic.mjs";
@@ -2400,7 +2400,15 @@ async function inspectOnboardingRecords(root, inspectWorld) {
         baseRevision,
         readPolicyRevision: (productModelId) => readProductRevision(projectRoot, productModelId, storageOwner).revision,
       });
-    }
+    } else
+      await verifyOnboardingCanonAtBase({
+        root: projectRoot,
+        storage: storageOwner,
+        projectId: inspected.project.projectId,
+        state,
+        currentModel: productCanon.model,
+        readPolicyRevision: (productModelId) => readProductRevision(projectRoot, productModelId, storageOwner).revision,
+      });
     const currentRevision = productCanonLineage?.current.revision || baseRevision;
     if (currentRevision.productModelHash !== productCanon.model.productModelHash)
       fail("Current Product revision does not match Canon.", "ONBOARDING_PRODUCT_CANON_DRIFT");
@@ -2522,7 +2530,15 @@ async function inspectOnboardingRecords(root, inspectWorld) {
       baseRevision,
       readPolicyRevision: (productModelId) => readProductRevision(projectRoot, productModelId, storageOwner).revision,
     });
-  }
+  } else
+    await verifyOnboardingCanonAtBase({
+      root: projectRoot,
+      storage: storageOwner,
+      projectId: inspected.project.projectId,
+      state,
+      currentModel: productCanon.model,
+      readPolicyRevision: (productModelId) => readProductRevision(projectRoot, productModelId, storageOwner).revision,
+    });
   const productModelRevisions = reviewDecision?.promotionAuthority
     ? {
         previous: readProductRevision(projectRoot, reviewDecision.previousProductModelId, storageOwner).revision,
