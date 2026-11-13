@@ -2398,6 +2398,7 @@ async function inspectOnboardingRecords(root, inspectWorld) {
         state,
         currentModel: productCanon.model,
         baseRevision,
+        readPolicyRevision: (productModelId) => readProductRevision(projectRoot, productModelId, storageOwner).revision,
       });
     }
     const currentRevision = productCanonLineage?.current.revision || baseRevision;
@@ -2519,6 +2520,7 @@ async function inspectOnboardingRecords(root, inspectWorld) {
       state,
       currentModel: productCanon.model,
       baseRevision,
+      readPolicyRevision: (productModelId) => readProductRevision(projectRoot, productModelId, storageOwner).revision,
     });
   }
   const productModelRevisions = reviewDecision?.promotionAuthority

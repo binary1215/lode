@@ -469,7 +469,14 @@ export function readDocumentChangeApplicationReceipt({ root = ".", applicationRe
     fail("Document-change application file does not contain the requested identity.", "DOCUMENT_CHANGE_ARTIFACT_ID_MISMATCH");
   const review = readDocumentChangeReviewDecision({ root: inspected.project.projectRoot, reviewDecisionId: receipt.reviewDecisionId });
   verifyDocumentChangeApplicationReceipt(receipt, review.reviewDecision, review.candidateSet, inspected.project.projectId, storage);
-  return { status: "verified", file, applicationReceipt: receipt, reviewDecision: review.reviewDecision, candidateSet: review.candidateSet };
+  return {
+    status: "verified",
+    file,
+    applicationReceipt: receipt,
+    reviewDecision: review.reviewDecision,
+    candidateSet: review.candidateSet,
+    resultingProductModelRevision: review.resultingProductModelRevision,
+  };
 }
 
 async function buildDocumentAuditChild({ projectRoot, beforeWorld, storeAdapter, graphProjectionAdapter, computeAdapter, writerLease }) {

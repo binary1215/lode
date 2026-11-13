@@ -28,13 +28,13 @@ import { inspectConversationalOnboarding } from "../scripts/lib/session/onboardi
 import { enterConversationRecovery } from "../scripts/lib/session/compaction-lifecycle.mjs";
 import { readProductModelCanon, normalizeProductModelDocument } from "../scripts/lib/world/product-model.mjs";
 import { readOnboardingProductSuccessor } from "../scripts/lib/session/onboarding-product-successor.mjs";
+import { proposeProductPolicy, reviewProductPolicy } from "../scripts/lib/world/product-policy.mjs";
 import { inspectWorldModel } from "../scripts/lib/world/world-model.mjs";
 import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
 import { createRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
 import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
 import { buildWorldModel, materializeWorldMarkdownProjection, captureWorldMarkdownChanges } from "../scripts/lib/world/world-model.mjs";
 import { reviewDocumentChanges, inspectDocumentChangeReviewStatus, documentChangeReviewCanonicalJson } from "../scripts/lib/world/document-change-review.mjs";
-import { loadDocumentChangeProjection } from "../scripts/lib/world/document-change-projection.mjs";
 import {
   captureHistoricalBoundaryApplicationBasis,
   createVerifiedHistoricalInventoryCapability,
@@ -1045,13 +1045,6 @@ test("physical composition and part damage remain strict Product errors without 
     });
 });
 
-function recordSuccessorTestEvidence(name, evidence) {
-  if (!process.env.LODE_CANON_LINEAGE_TEST_EVIDENCE) return;
-  const directory = path.join(pluginRoot, "tmp/canon-lineage-review/implementation");
-  fs.mkdirSync(directory, { recursive: true });
-  fs.writeFileSync(path.join(directory, name), JSON.stringify(evidence, null, 2) + "\n");
-}
-
 // Public application and read regressions, independent of generated graphs as
 // approval evidence. Optional diagnostics never overwrite baseline evidence.
 async function approvedDocumentSuccessorFixture(t, historical, hops) {
@@ -1111,34 +1104,14 @@ async function approvedDocumentSuccessorFixture(t, historical, hops) {
     const captured = await captureWorldMarkdownChanges({ root: f.root, persist: true });
     const model = JSON.parse(fs.readFileSync(path.join(f.root, f.canonPath)));
     model.capabilities[0].description = `Explicitly reviewed delivery contract ${hop}.`;
-    let applied;
-    try {
-      applied = await reviewDocumentChanges({
-        root: f.root,
-        candidateSetId: captured.candidateSet.candidateSetId,
-        disposition: "accept-all",
-        rationale: `Synthetic explicit successor ${hop} approval.`,
-        resultingProductModel: model,
-        apply: true,
-      });
-    } catch (error) {
-      const projection = loadDocumentChangeProjection({ projectRoot: f.root, projectId: inspectProject(f.root).project.projectId, storage: f.storage });
-      recordSuccessorTestEvidence(`application-failure-${historical ? "historical" : "modern"}-${hops}.json`, {
-        historical,
-        hops,
-        failingHop: hop,
-        error: { code: error.code, message: error.message, projectionPending: error.projectionPending },
-        completedPriorApplications: applications,
-        projectionProductRevisions: projection.productModelRevisions.map((item) => ({
-          productModelId: item.productModelId,
-          revisionHash: item.revisionHash,
-          descriptorId: `document-product-model-revision-${item.revisionHash.slice(0, 24)}`,
-        })),
-        review: await inspectDocumentChangeReviewStatus({ root: f.root, candidateSetId: captured.candidateSet.candidateSetId }),
-        onboardingPointerUnchanged: fs.readFileSync(path.join(f.root, f.statePath)).equals(beforeState),
-      });
-      throw error;
-    }
+    const applied = await reviewDocumentChanges({
+      root: f.root,
+      candidateSetId: captured.candidateSet.candidateSetId,
+      disposition: "accept-all",
+      rationale: `Synthetic explicit successor ${hop} approval.`,
+      resultingProductModel: model,
+      apply: true,
+    });
     const status = await inspectDocumentChangeReviewStatus({ root: f.root, candidateSetId: captured.candidateSet.candidateSetId });
     assert.equal(status.canonApplied, true);
     assert.equal(status.projectionsReady, true);
@@ -1148,16 +1121,6 @@ async function approvedDocumentSuccessorFixture(t, historical, hops) {
   assert.deepEqual(fs.readFileSync(path.join(f.root, f.statePath)), beforeState);
   assert.equal((await inspectWorldModel({ root: f.root })).status, "current");
   const guide = await inspectConversationalOnboarding({ root: f.root });
-  const evidence = {
-    historical,
-    hops,
-    applications,
-    guide,
-    onboardingPointerUnchanged: true,
-    worldStatus: "current",
-    expected: "Read verified approved successor without replacing the historical onboarding pointer.",
-  };
-  recordSuccessorTestEvidence(`reproduction-${historical ? "historical" : "modern"}-${hops}.json`, evidence);
   return { ...f, beforeState, guide, applications };
 }
 
@@ -1262,6 +1225,12 @@ test("approved document successor rejects damaged or incomplete original closure
           const before = successorTreeObservation(f.root);
           const diagnostic = await inspectOptionalOnboardingForEntry({ root: f.root });
           assert.equal(diagnostic.status, "integrity_attention");
+          // Without its receipt the change is not on record (drift); any other
+          // missing or altered record makes the records unverifiable.
+          assert.equal(
+            diagnostic.reasonCode,
+            kind === "application" && mutation === "missing" ? "ONBOARDING_PRODUCT_CANON_DRIFT" : "ONBOARDING_PRODUCT_SUCCESSOR_UNVERIFIABLE",
+          );
           assert.deepEqual(successorTreeObservation(f.root), before);
         } finally {
           fs.writeFileSync(file, original);
@@ -1276,13 +1245,13 @@ test("approved document successor rejects damaged or incomplete original closure
       changed.capabilities[0].description = "Unreviewed edit";
       fs.writeFileSync(file, JSON.stringify(changed));
       const before = successorTreeObservation(f.root);
-      assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).status, "integrity_attention");
+      assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).reasonCode, "ONBOARDING_PRODUCT_CANON_DRIFT");
       assert.deepEqual(successorTreeObservation(f.root), before);
     } finally {
       fs.writeFileSync(file, original);
     }
   });
-  await t.test("distinct-completed-receipt-ambiguity", async () => {
+  await t.test("second-receipt-for-the-same-step", async () => {
     const receipt = JSON.parse(fs.readFileSync(path.join(f.root, paths.application)));
     delete receipt.applicationReceiptId;
     delete receipt.applicationReceiptHash;
@@ -1295,7 +1264,8 @@ test("approved document successor rejects damaged or incomplete original closure
     try {
       const before = successorTreeObservation(f.root);
       const diagnostic = await inspectOptionalOnboardingForEntry({ root: f.root });
-      assert.equal(diagnostic.reasonCode, "ONBOARDING_PRODUCT_SUCCESSOR_AMBIGUOUS");
+      // Two completed applications cannot both start from the base: drift.
+      assert.equal(diagnostic.reasonCode, "ONBOARDING_PRODUCT_CANON_DRIFT");
       assert.deepEqual(successorTreeObservation(f.root), before);
     } finally {
       fs.unlinkSync(file);
@@ -1306,7 +1276,7 @@ test("approved document successor rejects damaged or incomplete original closure
       original = fs.readFileSync(file);
     try {
       fs.truncateSync(file, 8 * 1024 * 1024 + 1);
-      assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).reasonCode, "ONBOARDING_PRODUCT_SUCCESSOR_LIMIT");
+      assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).reasonCode, "ONBOARDING_PRODUCT_SUCCESSOR_UNVERIFIABLE");
     } finally {
       fs.writeFileSync(file, original);
     }
@@ -1324,9 +1294,21 @@ test("approved document successor rejects damaged or incomplete original closure
         fs.writeFileSync(file, "{}");
         files.push(file);
       }
-      assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).reasonCode, "ONBOARDING_PRODUCT_SUCCESSOR_LIMIT");
+      // The document-change projection's own bound and code.
+      assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).reasonCode, "DOCUMENT_CHANGE_PROJECTION_LIMIT");
     } finally {
       for (const file of files) fs.unlinkSync(file);
+    }
+  });
+  await t.test("stray-record-file", async () => {
+    const file = path.join(f.root, f.layout.directory, "document-changes/applications", "notes.json");
+    fs.writeFileSync(file, "{}");
+    try {
+      const diagnostic = await inspectOptionalOnboardingForEntry({ root: f.root });
+      assert.equal(diagnostic.status, "integrity_attention");
+      assert.equal(diagnostic.reasonCode, "ONBOARDING_PRODUCT_SUCCESSOR_UNVERIFIABLE");
+    } finally {
+      fs.unlinkSync(file);
     }
   });
 });
@@ -1372,7 +1354,9 @@ test("ready existing Canon without onboarding revision uses only its recorded Wo
     original = fs.readFileSync(snapshotFile);
   fs.unlinkSync(snapshotFile);
   try {
-    assert.equal((await inspectOptionalOnboardingForEntry({ root })).status, "integrity_attention");
+    const missing = await inspectOptionalOnboardingForEntry({ root });
+    assert.equal(missing.status, "integrity_attention");
+    assert.equal(missing.reasonCode, "WORLD_MODEL_SNAPSHOT_MISSING");
   } finally {
     fs.writeFileSync(snapshotFile, original);
   }
@@ -1413,7 +1397,7 @@ test("pending onboarding candidates are never rebased by a separate document app
     },
   });
   const before = successorTreeObservation(f.root);
-  assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).status, "integrity_attention");
+  assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).reasonCode, "ONBOARDING_PRODUCT_CANON_DRIFT");
   assert.deepEqual(successorTreeObservation(f.root), before);
   assert.equal(JSON.parse(fs.readFileSync(path.join(f.root, f.statePath))).phase, "awaiting-review");
 });
@@ -1493,7 +1477,11 @@ test("rehashed foreign owner and wrong predecessor cannot borrow an approved suc
         created.push(file);
         fs.unlinkSync(appFile);
         const before = successorTreeObservation(f.root);
-        assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).status, "integrity_attention");
+        const diagnostic = await inspectOptionalOnboardingForEntry({ root: f.root });
+        assert.equal(diagnostic.status, "integrity_attention");
+        // A foreign record is unverifiable; a change from another predecessor
+        // does not start from the base, so the Canon is unexplained (drift).
+        assert.equal(diagnostic.reasonCode, kind === "foreign-project" ? "ONBOARDING_PRODUCT_SUCCESSOR_UNVERIFIABLE" : "ONBOARDING_PRODUCT_CANON_DRIFT");
         assert.deepEqual(successorTreeObservation(f.root), before);
       } finally {
         for (const file of created) fs.unlinkSync(file);
@@ -1511,20 +1499,20 @@ test("a reviewed but unapplied successor is not completed lineage even with its 
   // not. The reader must not complete this application or create a new review.
   fs.writeFileSync(path.join(f.root, f.canonPath), JSON.stringify(pending.model));
   const before = successorTreeObservation(f.root);
-  assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).status, "integrity_attention");
+  assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).reasonCode, "ONBOARDING_PRODUCT_CANON_DRIFT");
   assert.deepEqual(successorTreeObservation(f.root), before);
 });
 
-test("successor traversal rejects a closed cycle that cannot reach its supplied verified base", async (t) => {
+test("reviewed changes that cannot start from the supplied verified base are drift", async (t) => {
   const f = await approvedDocumentSuccessorFixture(t, false, 1);
   const baseState = JSON.parse(f.beforeState);
   const originalBase = JSON.parse(
     fs.readFileSync(path.join(f.root, f.layout.directory, "onboarding/product-model-revisions", baseState.productModelId + ".json")),
   );
   await appendReviewedDocument(f.root, f.layout, originalBase.document.capabilities[0].description);
-  // Isolated traversal test: public approvals now provide real A→B→A edges.
-  // Supply a distinct synthetic typed base to exercise cycle rejection rather
-  // than the public equal-Canon fast path. This is not an approval fixture.
+  // Isolated traversal test: public approvals provide real A→B→A edges.
+  // Supply a distinct synthetic typed base that none of them starts from,
+  // rather than the public equal-Canon fast path. This is not an approval fixture.
   const unreachableDocument = structuredClone(originalBase.document);
   unreachableDocument.capabilities[0].description = "Unreachable synthetic typed base.";
   const model = normalizeProductModelDocument(unreachableDocument, f.storage);
@@ -1539,7 +1527,7 @@ test("successor traversal rejects a closed cycle that cannot reach its supplied 
       currentModel: readProductModelCanon({ projectRoot: f.root, storage: f.storage }).model,
       baseRevision,
     }),
-    { code: "ONBOARDING_PRODUCT_SUCCESSOR_CYCLE" },
+    { code: "ONBOARDING_PRODUCT_CANON_DRIFT" },
   );
   assert.deepEqual(successorTreeObservation(f.root), before);
 });
@@ -1567,3 +1555,81 @@ test("completed Canon receipt before projection audit remains distinct from read
   );
   assert.deepEqual(successorTreeObservation(f.root), before);
 });
+
+// Rule: the Canon on disk is the result of the latest reviewed change, and the
+// reviewed changes on record lead, one after another, from the onboarding base.
+test("a Canon restored by hand to an earlier reviewed result is drift", async (t) => {
+  const f = await approvedDocumentSuccessorFixture(t, false, 2);
+  const first = JSON.parse(
+    fs.readFileSync(
+      path.join(f.root, f.layout.directory, "document-changes/product-model-revisions", f.applications[0].status.resultingProductModelId + ".json"),
+    ),
+  );
+  fs.writeFileSync(path.join(f.root, f.canonPath), JSON.stringify(first.document, null, 2) + "\n");
+  assert.equal(readProductModelCanon({ projectRoot: f.root, storage: f.storage }).model.productModelId, f.applications[0].status.resultingProductModelId);
+  const before = successorTreeObservation(f.root);
+  await assert.rejects(() => inspectOnboarding({ root: f.root }), { code: "ONBOARDING_PRODUCT_CANON_DRIFT" });
+  const entry = await inspectOptionalOnboardingForEntry({ root: f.root });
+  assert.equal(entry.status, "integrity_attention");
+  assert.equal(entry.reasonCode, "ONBOARDING_PRODUCT_CANON_DRIFT");
+  assert.deepEqual(successorTreeObservation(f.root), before);
+});
+
+for (const [name, steps] of [
+  ["A→B→C→B", ["Contract B", "Contract C", "Contract B"]],
+  ["A→B→A→B", ["Contract B", null, "Contract B"]],
+])
+  test(`a reviewed revert ${name} stays ready and follows every application`, async (t) => {
+    const f = await fixture();
+    t.after(() => fs.rmSync(f.root, { recursive: true, force: true }));
+    await reviewOnboarding(f.request);
+    const original = JSON.parse(fs.readFileSync(path.join(f.root, f.canonPath))).capabilities[0].description;
+    for (const step of steps) assert.equal((await appendReviewedDocument(f.root, f.layout, step ?? original)).result.status, "applied");
+    const status = await inspectOnboarding({ root: f.root });
+    assert.ok(["ready", "ready_world_changed"].includes(status.status), status.status);
+    const hops = status.productCanonLineage.hops;
+    assert.equal(hops.length, 3);
+    assert.equal(hops[0].previousProductModelId, status.productCanonLineage.base.productModelId);
+    hops.slice(1).forEach((hop, index) => assert.equal(hop.previousProductModelHash, hops[index].resultingProductModelHash));
+    assert.equal(hops.at(-1).resultingProductModelId, status.productModel.productModelId);
+    assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).status, "ready_world_unchecked");
+  });
+
+for (const order of ["policy only", "document then policy", "policy then document"])
+  test(`a Product Policy approval is a reviewed successor too: ${order}`, async (t) => {
+    const f = await fixture();
+    t.after(() => fs.rmSync(f.root, { recursive: true, force: true }));
+    await reviewOnboarding(f.request);
+    const policy = async () => {
+      const proposed = await proposeProductPolicy({
+        root: f.root,
+        operation: "create",
+        key: "exact-evidence",
+        name: "Exact evidence",
+        statement: "Use exact evidence.",
+      });
+      const reviewed = await reviewProductPolicy({
+        root: f.root,
+        candidateId: proposed.candidate.candidateId,
+        disposition: "accept",
+        rationale: "Synthetic acceptance.",
+      });
+      assert.equal(reviewed.canonChanged, true);
+    };
+    if (order === "document then policy") await appendReviewedDocument(f.root, f.layout, "Contract B");
+    await policy();
+    if (order === "policy then document") await appendReviewedDocument(f.root, f.layout, "Contract B");
+    const status = await inspectOnboarding({ root: f.root });
+    assert.ok(["ready", "ready_world_changed"].includes(status.status), status.status);
+    const families = status.productCanonLineage.hops.map((hop) => hop.family);
+    assert.deepEqual(
+      families,
+      order === "policy only"
+        ? ["product-policy"]
+        : order === "document then policy"
+          ? ["document-change", "product-policy"]
+          : ["product-policy", "document-change"],
+    );
+    assert.equal(status.productCanonLineage.current.revision.productModelHash, status.productModel.productModelHash);
+    assert.equal((await inspectOptionalOnboardingForEntry({ root: f.root })).status, "ready_world_unchecked");
+  });
