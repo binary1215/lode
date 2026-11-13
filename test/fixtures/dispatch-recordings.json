@@ -9553,6 +9553,9 @@
    "input": {
     "project_root": "<root>",
     "title": "sample-title",
+    "feature_keys": [
+     "sample-feature_keys"
+    ],
     "evidence_ids": [
      "sample-evidence_ids"
     ],
@@ -9600,6 +9603,9 @@
       {
        "project_root": "<root>",
        "title": "sample-title",
+       "feature_keys": [
+        "sample-feature_keys"
+       ],
        "evidence_ids": [
         "sample-evidence_ids"
        ],
@@ -9652,6 +9658,7 @@
    "input": {
     "project_root": "<root>",
     "title": "sample-title",
+    "feature_keys": [],
     "evidence_ids": [
      "sample-evidence_ids"
     ],
@@ -9670,6 +9677,7 @@
       {
        "project_root": "<root>",
        "title": "sample-title",
+       "feature_keys": [],
        "evidence_ids": [
         "sample-evidence_ids"
        ],
