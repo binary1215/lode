@@ -513,7 +513,13 @@ test("a new result is a new file; the earlier result stays byte-identical; stale
   fs.unlinkSync(human);
   fs.renameSync(copy, human);
   const replaced = await publish(second);
-  assert.equal(replaced.destinations[0].reasonCode, "WORK_DOCUMENT_RESOURCE_REPLACED");
+  // An editor or sync tool saving through a temporary file changes the file,
+  // not the text: documents are judged by content, the edit is still reported.
+  assert.equal(replaced.destinations[0].status, "current", JSON.stringify(replaced.destinations[0]));
+  assert.deepEqual(
+    replaced.destinations[0].personEdited.map((value) => value.document),
+    ["Expiry wording 결과 2"],
+  );
   assert.deepEqual(fs.readFileSync(human), oldBytes);
 });
 test("stream bound cancels chunked/no-length responses during receipt; parent recovery shares one finite request budget", async () => {

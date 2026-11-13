@@ -13,7 +13,7 @@ export function createDocumentEffectWriter({
   prepared,
   previous,
   retryAttemptId,
-  stableContainerIds = ["Start.md", "Notes.md"],
+  stableContainerIds = [],
   recordInputs = false,
   // Layout v2: recovery matches title and body, and never binds a page already
   // recorded for another document.
@@ -22,7 +22,11 @@ export function createDocumentEffectWriter({
   // Caller context kept with each attempt (not part of the write scope), e.g.
   // the Session configuration an explicit retry must still match.
   attemptContext = null,
+  // Documents judged by content rather than file identity: an editor or sync
+  // tool that saves through a temporary file changes the inode, not the text.
+  identityByContent = false,
 }) {
+  const sameObject = (a, b) => identityByContent || a === b;
   if (retryAttemptId) {
     const attempt = store.read("attempts", `${retryAttemptId}.json`),
       outcome = store.read("outcomes", `${retryAttemptId}.json`);
@@ -113,6 +117,7 @@ export function createDocumentEffectWriter({
     documentFailure("Rejected-write history needs bounded inspection.", "WORK_DOCUMENT_RETRY_HISTORY_PARTIAL");
   };
   const perform = async (op, input, effect, extra) => {
+    adapter.ensureBudget?.();
     store.write(["attempts", `${op.attemptId}.json`], {
       ...op.record,
       ...extra,
@@ -146,7 +151,7 @@ export function createDocumentEffectWriter({
   const readBound = async (id) => {
     const observed = await adapter.read(id),
       binding = store.read(...bindingParts(id));
-    if (binding?.objectIdentity && observed.objectIdentity !== binding.objectIdentity)
+    if (binding?.objectIdentity && !sameObject(observed.objectIdentity, binding.objectIdentity))
       documentFailure("The old document was replaced; its reference was not rebound.", "WORK_DOCUMENT_RESOURCE_REPLACED");
     return observed;
   };
@@ -206,6 +211,25 @@ export function createDocumentEffectWriter({
     if (result?.id) return result.id;
     const recovered = store.read("recovered", `${operationKey}.json`);
     if (recovered?.id) return recovered.id;
+    // A destination whose create is exclusive by name (a vault file) settles an
+    // unknown create by looking at that exact path: absent means it did not
+    // happen and may be done now; the frozen create text means bind it; other
+    // content is a person's file, never overwritten.
+    if (existing && adapter.exclusiveCreate) {
+      const found = await adapter.find({ documentId, markdown });
+      if (found.matches.length === 1) {
+        await verify(found.matches[0].id, markdown);
+        store.write(["recovered", `${operationKey}.json`], { id: found.matches[0].id, scope: "exact-name-and-content-readback" });
+        return found.matches[0].id;
+      }
+      if (found.occupied || found.matches.length)
+        documentFailure("Another file already uses this document name; it was not overwritten.", "WORK_DOCUMENT_NAME_OCCUPIED");
+      const response = await adapter.create(input);
+      store.write(["outcomes", `${operationKey}.json`], response, true);
+      if (response.objectIdentity) store.write(bindingParts(response.id), { objectIdentity: response.objectIdentity }, true);
+      await verify(response.id, markdown);
+      return response.id;
+    }
     if (existing) {
       const completion = await terminal(operationKey, result);
       if (completion?.resultId) {
@@ -301,13 +325,15 @@ export function createDocumentEffectWriter({
     await verify(response.id, markdown);
     return response.id;
   };
-  const change = async (id, oldText, newText) => {
+  // occurrence separates a repeated identical change (A→B again later) from
+  // an earlier completed one; the same occurrence settles the same attempt.
+  const change = async (id, oldText, newText, occurrence = null) => {
     const input = { id, oldText, newText };
     // Resolve a rejection only after the exact current resource is read below.
     // No POST/PATCH is issued merely by inspecting the journal.
     let op;
     try {
-      op = operation(workDocumentHash([key, id, oldText, newText]), "replace-exact-text", input);
+      op = operation(workDocumentHash([key, id, oldText, newText, ...(occurrence === null ? [] : [occurrence])]), "replace-exact-text", input);
     } catch (error) {
       if (!error.rejectedWrite) throw error;
       const observed = await readBound(id);
@@ -322,7 +348,7 @@ export function createDocumentEffectWriter({
     // update; a same-title/content copy cannot supply that exact object identity.
     if (savedResponse?.objectIdentity) {
       const observed = await adapter.read(id);
-      if (observed.objectIdentity !== savedResponse.objectIdentity || !observed.markdown.includes(newText))
+      if (!sameObject(observed.objectIdentity, savedResponse.objectIdentity) || !observed.markdown.includes(newText))
         documentFailure("Published resource was replaced or edited.", "WORK_DOCUMENT_RESOURCE_REPLACED");
       store.write(bindingParts(id), { objectIdentity: savedResponse.objectIdentity }, true);
     }
@@ -342,59 +368,10 @@ export function createDocumentEffectWriter({
     if (response.warnings?.length || response.pendingTask) documentFailure("Change awaits terminal result and readback.", "WORK_DOCUMENT_ASYNC_PENDING");
     if (response.objectIdentity) {
       const observed = await adapter.read(id);
-      if (observed.objectIdentity !== response.objectIdentity || !observed.markdown.includes(newText)) documentFailure("Local replacement readback differs.");
+      if (!sameObject(observed.objectIdentity, response.objectIdentity) || !observed.markdown.includes(newText))
+        documentFailure("Local replacement readback differs.");
       store.write(bindingParts(id), { objectIdentity: response.objectIdentity }, true);
     }
   };
-  const reconcileChangeBinding = async (id, oldText, newText) => {
-    const input = { id, oldText, newText },
-      baseKey = workDocumentHash([key, id, oldText, newText]);
-    let attemptId = baseKey;
-    for (let count = 0; count < 64; count++) {
-      const attempt = store.read("attempts", attemptId + ".json"),
-        outcome = store.read("outcomes", attemptId + ".json");
-      if (!attempt) return;
-      if (
-        attempt.scope?.key !== key ||
-        attempt.scope.operation !== "replace-exact-text" ||
-        attempt.scope.adapterIdentity !== adapter.identity ||
-        attempt.scope.inputDigest !== workDocumentHash(input) ||
-        attempt.id !== id
-      )
-        documentFailure("Change reconciliation differs.", "WORK_DOCUMENT_RECORD_TAMPER");
-      if (outcome?.objectIdentity) {
-        const observed = await adapter.read(id);
-        if (observed.objectIdentity !== outcome.objectIdentity || !observed.markdown.includes(newText))
-          documentFailure("Known replacement was edited or replaced.", "WORK_DOCUMENT_RESOURCE_REPLACED");
-        store.write(bindingParts(id), { objectIdentity: outcome.objectIdentity }, true);
-        return;
-      }
-      if (!outcome?.rejectedWrite) return;
-      attemptId = workDocumentHash([baseKey, attemptId, "explicit-rejected-write-successor"]);
-    }
-    documentFailure("Change history needs bounded inspection.", "WORK_DOCUMENT_RETRY_HISTORY_PARTIAL");
-  };
-  const settleKnownChange = async (id, oldText, newText) => {
-    const input = { id, oldText, newText },
-      baseKey = workDocumentHash([key, id, oldText, newText]);
-    let attemptId = baseKey;
-    for (let count = 0; count < 64; count++) {
-      const attempt = store.read("attempts", attemptId + ".json"),
-        outcome = store.read("outcomes", attemptId + ".json");
-      if (!attempt) return;
-      if (
-        attempt.scope?.key !== key ||
-        attempt.scope.operation !== "replace-exact-text" ||
-        attempt.scope.adapterIdentity !== adapter.identity ||
-        attempt.scope.inputDigest !== workDocumentHash(input) ||
-        attempt.id !== id
-      )
-        documentFailure("Pending change scope differs.", "WORK_DOCUMENT_RECORD_TAMPER");
-      if (outcome?.pendingTask) return terminal(attemptId, outcome, id);
-      if (!outcome?.rejectedWrite) return;
-      attemptId = workDocumentHash([baseKey, attemptId, "explicit-rejected-write-successor"]);
-    }
-    documentFailure("Pending history needs bounded inspection.", "WORK_DOCUMENT_RETRY_HISTORY_PARTIAL");
-  };
-  return { create, change, verify, readBound, reconcileChangeBinding, settleKnownChange };
+  return { create, change, verify, readBound };
 }

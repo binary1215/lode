@@ -65,6 +65,8 @@ export function configureWorkDocuments({ root, sessionId, targets, expectedConfi
   });
 }
 
+// Receipts written before the readable layout carry no layoutVersion.
+const labelLayout = (receipt) => (receipt && !receipt.layoutVersion ? { ...receipt, layout: "old-layout", layoutVersion: 1 } : receipt);
 export function workDocumentStatus(options = {}) {
   const store = workDocumentStore(options),
     configuration = store.read("configuration.json");
@@ -82,7 +84,9 @@ export function workDocumentStatus(options = {}) {
       ? {
           destinations: (configuration?.targets || []).map((target) => ({
             id: target.id,
-            current: store.read("current", `${workDocumentHash([target.id, target.kind, target.vaultRoot || target.parentPageId, options.logicalKey])}.json`),
+            current: labelLayout(
+              store.read("current", `${workDocumentHash([target.id, target.kind, target.vaultRoot || target.parentPageId, options.logicalKey])}.json`),
+            ),
           })),
         }
       : {}),
@@ -355,6 +359,18 @@ async function publishPair({ root, store, prepared, adapter, key, target, config
   const { basis } = prepared;
   const previous = store.read("current", `${key}.json`);
   if (!(await advances(root, basis, previous))) return { status: "historical-no-current-change", reasonCode: "WORK_DOCUMENT_NOT_EXPLICIT_SUCCESSOR" };
+  // The same result already published in the old layout is not a next result:
+  // nothing is copied into the new tree and the old Start is left alone.
+  if (previous && !previous.layoutVersion && previous.basisId === basis.basisId)
+    return {
+      status: "current",
+      layout: "old-layout",
+      alreadyPublishedInOldLayout: true,
+      basisId: basis.basisId,
+      views: previous.views,
+      remoteCAS: false,
+      completionAuthority: false,
+    };
   const projectStore = projectDocumentStore({ root, sessionId: basis.sessionId });
   const destination = documentDestinationIdentity(target);
   const treeKey = documentTreeKey(basis.projectId, destination);
@@ -440,6 +456,7 @@ async function publishPair({ root, store, prepared, adapter, key, target, config
         : {}),
       ...(tree.report.personEdited.length ? { personEdited: tree.report.personEdited } : {}),
       ...(published.oldLayoutLink ? { oldLayoutLink: published.oldLayoutLink } : {}),
+      ...(published.featureChangeIgnored ? { featureChangeIgnored: published.featureChangeIgnored } : {}),
       remoteCAS: false,
       crossDestinationAtomicity: false,
       completionAuthority: false,

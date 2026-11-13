@@ -18,6 +18,9 @@ export const safeVaultName = (value) =>
   !/[\x00-\x1f\x7f\\/:*?"<>|#^[\]]/.test(value) &&
   !/^[.\s]/.test(value) &&
   !/[.\s]$/.test(value);
+// Vault link targets: every path segment percent-encoded, parentheses included,
+// so a name with a collision suffix such as "(d403)" keeps the Markdown link intact.
+export const encodeLinkSegment = (segment) => encodeURIComponent(segment).replace(/[()]/g, (character) => (character === "(" ? "%28" : "%29"));
 const pageId = (value) => typeof value === "string" && /^(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(value);
 const notionPublicationBudgets = new WeakSet();
 
@@ -96,8 +99,10 @@ export function createObsidianWorkDocumentAdapter({ vaultRoot, directory }) {
   };
   return {
     kind: "obsidian",
+    // A file name is the document identity and creation never overwrites.
+    exclusiveCreate: true,
     identity: workDocumentHash(["obsidian", vault, directory]),
-    url: (id) => encodeURIComponent(id),
+    url: (id) => encodeLinkSegment(id),
     directory,
     scoped(segment) {
       if (!safeVaultName(segment)) documentFailure("Invalid child document directory.");
@@ -186,9 +191,12 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
     value.message.length > 0 &&
     value.message.length <= 4096 &&
     (value.request_id === undefined || (typeof value.request_id === "string" && value.request_id.length <= 180));
-  const call = async (method, endpoint, body) => {
+  const budgetLeft = () => {
     if (budget.used >= requestBudget || now() >= budget.deadline)
       documentFailure("Publication/recovery transport budget exhausted.", "WORK_DOCUMENT_TRANSPORT_BUDGET");
+  };
+  const call = async (method, endpoint, body) => {
+    budgetLeft();
     budget.used++;
     const remaining = Math.max(1, budget.deadline - now());
     let timer, result;
@@ -280,6 +288,9 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
         workDocumentHash(proof.intent) === workDocumentHash(expected)
       );
     },
+    // Checked before a write is journaled: a request this adapter would refuse
+    // to send is a known not-attempted outcome, never an unknown one.
+    ensureBudget: budgetLeft,
     beginPublication() {
       if (!_sharedBudget) {
         budget.used = 0;
@@ -295,6 +306,31 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
     // carry no identity line; titles are unique within one exact parent).
     async find({ title, markdown, cursor = null }) {
       const matches = [];
+      if (title !== undefined) {
+        // Layout v2: list the exact parent to its end and read only children
+        // whose listed title is this title (or not given). One complete listing
+        // decides; no slice of it is ever bound.
+        const candidates = [];
+        let pageCursor = null;
+        for (;;) {
+          const children = await call(
+            "GET",
+            "/blocks/" + parentPageId + "/children?page_size=100" + (pageCursor ? "&start_cursor=" + encodeURIComponent(pageCursor) : ""),
+          );
+          if (!Array.isArray(children.results) || children.results.length > 100) documentFailure("Parent enumeration is incomplete.");
+          for (const child of children.results)
+            if (child.type === "child_page" && (typeof child.child_page?.title !== "string" || child.child_page.title === title)) candidates.push(child.id);
+          if (children.has_more === false) break;
+          if (typeof children.next_cursor !== "string" || !children.next_cursor || children.next_cursor.length > 500) return { complete: false, matches };
+          pageCursor = children.next_cursor;
+        }
+        if (candidates.length > 12) return { complete: false, matches };
+        for (const id of candidates) {
+          const value = await read(id);
+          if (value.complete && !value.warnings.length && sameDocumentText(value.markdown, markdown) && value.title === title) matches.push({ id: value.id });
+        }
+        return { complete: true, matches };
+      }
       if (
         cursor &&
         (typeof cursor !== "object" ||

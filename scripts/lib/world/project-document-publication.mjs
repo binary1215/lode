@@ -170,13 +170,20 @@ export function projectDocumentStatus({ root, sessionId, targetIds } = {}) {
     destinations: (task.read("configuration.json")?.targets || [])
       .filter((target) => !targetIds || targetIds.includes(target.id))
       .map((target) => {
-        const key = documentTreeKey(store.owner.projectId, documentDestinationIdentity(target));
+        const identity = documentDestinationIdentity(target),
+          key = documentTreeKey(store.owner.projectId, identity);
+        // A publication made before the readable layout keeps reading as
+        // published in the old layout until a new one completes.
+        const oldKey = hash([store.owner.projectId, identity, "project-documents-v1"]);
+        const current = store.read("current", key + ".json"),
+          old = store.read("current", oldKey + ".json");
         return {
           id: target.id,
           scopeEnabled: target.projectDocuments === true,
-          layoutVersion: DOCUMENT_LAYOUT_VERSION,
-          current: store.read("current", key + ".json"),
-          progress: store.read("progress", key + ".json"),
+          layoutVersion: current ? DOCUMENT_LAYOUT_VERSION : old ? 1 : null,
+          current: current || (old ? { ...old, layout: "old-layout", layoutVersion: 1 } : null),
+          progress: store.read("progress", key + ".json") || (old ? store.read("progress", oldKey + ".json") : null),
+          ...(current && old ? { oldLayout: { ...old, layout: "old-layout", layoutVersion: 1 } } : {}),
         };
       }),
   };
@@ -289,7 +296,7 @@ export async function publishProjectDocuments({ root, sessionId, projectionId, t
         let operations = 0;
         try {
           while (state.phase === "write" && state.cursor < steps.length && operations++ < maxPageOperations) {
-            await tree.runProjectStep(steps[state.cursor]);
+            await tree.runProjectStep(steps[state.cursor], { multiCall: steps.length > maxPageOperations });
             state.cursor++;
             noteEdits();
             saveState();

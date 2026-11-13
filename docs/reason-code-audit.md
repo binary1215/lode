@@ -75,7 +75,7 @@ The area is the code's first word. Areas with at least 20 codes:
 | `INVALID_*` | 576 | 60 | 4 | 515 | 100 |
 | `NATIVE_*` | 252 | 40 | 3 | 209 | 61 |
 | `CODEX_*` | 180 | 13 | 0 | 167 | 69 |
-| `PROJECT_*` | 140 | 22 | 4 | 116 | 29 |
+| `PROJECT_*` | 139 | 22 | 4 | 115 | 29 |
 | `RUNTIME_*` | 92 | 10 | 1 | 82 | 29 |
 | `ARCADEDB_*` | 83 | 12 | 0 | 71 | 15 |
 | `DOCUMENT_*` | 78 | 6 | 2 | 71 | 10 |
@@ -89,8 +89,8 @@ The area is the code's first word. Areas with at least 20 codes:
 | `REFRESH_*` | 41 | 1 | 1 | 40 | 3 |
 | `CHANGE_*` | 35 | 2 | 0 | 33 | 2 |
 | `CLAUDE_*` | 34 | 1 | 0 | 33 | 6 |
+| `WORK_*` | 34 | 5 | 0 | 29 | 7 |
 | `FEATURE_*` | 33 | 4 | 0 | 29 | 7 |
-| `WORK_*` | 33 | 5 | 0 | 28 | 7 |
 | `CONVERSATION_*` | 32 | 7 | 1 | 24 | 7 |
 | `GRAPH_*` | 32 | 2 | 2 | 28 | 10 |
 | `DISTRIBUTION_*` | 31 | 0 | 0 | 31 | 10 |
@@ -126,22 +126,25 @@ Quiet codes by last word:
 
 ## Documented codes
 
-These 28 codes are named in English docs or skills, so an agent may branch on
-them:
+These 34 codes are named in English docs or skills (10 in skills), so an agent
+may branch on them:
 - `COMPUTE_OUTPUT_LIMIT`, `CONFORMANCE_RESOLUTION_STALE`,
   `CONVERSATION_ENTRY_BASIS_CHANGED`, `DIVERGENT_DEPLOYMENT_RESULT_REPLAY`
-- `DOCUMENT_PROJECTION_UNREVIEWED_DRIFT`, `GRAPH_PROJECTION_STALE`,
-  `GRAPH_SNAPSHOT_RECEIPT_SELF_REFERENCE`, `INVALID_SESSION_INPUT`
-- `INVALID_SESSION_WORK_EVIDENCE`, `INVALID_SNAPSHOT_COMPOSITION`,
-  `INVALID_TOOL_ARGUMENTS`, `MANAGED_OPERATION_NOT_ON_DEFAULT_SURFACE`
-- `NATIVE_HOOK_DIRECT_INGRESS_REQUIRED`, `NATIVE_HOOK_INGRESS_REQUIRED`,
-  `NATIVE_OPENCODE_BOOTSTRAP_UNQUALIFIED`, `NOT_INITIALIZED`
-- `NO_PENDING_REVIEW`, `PROJECT_NATIVE_RUNTIME_ROOT_NOT_USED`,
-  `PROJECT_NOT_READY`, `PROJECT_RELOCATION_PENDING`
+- `DOCUMENT_CHANGE_PROJECTION_LIMIT`, `DOCUMENT_PROJECTION_UNREVIEWED_DRIFT`,
+  `GRAPH_PROJECTION_STALE`, `GRAPH_SNAPSHOT_RECEIPT_SELF_REFERENCE`
+- `INVALID_SESSION_INPUT`, `INVALID_SESSION_WORK_EVIDENCE`,
+  `INVALID_SNAPSHOT_COMPOSITION`, `INVALID_TOOL_ARGUMENTS`
+- `MANAGED_OPERATION_NOT_ON_DEFAULT_SURFACE`, `NATIVE_HOOK_DIRECT_INGRESS_REQUIRED`,
+  `NATIVE_HOOK_INGRESS_REQUIRED`, `NATIVE_OPENCODE_BOOTSTRAP_UNQUALIFIED`
+- `NOT_INITIALIZED`, `NO_PENDING_REVIEW`,
+  `ONBOARDING_PRODUCT_CANON_DRIFT`, `ONBOARDING_PRODUCT_SUCCESSOR_UNVERIFIABLE`
+- `PROJECT_NATIVE_RUNTIME_ROOT_NOT_USED`, `PROJECT_NOT_READY`,
+  `PROJECT_RELOCATION_AVAILABLE`, `PROJECT_RELOCATION_PENDING`
 - `RECOVERY_BASIS_NOT_HELD`, `REFRESH_WRITER_BUSY`,
   `RUNTIME_ADAPTER_CONTROL_NOT_ENABLED`, `RUN_RESULT_LEGACY_INTEGRATION_PENDING`
-- `SESSION_PATH_ESCAPE`, `SNAPSHOT_GIT_EXECUTABLE_UNAVAILABLE`,
-  `STORAGE_VERSION_MISMATCH`, `WORLD_MODEL_CANON_BASIS_CONFLICT`
+- `SESSION_PATH_ESCAPE`, `SESSION_SELECTION_LOST`,
+  `SINGLE_SESSION_ENTRY_AVAILABLE`, `SNAPSHOT_GIT_EXECUTABLE_UNAVAILABLE`
+- `STORAGE_VERSION_MISMATCH`, `WORLD_MODEL_CANON_BASIS_CONFLICT`
 
 ## Merge candidates
 
@@ -149,7 +152,7 @@ These are proposals for the merge decision, not changes. Every candidate keeps
 the human-readable message. Under design 4.6, the old code is still returned in
 a separate response field for two minor versions.
 
-1. **Keep as is.** Keep all 356 consumed codes and the 28 documented ones. Inside
+1. **Keep as is.** Keep all 360 consumed codes and the 34 documented ones. Inside
    the four prefix-branch groups, keep at least the prefix.
 2. **First candidates.** These are the 1,731 quiet codes that no test asserts.
    Group each area's codes by their last word into one area code, for example

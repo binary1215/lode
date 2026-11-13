@@ -167,7 +167,7 @@ export const workDocumentTools = [
   ),
   definition(
     "publish",
-    "Publish a prepared pair only to selected connected destinations. Distinguishes task work, local generation, destination success and current-link success. Unknown effects are readback-reconciled, never blindly created again. Rechecks source/selected task and destination scope. P5 outcome creates no ReviewDecision or P2 checkpoint. Real external publication requires the current user's chosen destination and scope.",
+    "Publish a prepared pair as a new result document in its feature folder (and update the folder documents' lists) only to selected connected destinations. Unknown effects are readback-reconciled, never blindly created again; person-edited documents are reported, not overwritten. The first result of a task published in the old layout links back and edits the old Start list once. continuation-required means publish the same projection again; completed steps are kept. Rechecks source/selected task and destination scope. P5 outcome creates no ReviewDecision or P2 checkpoint. Real external publication requires the current user's chosen destination and scope.",
     {
       projection_id: digest,
       target_ids: { type: "array", minItems: 1, maxItems: 8, items: text },

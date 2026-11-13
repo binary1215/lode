@@ -427,7 +427,7 @@ function humanBody(basis) {
     done.push(...c.observedWork);
     for (const judgment of c.judgments)
       judged.push(
-        [judgment.assessment, judgment.reason].filter(Boolean).join(" ") +
+        (judgment.assessment && judgment.reason ? `${judgment.assessment} — 이유: ${judgment.reason}` : judgment.assessment || judgment.reason) +
           (judgment.alternatives?.length ? ` (다른 선택지: ${judgment.alternatives.join("; ")})` : ""),
       );
     remaining.push(...c.pending);

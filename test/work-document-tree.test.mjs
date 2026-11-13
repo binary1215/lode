@@ -9,8 +9,10 @@ import { initializeProject } from "../scripts/lib/session/lode-core.mjs";
 import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
 import { recordSessionWorkEvidence } from "../scripts/lib/session/session-work-context.mjs";
 import { projectDocumentStore, workDocumentStore } from "../scripts/lib/world/work-document-store.mjs";
-import { configureWorkDocuments, prepareWorkDocuments, publishWorkDocuments } from "../scripts/lib/world/work-document-publication.mjs";
-import { createNotionWorkDocumentAdapter } from "../scripts/lib/world/work-document-destinations.mjs";
+import { configureWorkDocuments, prepareWorkDocuments, publishWorkDocuments, workDocumentStatus } from "../scripts/lib/world/work-document-publication.mjs";
+import { prepareProjectDocuments, publishProjectDocuments, projectDocumentStatus } from "../scripts/lib/world/project-document-publication.mjs";
+import { readableName } from "../scripts/lib/world/work-document-tree.mjs";
+import { createNotionWorkDocumentAdapter, documentDestinationIdentity } from "../scripts/lib/world/work-document-destinations.mjs";
 import { workDocumentHash } from "../scripts/lib/world/work-document-source.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
@@ -149,7 +151,7 @@ test("the sample product publishes the agreed tree with readable names and no br
   const result = read(f.vault, "Lode/샘플 제품/계정/보안/만료 안내/만료 안내 문구 결과 2.md");
   assert.match(
     result,
-    /^# 만료 안내 문구 — 결과 2\n\n상태: 진행 중 \(모바일 문구 남음\) · 기록 [^\n]+ UTC\n\n## 한 일\n\n- [^\n]+\n\n## 판단과 이유\n\n- 자동 재시도를 넣지 않았습니다\. 중복 요청이 생길 수 있기 때문입니다\. \(다른 선택지: 사용자가 직접 재시도\)\n\n## 남은 일\n\n- 모바일 검증과 배포는 실행하지 않았습니다\.\n- 모바일 문구 수정\n\n## 확인하지 못한 것\n\n- 모바일 합의에 대한 사용자 원문이 없습니다\.\n\n---\n\n\[이전 결과\]\([^)]+\) · \[기능: 만료 안내\]\([^)]+\) · \[근거 문서\]\([^)]+\)\n$/,
+    /^# 만료 안내 문구 — 결과 2\n\n상태: 진행 중 \(모바일 문구 남음\) · 기록 [^\n]+ UTC\n\n## 한 일\n\n- [^\n]+\n\n## 판단과 이유\n\n- 자동 재시도를 넣지 않았습니다. — 이유: 중복 요청이 생길 수 있기 때문입니다\. \(다른 선택지: 사용자가 직접 재시도\)\n\n## 남은 일\n\n- 모바일 검증과 배포는 실행하지 않았습니다\.\n- 모바일 문구 수정\n\n## 확인하지 못한 것\n\n- 모바일 합의에 대한 사용자 원문이 없습니다\.\n\n---\n\n\[이전 결과\]\([^)]+\) · \[기능: 만료 안내\]\([^)]+\) · \[근거 문서\]\([^)]+\)\n$/,
   );
   const feature = read(f.vault, "Lode/샘플 제품/계정/보안/만료 안내/만료 안내.md");
   assert.match(
@@ -315,6 +317,13 @@ test("renaming or moving a feature keeps its folder; titles and link text follow
   assert.equal(out.result.url, "Lode/샘플 제품/계정/보안/만료 안내/만료 안내 문구 결과 2.md", "new results keep landing in the existing folder");
   assert.ok(!fs.existsSync(path.join(f.vault, "Lode", "샘플 제품", "계정", "세션 만료 안내")));
   assert.match(read(f.vault, "Lode/샘플 제품/계정/보안/만료 안내/만료 안내 문구 결과 2.md"), /\[기능: 세션 만료 안내\]/);
+  // The feature document, its parent line and the parents' lists follow the model on the result path.
+  const feature = read(f.vault, "Lode/샘플 제품/계정/보안/만료 안내/만료 안내.md");
+  assert.match(feature, /^# 세션 만료 안내\n/);
+  assert.match(feature, /\n상위: \[계정\]\(\.\.\/\.\.\/%EA%B3%84%EC%A0%95\.md\)\n/);
+  assert.match(read(f.vault, "Lode/샘플 제품/계정/계정.md"), /- \[세션 만료 안내\]\([^)]+\) — 기능/);
+  assert.match(read(f.vault, "Lode/샘플 제품/계정/보안/보안.md"), /- \[세션 만료 안내\]\([^)]+\) — 기능/);
+  assertLinksResolve(f.vault);
 });
 
 test("person edits: an edited list region is reported and kept, other edits survive list updates, person files and names are never reused", async (t) => {
@@ -476,14 +485,16 @@ function notion() {
       return { status: 200, body: { object: "page", id, parent: page.parent } };
     }
     if (url.pathname.includes("/blocks/")) {
-      const id = url.pathname.split("/")[3];
+      // Listings come in pages of 100, as the real API returns them.
+      const id = url.pathname.split("/")[3],
+        children = [...pages.values()].filter((page) => page.parent.page_id === id),
+        offset = Number(url.searchParams.get("start_cursor") || 0);
       return {
         status: 200,
         body: {
-          results: [...pages.values()]
-            .filter((page) => page.parent.page_id === id)
-            .map((page) => ({ id: page.id, type: "child_page", child_page: { title: page.title } })),
-          has_more: false,
+          results: children.slice(offset, offset + 100).map((page) => ({ id: page.id, type: "child_page", child_page: { title: page.title } })),
+          has_more: offset + 100 < children.length,
+          next_cursor: offset + 100 < children.length ? String(offset + 100) : null,
         },
       };
     }
@@ -494,6 +505,10 @@ function notion() {
       const { old_str, new_str } = call.body.update_content.content_updates[0];
       if (page.markdown.split(old_str).length !== 2) return { status: 400, body: { object: "error" } };
       page.markdown = page.markdown.replace(old_str, new_str);
+      if (fault.losePatchId === page.id) {
+        fault.losePatchId = null;
+        throw Object.assign(new Error("Synthetic lost update"), { code: "ECONNRESET" });
+      }
     }
     return {
       status: 200,
@@ -644,4 +659,289 @@ test("Notion unknown create: binds only one exact title+body page not recorded f
         assert.equal(again.destinations[0].reasonCode, "WORK_DOCUMENT_CREATE_UNKNOWN");
       }
     });
+});
+
+// ---- Review round: failure recovery, person changes and earlier layouts ----
+
+const featureDoc = "Lode/샘플 제품/계정/보안/만료 안내/만료 안내.md";
+test("a failed vault create is settled by name: absent creates it, the same text binds it, a person's file is kept", async (t) => {
+  for (const mode of ["absent", "same-text", "person-file"])
+    await t.test(mode, async (t) => {
+      const f = fixture(t);
+      f.connect();
+      const target = path.join(f.vault, ...featureDoc.split("/"));
+      const link = fs.linkSync;
+      let fired = false;
+      t.mock.method(fs, "linkSync", function (from, to) {
+        if (!fired && String(to) === target) {
+          fired = true;
+          if (mode === "same-text") link.call(this, from, to);
+          throw Object.assign(new Error("Synthetic transient failure"), { code: "EBUSY" });
+        }
+        return link.call(this, from, to);
+      });
+      const evidence = f.save("todo-expiry", "만료 안내 문구");
+      const first = (await f.publish(evidence, "todo-expiry", "만료 안내 문구", ["fb"])).published.destinations[0];
+      assert.ok(fired);
+      assert.equal(first.status, "publication-unconfirmed");
+      if (mode === "person-file") fs.writeFileSync(target, "사람이 같은 이름으로 만든 파일\n");
+      const second = (await f.publish(evidence, "todo-expiry", "만료 안내 문구", ["fb"])).published.destinations[0];
+      if (mode === "person-file") {
+        assert.equal(second.reasonCode, "WORK_DOCUMENT_NAME_OCCUPIED");
+        assert.equal(fs.readFileSync(target, "utf8"), "사람이 같은 이름으로 만든 파일\n", "never overwritten");
+        // Other features are not blocked by it.
+        const other = (await f.publish(f.save("todo-alone", "알림 정리"), "todo-alone", "알림 정리", ["fc"])).published.destinations[0];
+        assert.equal(other.status, "current");
+        return;
+      }
+      assert.equal(second.status, "current", JSON.stringify(second));
+      assert.match(fs.readFileSync(target, "utf8"), /^# 만료 안내\n/);
+      assert.equal(files(f.vault).filter((file) => file.endsWith("/만료 안내.md")).length, 1, "no duplicate");
+      const other = (await f.publish(f.save("todo-other", "다른 작업"), "todo-other", "다른 작업", ["fb"])).published.destinations[0];
+      assert.equal(other.status, "current");
+    });
+});
+
+test("Lode's own refusal before a write leaves no unknown attempt: a fresh preparation and later results publish", async (t) => {
+  const f = fixture(t);
+  f.connect([{ id: "vault", kind: "obsidian", vaultRoot: f.vault, automatic: false, todoIds: [], projectDocuments: true }]);
+  let prepared = await prepareProjectDocuments({ root: f.root, sessionId: f.sessionId });
+  // The Product model changes while this call is between documents.
+  const link = fs.linkSync;
+  let journaled = 0,
+    changed = false;
+  t.mock.method(fs, "linkSync", function (from, to) {
+    const result = link.call(this, from, to);
+    if (!changed && String(to).includes(path.sep + "attempts" + path.sep) && ++journaled === 2) {
+      changed = true;
+      const model = sampleModel();
+      model.features[0].description = "다른 세션이 방금 고친 설명";
+      f.write(model);
+    }
+    return result;
+  });
+  const during = await publishProjectDocuments({ root: f.root, sessionId: f.sessionId, projectionId: prepared.projectionId, targetIds: ["vault"] });
+  t.mock.restoreAll();
+  assert.ok(changed);
+  assert.equal(during.destinations[0].reasonCode, "PROJECT_DOCUMENT_SOURCE_CHANGED");
+  prepared = await prepareProjectDocuments({ root: f.root, sessionId: f.sessionId });
+  let last;
+  for (let i = 0; i < 60; i++) {
+    last = await publishProjectDocuments({ root: f.root, sessionId: f.sessionId, projectionId: prepared.projectionId, targetIds: ["vault"] });
+    if (last.status !== "continuation-required") break;
+  }
+  assert.equal(last.status, "published", JSON.stringify(last));
+  const result = (await f.publish(f.save("todo-expiry", "만료 안내 문구"), "todo-expiry", "만료 안내 문구", ["fb"])).published;
+  assert.equal(result.status, "published", JSON.stringify(result));
+  assert.match(read(f.vault, "Lode/샘플 제품/계정/로그인/로그인.md"), /다른 세션이 방금 고친 설명/);
+});
+
+test("a person re-saving, deleting or renaming a folder document never stops a result; deletions are reported, not undone", async (t) => {
+  for (const mode of ["re-saved", "deleted", "renamed"])
+    await t.test(mode, async (t) => {
+      const f = fixture(t);
+      f.connect();
+      const first = f.save("todo-expiry", "만료 안내 문구");
+      await f.publish(first, "todo-expiry", "만료 안내 문구", ["fb"]);
+      const target = path.join(f.vault, ...featureDoc.split("/"));
+      const bytes = fs.readFileSync(target);
+      if (mode === "re-saved") {
+        // Editors and sync tools save through a temporary file: new inode, same text.
+        fs.writeFileSync(target + ".tmp", bytes);
+        fs.unlinkSync(target);
+        fs.renameSync(target + ".tmp", target);
+      } else if (mode === "deleted") fs.unlinkSync(target);
+      else fs.renameSync(target, path.join(path.dirname(target), "만료 안내 메모.md"));
+      const second = f.save("todo-expiry", "만료 안내 문구", "partial", first);
+      const out = (await f.publish(second, "todo-expiry", "만료 안내 문구", ["fb"])).published.destinations[0];
+      assert.equal(out.status, "current", JSON.stringify(out));
+      assert.ok(fs.existsSync(path.join(path.dirname(target), "만료 안내 문구 결과 2.md")));
+      if (mode === "re-saved") {
+        assert.equal(out.personEdited, undefined);
+        assert.match(fs.readFileSync(target, "utf8"), /\[만료 안내 문구 결과 2\]/, "the list is updated by content");
+      } else {
+        assert.deepEqual(out.personEdited, [{ document: "만료 안내", status: "document-missing-not-recreated" }]);
+        assert.ok(!fs.existsSync(target), "a deleted folder document is not recreated");
+        if (mode === "renamed") assert.deepEqual(fs.readFileSync(path.join(path.dirname(target), "만료 안내 메모.md")), bytes);
+      }
+    });
+});
+
+test("an old-layout Project publication still reads as published in the old layout", async (t) => {
+  const f = fixture(t);
+  const target = { id: "vault", kind: "obsidian", vaultRoot: f.vault, automatic: false, todoIds: [], projectDocuments: true };
+  f.connect([target]);
+  const oldKey = workDocumentHash([f.store.owner.projectId, documentDestinationIdentity(target), "project-documents-v1"]);
+  const receipt = { kind: "ProjectDocumentPublicationReceipt", authorityPlane: "P5", projectId: f.store.owner.projectId, pages: 20, homeId: "Start.md" };
+  f.store.write(["current", oldKey + ".json"], receipt);
+  const status = projectDocumentStatus({ root: f.root, sessionId: f.sessionId }).destinations[0];
+  assert.equal(status.layoutVersion, 1);
+  assert.equal(status.current.layout, "old-layout");
+  assert.equal(status.current.pages, 20);
+});
+
+test("Notion recovery lists the exact parent to its end and binds the single title and body match among many children", async (t) => {
+  for (const others of [13, 130])
+    await t.test(`${others} other pages`, async (t) => {
+      const f = fixture(t),
+        fake = notion();
+      for (let i = 0; i < others; i++) {
+        const id = "20000000-0000-4000-8000-" + String(5000 + i).padStart(12, "0");
+        fake.pages.set(id, { id, parent: { page_id: fake.parent }, title: `다른 페이지 ${i}`, markdown: `다른 내용 ${i}` });
+      }
+      f.connect([notionTarget(fake)]);
+      const losing = createNotionWorkDocumentAdapter({
+        parentPageId: fake.parent,
+        request: async (call) => {
+          if (call.method === "POST" && call.body.properties.title.title[0].text.content === "샘플 제품") fake.fault.lose = true;
+          return fake.request(call);
+        },
+      });
+      const evidence = f.save("todo-login", "로그인 오류 안내");
+      const lost = await f.publish(evidence, "todo-login", "로그인 오류 안내", ["fa"], ["notion"], { notion: losing });
+      assert.equal(lost.published.destinations[0].status, "publication-unconfirmed");
+      const posts = fake.calls.filter((call) => call.method === "POST").length;
+      const again = await f.publish(evidence, "todo-login", "로그인 오류 안내", ["fa"], ["notion"], { notion: fake.adapter() });
+      assert.equal(again.published.status, "published", JSON.stringify(again.published));
+      assert.equal([...fake.pages.values()].filter((page) => page.title === "샘플 제품").length, 1, "no duplicate product page");
+      assert.ok(fake.calls.filter((call) => call.method === "POST").length > posts, "the rest of the tree follows");
+    });
+});
+
+test("non-blocking review items: feature change on a published result, names, line endings and the fixed folders", async (t) => {
+  await t.test("a different feature for an already published result is reported", async (t) => {
+    const f = fixture(t);
+    f.connect();
+    const evidence = f.save("todo-x", "공통 문구");
+    await f.publish(evidence, "todo-x", "공통 문구", ["fa"]);
+    const out = (await f.publish(evidence, "todo-x", "공통 문구", ["fb"])).published.destinations[0];
+    assert.deepEqual(out.featureChangeIgnored.kept, ["fa"]);
+    assert.deepEqual(out.featureChangeIgnored.requested, ["fb"]);
+  });
+  await t.test("reserved Windows names and the UTF-16 cap", () => {
+    for (const [value, expected] of [
+      ["con", "con 문서"],
+      ["CON.txt", "CON 문서.txt"],
+      ["nul ", "nul 문서"],
+      ["com1. ", "com1 문서"],
+      ["lpt9 .md", "lpt9 문서 .md"],
+      ["console", "console"],
+    ])
+      assert.equal(readableName(value), expected, value);
+    const wide = readableName("😀".repeat(30));
+    assert.equal(wide.length, 40, "40 UTF-16 units, no split pair");
+  });
+  await t.test("a feature named like its group's document and a feature named 소속 미확인 keep separate places", async (t) => {
+    const model = sampleModel();
+    model.features.push({ key: "fx", name: "계정.md", featureGroupKeys: ["g1"], capabilityKeys: [], governedBy: [] });
+    model.features.push({ key: "fy", name: "소속 미확인", featureGroupKeys: [], capabilityKeys: [], governedBy: [] });
+    const f = fixture(t, { model });
+    f.connect();
+    const x = (await f.publish(f.save("todo-x", "이름 겹침"), "todo-x", "이름 겹침", ["fx"])).published.destinations[0];
+    assert.equal(x.status, "current", JSON.stringify(x));
+    assert.match(x.result.url, /^Lode\/샘플 제품\/계정\/계정\.md \([a-f0-9]{4}\)\//);
+    const y = (await f.publish(f.save("todo-y", "고정 폴더"), "todo-y", "고정 폴더", ["fy"])).published.destinations[0];
+    const none = (await f.publish(f.save("todo-z", "기능 없음"), "todo-z", "기능 없음")).published.destinations[0];
+    assert.match(y.result.url, /^Lode\/샘플 제품\/소속 미확인 \([a-f0-9]{4}\)\//);
+    assert.match(none.result.url, /^Lode\/샘플 제품\/소속 미확인\/기능 없음 결과 1\.md$/);
+    assertLinksResolve(f.vault);
+  });
+  await t.test("a document converted to CRLF keeps CRLF when a list changes", async (t) => {
+    const f = fixture(t);
+    f.connect();
+    const first = f.save("todo-expiry", "만료 안내 문구");
+    await f.publish(first, "todo-expiry", "만료 안내 문구", ["fb"]);
+    const target = path.join(f.vault, ...featureDoc.split("/"));
+    fs.writeFileSync(target, fs.readFileSync(target, "utf8").replace(/\n/g, "\r\n"));
+    await f.publish(f.save("todo-expiry", "만료 안내 문구", "partial", first), "todo-expiry", "만료 안내 문구", ["fb"]);
+    const text = fs.readFileSync(target, "utf8");
+    assert.match(text, /만료 안내 문구 결과 2/);
+    assert.ok(!/[^\r]\n/.test(text), "every line ends with CRLF");
+  });
+});
+
+test("Project publication: decision documents link their features on the first publication; a multi-call publication says it is in progress", async (t) => {
+  const f = fixture(t);
+  f.connect([{ id: "vault", kind: "obsidian", vaultRoot: f.vault, automatic: false, todoIds: [], projectDocuments: true }]);
+  const prepared = await prepareProjectDocuments({ root: f.root, sessionId: f.sessionId });
+  const product = path.join(f.vault, "Lode", "샘플 제품", "샘플 제품.md");
+  let first = true,
+    last;
+  for (let i = 0; i < 60; i++) {
+    last = await publishProjectDocuments({ root: f.root, sessionId: f.sessionId, projectionId: prepared.projectionId, targetIds: ["vault"] });
+    if (first) assert.match(fs.readFileSync(product, "utf8"), /문서를 갱신하는 중입니다/);
+    first = false;
+    if (last.status !== "continuation-required") break;
+  }
+  assert.equal(last.status, "published");
+  assert.doesNotMatch(fs.readFileSync(product, "utf8"), /문서를 갱신하는 중입니다/);
+  const decision = read(f.vault, "Lode/샘플 제품/결정과 조건/네트워크 재시도는 사용자가 선택합니다.md");
+  assert.match(decision, /## 관련 기능\n\n- \[로그인\]\([^)]+\)\n- \[만료 안내\]\([^)]+\)/);
+  assertLinksResolve(f.vault);
+});
+
+test("earlier layout: the same result is not copied again; old receipts are labelled; a lost Start update is recognised", async (t) => {
+  const oldPublication = (f, evidence, { basisId = "b".repeat(64), startId = "Start.md", url = "human-old.md" } = {}) => {
+    const owner = f.store.caller;
+    const logicalKey = workDocumentHash([owner.projectId, f.sessionId, "todo-expiry", "work-document"]);
+    const currentText = "Lode current links begin\n\n[사람용](human-old.md)\n\nLode current links end";
+    return {
+      logicalKey,
+      currentText,
+      receipt: {
+        kind: "WorkDocumentPublicationReceipt",
+        authorityPlane: "P5",
+        basisId,
+        projectionId: "c".repeat(64),
+        logicalKey,
+        startId,
+        currentText,
+        views: [{ audience: "human", id: "human-old.md", url }],
+        taskRevision: { evidenceId: evidence.evidenceId, evidenceDigest: evidence.evidenceDigest },
+        title: "만료 안내 문구",
+        executionReplayAllowed: false,
+      },
+    };
+  };
+  await t.test("the same result", async (t) => {
+    const f = fixture(t);
+    f.connect();
+    const evidence = f.save("todo-expiry", "만료 안내 문구");
+    const prepared = await prepareWorkDocuments({
+      root: f.root,
+      sessionId: f.sessionId,
+      todoId: "todo-expiry",
+      evidenceIds: [evidence.evidenceId],
+      title: "만료 안내 문구",
+      featureKeys: ["fb"],
+    });
+    const old = oldPublication(f, evidence, { basisId: prepared.basis.basisId });
+    const key = workDocumentHash(["vault", "obsidian", f.vault, old.logicalKey]);
+    workDocumentStore({ root: f.root, sessionId: f.sessionId }).write(["current", `${key}.json`], old.receipt, true);
+    const status = workDocumentStatus({ root: f.root, sessionId: f.sessionId, logicalKey: old.logicalKey }).destinations[0].current;
+    assert.equal(status.layout, "old-layout");
+    const out = (await publishWorkDocuments({ root: f.root, sessionId: f.sessionId, projectionId: prepared.projectionId, targetIds: ["vault"] }))
+      .destinations[0];
+    assert.equal(out.alreadyPublishedInOldLayout, true);
+    assert.deepEqual(files(f.vault), [], "nothing is copied into the new tree");
+  });
+  await t.test("a lost Notion Start update", async (t) => {
+    const f = fixture(t),
+      fake = notion();
+    f.connect([notionTarget(fake)]);
+    const first = f.save("todo-expiry", "만료 안내 문구");
+    const startId = "20000000-0000-4000-8000-000000009000";
+    const old = oldPublication(f, first, { startId, url: "https://www.notion.so/20000000000040008000000000009001" });
+    fake.pages.set(startId, { id: startId, parent: { page_id: fake.parent }, title: "Lode work", markdown: `# Lode work\n\n${old.currentText}\n` });
+    const key = workDocumentHash(["notion", "notion", fake.parent, old.logicalKey]);
+    workDocumentStore({ root: f.root, sessionId: f.sessionId }).write(["current", `${key}.json`], old.receipt, true);
+    fake.fault.losePatchId = startId;
+    const second = f.save("todo-expiry", "만료 안내 문구", "partial", first);
+    const lost = (await f.publish(second, "todo-expiry", "만료 안내 문구", ["fb"], ["notion"], { notion: fake.adapter() })).published.destinations[0];
+    assert.equal(lost.status, "publication-unconfirmed");
+    const again = (await f.publish(second, "todo-expiry", "만료 안내 문구", ["fb"], ["notion"], { notion: fake.adapter() })).published.destinations[0];
+    assert.equal(again.status, "current", JSON.stringify(again));
+    assert.equal(again.oldLayoutLink.status, "linked-to-new-location");
+    assert.equal(again.personEdited, undefined);
+  });
 });

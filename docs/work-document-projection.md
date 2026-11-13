@@ -49,7 +49,8 @@ otherwise the Project folder name; groups and features use Product model names.
 Characters a file name cannot hold are removed, names stop at 40 characters, and a
 short suffix such as `(d403)` is added only when the name is already taken in
 that folder, by another Lode document or by a file a person made there. Page
-titles already used under the Notion parent are never reused either. Vault paths
+titles already used under the configured Notion parent are never reused either;
+inside Lode's own pages only Lode's own names are checked. Vault paths
 stay within 180 characters: deeper groups are placed higher and links keep the
 hierarchy.
 
@@ -89,8 +90,15 @@ Lists such as a feature's 이 기능의 결과 need no markers. Lode records the
 list text it wrote and replaces it only where that text occurs exactly once. If a
 person changed the list, it is kept and reported as `personEdited`, and the
 result still publishes. A document still exactly as Lode last wrote it may be
-rewritten whole (title, description). Files people create inside Lode folders
-are never touched. There are no per-task Start or Notes documents.
+rewritten whole (title, description). Documents are judged by their text, not by
+the file: an editor or sync tool that saves through a temporary file changes
+nothing. A folder document a person deleted or renamed is reported as
+`document-missing-not-recreated` and results still publish; Lode does not
+recreate it. Restoring the file (from the vault's trash or by undoing the rename)
+brings it back, and Lode updates its lists again once their last text is found.
+Files people create inside Lode folders are never touched, and a person's file
+at a name Lode was about to create is reported (`WORK_DOCUMENT_NAME_OCCUPIED`),
+not overwritten. There are no per-task Start or Notes documents.
 
 ### Project documentation
 
@@ -114,7 +122,10 @@ revised by Lode, never silently shrunk to the last note.
 One tree is shared across Sessions and aliases for the same actual Notion parent
 or physical vault. Different Projects with the same title get separate folders.
 Large products continue in bounded calls: `continuation-required` is Lode's to
-follow, never a user task. Completion requires observing every selected document.
+follow, never a user task. While a publication spans several calls, the product
+document says that it is being updated until the last call; documents are
+otherwise updated in place without history copies, since results are never
+rewritten. Completion requires observing every selected document.
 This is **not simultaneous remote CAS**: receipts state the last verified scope.
 A stale source or configuration is refused, and Canon read failures keep their
 primary failure. Unreadable or unselected Sessions never silently delete their
@@ -168,7 +179,7 @@ checkpoint is not automatically exported.
 The async CLI/MCP `session-work-record` composition first saves the existing
 create-only P3 original. An explicitly connected task's uniquely scoped result
 then prepares related documents. Later partial, waiting, cancelled and corrected
-revisions update the same scope. Native termination, idle, checkpoint save, empty
+revisions are published as the task's next results. Native termination, idle, checkpoint save, empty
 pending and a bare `completed` label never establish completion. Mixed tasks and
 incomplete/conflicting revisions leave publication unconfirmed, preserving the
 saved work. No-change retries create no duplicate documents.
@@ -202,8 +213,9 @@ responses. Document effects are distinguished from original task effects.
 
 Every external effect has a prior durable attempt. Lost creates use the trusted
 attempt and bounded selected-parent enumeration with exact body/parent checks.
-Missing mappings, copied markers, duplicates, expired tasks and empty/partial
-listings do not permit blind POST replay. A matching content copy is not proof of
+Missing mappings, copied pages, duplicates, expired tasks and empty/partial
+listings do not permit blind POST replay; a vault file is settled by its exact
+name instead (absent: created; Lode's text: bound; other text: kept). A matching content copy is not proof of
 the original creation event or authorship. Old exact references never bind to a
 new same-title page. Known async tasks require terminal success and readback;
 missing warnings alone is not success. One destination failure does not erase

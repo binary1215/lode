@@ -828,6 +828,7 @@ test("paged prefix body drift and changed/deleted prior candidates never establi
           configurationDigest: "a".repeat(64),
           prepared: { projectionId },
           previous: null,
+          stableContainerIds: ["Start.md"],
         });
       let writer = make("b".repeat(64));
       fake.fault.lose = true;

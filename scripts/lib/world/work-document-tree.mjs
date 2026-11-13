@@ -3,7 +3,7 @@ import path from "node:path";
 import { workDocumentHash as hash, readableText, recordedTime, WORK_DOCUMENT_RENDERER } from "./work-document-source.mjs";
 import { documentFailure as fail, readDocumentValue } from "./work-document-store.mjs";
 import { createDocumentEffectWriter } from "./work-document-effect-writer.mjs";
-import { createObsidianWorkDocumentAdapter, sameDocumentText, safeVaultName } from "./work-document-destinations.mjs";
+import { createObsidianWorkDocumentAdapter, encodeLinkSegment, sameDocumentText, safeVaultName } from "./work-document-destinations.mjs";
 import { readProductModelCanon } from "./product-model.mjs";
 
 // Layout v2: Lode/<product>/<feature group>/<feature>/ with readable names.
@@ -37,13 +37,16 @@ export function readableName(value, fallback = "이름 없음") {
     .replace(/\s+/g, " ")
     .trim()
     .replace(/^[.\s]+/, "");
-  name = [...name]
-    .slice(0, NAME_CAP)
-    .join("")
-    .replace(/[.\s]+$/, "");
+  // The cap counts UTF-16 units (what path limits count) and never splits a pair.
+  let capped = "";
+  for (const character of name) {
+    if (capped.length + character.length > NAME_CAP) break;
+    capped += character;
+  }
+  name = capped.replace(/[.\s]+$/, "");
   if (!name) name = fallback;
-  if (/^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i.test(name)) name += " 문서";
-  return name;
+  // Windows refuses a device name as the stem, also with an extension or spaces.
+  return name.replace(/^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(?=\s*(\.|$))/i, "$1 문서");
 }
 const lower = (name) => name.normalize("NFC").toLowerCase();
 const line = (value) => readableText(String(value).replace(/\s+/g, " "));
@@ -125,7 +128,6 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
   const adapterFor = (doc) => {
     if (!notion) return createObsidianWorkDocumentAdapter({ vaultRoot: vault, directory: dirOf(doc) });
     const parent = parentPage(doc);
-    if (parent === undefined) fail("A parent page is not allocated.", "PROJECT_DOCUMENT_LINK_PENDING");
     return parent ? adapter.scoped(parent) : adapter;
   };
   const link = (from, to) => {
@@ -133,7 +135,7 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
     return path.posix
       .relative(dirOf(from), dirOf(to) + "/" + to.name + ".md")
       .split("/")
-      .map(encodeURIComponent)
+      .map(encodeLinkSegment)
       .join("/");
   };
   const anchor = (from, to, label) => {
@@ -146,21 +148,9 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
   const writerFor = (doc) => {
     const writerKey = hash([key, doc.key]);
     const retry = retryAttemptId && store.read("attempts", retryAttemptId + ".json")?.scope?.key === writerKey ? retryAttemptId : undefined;
-    const raw = adapterFor(doc);
-    const guarded = {
-      ...raw,
-      create: async (input) => {
-        await check();
-        return raw.create(input);
-      },
-      replace: async (input) => {
-        await check();
-        return raw.replace(input);
-      },
-    };
     return createDocumentEffectWriter({
       store,
-      adapter: guarded,
+      adapter: adapterFor(doc),
       key: writerKey,
       target: { id: key },
       configurationDigest: permissionDigest,
@@ -171,6 +161,7 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
       recoverByTitle: notion,
       recordedElsewhere: (id) => id !== doc.id && recordedIds().has(id),
       attemptContext,
+      identityByContent: true,
     });
   };
   const documentId = (doc) => (notion ? doc.name : doc.name + ".md");
@@ -195,11 +186,11 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
         ? rootListing.titles.some((title) => lower(title) === lower(name))
         : !/ \([a-f0-9]{4,}\)$/.test(name)
       : occupiedOnDisk("Lode", name);
-  const allocate = (space, ownerKey, base, dir, extension = "") => {
+  const allocate = (space, ownerKey, base, dir, extension = "", clashes = () => false) => {
     const existing = Object.values(space).find((value) => value.owner === ownerKey);
     if (existing) return existing.name;
     let name = base;
-    const occupied = (candidate) => (space === state.rootNames ? occupiedAtRoot(candidate) : occupiedOnDisk(dir, candidate + extension));
+    const occupied = (candidate) => clashes(candidate) || (space === state.rootNames ? occupiedAtRoot(candidate) : occupiedOnDisk(dir, candidate + extension));
     for (let size = 4; space[lower(name)] || occupied(name); size += 2) {
       if (size > 16) fail("No free document name.", "WORK_DOCUMENT_NAME_UNAVAILABLE");
       name = `${base} (${hash([key, ownerKey]).slice(0, size)})`;
@@ -223,6 +214,7 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
       doc.createRegions = value.regions || {};
       save();
     }
+    await check();
     doc.id = await writerFor(doc).create(docKey, documentId(doc), doc.name, doc.createText);
     doc.lastWritten = doc.createText;
     doc.regions = doc.createRegions;
@@ -247,9 +239,11 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
   // before anything else is decided about the document: never replayed blindly
   // and never mistaken for a person's edit.
   const send = async (doc, writer, pending) => {
+    await check();
+    if (pending.occurrence === undefined) pending = { ...pending, occurrence: (doc.changes = (doc.changes || 0) + 1) };
     doc.pending = pending;
     save();
-    await writer.change(doc.id, pending.oldText, pending.newText);
+    await writer.change(doc.id, pending.oldText, pending.newText, pending.occurrence);
     const after = await writer.readBound(doc.id);
     if (!after.complete || after.warnings?.length) fail("Document read is incomplete.", "WORK_DOCUMENT_REMOTE_DRIFT");
     if (pending.whole ? !sameDocumentText(after.markdown, pending.lastWritten) : after.markdown.split(pending.newText).length !== 2)
@@ -266,12 +260,24 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
   const settlePending = async () => {
     for (const doc of Object.values(state.documents).filter((value) => value.pending && value.id)) await send(doc, writerFor(doc), doc.pending);
   };
+  const missing = (error) => error?.code === "ENOENT" || error?.httpStatus === 404;
+  // A file's own line endings are kept when Lode rewrites part of it.
+  const eol = (text, observed) => (observed.includes("\r\n") ? text.replace(/\r?\n/g, "\r\n") : text);
   const refresh = async (docKey, { whole = null, regions = {} } = {}) => {
     const doc = state.documents[docKey];
     if (!doc?.id) return;
     const writer = writerFor(doc);
-    if (doc.pending) await send(doc, writer, doc.pending);
-    const observed = await writer.readBound(doc.id);
+    let observed;
+    try {
+      if (doc.pending) await send(doc, writer, doc.pending);
+      observed = await writer.readBound(doc.id);
+    } catch (error) {
+      if (!missing(error)) throw error;
+      // A deleted or renamed document is a person's choice: it is reported and
+      // not recreated; the publication goes on.
+      report.personEdited.push({ document: doc.name, status: "document-missing-not-recreated" });
+      return;
+    }
     if (!observed.complete || observed.warnings?.length) fail("Document read is incomplete.", "WORK_DOCUMENT_REMOTE_DRIFT");
     if (!doc.edited && doc.lastWritten && sameDocumentText(observed.markdown, doc.lastWritten)) {
       const next = whole ? whole.text : applyRegions(doc.lastWritten, doc.regions, regions);
@@ -281,7 +287,7 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
         await send(doc, writer, {
           whole: true,
           oldText: observed.markdown.trimEnd(),
-          newText: next.trimEnd(),
+          newText: eol(next.trimEnd(), observed.markdown),
           lastWritten: next,
           regions: nextRegions,
           edited: false,
@@ -299,21 +305,25 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
     }
     if (whole) {
       regions = whole.regions || {};
-      report.personEdited.push({ document: doc.name, status: "person-edited-not-overwritten", listsUpdated: Object.keys(regions) });
+      // Only a change outside the lists is withheld from a person's document.
+      if (applyRegions(doc.lastWritten || "", doc.regions, regions) !== whole.text)
+        report.personEdited.push({ document: doc.name, status: "person-edited-not-overwritten", listsUpdated: Object.keys(regions) });
     }
     for (const [name, value] of Object.entries(regions)) {
       const before = doc.regions[name];
       if (before === undefined || before === value) continue;
       const current = await writer.readBound(doc.id);
-      if (current.markdown.split(before).length !== 2) {
+      const oldText = eol(before, current.markdown),
+        newText = eol(value, current.markdown);
+      if (current.markdown.split(oldText).length !== 2) {
         report.personEdited.push({ document: doc.name, region: name, status: "person-edited-not-overwritten" });
         continue;
       }
       await send(doc, writer, {
         whole: false,
-        oldText: before,
-        newText: value,
-        lastWritten: doc.lastWritten,
+        oldText,
+        newText,
+        lastWritten: applyRegions(doc.lastWritten || "", { [name]: before }, { [name]: value }) ?? doc.lastWritten,
         regions: { ...doc.regions, [name]: value },
         edited: true,
       });
@@ -356,7 +366,9 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
       // the hierarchy stays visible through links.
       while (parent.parent && !fits(parent, base)) parent = state.folders[parent.parent];
       parentKey = parent.key;
-      name = allocate(parent.dirs, folderKey, base, folderDir(parent));
+      name = allocate(parent.dirs, folderKey, base, folderDir(parent), "", (candidate) =>
+        Boolean(/\.md$/i.test(candidate) && parent.files[lower(candidate.slice(0, -3))]),
+      );
       segments = [...parent.segments, name];
     }
     const folder = {
@@ -370,6 +382,10 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
       files: { [lower(name)]: { owner: "doc:" + folderKey, name } },
       evidenceFiles: { [lower(name + " 근거")]: { owner: "ev:" + folderKey, name: name + " 근거" } },
     };
+    // 12: the fixed folders under a product keep their names; a feature named
+    // like one of them gets a suffix instead of merging with it.
+    if (kind === "product")
+      for (const [specialKey, special] of Object.entries(SPECIAL)) folder.dirs[lower(special.name)] = { owner: specialKey, name: special.name };
     state.folders[folderKey] = folder;
     if (kind === "feature") state.featureFolders[entityKey] = folderDir(folder);
     declare("doc:" + folderKey, { folder: folderKey, role: "folder", name });
@@ -455,7 +471,7 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
   let extras = { narratives: new Map(), records: null };
   let recordsRegion = null;
   const narrativeSections = (kind, entityKey) => {
-    const narrative = extras.narratives.get(kind + "/" + entityKey);
+    const narrative = extras.narratives.get(kind + "/" + entityKey) || state.narratives?.[kind + "/" + entityKey];
     if (!narrative) return [];
     const out = [];
     if (narrative.historical) out.push("아래 설명은 이전에 선택한 원문에 대한 것입니다. 현재 원문과 달라졌으며 현재 동작은 다시 확인해야 합니다.");
@@ -497,12 +513,14 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
       doc = folderDoc(folderKey),
       sections = [`# ${line(displayName(folder))}`],
       regions = {};
-    if (folder.kind === "product")
+    if (folder.kind === "product") {
+      if (state.inProgress) sections.push("문서를 갱신하는 중입니다. 다 끝날 때까지 일부 문서는 이전 내용일 수 있습니다.");
       sections.push(
         canon.features.length || canon.featureGroups.length
           ? "제품 구성과 기능별 작업 결과를 아래에서 찾아볼 수 있습니다."
           : "제품 설명 원문이 아직 없습니다. 결과는 소속 미확인 폴더에서 읽을 수 있습니다.",
       );
+    }
     if (SPECIAL[folder.kind])
       sections.push(
         {
@@ -547,9 +565,9 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
       `폴더: ${folderDir(folder)}`,
       `제품 원문: ${canonRead.status} · ${canon.productModelId || "없음"} · ${canon.productModelHash || "없음"} · ${canonRead.sourceDigest || "없음"}`,
     ];
-    const narrative = extras.narratives.get(
-      (folder.kind === "group" ? "FeatureGroup" : folder.kind === "feature" ? "Feature" : "product-view") + "/" + (folder.entityKey || "project"),
-    );
+    const narrativeKey =
+      (folder.kind === "group" ? "FeatureGroup" : folder.kind === "feature" ? "Feature" : "product-view") + "/" + (folder.entityKey || "project");
+    const narrative = extras.narratives.get(narrativeKey) || state.narratives?.[narrativeKey];
     const sections = [`# ${line(displayName(folder))} 근거`, management(lines)];
     if (value) sections.push("## 제품 원문 항목\n\n" + "```json\n" + JSON.stringify(value, null, 2) + "\n```");
     if (narrative)
@@ -591,6 +609,17 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
     return folder;
   };
 
+  // Brings a folder document and its ancestors up to the current model: names,
+  // parent links and lists. Unchanged documents are not read or written.
+  const syncChain = async (folderKey, seen = new Set()) => {
+    if (seen.has(folderKey)) return;
+    seen.add(folderKey);
+    const folder = await ensureFolder(folderKey);
+    for (const parentKey of [...new Set([folder.parent, ...canonicalParents(folder)].filter(Boolean))]) await syncChain(parentKey, seen);
+    const whole = renderFolder(folderKey);
+    if (whole.text !== folderDoc(folderKey).lastWritten || folderDoc(folderKey).edited) await refresh("doc:" + folderKey, { whole });
+  };
+
   // ---- results ----
   const resolveFeatures = (featureKeys = []) => {
     const accepted = [],
@@ -606,6 +635,16 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
       agent = views.find((view) => view.audience === "agent");
     const resultKey = hash([basis.logicalKey, basis.basisId]);
     let result = state.results[resultKey];
+    let featureChangeIgnored = null;
+    if (result) {
+      const requested = resolveFeatures(featureKeys);
+      if (JSON.stringify(requested.accepted) !== JSON.stringify(result.features))
+        featureChangeIgnored = {
+          requested: featureKeys,
+          kept: result.features,
+          reason: "this result is already published; the next result follows the new choice",
+        };
+    }
     if (!result) {
       const { accepted, rejected } = resolveFeatures(featureKeys);
       // Keys that are not Product features are never accepted as features.
@@ -616,7 +655,7 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
       const number = history.length + 1;
       const title = human.title;
       const base = `${readableName(title, "작업")} 결과 ${number}`;
-      const name = allocate(folder.files, "result:" + resultKey, base, folderDir(folder), ".md");
+      const name = allocate(folder.files, "result:" + resultKey, base, folderDir(folder), ".md", (candidate) => Boolean(folder.dirs[lower(candidate + ".md")]));
       const evidenceName = allocate(folder.evidenceFiles, "result-ev:" + resultKey, name + " 근거", folderDir(folder) + "/근거", ".md");
       const record = basis.records.find((value) => value.role === "selected-task" && value.currentness !== "selected-historical-task-revision");
       const task = basis.taskState?.items.find((value) => value.todoId === basis.todoId);
@@ -661,7 +700,7 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
       const url = path.posix
         .relative(dirOf(from), result.previous.directory + "/" + result.previous.file)
         .split("/")
-        .map(encodeURIComponent)
+        .map(encodeLinkSegment)
         .join("/");
       return `[이전 결과](${url})`;
     };
@@ -715,7 +754,8 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
     const humanCurrent = observed.complete && !observed.warnings?.length && sameDocumentText(observed.markdown, humanDoc.lastWritten);
     if (!humanCurrent) report.personEdited.push({ document: humanDoc.name, status: "person-edited-not-overwritten" });
     const folders = [...new Set([result.folder, ...result.features.map((featureKey) => "feature:" + featureKey)])];
-    for (const folderKey of folders) await refresh("doc:" + folderKey, { regions: { results: resultsRegion(state.folders[folderKey]) } });
+    const seen = new Set();
+    for (const folderKey of folders) await syncChain(folderKey, seen);
     let oldLayoutLink = null;
     if (result.previous?.kind === "old-layout") oldLayoutLink = await linkOldLayout(result, humanDoc);
     return {
@@ -724,6 +764,7 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
       evidenceDoc,
       humanCurrent,
       oldLayoutLink,
+      featureChangeIgnored,
       url: (doc) => (notion ? adapter.url(doc.id) : dirOf(doc) + "/" + doc.name + ".md"),
     };
   };
@@ -754,10 +795,11 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
         : path.posix
             .relative(old.directory, dirOf(humanDoc) + "/" + humanDoc.name + ".md")
             .split("/")
-            .map(encodeURIComponent)
+            .map(encodeLinkSegment)
             .join("/");
       const text = `이후 결과는 새 위치에 있습니다: [${line(humanDoc.name)}](${url})`;
-      if (!observed.complete || observed.warnings?.length || observed.markdown.split(old.currentText).length !== 2)
+      const applied = observed.markdown.split(text).length === 2 && !observed.markdown.includes(old.currentText);
+      if (!observed.complete || observed.warnings?.length || (!applied && observed.markdown.split(old.currentText).length !== 2))
         outcome = { status: "person-edited-not-overwritten", document: old.startName };
       else {
         await writer.change(old.startId, old.currentText, text);
@@ -781,7 +823,9 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
     const docKey = `entity:${kind}:${entityKey}`;
     if (!state.documents[docKey]) {
       const value = (canon[ENTITY_FIELDS[kind][0]] || []).find((item) => item.key === entityKey);
-      const name = allocate(folder.files, docKey, readableName(entityDisplay(kind, value)), folderDir(folder), ".md");
+      const name = allocate(folder.files, docKey, readableName(entityDisplay(kind, value)), folderDir(folder), ".md", (candidate) =>
+        Boolean(folder.dirs[lower(candidate + ".md")]),
+      );
       const evidence = allocate(folder.evidenceFiles, docKey + ":ev", name + " 근거", folderDir(folder) + "/근거", ".md");
       declare(docKey, { folder: "conditions", role: "entity", entityKind: kind, entityKey, name });
       declare(docKey + ":ev", { folder: "conditions", role: "evidence", name: evidence });
@@ -859,11 +903,19 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
     for (const feature of [...canon.features].sort((a, b) => a.key.localeCompare(b.key))) steps.push({ kind: "folder", key: "feature:" + feature.key });
     steps.push({ kind: "folder", key: "unclassified" });
     if (records) steps.push({ kind: "folder", key: "records" });
+    for (const [kind, [field]] of Object.entries(ENTITY_FIELDS))
+      for (const value of canon[field] || []) steps.push({ kind: "entity", entityKind: kind, key: value.key });
+    steps.push({ kind: "folder", key: "product", final: true });
     return steps;
   };
-  const runProjectStep = async (step) => {
+  const runProjectStep = async (step, { multiCall = false } = {}) => {
     await settlePending();
     await listRoot();
+    const inProgress = multiCall && !step.final;
+    if (Boolean(state.inProgress) !== inProgress) {
+      state.inProgress = inProgress;
+      save();
+    }
     if (step.kind === "entity") {
       await ensureEntity(step.entityKind, step.key);
       const docKey = `entity:${step.entityKind}:${step.key}`;
@@ -921,6 +973,10 @@ export function openDocumentTree({ store, key, target, adapter, permissionDigest
     runProjectStep,
     setExtras(value) {
       extras = { ...extras, ...value };
+      if (value.narratives) {
+        state.narratives = Object.fromEntries(value.narratives);
+        save();
+      }
     },
     folderDoc,
     url: (doc) => (notion ? adapter.url(doc.id) : dirOf(doc) + "/" + doc.name + ".md"),
