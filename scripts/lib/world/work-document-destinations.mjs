@@ -249,7 +249,11 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
       if (error.httpStatus === 404) error.pageMissing = true;
       throw error;
     });
-    if (compact(page?.id || "") !== compact(id) || compact(page.parent?.page_id || "") !== compact(parentPageId) || page.archived || page.in_trash)
+    // A page a person moved to the trash answers with in_trash (archived in
+    // older API versions): it is read as missing, like a page that is gone.
+    if (page?.in_trash === true || page?.archived === true)
+      throw Object.assign(new Error("Page is in the trash."), { code: "WORK_DOCUMENT_REMOTE_DRIFT", pageMissing: true });
+    if (compact(page?.id || "") !== compact(id) || compact(page.parent?.page_id || "") !== compact(parentPageId))
       documentFailure("Page parent or identity differs.", "WORK_DOCUMENT_REMOTE_DRIFT");
     const value = await call("GET", `/pages/${id}/markdown?markdown_version=v2`);
     if (compact(value?.id || "") !== compact(id) || typeof value.markdown !== "string" || Buffer.byteLength(value.markdown) > 2 * 1024 * 1024)
@@ -339,7 +343,7 @@ export function createNotionWorkDocumentAdapter({ parentPageId, request, request
           }
         } catch (error) {
           if (error.code !== "WORK_DOCUMENT_TRANSPORT_BUDGET") throw error;
-          return { complete: false, matches: [], limit: "parent-listing-exceeds-one-call-budget" };
+          return { complete: false, matches: [], limit: "recovery-exceeds-one-call-request-budget" };
         }
         return { complete: true, matches };
       }

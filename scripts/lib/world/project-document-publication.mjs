@@ -278,11 +278,14 @@ export async function publishProjectDocuments({ root, sessionId, projectionId, t
           attemptContext: { configurationDigest: configuration.configurationDigest },
           check,
         });
-        // A publication refused as stale cannot finish: its in-progress line goes.
-        const stale = (error) =>
-          ["PROJECT_DOCUMENT_SOURCE_CHANGED", "PROJECT_DOCUMENT_SELECTION_CHANGED", "WORK_DOCUMENT_CONFIGURATION_CHANGED"].includes(error?.code);
+        // A publication refused because its source or selection changed cannot
+        // finish: its own in-progress line goes. Nothing is written when the
+        // destination's configuration changed; the next publication allowed to
+        // write there replaces the line.
+        const stale = (error) => ["PROJECT_DOCUMENT_SOURCE_CHANGED", "PROJECT_DOCUMENT_SELECTION_CHANGED"].includes(error?.code);
         const endIfStale = async (error) => {
-          if (stale(error)) await tree.endProgress().catch(() => {});
+          if (stale(error) && task.read("configuration.json")?.configurationDigest === configuration.configurationDigest)
+            await tree.endProgress(projectionId).catch(() => {});
           throw error;
         };
         const basis = await check().catch(endIfStale);
@@ -303,7 +306,7 @@ export async function publishProjectDocuments({ root, sessionId, projectionId, t
         let operations = 0;
         try {
           while (state.phase === "write" && state.cursor < steps.length && operations++ < maxPageOperations) {
-            await tree.runProjectStep(steps[state.cursor], { multiCall: steps.length > maxPageOperations });
+            await tree.runProjectStep(steps[state.cursor], { multiCall: steps.length > maxPageOperations, projectionId });
             state.cursor++;
             noteEdits();
             saveState();

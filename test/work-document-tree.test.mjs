@@ -1138,8 +1138,184 @@ test("Notion recovery reads every same-title child; a parent too large for one c
         assert.equal(found.matches.length, 1);
       } else {
         assert.equal(found.complete, false);
-        assert.equal(found.limit, "parent-listing-exceeds-one-call-budget");
+        assert.equal(found.limit, "recovery-exceeds-one-call-request-budget");
         assert.equal(found.cursor, undefined, "no partial position is kept or offered for a repeat");
       }
     });
+});
+
+// ---- Review round 4: replayed vault changes, the line's owner, trashed pages ----
+
+// The vault write reaches the file, then a read of that file fails: once right
+// after the write ("first"), or on the second read after it ("second").
+function faultReadBack(t, target, which) {
+  const rename = fs.renameSync,
+    readFile = fs.readFileSync;
+  let reads = -1,
+    fired = 0;
+  t.mock.method(fs, "renameSync", function (from, to) {
+    const result = rename.call(this, from, to);
+    if (String(to) === target) reads = 0;
+    return result;
+  });
+  t.mock.method(fs, "readFileSync", function (file, ...rest) {
+    if (reads >= 0 && String(file) === target && rest[0] === "utf8" && ++reads === (which === "first" ? 1 : 2)) {
+      reads = -1;
+      fired++;
+      throw Object.assign(new Error("Synthetic busy read-back"), { code: "EBUSY" });
+    }
+    return readFile.call(this, file, ...rest);
+  });
+  return () => fired;
+}
+const productDoc = "Lode/샘플 제품/샘플 제품.md";
+
+test("a replayed vault change whose new text contains the old text is applied once", async (t) => {
+  const f = fixture(t);
+  f.connect();
+  await f.publish(f.save("todo-a", "만료 문구"), "todo-a", "만료 문구", ["fb"]);
+  const product = path.join(f.vault, ...productDoc.split("/"));
+  fs.appendFileSync(product, "\n사람의 메모\n");
+  const evidence = f.save("todo-b", "알림 정리");
+  const fired = faultReadBack(t, product, "first");
+  const first = (await f.publish(evidence, "todo-b", "알림 정리", ["fc"])).published.destinations[0];
+  assert.equal(fired(), 1);
+  assert.equal(first.status, "publication-unconfirmed");
+  t.mock.restoreAll();
+  const again = (await f.publish(evidence, "todo-b", "알림 정리", ["fc"])).published.destinations[0];
+  assert.equal(again.status, "current", JSON.stringify(again));
+  const text = fs.readFileSync(product, "utf8");
+  assert.equal(text.split("\n").filter((value) => value.startsWith("- [알림]")).length, 1, "the list line is written once");
+  assert.ok(text.endsWith("사람의 메모\n"));
+});
+
+test("after a change that reached the file, a person's memo leaves the record following the file", async (t) => {
+  for (const which of ["first", "second"])
+    await t.test(`read-back failed ${which === "first" ? "before the outcome was journaled" : "after the outcome was journaled"}`, async (t) => {
+      const f = fixture(t);
+      f.connect();
+      await f.publish(f.save("todo-a", "만료 문구"), "todo-a", "만료 문구", ["fb"]);
+      const target = path.join(f.vault, ...featureDoc.split("/"));
+      const evidence = f.save("todo-b", "둘째 작업");
+      const fired = faultReadBack(t, target, which);
+      await f.publish(evidence, "todo-b", "둘째 작업", ["fb"]);
+      assert.equal(fired(), 1);
+      t.mock.restoreAll();
+      assert.match(fs.readFileSync(target, "utf8"), /둘째 작업 결과 1/, "the write reached the file");
+      fs.writeFileSync(target, fs.readFileSync(target, "utf8").replace("# 만료 안내\n", "# 만료 안내\n\n사람이 쓴 소개\n"));
+      const again = (await f.publish(evidence, "todo-b", "둘째 작업", ["fb"])).published.destinations[0];
+      assert.equal(again.status, "current", JSON.stringify(again));
+      assert.deepEqual(
+        again.personEdited.map((value) => value.status),
+        ["person-edited-not-overwritten"],
+      );
+      for (const n of [3, 4]) {
+        const later = (await f.publish(f.save(`todo-${n}`, `작업 ${n}`), `todo-${n}`, `작업 ${n}`, ["fb"])).published.destinations[0];
+        assert.equal(later.status, "current", JSON.stringify(later));
+        assert.equal(later.personEdited, undefined, "the person's memo is outside the list and needs no report");
+        assert.match(fs.readFileSync(target, "utf8"), new RegExp(`작업 ${n} 결과 1`), "later list updates continue");
+      }
+      assert.match(fs.readFileSync(target, "utf8"), /사람이 쓴 소개/);
+    });
+});
+
+test("the in-progress line: nothing is written after the destination's scope is revoked; an older projection never removes a newer one's line", async (t) => {
+  await t.test("scope revoked during a call", async (t) => {
+    const f = fixture(t);
+    const target = (over = {}) => ({ id: "vault", kind: "obsidian", vaultRoot: f.vault, automatic: false, todoIds: [], projectDocuments: true, ...over });
+    let configuration = f.connect([target()]);
+    const prepared = await prepareProjectDocuments({ root: f.root, sessionId: f.sessionId });
+    const call = () => publishProjectDocuments({ root: f.root, sessionId: f.sessionId, projectionId: prepared.projectionId, targetIds: ["vault"] });
+    await call();
+    const rename = fs.renameSync,
+      written = [];
+    let revoked = false;
+    t.mock.method(fs, "renameSync", function (from, to) {
+      const inVault = String(to).startsWith(f.vault);
+      if (revoked && inVault) written.push(String(to));
+      const result = rename.call(this, from, to);
+      if (!revoked && inVault) {
+        revoked = true;
+        configuration = configureWorkDocuments({
+          root: f.root,
+          sessionId: f.sessionId,
+          targets: [target({ projectDocuments: false })],
+          expectedConfigurationDigest: configuration.configurationDigest,
+        });
+      }
+      return result;
+    });
+    const second = await call();
+    t.mock.restoreAll();
+    assert.ok(revoked);
+    assert.equal(second.destinations[0].reasonCode, "WORK_DOCUMENT_CONFIGURATION_CHANGED");
+    assert.deepEqual(written, [], "no vault write after the revocation");
+  });
+  await t.test("an older projection", async (t) => {
+    const f = fixture(t);
+    f.connect([{ id: "vault", kind: "obsidian", vaultRoot: f.vault, automatic: false, todoIds: [], projectDocuments: true }]);
+    const old = await prepareProjectDocuments({ root: f.root, sessionId: f.sessionId });
+    const model = sampleModel();
+    model.features[0].description = "바뀐 설명";
+    f.write(model);
+    const current = await prepareProjectDocuments({ root: f.root, sessionId: f.sessionId });
+    const call = (projectionId) => publishProjectDocuments({ root: f.root, sessionId: f.sessionId, projectionId, targetIds: ["vault"] });
+    const product = path.join(f.vault, ...productDoc.split("/"));
+    assert.equal((await call(current.projectionId)).status, "continuation-required");
+    assert.match(fs.readFileSync(product, "utf8"), /문서를 갱신하는 중입니다/);
+    assert.equal((await call(old.projectionId)).destinations[0].reasonCode, "PROJECT_DOCUMENT_SOURCE_CHANGED");
+    assert.match(fs.readFileSync(product, "utf8"), /문서를 갱신하는 중입니다/, "only the running publication owns its line");
+    let last;
+    for (let i = 0; i < 60; i++) if ((last = await call(current.projectionId)).status !== "continuation-required") break;
+    assert.equal(last.status, "published");
+    assert.doesNotMatch(fs.readFileSync(product, "utf8"), /문서를 갱신하는 중입니다/);
+  });
+});
+
+test("a list a person already brought to Lode's text converges without a report", async (t) => {
+  const f = fixture(t);
+  f.connect([{ id: "vault", kind: "obsidian", vaultRoot: f.vault, automatic: false, todoIds: [], projectDocuments: true }]);
+  const prepared = await prepareProjectDocuments({ root: f.root, sessionId: f.sessionId });
+  const call = () => publishProjectDocuments({ root: f.root, sessionId: f.sessionId, projectionId: prepared.projectionId, targetIds: ["vault"] });
+  const product = path.join(f.vault, ...productDoc.split("/"));
+  await call();
+  // The person deletes the in-progress line by hand.
+  fs.writeFileSync(product, fs.readFileSync(product, "utf8").replace(/문서를 갱신하는 중입니다\.[^\n]*\n\n/, ""));
+  for (let i = 0; i < 60; i++) if ((await call()).status !== "continuation-required") break;
+  const next = (await f.publish(f.save("todo-a", "알림 정리"), "todo-a", "알림 정리", ["fc"])).published.destinations[0];
+  assert.equal(next.status, "current");
+  assert.ok(!(next.personEdited || []).some((value) => value.region === "intro"), JSON.stringify(next.personEdited));
+});
+
+test("a Notion page in the trash is read as missing: reported, never recreated, results still publish", async (t) => {
+  const f = fixture(t),
+    fake = notion();
+  f.connect([notionTarget(fake)]);
+  await f.publish(f.save("todo-a", "첫 작업"), "todo-a", "첫 작업", ["fa"], ["notion"], { notion: fake.adapter() });
+  const page = [...fake.pages.values()].find((value) => value.title === "로그인");
+  page.in_trash = true;
+  const original = fake.request;
+  fake.request = async (call) => {
+    const response = await original(call);
+    if (call.method === "GET" && /\/pages\/[^/]+$/.test(new URL(call.url).pathname) && response.body?.id === page.id) response.body.in_trash = true;
+    return response;
+  };
+  const adapter = createNotionWorkDocumentAdapter({ parentPageId: fake.parent, request: (call) => fake.request(call) });
+  const out = (await f.publish(f.save("todo-b", "둘째 작업"), "todo-b", "둘째 작업", ["fa"], ["notion"], { notion: adapter })).published.destinations[0];
+  assert.equal(out.status, "current", JSON.stringify(out));
+  assert.deepEqual(out.personEdited, [{ document: "로그인", status: "document-missing-not-recreated" }]);
+  assert.equal([...fake.pages.values()].filter((value) => value.title === "로그인").length, 1, "never recreated");
+});
+
+test("two documents with the same name in different folders are reported separately", async (t) => {
+  const model = sampleModel();
+  model.features[0].name = "같은 이름";
+  model.features[1].name = "같은 이름";
+  const f = fixture(t, { model });
+  f.connect();
+  await f.publish(f.save("todo-a", "공통 작업"), "todo-a", "공통 작업", ["fa", "fb"]);
+  for (const file of files(f.vault).filter((value) => value.endsWith("/같은 이름.md"))) fs.unlinkSync(path.join(f.vault, ...file.split("/")));
+  const out = (await f.publish(f.save("todo-b", "다음 작업"), "todo-b", "다음 작업", ["fa", "fb"])).published.destinations[0];
+  assert.equal(out.status, "current");
+  assert.equal(out.personEdited.filter((value) => value.document === "같은 이름").length, 2);
 });

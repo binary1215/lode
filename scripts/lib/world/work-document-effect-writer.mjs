@@ -356,18 +356,31 @@ export function createDocumentEffectWriter({
     // update; a same-title/content copy cannot supply that exact object identity.
     if (savedResponse?.objectIdentity) {
       const observed = await adapter.read(id);
-      if (!sameObject(observed.objectIdentity, savedResponse.objectIdentity) || !observed.markdown.includes(newText))
-        documentFailure("Published resource was replaced or edited.", "WORK_DOCUMENT_RESOURCE_REPLACED");
+      if (!sameObject(observed.objectIdentity, savedResponse.objectIdentity))
+        documentFailure("Published resource was replaced.", "WORK_DOCUMENT_RESOURCE_REPLACED");
+      // Judged by content, a later edit by a person is a drift, not a replacement.
+      if (!observed.markdown.includes(newText))
+        documentFailure("Published resource was edited.", identityByContent ? "WORK_DOCUMENT_REMOTE_DRIFT" : "WORK_DOCUMENT_RESOURCE_REPLACED");
       store.write(bindingParts(id), { objectIdentity: savedResponse.objectIdentity }, true);
     }
     const read = await readBound(id);
     if (!read.complete || read.warnings?.length) documentFailure("Managed text cannot be read completely.");
-    if ((read.markdown.includes(newText) && !read.markdown.includes(oldText)) || (oldText === newText && read.markdown.includes(newText))) return;
+    // The change happened when its new text is in the document exactly once and
+    // every occurrence of the old text lies inside it: the new text may contain
+    // the old text (a line added to a list), while old text around or beyond it
+    // (a line still to be removed) means it did not happen.
+    const at = read.markdown.indexOf(newText);
+    if (at >= 0 && read.markdown.indexOf(newText, at + 1) < 0) {
+      let outside = false;
+      for (let from = read.markdown.indexOf(oldText); from >= 0 && !outside; from = read.markdown.indexOf(oldText, from + 1))
+        outside = from < at || from + oldText.length > at + newText.length;
+      if (oldText === newText || !outside) return;
+    }
     if (read.markdown.indexOf(oldText) < 0 || read.markdown.indexOf(oldText) !== read.markdown.lastIndexOf(oldText))
       documentFailure("Managed text changed or matches ambiguously.", "WORK_DOCUMENT_REMOTE_DRIFT");
     if (op.existing) {
-      // A vault rewrite is one atomic rename: the old text still present exactly
-      // once (checked above) with the new text absent means it did not happen.
+      // A vault rewrite is one atomic rename. The old text present exactly once
+      // (checked above), without the new text in place, means it did not happen.
       if (adapter.exclusiveCreate) {
         const response = await adapter.replace(input);
         store.write(["outcomes", `${op.attemptId}.json`], response, true);

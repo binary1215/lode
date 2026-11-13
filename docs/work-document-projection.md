@@ -130,10 +130,11 @@ One tree is shared across Sessions and aliases for the same actual Notion parent
 or physical vault. Different Projects with the same title get separate folders.
 Large products continue in bounded calls: `continuation-required` is Lode's to
 follow, never a user task. While a publication spans several calls, the product
-document says that it is being updated until the last call, or until that
-publication is refused because its source, selection or destination changed; the
-line is part of a Lode list region, so it is removed from an edited product
-document too. Documents are
+document says that it is being updated. Only that publication removes the line:
+at its last call, or when it is refused because its source or selection changed.
+When the destination's connection or configuration changed, Lode writes nothing
+there, and the next publication allowed to write replaces the line. The line is
+part of a Lode list region, so it is removed from an edited product document too. Documents are
 otherwise updated in place without history copies, since results are never
 rewritten. Completion requires observing every selected document.
 This is **not simultaneous remote CAS**: receipts state the last verified scope.
@@ -154,7 +155,8 @@ candidate observations without establishing current uniqueness. The first
 publication of a new tree can exceed one call's request budget: the result is
 `continuation-required`, and publishing the same projection again continues with
 completed steps kept. Recovery of an unknown page creation must list and read the
-parent within one call; a parent too large for that is reported with
+parent within one call's request budget; when that is not possible (a large
+parent, or a budget or deadline already spent in that call) it is reported with
 `recoveryLimit` instead of a repeat that would restart the listing.
 
 ### Earlier publications
