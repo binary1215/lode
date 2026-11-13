@@ -812,10 +812,9 @@ export function inspectProjectLocationExperience({ root = ".", sessionId } = {})
       },
       authority: { plane: "P4", advisoryOnly: true, persisted: false, mutatesProject: false, grantsAuthorization: false, writesRecoveryDirection: false },
     });
-  const location = resumeProjectLocation({
+  const location = inspectProjectResumeLocation({
     root,
     pluginRoot: activePluginRoot,
-    inspectOnly: true,
     validateSelection:
       sessionId === undefined
         ? null
@@ -842,7 +841,9 @@ export function inspectProjectLocationExperience({ root = ".", sessionId } = {})
     },
     nextAction: {
       id: "resume_existing_project",
-      summary: "Explicitly resume this existing Project at the new folder; do not initialize a replacement. This read has not selected or restored a Session.",
+      summary: `Explicitly resume this existing Project at the new folder; do not initialize a replacement.${
+        location.byteRepair ? " Resume first restores the recorded bytes of managed files whose line endings changed (backups are kept)." : ""
+      } This read has not selected or restored a Session.`,
       entrypoint: { cli: "resume", tool: "lode_project_initialize_or_resume", profile: "core" },
     },
     authority: { plane: "P4", advisoryOnly: true, persisted: false, mutatesProject: false, grantsAuthorization: false, writesRecoveryDirection: false },
@@ -900,6 +901,7 @@ function bootstrapResponse({ root, profile, before, installation, onboardingActi
     projectAction: before.status === "not_initialized" ? "initialized" : "resumed",
     installationAction: installation.status,
     ...(installation.location ? { projectLocation: installation.location } : {}),
+    ...(installation.byteRepair ? { byteRepair: installation.byteRepair } : {}),
     ...(installation.instructionIntegration ? { instructionIntegration: installation.instructionIntegration } : {}),
     onboardingAction,
     inputDisposition,
@@ -968,15 +970,16 @@ export async function initializeOrResumeProject(options = {}) {
   }
   const location = resumeProjectLocation({ root, pluginRoot, runtimes, copiedProject, validateSelection });
   if (location && byteRepair) location.byteRepair = byteRepair;
-  const operation = async () => await initializeOrResumeCurrentProject({ ...options, root, profile, onboardingInput, location });
+  const operation = async () => await initializeOrResumeCurrentProject({ ...options, root, profile, onboardingInput, location, byteRepair });
   if (!projectSessionRoute) return await operation();
   const unresolved = (reasonCode) => {
     const value = sessionSelectionUnresolved(root, { reasonCode });
-    if (!location) return value;
+    if (!location) return byteRepair ? { ...value, byteRepair } : value;
     const summary = "Project folder location recovery was applied. Logical Session selection and Host linkage remain unconfirmed; no execution was replayed.";
     return {
       ...value,
       projectLocation: location,
+      ...(byteRepair ? { byteRepair } : {}),
       nextHeadAction: `${summary} ${value.nextHeadAction}`,
       presentation: { ...value.presentation, mode: "exception", summary },
     };
@@ -1000,6 +1003,7 @@ async function initializeOrResumeCurrentProject({
   instructionIntegration = null,
   onValidatedSessionSelection = null,
   location = null,
+  byteRepair = null,
   installationContext = null,
   writeRootInstructionFiles = false,
 }) {
@@ -1024,6 +1028,8 @@ async function initializeOrResumeCurrentProject({
     installation = convergeProjectInstallation({ root, pluginRoot, runtimes, onValidatedSessionSelection, installationContext, writeRootInstructionFiles });
   }
   if (location) installation.location = location;
+  // A repair is reported whether or not the folder moved.
+  if (byteRepair) installation.byteRepair = byteRepair;
 
   if (instructionIntegration != null) installation.instructionIntegration = linkProjectInstructions({ root, choice: instructionIntegration });
   if (profile === "product") await recoverOnboardingPromotion({ root });

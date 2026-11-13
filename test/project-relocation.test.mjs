@@ -56,6 +56,29 @@ test("public resume restores exact recorded newline bytes before strict relocati
   const f = await newlineRelocationFixture(t);
   const before = snapshot(f.moved);
   assert.throws(() => resumeProjectLocation({ root: f.moved, pluginRoot, inspectOnly: true }), { code: "PROJECT_NOT_READY" });
+  // Read-only surfaces name the explicit resume that repairs this state.
+  const status = await runCommand(["status", f.moved]);
+  assert.equal(status.status, "relocation_available");
+  assert.equal(status.projectLocation.byteRepair.status, "available-on-resume");
+  assert.match(status.nextAction.summary, /line endings/);
+  const mcp = async (name, meta, bridge) => {
+    const response = await dispatch(
+      { jsonrpc: "2.0", id: name, method: "tools/call", params: { ...(meta ? { _meta: meta } : {}), name, arguments: { project_root: f.moved } } },
+      bridge ? { nativeSessionBridge: bridge } : {},
+    );
+    assert.equal(response.error, undefined, JSON.stringify(response.error));
+    return response.result.structuredContent;
+  };
+  const projectStatus = await mcp("lode_project_status");
+  assert.equal(projectStatus.status, "relocation_available");
+  assert.equal(projectStatus.nextAction.entrypoint.tool, "lode_project_initialize_or_resume");
+  const bridge = createNativeSessionHostBridge({ runtime: "codex", environment: { HEAD_AGENT_OPERATIONAL_STATE_ROOT: path.join(f.base, "host") } });
+  t.after(() => bridge.dispose());
+  for (const entered of [await mcp("lode_conversation_enter"), await mcp("lode_conversation_enter", { threadId: "newline-thread" }, bridge)]) {
+    assert.equal(entered.status, "conversation_recovery_unavailable");
+    assert.equal(entered.reasonCode, "PROJECT_RELOCATION_AVAILABLE");
+    assert.equal(entered.nextAction.entrypoint.tool, "lode_project_initialize_or_resume");
+  }
   assert.deepEqual(snapshot(f.moved), before);
   const result = await initializeOrResumeProject({ root: f.moved, pluginRoot, instructionIntegration: "preserve" });
   assert.equal(result.projectLocation.status, "relocated");
@@ -66,6 +89,29 @@ test("public resume restores exact recorded newline bytes before strict relocati
     assert.deepEqual(fs.readFileSync(path.join(f.moved, repair.backup)), f.observed.get(repair.path));
   }
   assert.equal(inspectProject(f.moved).status, "ready");
+});
+
+test("resume reports a line-ending repair in a Project that did not move", async (t) => {
+  const base = fs.mkdtempSync(path.join(pluginRoot, ".qa-newline-in-place-"));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const root = path.join(base, "project");
+  fs.mkdirSync(root);
+  await initializeOrResumeProject({ root, pluginRoot, runtimes: ["codex"] });
+  for (const entry of JSON.parse(bytes(root, ".lode/generated/manifest.json")).managed) {
+    const file = path.join(root, entry.path);
+    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(/\r?\n/g, "\r\n"));
+  }
+  const result = await initializeOrResumeProject({ root, pluginRoot, instructionIntegration: "preserve" });
+  assert.equal(result.projectLocation, undefined, "the folder did not move");
+  assert.equal(result.byteRepair.status, "original-bytes-restored");
+  assert.ok(result.byteRepair.applied.length > 0);
+  for (const repair of result.byteRepair.applied) assert.ok(fs.existsSync(path.join(root, repair.backup)));
+  assert.equal(inspectProject(root).status, "ready");
+  assert.equal(
+    (await initializeOrResumeProject({ root, pluginRoot, instructionIntegration: "preserve" })).byteRepair,
+    undefined,
+    "a second resume repairs nothing",
+  );
 });
 
 test("newline relocation refuses edited, missing and invalid owner inputs without repair", async (t) => {
@@ -90,7 +136,15 @@ test("newline relocation refuses edited, missing and invalid owner inputs withou
         fs.writeFileSync(path.join(options.pluginRoot, ".codex-plugin/plugin.json"), '{"version":""}');
       }
       const before = snapshot(f.moved);
-      await assert.rejects(initializeOrResumeProject(options));
+      const expected = {
+        edited: { code: "PROJECT_NOT_READY", message: /\.lode\/roles\/developer\.md \(MANAGED_CONTENT_EDITED\)/ },
+        missing: { code: "PROJECT_NOT_READY", message: /\.lode\/roles\/developer\.md \(MANAGED_FILE_MISSING\)/ },
+        runtime: { code: "PROJECT_RUNTIME_MISMATCH" },
+        session: { code: "SESSION_NOT_FOUND" },
+        "lost-binding": { code: "SESSION_SELECTION_LOST" },
+        package: { code: "PROJECT_RELOCATION_CONFLICT" },
+      }[kind];
+      await assert.rejects(initializeOrResumeProject(options), expected);
       assert.deepEqual(snapshot(f.moved), before);
     });
 });

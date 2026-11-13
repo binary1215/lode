@@ -66,8 +66,9 @@ export function repairProjectBytesForResume(options = {}) {
 }
 
 // Explicit resume may reach the recorded-byte repair after a read-only
-// preflight. Ordinary status and relocation publication still require exact
-// on-disk digests. Do not treat arbitrary drift or a pending journal as repair.
+// preflight; status uses the same preflight to name resume as the next step.
+// Relocation publication still requires exact on-disk digests. Do not treat
+// arbitrary drift or a pending journal as repair.
 export function inspectProjectResumeLocation(options = {}) {
   try {
     return resumeProjectLocation({ ...options, inspectOnly: true });
@@ -77,12 +78,20 @@ export function inspectProjectResumeLocation(options = {}) {
     if (fs.existsSync(safeLocationFile(input.currentRoot, input.directory, locationJournalRelative))) throw error;
     verifyProjectLocation(input.currentRoot, input.directory, input.project);
     const plan = inspectManagedByteRepairs({ root: input.currentRoot, directory: input.directory, manifest: input.manifest });
-    if (!plan.repairs.length || plan.unresolved.length) throw error;
+    // Name the files that block the repair, not the first file that differs.
+    if (plan.unresolved.length)
+      fail(
+        `Managed file drift prevents relocation: ${plan.unresolved.map((item) => `${item.path} (${item.reasonCode})`).join(", ")}. ` +
+          "Resume restores only files whose line endings changed; no file has been changed.",
+        "PROJECT_NOT_READY",
+      );
+    if (!plan.repairs.length) throw error;
     return {
       status: "relocation-byte-repair-needed",
       projectId: input.project.projectId,
       projectRoot: input.currentRoot,
       previousRoot: input.project.projectRoot,
+      byteRepair: { status: "available-on-resume", paths: plan.repairs.map((item) => item.path), transformation: "exact-recorded-digest-line-ending-repair" },
       persisted: false,
     };
   }

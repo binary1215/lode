@@ -19,9 +19,9 @@ Read the state you were given (Hook `additionalContext` or the result of
 | `session_selection_unresolved` (other `reasonCode`) | `sessionDiscovery.call` as returned (= `lode_session_list`, in the default list) | Show candidates and leave the choice to the user; independent work continues. |
 | `conversation_recovery_unavailable` or Hook `host_context_unavailable` + `reasonCode: NOT_INITIALIZED` | `lode_project_initialize_or_resume {project_root, profile: "core"}` only when the user wants Lode here | Never create root instruction files without `write_root_instruction_files`. |
 | same + `PROJECT_RELOCATION_AVAILABLE` / `PROJECT_RELOCATION_PENDING` | `nextAction.entrypoint` as returned (resume, `profile: "core"`) | Never initialize a new Project over a moved one. |
-| same + `PROJECT_NOT_READY` | `lode_project_status {project_root}` | Report the drift it names; ordinary work is not blocked (`ordinaryWorkBlocked: false`). |
+| same + `PROJECT_NOT_READY` | `lode_project_status {project_root}` once; follow a `nextAction` it returns | If it answers `PROJECT_NOT_READY` too, report the files it names and stop; ordinary work is not blocked. |
 | `CONVERSATION_ENTRY_BASIS_CHANGED` attention | `lode_conversation_enter` once more | Only dependent context needs the reread. |
-| MCP error with `error.data.reasonCode` | `INVALID_TOOL_ARGUMENTS` → fix the arguments; `PROJECT_NOT_READY` → `lode_project_status`; `NO_PENDING_REVIEW` → normal, nothing awaits review | Do not match message strings. |
+| MCP error with `error.data.reasonCode` | `INVALID_TOOL_ARGUMENTS` → fix the arguments; `PROJECT_NOT_READY` → report the files it names (call `lode_project_status` only if not already answered with it); `NO_PENDING_REVIEW` → normal, nothing awaits review | Do not match message strings. |
 | Tool not in the default list | `lode_tools_read {name, arguments}` (read-only) / `lode_tools_call {name, arguments}` (effects) | The router checks read-only status first; `lode_tools_discover {name \| prefix}` returns exact schemas. |
 
 Entry rules that apply to every row:
