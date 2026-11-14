@@ -82,6 +82,9 @@ export function processBirth(pid, { platform = process.platform, spawnSyncImpl =
   if (pid === process.pid && value !== null) birthCache.set(key, value);
   return value;
 }
+// The query text never contains this line (a test checks it).
+export const WINDOWS_QUERY_END = "#lode-native-process-query-end";
+const WINDOWS_QUERY_READER = `$taskIn=[Console]::In;$taskText=[Text.StringBuilder]::new();while(($taskLine=$taskIn.ReadLine()) -ne $null -and $taskLine -ne '${WINDOWS_QUERY_END}'){[void]$taskText.Append($taskLine).Append([char]10)};& ([scriptblock]::Create($taskText.ToString()))`;
 export const NATIVE_PROCESS_LIMITS = Object.freeze({ depth: 8, known: 16, timeoutMs: 1500, outputBytes: 64 * 1024 });
 function registry(pid, nativeSessionId, environment) {
   const config = environment.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
@@ -162,7 +165,10 @@ Write-TaskProcessQueryWire $taskMachine ([Environment]::MachineName) @($taskRows
   const executable = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
   // Same exact query, delivered on stdin rather than a large encoded command
   // line. No script file, policy change, daemon or additional runtime is needed.
-  const args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "& ([scriptblock]::Create([Console]::In.ReadToEnd()))"];
+  // PowerShell reads it up to the end line, not to end of input: on Windows
+  // the end of a child's input is delivered only while this thread's event
+  // loop runs, and a caller may run a synchronous child process meanwhile.
+  const args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", WINDOWS_QUERY_READER];
   const report = (record) => {
     try {
       onProcess(record);
@@ -212,11 +218,16 @@ Write-TaskProcessQueryWire $taskMachine ([Environment]::MachineName) @($taskRows
     };
     // spawn can itself be slow on Windows. Never grant that elapsed time again.
     const remaining = deadlineAt === null ? timeoutMs : Math.max(0, deadlineAt - Date.now());
-    timer = setTimeout(stop, remaining);
+    // The timer can be late when the caller's thread was busy (a synchronous
+    // child process running meanwhile). Let pending I/O run first: a helper
+    // that already exited in time keeps its result; a running one is stopped.
+    timer = setTimeout(() => setImmediate(() => child.exitCode === null && child.signalCode === null && stop()), remaining);
     if (remaining === 0) stop();
     child.stdin.on("error", stop);
     try {
-      child.stdin.end(script + "\n\n");
+      child.stdin.end(script + "\n\n" + WINDOWS_QUERY_END + "\n");
+      // Handed to the pipe: the query no longer needs this thread to start.
+      report({ event: "input-written", pid: child.pid, parent: process.pid, ports: [] });
     } catch {
       stop();
     }

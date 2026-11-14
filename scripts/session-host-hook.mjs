@@ -135,10 +135,38 @@ export async function runSessionHostHook({
 async function runSpelledSessionHostHook({ runtime, event, environment, observeOnly, deliver, processObserver, deadlineAt, pickupDeadlineAt }) {
   const startedAt = Date.now();
   const promptDeadlineAt = Math.min(deadlineAt ?? Infinity, startedAt + 10_000);
-  let nativeOutcome;
+  let nativeOutcome, observing;
+  // A Claude prompt's process lookup is an independent child process: once it
+  // has its whole input (the synchronous capture would otherwise hold that
+  // input back), the prompt capture runs while it works, and the observation
+  // is published after the capture with the same content. Nothing in between
+  // reads it. SessionStart and the clear transitions keep the old order.
+  const overlap = runtime === "claude" && event?.hook_event_name === "UserPromptSubmit";
   try {
     const { observeNativeHook } = await import("./lib/session/native-session-observations.mjs");
-    nativeOutcome = await observeNativeHook({ runtime, event, environment, processObserver, deadlineAt });
+    let lookupStarted;
+    const started = new Promise((resolve) => (lookupStarted = resolve));
+    const probe = overlap ? processObserver || (await import("./lib/session/native-session-process.mjs")).observeClaudeProcess : processObserver;
+    observing = observeNativeHook({
+      runtime,
+      event,
+      environment,
+      processObserver: overlap
+        ? (options) => {
+            const lookup = probe({
+              ...options,
+              onProcess(record) {
+                if (["input-written", "closed"].includes(record?.event)) lookupStarted();
+              },
+            });
+            Promise.resolve(lookup).then(lookupStarted, lookupStarted);
+            return lookup;
+          }
+        : processObserver,
+      deadlineAt,
+    }).catch(() => undefined);
+    if (overlap) await Promise.race([started, observing]);
+    else nativeOutcome = await observing;
   } catch {
     /* Observations cannot block native flow or existing recovery. */
   }
@@ -147,6 +175,7 @@ async function runSpelledSessionHostHook({ runtime, event, environment, observeO
   } catch {
     /* A missing prompt reference never blocks the host. */
   }
+  if (overlap) nativeOutcome = await observing;
   let promptOperation, referenceTransfer;
   if (!observeOnly && event?.hook_event_name === "SessionStart" && ["clear", "compact"].includes(event.source))
     try {

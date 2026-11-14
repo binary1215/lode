@@ -11,6 +11,40 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.122 — publication tracked separately
+
+- Windows: the UserPromptSubmit, Stop and PreCompact Hooks take about half
+  as long.
+  - Each prompt-reference operation (capturing a prompt, capturing the
+    visible assistant text, freezing before compaction) starts the
+    permission helper once instead of twice: the store directory, the
+    existing file and the new temporary file are checked or created in one
+    request. Every check is the same as before, nothing is remembered from
+    one Hook to the next, and a failed check still stores nothing.
+  - A Claude Code prompt no longer waits for its process lookup before the
+    capture starts; the two run at the same time and the stored observation
+    is unchanged.
+  - Measured with the real Hook process on Windows 11, before and after:
+    Claude Code prompt 1.7-2.3 s to 0.9-1.1 s; Codex prompt 1.3-1.7 s to
+    0.8-1.1 s; Stop with new assistant text and PreCompact 1.3-1.7 s to
+    0.8-1.0 s. Stop with unchanged text stays at about 0.8 s. SubagentStop
+    and folders without Lode still start no helper (about 0.15 s). The very
+    first operation in a new state folder needs one extra helper call.
+- Windows: the private prompt reference now works when the state folder
+  path contains non-ASCII characters, for example an account whose profile
+  folder has a Hangul or accented name. Before, the permission helper
+  received a damaged path, refused it, and no prompt reference was ever
+  stored, without any message.
+- Correction to 0.3.0-beta.121: the "2.3 to 2.5 seconds" given there for the
+  Windows prompt Hook with no mail was measured with a substitute user
+  profile, which makes PowerShell start slower. With the real profile it
+  was 1.7 to 2.1 seconds.
+- Limits: timings were measured on one Windows 11 machine. macOS and Linux
+  do not use the helper and were not timed. The non-ASCII fix was checked
+  with a state folder under Hangul, accented and emoji directory names on a
+  Korean-locale console, not with a real non-ASCII account or another
+  console code page.
+
 ## 0.3.0-beta.121 — publication tracked separately
 
 - Queued conversation mail no longer waits for the recipient's next prompt.
