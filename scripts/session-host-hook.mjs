@@ -107,7 +107,9 @@ function noteNativePrompt(runtime, event, environment) {
 // Mail is claimed only while the hook is within this many milliseconds of its
 // start, so claiming, writing the output and committing finish well inside the
 // Stop and UserPromptSubmit Hook timeout (hooks/claude.json, hooks/codex.json).
-// Mail not claimed by then stays queued for the next Stop or prompt.
+// Mail not claimed by then stays queued for the next Stop or prompt. Only the
+// real hook process (main) sets this deadline; an in-process caller passes its
+// own pickupDeadlineAt, and null means no deadline.
 export const MAIL_PICKUP_BUDGET_MS = 6000;
 
 export async function runSessionHostHook({
@@ -123,15 +125,7 @@ export async function runSessionHostHook({
   // A Host cwd that differs from the recorded Project root only in drive-letter
   // case reaches that Project (Windows); every hook path below reads event.cwd.
   event = withRecordedCwd(event);
-  const options = {
-    runtime,
-    environment,
-    observeOnly,
-    deliver,
-    processObserver,
-    deadlineAt,
-    pickupDeadlineAt: pickupDeadlineAt ?? Date.now() + MAIL_PICKUP_BUDGET_MS,
-  };
+  const options = { runtime, environment, observeOnly, deliver, processObserver, deadlineAt, pickupDeadlineAt };
   // A cwd that differs only in directory-name case is retried with the
   // recorded spelling after its Project was not found (no read when found).
   if (typeof event?.cwd !== "string") return await runSpelledSessionHostHook({ ...options, event });

@@ -113,10 +113,6 @@ function tree(directory, base = directory) {
   });
 }
 
-// Direct hook calls get a distant pick-up deadline unless a test is about the
-// deadline, so a loaded machine cannot turn a hand-over test into a budget test.
-const runHook = (options) => runSessionHostHook({ pickupDeadlineAt: Date.now() + 10 * 60 * 1000, ...options });
-
 const stop = (runtime, root, sessionId, extra = {}) => ({ hook_event_name: "Stop", cwd: root, session_id: sessionId, stop_hook_active: false, ...extra });
 
 test("Claude Code Stop hands queued mail over as continuing feedback and commits only after the output was written", async (t) => {
@@ -124,7 +120,7 @@ test("Claude Code Stop hands queued mail over as continuing feedback and commits
   register(root, environment, "claude", "receiver", { kind: "claude-next-prompt" });
   const sent = await queue(root, environment, "claude:receiver", "the migration review is ready");
   let seen = null;
-  const output = await runHook({
+  const output = await runSessionHostHook({
     runtime: "claude",
     environment,
     observeOnly: true,
@@ -147,7 +143,10 @@ test("Claude Code Stop hands queued mail over as continuing feedback and commits
   assert.equal(handed.state, "sent");
   assert.equal(handed.evidence, "stop-hook");
   // The next Stop with nothing queued produces the ordinary output.
-  assert.deepEqual(await runHook({ runtime: "claude", environment, observeOnly: true, event: stop("claude", root, "receiver"), deliver: async () => {} }), {});
+  assert.deepEqual(
+    await runSessionHostHook({ runtime: "claude", environment, observeOnly: true, event: stop("claude", root, "receiver"), deliver: async () => {} }),
+    {},
+  );
   // A message handed at Stop is not injected again at the next prompt.
   assert.equal(
     prepareHookInjection({ runtime: "claude", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "receiver" }, environment }),
@@ -159,7 +158,7 @@ test("Codex Stop continues through decision block with the mail as its reason an
   const { root, environment } = isolated(t);
   register(root, environment, "codex", "receiver", { kind: "codex-next-prompt" });
   const sent = await queue(root, environment, "codex:receiver", "codex please continue");
-  const output = await runHook({
+  const output = await runSessionHostHook({
     runtime: "codex",
     environment,
     observeOnly: true,
@@ -176,11 +175,11 @@ test("no Lode cap: five Stops in a row each hand over a fresh message and contin
   const { root, environment } = isolated(t);
   register(root, environment, "claude", "receiver", { kind: "claude-next-prompt" });
   await queue(root, environment, "claude:receiver", "warm-up");
-  await runHook({ runtime: "claude", environment, observeOnly: true, event: stop("claude", root, "receiver"), deliver: async () => {} });
+  await runSessionHostHook({ runtime: "claude", environment, observeOnly: true, event: stop("claude", root, "receiver"), deliver: async () => {} });
   const before = tree(path.join(root, ".lode")).filter((entry) => !/^messaging[\\/](inbox|inflight|archive)[\\/]./.test(entry));
   for (let round = 1; round <= 6; round += 1) {
     const sent = await queue(root, environment, "claude:receiver", `round ${round}`);
-    const output = await runHook({
+    const output = await runSessionHostHook({
       runtime: "claude",
       environment,
       observeOnly: true,
@@ -200,7 +199,7 @@ test("a failed Stop output write keeps the message as unknown, never queued or i
   register(root, environment, "claude", "receiver", { kind: "claude-next-prompt" });
   const sent = await queue(root, environment, "claude:receiver", "write fails");
   await assert.rejects(
-    runHook({
+    runSessionHostHook({
       runtime: "claude",
       environment,
       observeOnly: true,
@@ -220,7 +219,10 @@ test("a failed Stop output write keeps the message as unknown, never queued or i
     prepareHookInjection({ runtime: "claude", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "receiver" }, environment }),
     null,
   );
-  assert.deepEqual(await runHook({ runtime: "claude", environment, observeOnly: true, event: stop("claude", root, "receiver"), deliver: async () => {} }), {});
+  assert.deepEqual(
+    await runSessionHostHook({ runtime: "claude", environment, observeOnly: true, event: stop("claude", root, "receiver"), deliver: async () => {} }),
+    {},
+  );
 });
 
 test("SubagentStop and a Stop from a subagent or teammate leave the parent's mail queued", async (t) => {
@@ -235,7 +237,7 @@ test("SubagentStop and a Stop from a subagent or teammate leave the parent's mai
     ["codex", { ...stop("codex", root, "parent-codex"), hook_event_name: "SubagentStop", agent_id: "child-thread" }],
     ["codex", { ...stop("codex", root, "parent-codex"), agent_id: "child-thread" }],
   ]) {
-    const output = await runHook({ runtime, environment, observeOnly: true, event, deliver: async () => {} });
+    const output = await runSessionHostHook({ runtime, environment, observeOnly: true, event, deliver: async () => {} });
     assert.equal(output.decision, undefined);
     assert.equal(output.hookSpecificOutput, undefined);
   }
@@ -321,7 +323,7 @@ test("queued mail is handed over oldest first at a prompt and at Stop", async (t
   );
   prompt.commit();
   for (const body of ["sixth-body", "seventh-body", "eighth-body"]) await queue(root, environment, "codex:receiver", body);
-  const output = await runHook({
+  const output = await runSessionHostHook({
     runtime: "codex",
     environment,
     observeOnly: true,
@@ -546,7 +548,7 @@ test("past the pick-up budget nothing is claimed and the mail stays queued", asy
   const sent = [];
   for (const body of ["one", "two", "three"]) sent.push((await queue(root, environment, "claude:receiver", body)).id);
   for (const event of [stop("claude", root, "receiver"), { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "receiver", prompt: "next" }]) {
-    const output = await runHook({
+    const output = await runSessionHostHook({
       runtime: "claude",
       environment,
       observeOnly: true,
@@ -559,7 +561,7 @@ test("past the pick-up budget nothing is claimed and the mail stays queued", asy
     assert.deepEqual(queuedIds(root).sort(), [...sent].sort());
   }
   // Within the budget the same mail is handed over.
-  const output = await runHook({
+  const output = await runSessionHostHook({
     runtime: "claude",
     environment,
     observeOnly: true,
@@ -602,7 +604,7 @@ test("Claude Code: a hand-over stays within 10,000 characters; the rest stays qu
   let rounds = 0;
   while (queuedIds(root).length && rounds < 5) {
     rounds += 1;
-    const output = await runHook({
+    const output = await runSessionHostHook({
       runtime: "claude",
       environment,
       observeOnly: true,
@@ -624,7 +626,7 @@ test("Claude Code: a hand-over stays within 10,000 characters; the rest stays qu
   const big = ["A", "B"].map((letter) => letter.repeat(6000));
   for (const body of big) await queue(root, environment, "claude:receiver", body);
   for (const letter of ["A", "B"]) {
-    const output = await runHook({
+    const output = await runSessionHostHook({
       runtime: "claude",
       environment,
       observeOnly: true,
@@ -650,7 +652,7 @@ test("Claude Code prompt path uses the same limit; Codex counts UTF-8 bytes agai
   // 3,000 Hangul syllables are 9,000 UTF-8 bytes: one message per Codex Stop.
   for (const syllable of ["가", "나"]) await queue(root, environment, "codex:receiver-codex", syllable.repeat(3000));
   for (const syllable of ["가", "나"]) {
-    const output = await runHook({
+    const output = await runSessionHostHook({
       runtime: "codex",
       environment,
       observeOnly: true,
@@ -676,7 +678,7 @@ test("a mailbox lock left by a stopped hook does not make the next Stop skip the
   const lock = path.join(root, ".lode", "messaging", ".delivery-locks", sha256Hex("claude:receiver") + ".lock");
   fs.mkdirSync(lock, { recursive: true });
   fs.writeFileSync(path.join(lock, `owner-${host}-${dead}-${"0".repeat(32)}.json`), JSON.stringify({ pid: dead }));
-  const output = await runHook({
+  const output = await runSessionHostHook({
     runtime: "claude",
     environment,
     observeOnly: true,
