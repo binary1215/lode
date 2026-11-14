@@ -7,7 +7,7 @@ import { initializeProject, inspectProject } from "../scripts/lib/head-core.mjs"
 import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
 import { recordSessionWorkEvidence, readSessionWorkEvidenceOwner } from "../scripts/lib/session/session-work-context.mjs";
 import { updateProjectDirection } from "../scripts/lib/session/project-direction.mjs";
-import { readWorkDocumentBasis, renderWorkDocument, resolveWorkDocumentLinks, workDocumentHash } from "../scripts/lib/world/work-document-source.mjs";
+import { readWorkDocumentBasis, renderWorkDocument, workDocumentHash } from "../scripts/lib/world/work-document-source.mjs";
 import { createSourceObservation, retainSourceObservation } from "../scripts/lib/world/source-observation.mjs";
 import { createRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
 
@@ -54,24 +54,22 @@ test("Core-only exact originals -> stable human/agent facts; no authority, provi
   const before = fs.readFileSync(stateFile);
   const basis = await readWorkDocumentBasis(selection);
   assert.equal(basis.basisId, (await readWorkDocumentBasis(selection)).basisId);
-  for (const audience of ["human", "agent"]) {
-    const view = renderWorkDocument(basis, { audience, title: "Sign-in expiration" });
-    for (const text of [
-      "No external deployment",
-      "Do not retry network requests",
-      "Earlier wording withdrawn",
-      "Automatic retries can duplicate requests",
-      "Mobile manual test and deployment not executed",
-      "Old test success is not a current-code test",
-    ])
-      assert.ok(view.markdown.includes(text));
-    assert.ok(!view.markdown.includes(root));
-    const notion = resolveWorkDocumentLinks(view, { peer: "https://www.notion.so/peer", start: "https://www.notion.so/start" });
-    const vault = resolveWorkDocumentLinks(view, { peer: "agent.md", start: "start.md" });
-    assert.notEqual(notion.payloadDigest, vault.payloadDigest);
-    assert.equal(notion.viewId, vault.viewId);
-    assert.ok(!notion.markdown.includes("lode-view:"));
-  }
+  const result = ["Automatic retries can duplicate requests", "Mobile manual test and deployment not executed", "Old test success is not a current-code test"];
+  const agent = renderWorkDocument(basis, { audience: "agent", title: "Sign-in expiration" }).markdown;
+  for (const text of ["No external deployment", "Do not retry network requests", "Earlier wording withdrawn", ...result]) assert.ok(agent.includes(text), text);
+  // The person's view: status, 한 일, 판단과 이유, 남은 일, 확인하지 못한 것 and
+  // nothing for management (identities, digests, internal codes, notices).
+  const human = renderWorkDocument(basis, { audience: "human", title: "Sign-in expiration" }).markdown;
+  for (const text of result) assert.ok(human.includes(text), text);
+  assert.match(
+    human,
+    /^상태: 완료 · 기록 \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC\n\n## 한 일\n[\s\S]*\n## 판단과 이유\n[\s\S]*\n## 남은 일\n[\s\S]*\n## 확인하지 못한 것\n/,
+  );
+  assert.match(human, /다른 선택지: Retry silently/);
+  assert.ok(!/[a-f0-9]{64}/.test(human));
+  for (const text of [sessionId, original.evidenceId, "todo-expiry", "Lode document identity", "links begin", "<!--", "%%", root])
+    assert.ok(!human.includes(text), text);
+  assert.ok(!agent.includes(root));
   assert.deepEqual(before, fs.readFileSync(stateFile));
 });
 test("manual work without Todos is readable; mixed tasks and wrong Session never silently merge", async (t) => {
@@ -105,7 +103,8 @@ test("reopen and conflicting revisions stay visible even when reading an old com
   save({ todos: [{ todoId: "todo-a", task: "Task A", status: "cancelled", origin: "lode-proposed", prior, reason: "Cancelled separately" }] });
   const conflict = await readWorkDocumentBasis({ root, sessionId, todoId: "todo-a", evidenceIds: [first.evidenceId] });
   assert.equal(conflict.taskState.items[0].status, "conflict");
-  assert.ok(renderWorkDocument(conflict, { title: "Task A" }).markdown.includes("conflict"));
+  assert.ok(renderWorkDocument(conflict, { audience: "agent", title: "Task A" }).markdown.includes("conflict"));
+  assert.match(renderWorkDocument(conflict, { title: "Task A" }).markdown, /^상태: 기록이 갈려 확인 필요/);
 });
 test("retained exact before/after and selected log quotes; unrelated checkpoint is neither exported nor a basis change", async (t) => {
   const { root, sessionId, save } = setup(t),
@@ -163,11 +162,11 @@ test("retained exact before/after and selected log quotes; unrelated checkpoint 
   assert.equal(basis.comparisons[0].status, "observed");
   assert.equal(basis.comparisons[0].sourceAvailability.before.reasonCode, "SESSION_WORK_REFERENCE_CHANGED");
   assert.equal(basis.quotations[0].status, "exact-byte-quotation");
-  for (const audience of ["human", "agent"]) {
-    const view = renderWorkDocument(basis, { audience, title: "Expiry" });
-    assert.ok(view.markdown.includes("try again"));
-    assert.ok(view.markdown.includes("sign in again"));
-  }
+  // Exact before/after bytes and quotes are evidence: the 근거 view carries them.
+  const agentView = renderWorkDocument(basis, { audience: "agent", title: "Expiry" }).markdown;
+  assert.ok(agentView.includes("try again"));
+  assert.ok(agentView.includes("sign in again"));
+  assert.ok(!renderWorkDocument(basis, { audience: "human", title: "Expiry" }).markdown.includes("try again"));
   withSessionRoute(root, sessionId, () =>
     createRecoveryCheckpoint({
       root,

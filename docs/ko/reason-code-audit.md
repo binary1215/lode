@@ -38,18 +38,18 @@
 
 | 항목 | 코드 수 |
 | --- | --- |
-| `REASON_CODES` 항목 | 2,725 |
-| 배포 코드나 Go에서 사용 | 359 |
-| — 직접 비교 | 186 |
+| `REASON_CODES` 항목 | 2,727 |
+| 배포 코드나 Go에서 사용 | 360 |
+| — 직접 비교 | 187 |
 | — prefix 분기에 포함 | 20 |
 | — 맵의 키로만 사용 | 5 |
 | — 배열이나 `Set`에만 나열 | 147 |
 | — Go 소스에 등장 | 17 |
 | 영문 문서·스킬에 문서화 | 34(스킬 10) |
 | 테스트·검증기가 단언 | 841 |
-| **조용한 코드** | **2,350**(86%) |
-| — 조용하지만 테스트가 단언 | 621 |
-| — 조용하고 단언도 없음 | 1,729 |
+| **조용한 코드** | **2,351**(86%) |
+| — 조용하지만 테스트가 단언 | 620 |
+| — 조용하고 단언도 없음 | 1,731 |
 | 옛 `HEAD_*` 표기를 아직 함께 돌려줌 | 121 |
 
 **prefix 분기.** 다음 네 prefix가 코드 묶음으로 분기합니다.
@@ -88,10 +88,10 @@
 | `REFRESH_*` | 41 | 1 | 1 | 40 | 3 |
 | `CHANGE_*` | 35 | 2 | 0 | 33 | 2 |
 | `CLAUDE_*` | 34 | 1 | 0 | 33 | 6 |
+| `WORK_*` | 34 | 5 | 0 | 29 | 7 |
 | `FEATURE_*` | 33 | 4 | 0 | 29 | 7 |
 | `CONVERSATION_*` | 32 | 7 | 1 | 24 | 7 |
 | `GRAPH_*` | 32 | 2 | 2 | 28 | 10 |
-| `WORK_*` | 32 | 4 | 0 | 28 | 8 |
 | `DISTRIBUTION_*` | 31 | 0 | 0 | 31 | 10 |
 | `DUPLICATE_*` | 30 | 3 | 0 | 27 | 7 |
 | `HISTORICAL_*` | 30 | 0 | 0 | 30 | 2 |
@@ -125,21 +125,24 @@
 
 ## 문서화된 코드
 
-영문 문서나 스킬이 이름을 밝힌 코드는 28개이며, 에이전트가 이 값으로 분기할 수 있습니다.
+영문 문서나 스킬이 이름을 밝힌 코드는 34개(스킬 10개)이며, 에이전트가 이 값으로 분기할 수 있습니다.
 - `COMPUTE_OUTPUT_LIMIT`, `CONFORMANCE_RESOLUTION_STALE`,
   `CONVERSATION_ENTRY_BASIS_CHANGED`, `DIVERGENT_DEPLOYMENT_RESULT_REPLAY`
-- `DOCUMENT_PROJECTION_UNREVIEWED_DRIFT`, `GRAPH_PROJECTION_STALE`,
-  `GRAPH_SNAPSHOT_RECEIPT_SELF_REFERENCE`, `INVALID_SESSION_INPUT`
-- `INVALID_SESSION_WORK_EVIDENCE`, `INVALID_SNAPSHOT_COMPOSITION`,
-  `INVALID_TOOL_ARGUMENTS`, `MANAGED_OPERATION_NOT_ON_DEFAULT_SURFACE`
-- `NATIVE_HOOK_DIRECT_INGRESS_REQUIRED`, `NATIVE_HOOK_INGRESS_REQUIRED`,
-  `NATIVE_OPENCODE_BOOTSTRAP_UNQUALIFIED`, `NOT_INITIALIZED`
-- `NO_PENDING_REVIEW`, `PROJECT_NATIVE_RUNTIME_ROOT_NOT_USED`,
-  `PROJECT_NOT_READY`, `PROJECT_RELOCATION_PENDING`
+- `DOCUMENT_CHANGE_PROJECTION_LIMIT`, `DOCUMENT_PROJECTION_UNREVIEWED_DRIFT`,
+  `GRAPH_PROJECTION_STALE`, `GRAPH_SNAPSHOT_RECEIPT_SELF_REFERENCE`
+- `INVALID_SESSION_INPUT`, `INVALID_SESSION_WORK_EVIDENCE`,
+  `INVALID_SNAPSHOT_COMPOSITION`, `INVALID_TOOL_ARGUMENTS`
+- `MANAGED_OPERATION_NOT_ON_DEFAULT_SURFACE`, `NATIVE_HOOK_DIRECT_INGRESS_REQUIRED`,
+  `NATIVE_HOOK_INGRESS_REQUIRED`, `NATIVE_OPENCODE_BOOTSTRAP_UNQUALIFIED`
+- `NOT_INITIALIZED`, `NO_PENDING_REVIEW`,
+  `ONBOARDING_PRODUCT_CANON_DRIFT`, `ONBOARDING_PRODUCT_SUCCESSOR_UNVERIFIABLE`
+- `PROJECT_NATIVE_RUNTIME_ROOT_NOT_USED`, `PROJECT_NOT_READY`,
+  `PROJECT_RELOCATION_AVAILABLE`, `PROJECT_RELOCATION_PENDING`
 - `RECOVERY_BASIS_NOT_HELD`, `REFRESH_WRITER_BUSY`,
   `RUNTIME_ADAPTER_CONTROL_NOT_ENABLED`, `RUN_RESULT_LEGACY_INTEGRATION_PENDING`
-- `SESSION_PATH_ESCAPE`, `SNAPSHOT_GIT_EXECUTABLE_UNAVAILABLE`,
-  `STORAGE_VERSION_MISMATCH`, `WORLD_MODEL_CANON_BASIS_CONFLICT`
+- `SESSION_PATH_ESCAPE`, `SESSION_SELECTION_LOST`,
+  `SINGLE_SESSION_ENTRY_AVAILABLE`, `SNAPSHOT_GIT_EXECUTABLE_UNAVAILABLE`
+- `STORAGE_VERSION_MISMATCH`, `WORLD_MODEL_CANON_BASIS_CONFLICT`
 
 ## 병합 후보
 
@@ -147,13 +150,13 @@
 그대로 둡니다. 설계 4.6에 따라 예전 코드는 2개 마이너 버전 동안 응답의 별도 필드로 함께
 돌려줍니다.
 
-1. **그대로 둘 것.** 사용되는 356개와 문서화된 28개는 그대로 둡니다. prefix 분기 네
+1. **그대로 둘 것.** 사용되는 360개와 문서화된 34개는 그대로 둡니다. prefix 분기 네
    묶음 안에서는 최소한 prefix를 유지합니다.
-2. **1차 후보.** 테스트가 단언하지 않는 조용한 코드 1,729개입니다. 영역마다 마지막
+2. **1차 후보.** 테스트가 단언하지 않는 조용한 코드 1,731개입니다. 영역마다 마지막
    단어가 같은 코드를 영역 코드 하나로 묶습니다. 예를 들어 `PRODUCT_*_MISMATCH`는
    `PRODUCT_MISMATCH`로, `CODEX_*_INVALID`는 `CODEX_INVALID`로 묶습니다. 테스트는 바뀌지
    않고, 레지스트리 목록과 코드를 내는 곳만 바뀝니다.
-3. **2차 후보.** 테스트가 단언하는 조용한 코드 621개입니다. 묶는 방식은 같지만, 테스트
+3. **2차 후보.** 테스트가 단언하는 조용한 코드 620개입니다. 묶는 방식은 같지만, 테스트
    단언마다 영역 코드나 예전 코드 필드로 옮겨야 합니다.
 4. **`INVALID_*`(576개).** 가장 큰 묶음이고 대부분 입력이나 기록의 형태 검사입니다.
    `INVALID_INPUT`(호출 입력)과 `INVALID_RECORD`(저장된 기록) 두 개로 대부분을 덮을 수
