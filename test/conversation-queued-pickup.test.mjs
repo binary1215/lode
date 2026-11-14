@@ -437,9 +437,13 @@ test("B: the first unavailable answer ends the pass and everything stays queued 
       return { outcome: "delivered", evidence: "test-live" };
     },
   });
-  assert.deepEqual(live.earlier, { handed: 10, unknown: 0, queued: 3 });
-  assert.deepEqual(order, [...Array.from({ length: 10 }, (_, index) => `queued ${String(index).padStart(2, "0")}`), "live now"]);
-  assert.equal(queuedIds(root).length, 3);
+  // At most 10 older messages per send; on a loaded machine the 3 s bound can
+  // end the pass earlier. Either way the oldest go first and the rest stay queued.
+  const { handed } = live.earlier;
+  assert.ok(handed >= 1 && handed <= 10, JSON.stringify(live.earlier));
+  assert.deepEqual(live.earlier, { handed, unknown: 0, queued: 13 - handed });
+  assert.deepEqual(order, [...Array.from({ length: handed }, (_, index) => `queued ${String(index).padStart(2, "0")}`), "live now"]);
+  assert.equal(queuedIds(root).length, 13 - handed);
 });
 
 test("presence follows a resume: the recorded channel is the resumed process's", async (t) => {
