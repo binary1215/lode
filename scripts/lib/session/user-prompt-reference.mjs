@@ -108,12 +108,18 @@ function discardStage(permissions) {
 // Dedicated P5 plaintext storage only. Never change permissions of the general
 // operational/artifact directories. Windows checks token SID and protected DACL
 // on this dedicated store; POSIX mode bits are not Windows privacy evidence.
-const WINDOWS_PRIVATE_ACL = String.raw`
+// The script reaches PowerShell over stdin after the request line (see
+// WINDOWS_PRIVATE_ACL_COMMAND) and reads the request from $lodeRequest. It stays
+// printable ASCII: Windows PowerShell 5.1 decodes stdin with the console code
+// page. After the first line everything is one try/catch statement: cut-off
+// text fails to parse and nothing of it runs (cut right after the first line,
+// it only sets the error preference and answers nothing).
+export const WINDOWS_PRIVATE_ACL = String.raw`
 $ErrorActionPreference='Stop'
 try {
   # The parser ConvertFrom-Json uses in Windows PowerShell 5.1, without loading
   # its module or converting the result: an array of key/value dictionaries.
-  $requests=[Web.Script.Serialization.JavaScriptSerializer, System.Web.Extensions, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35]::new().DeserializeObject([Console]::In.ReadToEnd())
+  $requests=[Web.Script.Serialization.JavaScriptSerializer, System.Web.Extensions, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35]::new().DeserializeObject($lodeRequest)
   $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
   $system=[Security.Principal.SecurityIdentifier]::new('S-1-5-18')
   if (@(foreach($each in @($requests)){if($each.create -eq $true){$each}}).Count -gt 0) {
@@ -222,6 +228,11 @@ try {
   [Console]::Out.Write('private')
 } catch {[Console]::Error.Write($_.Exception.Message);exit 1}
 `;
+// Short and fixed: no script body or request data on the command line (a new
+// long command line costs about 0.25-0.3 s on the first child of a process).
+// [scriptblock]::Create parses the whole script before any of it runs; a parse
+// error throws, nothing runs and PowerShell exits non-zero.
+export const WINDOWS_PRIVATE_ACL_COMMAND = "$lodeRequest=[Console]::In.ReadLine(); & ([scriptblock]::Create([Console]::In.ReadToEnd()))";
 
 const privatePermissions = (deadlineAt = null) => ({
   checked: new Set(),
@@ -313,17 +324,22 @@ function windowsPrivate(requests, permissions, onCreate = null) {
   }
   const executable = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
   try {
-    const result = childProcess.spawnSync(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", WINDOWS_PRIVATE_ACL], {
-      cwd: path.dirname(file),
-      windowsHide: true,
-      shell: false,
-      // Windows PowerShell decodes stdin with the console code page. Plain
-      // ASCII JSON (\uXXXX escapes) reaches it intact under any code page.
-      input: asciiJson(pending.map((item) => item.request)),
-      encoding: "utf8",
-      timeout: remaining,
-      maxBuffer: 4096,
-    });
+    const result = childProcess.spawnSync(
+      executable,
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", WINDOWS_PRIVATE_ACL_COMMAND],
+      {
+        cwd: path.dirname(file),
+        windowsHide: true,
+        shell: false,
+        // Windows PowerShell decodes stdin with the console code page. Plain
+        // ASCII JSON (\uXXXX escapes, so never a raw line break) on the first
+        // line reaches it intact under any code page; the script follows.
+        input: asciiJson(pending.map((item) => item.request)) + "\n" + WINDOWS_PRIVATE_ACL,
+        encoding: "utf8",
+        timeout: remaining,
+        maxBuffer: 4096,
+      },
+    );
     const output = String(result.stdout || "")
       .trim()
       .split(/\r?\n/);
