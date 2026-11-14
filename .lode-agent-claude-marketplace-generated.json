@@ -1,0 +1,13 @@
+{
+  "protocolVersion": "0.1.0",
+  "kind": "LodeAgentClaudeMarketplaceSnapshot",
+  "marketplaceName": "lode-agent-plugin",
+  "pluginName": "lode-agent-core",
+  "pluginVersion": "0.3.0-beta.123",
+  "sourceDistributionReleaseId": "release-4aa32eb06656bd0c9dc09ad6",
+  "sourceRepository": "binary1215/lode",
+  "sourceCommit": "139cd3b9f6465d480a8315a221c9a6bffcb08842",
+  "projectionContentDigest": "283957deba3d31e78801ffc98b59d5fd7d08f4503f9d11ef92a48784d71efc01",
+  "authorityEffect": "none",
+  "snapshotId": "claude-marketplace-fdddcdf48b3908dea3b47e91"
+}

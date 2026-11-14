@@ -1,0 +1,7 @@
+{
+  "version": "0.3.0-beta.123",
+  "commit": "139cd3b9f6465d480a8315a221c9a6bffcb08842",
+  "goos": "linux",
+  "goarch": "arm64",
+  "cgoEnabled": false
+}
