@@ -193,10 +193,26 @@ async function runSpelledSessionHostHook({ runtime, event, environment, observeO
     const messaging = require("./lib/session/conversation-messaging.mjs");
     messaging.registerHookPresence({ runtime, event, environment, initialize: !observeOnly });
     if (event?.hook_event_name === "UserPromptSubmit") injection = messaging.prepareHookInjection({ runtime, event, environment });
+    // Stop hands the caller's own queued mail over and continues the turn. It
+    // registers nothing and sets nothing up, so --observe-only keeps its meaning.
+    if (event?.hook_event_name === "Stop") {
+      injection = messaging.prepareStopInjection({ runtime, event, environment });
+      const output = injection?.text ? messaging.stopContinuationOutput(runtime, injection.text) : null;
+      if (injection && !output) {
+        injection.release();
+        injection = null;
+      }
+      if (output) context = { ...context, ...output };
+    }
   } catch {
+    try {
+      injection?.release();
+    } catch {
+      /* The claim stays held; recovery keeps it unknown. */
+    }
     injection = null;
   }
-  if (injection?.text) {
+  if (injection?.text && event?.hook_event_name !== "Stop") {
     const previous = context.hookSpecificOutput?.additionalContext || "";
     context = {
       ...context,
