@@ -11,6 +11,43 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.120 — publication tracked separately
+
+- Published work documents (Obsidian vault, Notion) are laid out for the person
+  who reads them.
+  - Documents sit in a tree, `Lode/<product>/<feature group>/<feature>/`, with
+    one new file per result inside the feature folder. Folder and file names
+    are readable titles instead of hashes. Product, group and feature folder
+    documents carry the lists; there are no per-task start or notes documents.
+  - Human documents no longer contain management lines (identity lines,
+    markers, basis hashes, internal ids). That information is in a separate
+    evidence document an agent can open, and the human document links to it.
+  - `lode_work_document_prepare` accepts `feature_keys`. A feature the user
+    named wins; otherwise the agent picks among the Product model's features.
+    A result with no known feature goes to `소속 미확인/` and the rejected
+    keys are reported.
+  - Publications made with the earlier layout are not rewritten or moved. The
+    old start document receives one link to the new tree. Renaming or moving a
+    feature in the Product model never moves existing folders.
+  - A document a person edited is not overwritten: only Lode's own lists in it
+    are updated and the edit is reported. A document brought back to exactly
+    Lode's text is Lode's again.
+- A failed write no longer stops later publications.
+  - Obsidian files: a create or update whose outcome is unknown is settled by
+    looking at the file. Absent or still the old text: written again. Lode's
+    text: adopted. Any other content: treated as the person's file or edit
+    and left alone. This replaces "never write again" for vault files only.
+  - Notion keeps the rule that the same unverified change is not sent again.
+    A page update whose outcome is unknown now holds back only its own
+    document, reported as `update-unconfirmed`, while the rest of the
+    publication goes on; the next publication that wants a different text for
+    that document sends a new change made from the page as it is.
+  - Limits: a Notion document whose wanted text never changes again stays
+    `update-unconfirmed` and is reported on every publication. A Notion create
+    whose outcome cannot be confirmed is reported with its recovery limit and
+    has no way out yet. Notion behaviour was exercised against a synthetic
+    server only, not against the live service.
+
 ## 0.3.0-beta.119 — publication tracked separately
 
 - Managed files whose only difference from the recorded bytes is their line
