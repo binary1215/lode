@@ -539,3 +539,152 @@ test("OpenCode: a session's queued mail is delivered on its idle event, and only
     [two.id],
   );
 });
+
+// ---- Time budget, Host text limits and a lock left by a stopped hook ----
+
+test("past the pick-up budget nothing is claimed and the mail stays queued", async (t) => {
+  const { root, environment } = isolated(t);
+  register(root, environment, "claude", "receiver", { kind: "claude-next-prompt" });
+  const sent = [];
+  for (const body of ["one", "two", "three"]) sent.push((await queue(root, environment, "claude:receiver", body)).id);
+  for (const event of [stop("claude", root, "receiver"), { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "receiver", prompt: "next" }]) {
+    const output = await runSessionHostHook({
+      runtime: "claude",
+      environment,
+      observeOnly: true,
+      event,
+      pickupDeadlineAt: Date.now() - 1,
+      deliver: async () => {},
+    });
+    assert.equal(output.hookSpecificOutput, undefined, event.hook_event_name);
+    assert.deepEqual(mailbox(root).inflight, []);
+    assert.deepEqual(queuedIds(root).sort(), [...sent].sort());
+  }
+  // Within the budget the same mail is handed over.
+  const output = await runSessionHostHook({
+    runtime: "claude",
+    environment,
+    observeOnly: true,
+    event: stop("claude", root, "receiver"),
+    deliver: async () => {},
+  });
+  assert.match(output.hookSpecificOutput.additionalContext, /three/);
+  assert.deepEqual(queuedIds(root), []);
+});
+
+test("a claim that is not attempted by the deadline goes back to the inbox as queued", async (t) => {
+  const { root, environment } = isolated(t);
+  register(root, environment, "codex", "receiver", { kind: "codex-next-prompt" });
+  const ids = [];
+  for (const body of ["first", "second", "third"]) ids.push((await queue(root, environment, "codex:receiver", body)).id);
+  // The clock passes the deadline after the claims and before the attempts.
+  const realNow = Date.now;
+  const deadlineAt = realNow() + 60_000;
+  let claimsTaken = 0;
+  const originalRename = fs.renameSync;
+  t.mock.method(fs, "renameSync", function (from, to, ...rest) {
+    if (String(to).includes(`${path.sep}inflight${path.sep}`) && String(from).includes(`${path.sep}inbox${path.sep}`)) claimsTaken += 1;
+    return originalRename.call(this, from, to, ...rest);
+  });
+  t.mock.method(Date, "now", () => (claimsTaken >= 3 ? deadlineAt + 1 : realNow()));
+  const prepared = prepareStopInjection({ runtime: "codex", event: stop("codex", root, "receiver"), environment, deadlineAt });
+  t.mock.restoreAll();
+  assert.equal(prepared, null);
+  assert.deepEqual(mailbox(root).inflight, []);
+  assert.deepEqual(queuedIds(root).sort(), [...ids].sort());
+  assert.deepEqual(mailbox(root).archive, []);
+});
+
+test("Claude Code: a hand-over stays within 10,000 characters; the rest stays queued for the next Stop, in order", async (t) => {
+  const { root, environment } = isolated(t);
+  register(root, environment, "claude", "receiver", { kind: "claude-next-prompt" });
+  const bodies = Array.from({ length: 20 }, (_, index) => `short message ${String(index).padStart(2, "0")} ` + "x".repeat(190));
+  for (const body of bodies) await queue(root, environment, "claude:receiver", body);
+  const seen = [];
+  let rounds = 0;
+  while (queuedIds(root).length && rounds < 5) {
+    rounds += 1;
+    const output = await runSessionHostHook({
+      runtime: "claude",
+      environment,
+      observeOnly: true,
+      event: stop("claude", root, "receiver"),
+      deliver: async () => {},
+    });
+    const text = output.hookSpecificOutput.additionalContext;
+    assert.ok(text.length <= 10_000, `${text.length} characters`);
+    const left = queuedIds(root).length;
+    if (left) assert.match(text, new RegExp(`More same-project messages remain queued: ${left}\.`));
+    for (const match of text.matchAll(/short message (\d\d)/g)) seen.push(Number(match[1]));
+  }
+  assert.ok(rounds >= 2, "20 messages of this size do not fit one hand-over");
+  assert.deepEqual(
+    seen,
+    Array.from({ length: 20 }, (_, index) => index),
+  );
+  // Two messages of the maximum body size go one per Stop.
+  const big = ["A", "B"].map((letter) => letter.repeat(6000));
+  for (const body of big) await queue(root, environment, "claude:receiver", body);
+  for (const letter of ["A", "B"]) {
+    const output = await runSessionHostHook({
+      runtime: "claude",
+      environment,
+      observeOnly: true,
+      event: stop("claude", root, "receiver"),
+      deliver: async () => {},
+    });
+    const text = output.hookSpecificOutput.additionalContext;
+    assert.ok(text.length <= 10_000, `${text.length} characters`);
+    assert.ok(text.includes(letter.repeat(6000)));
+  }
+  assert.deepEqual(queuedIds(root), []);
+});
+
+test("Claude Code prompt path uses the same limit; Codex counts UTF-8 bytes against its 10,000-byte spill limit", async (t) => {
+  const { root, environment } = isolated(t);
+  register(root, environment, "claude", "receiver", { kind: "claude-next-prompt" });
+  register(root, environment, "codex", "receiver-codex", { kind: "codex-next-prompt" });
+  for (const letter of ["A", "B"]) await queue(root, environment, "claude:receiver", letter.repeat(6000));
+  const prompt = prepareHookInjection({ runtime: "claude", event: { hook_event_name: "UserPromptSubmit", cwd: root, session_id: "receiver" }, environment });
+  assert.ok(prompt.text.length <= 10_000);
+  assert.match(prompt.text, /More same-project messages remain queued: 1\./);
+  prompt.commit();
+  // 3,000 Hangul syllables are 9,000 UTF-8 bytes: one message per Codex Stop.
+  for (const syllable of ["가", "나"]) await queue(root, environment, "codex:receiver-codex", syllable.repeat(3000));
+  for (const syllable of ["가", "나"]) {
+    const output = await runSessionHostHook({
+      runtime: "codex",
+      environment,
+      observeOnly: true,
+      event: stop("codex", root, "receiver-codex"),
+      deliver: async () => {},
+    });
+    assert.ok(Buffer.byteLength(output.reason, "utf8") <= 10_000, `${Buffer.byteLength(output.reason, "utf8")} bytes`);
+    assert.ok(output.reason.includes(syllable.repeat(3000)));
+  }
+});
+
+test("a mailbox lock left by a stopped hook does not make the next Stop skip the pick-up", async (t) => {
+  const { root, environment } = isolated(t);
+  register(root, environment, "claude", "receiver", { kind: "claude-next-prompt" });
+  const sent = await queue(root, environment, "claude:receiver", "after a killed hook");
+  const { sha256Hex } = await import("../scripts/lib/core/digest.mjs");
+  const host = sha256Hex(os.hostname()).slice(0, 16);
+  // A pid that is not running: spawn a short process and wait for it to exit.
+  const dead = await new Promise((resolve) => {
+    const child = spawn(process.execPath, ["-e", ""], { windowsHide: true });
+    child.on("exit", () => resolve(child.pid));
+  });
+  const lock = path.join(root, ".lode", "messaging", ".delivery-locks", sha256Hex("claude:receiver") + ".lock");
+  fs.mkdirSync(lock, { recursive: true });
+  fs.writeFileSync(path.join(lock, `owner-${host}-${dead}-${"0".repeat(32)}.json`), JSON.stringify({ pid: dead }));
+  const output = await runSessionHostHook({
+    runtime: "claude",
+    environment,
+    observeOnly: true,
+    event: stop("claude", root, "receiver"),
+    deliver: async () => {},
+  });
+  assert.match(output.hookSpecificOutput.additionalContext, /after a killed hook/);
+  assert.equal(archived(root, sent.id).handedToHost, true);
+});

@@ -104,6 +104,12 @@ function noteNativePrompt(runtime, event, environment) {
   if (event.hook_event_name === "PreCompact") freezeUserPromptReference({ root: event.cwd, ...caller, environment });
 }
 
+// Mail is claimed only while the hook is within this many milliseconds of its
+// start, so claiming, writing the output and committing finish well inside the
+// Stop and UserPromptSubmit Hook timeout (hooks/claude.json, hooks/codex.json).
+// Mail not claimed by then stays queued for the next Stop or prompt.
+export const MAIL_PICKUP_BUDGET_MS = 6000;
+
 export async function runSessionHostHook({
   runtime,
   event,
@@ -112,18 +118,27 @@ export async function runSessionHostHook({
   deliver,
   processObserver = null,
   deadlineAt = null,
+  pickupDeadlineAt = null,
 } = {}) {
   // A Host cwd that differs from the recorded Project root only in drive-letter
   // case reaches that Project (Windows); every hook path below reads event.cwd.
   event = withRecordedCwd(event);
-  const options = { runtime, environment, observeOnly, deliver, processObserver, deadlineAt };
+  const options = {
+    runtime,
+    environment,
+    observeOnly,
+    deliver,
+    processObserver,
+    deadlineAt,
+    pickupDeadlineAt: pickupDeadlineAt ?? Date.now() + MAIL_PICKUP_BUDGET_MS,
+  };
   // A cwd that differs only in directory-name case is retried with the
   // recorded spelling after its Project was not found (no read when found).
   if (typeof event?.cwd !== "string") return await runSpelledSessionHostHook({ ...options, event });
   return await withOnDiskSpellingRetry(event.cwd, (cwd) => runSpelledSessionHostHook({ ...options, event: cwd === event.cwd ? event : { ...event, cwd } }));
 }
 
-async function runSpelledSessionHostHook({ runtime, event, environment, observeOnly, deliver, processObserver, deadlineAt }) {
+async function runSpelledSessionHostHook({ runtime, event, environment, observeOnly, deliver, processObserver, deadlineAt, pickupDeadlineAt }) {
   const startedAt = Date.now();
   const promptDeadlineAt = Math.min(deadlineAt ?? Infinity, startedAt + 10_000);
   let nativeOutcome;
@@ -192,11 +207,12 @@ async function runSpelledSessionHostHook({ runtime, event, environment, observeO
   try {
     const messaging = require("./lib/session/conversation-messaging.mjs");
     messaging.registerHookPresence({ runtime, event, environment, initialize: !observeOnly });
-    if (event?.hook_event_name === "UserPromptSubmit") injection = messaging.prepareHookInjection({ runtime, event, environment });
+    if (event?.hook_event_name === "UserPromptSubmit")
+      injection = messaging.prepareHookInjection({ runtime, event, environment, deadlineAt: pickupDeadlineAt });
     // Stop hands the caller's own queued mail over and continues the turn. It
     // registers nothing and sets nothing up, so --observe-only keeps its meaning.
     if (event?.hook_event_name === "Stop") {
-      injection = messaging.prepareStopInjection({ runtime, event, environment });
+      injection = messaging.prepareStopInjection({ runtime, event, environment, deadlineAt: pickupDeadlineAt });
       const output = injection?.text ? messaging.stopContinuationOutput(runtime, injection.text) : null;
       if (injection && !output) {
         injection.release();
@@ -289,6 +305,9 @@ async function main() {
       // Existing Host limits: End 1s; Start 10s. The optional clear query
       // has its own <=1s bound inside observeNativeHook; it does not cap rendering.
       ...(clearTransition ? { deadlineAt: Math.floor(performance.timeOrigin) + (event.hook_event_name === "SessionEnd" ? 1000 : 10_000) } : {}),
+      // Counted from this process's start, so Node start-up and the prompt
+      // reference work before the pick-up are inside the budget.
+      pickupDeadlineAt: Math.floor(performance.timeOrigin) + MAIL_PICKUP_BUDGET_MS,
       deliver: (output) => writeSessionHostOutput(output, process.stdout),
     });
   } catch {

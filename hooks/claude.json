@@ -18,7 +18,7 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-host-hook.mjs\" --runtime claude --observe-only",
-            "timeout": 3
+            "timeout": 15
           }
         ]
       }
@@ -41,7 +41,7 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-host-hook.mjs\" --runtime claude --observe-only",
-            "timeout": 3
+            "timeout": 15
           }
         ]
       }
