@@ -11,6 +11,44 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.121 — publication tracked separately
+
+- Queued conversation mail no longer waits for the recipient's next prompt.
+  - Claude Code and Codex: when the recipient's main session ends a turn, its
+    Stop Hook hands over mail queued for its own address and the Host
+    continues the same turn with it. `SubagentStop` and subagent Stops never
+    take the parent's mail. Claude Code needs version 2.1.163 or later for
+    the turn to continue; on an older version the mail is recorded as handed
+    over but the turn ends.
+  - Lode sets no limit on how many times in a row a turn continues this way.
+    Two sessions that keep answering each other keep running until a person
+    interrupts them or the Host stops them (Claude Code ends the turn after
+    eight Stop-hook continuations in a row).
+  - A send that finds the recipient's live channel first hands over that
+    recipient's older queued mail, oldest first, then its own message (at
+    most 10 older messages and 3 seconds per send). The result reports
+    `earlier` with `handed`, `unknown` and `queued` counts.
+  - A resumed Claude Code or Codex session registers its own running process,
+    so a live send reaches it instead of the process it replaced.
+  - OpenCode: the plugin scans the inbox once when its watcher starts and
+    delivers a session's queued mail when that session reports idle.
+- One hand-over carries only as many messages, oldest first, as fit the
+  Host's hook text limit (Claude Code 10,000 characters; Codex 10,000 UTF-8
+  bytes, which is about 3,300 Hangul characters). The rest stays queued for
+  the next Stop or prompt, and the last line says how many remain. A single
+  longer message is still handed over, and the Host then shows a preview and
+  a file path.
+- The Stop and UserPromptSubmit Hook timeout is 15 seconds instead of 3. Mail
+  is claimed only within 6 seconds of the Hook process start; later than
+  that it stays queued. On Windows the prompt Hook itself already took 2.3 to
+  2.5 seconds with no mail, which the old timeout barely covered.
+- A mailbox lock left behind by a stopped Hook no longer makes the next
+  pick-up skip its mail once.
+- Limits: a live Host continuing a turn from the Stop Hook was checked
+  against the Hosts' documentation and source and with the real Hook process,
+  not in a live Claude Code or Codex session. Timings were measured on
+  Windows only.
+
 ## 0.3.0-beta.120 — publication tracked separately
 
 - Published work documents (Obsidian vault, Notion) are laid out for the person
