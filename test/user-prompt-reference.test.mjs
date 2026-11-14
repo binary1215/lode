@@ -14,6 +14,7 @@ import {
   takeUserPromptReference,
   prepareUserPromptReference,
   acknowledgeUserPromptReference,
+  captureVisibleAssistantReference,
   USER_PROMPT_REFERENCE_LIMITS,
 } from "../scripts/lib/session/user-prompt-reference.mjs";
 import { runSessionHostHook, writeSessionHostOutput } from "../scripts/session-host-hook.mjs";
@@ -534,7 +535,7 @@ test(
     const freezeStarted = performance.now(),
       callsBeforeFreeze = privateCalls;
     assert.equal(freezeUserPromptReference(caller).frozen, true);
-    assert.equal(privateCalls - callsBeforeFreeze, 2, "Existing directory/file are batched; only the stage needs another request");
+    assert.equal(privateCalls - callsBeforeFreeze, 1, "Existing directory, existing file and the new stage are one request batch");
     t.diagnostic(`Freeze including independent stage ACL inspection: ${Math.round(performance.now() - freezeStarted)}ms`);
     for (const file of [promptDirectory(environment), promptFile(environment)]) assert.equal(windowsAclFixture(t, file, "inspect").untrusted, 0);
     assert.equal(windowsAclFixture(t, operational, "inspect").sddl, parentBefore.sddl, "General operational parent ACL must not change");
@@ -588,7 +589,10 @@ test(
       assert(options.timeout > 0 && options.timeout <= 5000);
       if (phase === "partial-batch") {
         const requests = JSON.parse(options.input);
-        assert.equal(requests.length, 2);
+        assert.deepEqual(
+          requests.map((item) => item.kind + (item.create ? "+create" : "")),
+          ["directory", "file", "file+create"],
+        );
         fs.unlinkSync(file); // Exact generated synthetic P5 file only: disappear after preflight.
       }
       const result = spawn.call(this, executable, args, options);
@@ -896,4 +900,95 @@ test("Windows creation failures and receipts never delete an unproven stage repl
       if (["stage-content-change", "before-open-content"].includes(fault)) assert.equal(fs.readFileSync(stage, "utf8"), "Intervening synthetic content");
       if (fault === "directory-collision") assert.equal(windowsAclFixture(sub, promptDirectory(environment), "inspect").sddl, beforeDirectoryAcl);
     });
+});
+
+// Counts the private-ACL helper calls and what each batch asked for.
+function countPrivateCalls(t, override = null) {
+  const spawn = childProcess.spawnSync,
+    calls = [];
+  t.mock.method(childProcess, "spawnSync", function (executable, args, options) {
+    const batch = options?.input && JSON.parse(options.input);
+    if (!Array.isArray(batch) || !batch.every((item) => item.kind)) return spawn.call(this, executable, args, options);
+    calls.push(batch.map((item) => item.kind + (item.create ? "+create" : "")));
+    const result = spawn.call(this, executable, args, options);
+    return override ? override(batch, result) : result;
+  });
+  return calls;
+}
+const stages = (environment) => fs.readdirSync(promptDirectory(environment)).filter((name) => name.endsWith(".tmp"));
+
+test(
+  "Windows: with the store present, a capture, an assistant-text capture and a freeze each start the ACL helper once",
+  { skip: process.platform !== "win32" },
+  (t) => {
+    const { root, environment } = fixture(t);
+    for (const runtime of ["claude", "codex"]) {
+      const caller = { root, runtime, nativeSessionId: "one-call-" + runtime, environment };
+      assert.equal(captureUserPrompt({ ...caller, text: "first prompt", messageId: runtime === "codex" ? "t1" : null }).captured, true);
+      const calls = countPrivateCalls(t);
+      assert.equal(captureUserPrompt({ ...caller, text: "second prompt", messageId: runtime === "codex" ? "t2" : null }).captured, true);
+      assert.deepEqual(calls.splice(0), [["directory", "file", "file+create"]], runtime + " prompt capture");
+      assert.equal(captureVisibleAssistantReference({ ...caller, text: "visible answer", turnId: "t2" }).captured, true);
+      assert.deepEqual(calls.splice(0), [["directory", "file", "file+create"]], runtime + " assistant text capture");
+      // Unchanged text writes nothing: one call, and no stage is asked for.
+      assert.equal(captureVisibleAssistantReference({ ...caller, text: "visible answer", turnId: "t2" }).reused, true);
+      assert.deepEqual(calls.splice(0), [["directory", "file"]], runtime + " unchanged assistant text");
+      assert.equal(freezeUserPromptReference(caller).frozen, true);
+      assert.deepEqual(calls.splice(0), [["directory", "file", "file+create"]], runtime + " freeze");
+      assert.deepEqual(stages(environment), []);
+      t.mock.restoreAll();
+    }
+  },
+);
+
+test("Windows: a stage created for a write that does not happen is removed", { skip: process.platform !== "win32" }, (t) => {
+  const { root, environment } = fixture(t),
+    caller = { root, runtime: "codex", nativeSessionId: "unused-stage", environment };
+  assert.equal(captureUserPrompt({ ...caller, text: "before compaction", messageId: "t1" }).captured, true);
+  assert.equal(freezeUserPromptReference(caller).frozen, true);
+  const before = fs.readFileSync(promptFile(environment));
+  // A frozen reference refuses the capture after its stage was created.
+  const calls = countPrivateCalls(t);
+  assert.deepEqual(captureUserPrompt({ ...caller, text: "synthetic later turn", messageId: "t2" }), { captured: false, frozen: true });
+  assert.deepEqual(calls, [["directory", "file", "file+create"]]);
+  assert.deepEqual(stages(environment), []);
+  assert.deepEqual(fs.readFileSync(promptFile(environment)), before);
+  // Assistant text guessed as changed before verification, found unchanged after it.
+  t.mock.restoreAll();
+  const other = { ...caller, runtime: "claude", nativeSessionId: "unused-stage-assistant" };
+  assert.equal(captureUserPrompt({ ...other, text: "prompt" }).captured, true);
+  assert.equal(captureVisibleAssistantReference({ ...other, text: "same answer" }).captured, true);
+  const target = fs
+    .readdirSync(promptDirectory(environment))
+    .map((name) => path.join(promptDirectory(environment), name))
+    .find((name) => name.endsWith(".json") && fs.readFileSync(name, "utf8").includes("same answer"));
+  const saved = fs.readFileSync(target);
+  // Same file (same identity), other text: only the unverified guess sees it.
+  fs.writeFileSync(target, saved.toString("utf8").replace("same answer", "older answer"));
+  const guessCalls = countPrivateCalls(t, (batch, result) => {
+    fs.writeFileSync(target, saved);
+    return result;
+  });
+  assert.deepEqual(captureVisibleAssistantReference({ ...other, text: "same answer" }), { captured: false, reused: true });
+  assert.deepEqual(guessCalls, [["directory", "file", "file+create"]]);
+  assert.deepEqual(stages(environment), []);
+  assert.deepEqual(fs.readFileSync(target), saved);
+});
+
+test("Windows: a failed ACL call after the stage was created leaves no stage and no capture", { skip: process.platform !== "win32" }, (t) => {
+  const { root, environment } = fixture(t),
+    caller = { root, runtime: "claude", nativeSessionId: "failed-call-stage", environment };
+  assert.equal(captureUserPrompt({ ...caller, text: "first" }).captured, true);
+  const before = fs.readFileSync(promptFile(environment));
+  let created = null;
+  const calls = countPrivateCalls(t, (batch, result) => {
+    created = batch.find((item) => item.create)?.path;
+    assert(created && fs.existsSync(created), "the real helper created the stage and printed its receipt");
+    return { ...result, status: 1 };
+  });
+  assert.equal(captureUserPrompt({ ...caller, text: "must not be written" }).captured, false);
+  assert.deepEqual(calls, [["directory", "file", "file+create"]]);
+  assert.equal(fs.existsSync(created), false);
+  assert.deepEqual(stages(environment), []);
+  assert.deepEqual(fs.readFileSync(promptFile(environment)), before);
 });

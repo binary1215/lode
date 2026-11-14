@@ -59,7 +59,12 @@ function boundText(text) {
   return clean.length > USER_PROMPT_REFERENCE_LIMITS.characters ? clean.slice(0, USER_PROMPT_REFERENCE_LIMITS.characters) : clean;
 }
 
-function callerFile(root, runtime, nativeSessionId, agentId, environment, create, permissions) {
+// stageWanted(existingFile) says whether this operation will probably write.
+// On Windows the private stage for that write is then created in the same
+// helper call that verifies the directory and the existing file. A wrong
+// guess costs only time: an unused stage is removed by discardStage, and a
+// missing one is created by writePrivate as before.
+function callerFile(root, runtime, nativeSessionId, agentId, environment, create, permissions, stageWanted = null) {
   checkBudget(permissions);
   if (!["claude", "codex", "opencode"].includes(runtime) || typeof nativeSessionId !== "string" || !nativeSessionId) return null;
   const projectRoot = fs.realpathSync(path.resolve(root));
@@ -71,7 +76,7 @@ function callerFile(root, runtime, nativeSessionId, agentId, environment, create
   if (!fs.existsSync(directory)) {
     if (!create) return null;
     try {
-      if (process.platform === "win32") windowsPrivate(directory, "directory", permissions, null, true);
+      if (process.platform === "win32") windowsPrivate([{ path: directory, kind: "directory", create: true }], permissions);
       else fs.mkdirSync(directory, { mode: 0o700 });
     } catch (error) {
       if (error.code !== "EEXIST") throw error;
@@ -79,8 +84,25 @@ function callerFile(root, runtime, nativeSessionId, agentId, environment, create
   }
   const file = path.join(directory, digest + ".json");
   permissions.lock = path.join(operational, ".user-prompt-locks", digest + ".lock");
-  privateDirectory(directory, permissions, fs.existsSync(file) ? file : null);
+  const existing = fs.existsSync(file) ? file : null;
+  privateDirectory(directory, permissions, existing, process.platform === "win32" && stageWanted?.(existing) ? file : null);
   return file;
+}
+
+const stagePath = (file) => path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
+
+// Removes a stage created for this operation and not used by writePrivate,
+// only while it is still the exact empty file proven by its receipt.
+function discardStage(permissions) {
+  const stage = permissions.stage;
+  permissions.stage = null;
+  if (!stage?.entry || stage.used) return;
+  try {
+    const entry = exactStat(stage.path);
+    if (entry.isFile() && !entry.isSymbolicLink() && entry.nlink === 1n && entry.size === 0n && sameEntry(stage.entry, entry)) fs.unlinkSync(stage.path);
+  } catch {
+    /* Already gone, or no longer this call's empty stage: leave it. */
+  }
 }
 
 // Dedicated P5 plaintext storage only. Never change permissions of the general
@@ -89,10 +111,12 @@ function callerFile(root, runtime, nativeSessionId, agentId, environment, create
 const WINDOWS_PRIVATE_ACL = String.raw`
 $ErrorActionPreference='Stop'
 try {
-  $requests=[Console]::In.ReadToEnd() | ConvertFrom-Json
+  # The parser ConvertFrom-Json uses in Windows PowerShell 5.1, without loading
+  # its module or converting the result: an array of key/value dictionaries.
+  $requests=[Web.Script.Serialization.JavaScriptSerializer, System.Web.Extensions, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35]::new().DeserializeObject([Console]::In.ReadToEnd())
   $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
   $system=[Security.Principal.SecurityIdentifier]::new('S-1-5-18')
-  if (@($requests | Where-Object {$_.create -eq $true}).Count -gt 0) {
+  if (@(foreach($each in @($requests)){if($each.create -eq $true){$each}}).Count -gt 0) {
     $assembly=[AppDomain]::CurrentDomain.DefineDynamicAssembly([Reflection.AssemblyName]::new('LodePrivateCreation'),[Reflection.Emit.AssemblyBuilderAccess]::Run)
     $module=$assembly.DefineDynamicModule('LodePrivateCreation')
     $type=$module.DefineType('LodePrivateCreation',[Reflection.TypeAttributes]'Public,Sealed,Abstract')
@@ -114,6 +138,13 @@ try {
       $next.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new($principal,[Security.AccessControl.FileSystemRights]::FullControl,$inherit,[Security.AccessControl.PropagationFlags]::None,[Security.AccessControl.AccessControlType]::Allow))
     }
     return $next
+  }
+  # The object Get-Item returns for a file system path, without the provider:
+  # attributes of the entry itself (a link is not followed), then
+  # DirectoryInfo or FileInfo. A missing path throws.
+  function Get-PrivateItem([string]$target) {
+    if (([IO.File]::GetAttributes($target) -band [IO.FileAttributes]::Directory) -ne 0) {return [IO.DirectoryInfo]::new($target)}
+    return [IO.FileInfo]::new($target)
   }
   foreach ($request in @($requests)) {
   $directory=$request.kind -eq 'directory'
@@ -150,7 +181,8 @@ try {
         $index=([uint64]$high -shl 32) -bor [uint64]$low
         # Receipt is flushed BEFORE disabling delete-on-close. Even on later
         # timeout/failure Node can clean only this exact proven file identity.
-        [Console]::Out.WriteLine((@{created=@{dev=$volume.ToString();ino=$index.ToString()}}|ConvertTo-Json -Compress))
+        # Both values are decimal digits only; no JSON escaping is needed.
+        [Console]::Out.WriteLine('{"created":{"dev":"'+$volume.ToString()+'","ino":"'+$index.ToString()+'"}}')
         [Console]::Out.Flush()
         # FileDispositionInfo cannot cancel FILE_FLAG_DELETE_ON_CLOSE.
         # FileDispositionInfoEx + ON_CLOSE (without DELETE) clears that flag.
@@ -159,9 +191,9 @@ try {
       }finally{if($info -ne [IntPtr]::Zero){[Runtime.InteropServices.Marshal]::FreeHGlobal($info)};$stage.Dispose()}
     }
   }
-  $item=Get-Item -LiteralPath $request.path -Force
+  $item=Get-PrivateItem $request.path
   if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {throw 'reparse'}
-  if ($directory -ne $item.PSIsContainer) {throw 'type'}
+  if ($directory -ne ($item -is [IO.DirectoryInfo])) {throw 'type'}
   $acl=$item.GetAccessControl()
   if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) {throw 'owner'}
   function PrivateAcl($value) {
@@ -169,7 +201,7 @@ try {
     $rules=@($value.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier]))
     if ($rules.Count -ne 2) {return $false}
     foreach ($principal in @($sid,$system)) {
-      $rule=@($rules | Where-Object {$_.IdentityReference.Value -eq $principal.Value})
+      $rule=@(foreach($each in $rules){if($each.IdentityReference.Value -eq $principal.Value){$each}})
       if ($rule.Count -ne 1 -or $rule[0].IsInherited -or $rule[0].AccessControlType -ne 'Allow' -or
         $rule[0].FileSystemRights -ne [Security.AccessControl.FileSystemRights]::FullControl) {return $false}
       $inherit=if($directory){[Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'}else{[Security.AccessControl.InheritanceFlags]::None}
@@ -182,8 +214,8 @@ try {
     $next=New-PrivateAcl $directory
     $item.SetAccessControl($next)
   }
-  $verified=Get-Item -LiteralPath $request.path -Force
-  if (($verified.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $directory -ne $verified.PSIsContainer) {throw 'changed'}
+  $verified=Get-PrivateItem $request.path
+  if (($verified.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $directory -ne ($verified -is [IO.DirectoryInfo])) {throw 'changed'}
   $acl=$verified.GetAccessControl()
   if ($acl.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $sid.Value -or -not (PrivateAcl $acl)) {throw 'unverified'}
   }
@@ -222,12 +254,27 @@ function operationPermissions(operation) {
   return permissions;
 }
 
-function windowsPrivate(file, kind, permissions, existingFile = null, create = false, onCreate = null) {
+// requests: one object, or a batch of the store directory followed by files
+// directly inside it (existing ones first, at most one new stage last).
+function windowsPrivate(requests, permissions, onCreate = null) {
   checkBudget(permissions);
   // Never accept a general artifact path, arbitrary script or caller body.
   if (permissions.failed) throw new Error("Private prompt ACL verification already failed.");
-  const requests = [{ path: file, kind, ...(create ? { create: true } : {}) }, ...(existingFile ? [{ path: existingFile, kind: "file" }] : [])];
-  if (existingFile && (kind !== "directory" || path.dirname(existingFile) !== file)) throw new Error("Unsafe prompt ACL batch.");
+  const [first] = requests,
+    file = first?.path,
+    creates = requests.filter((request) => request.create);
+  if (
+    !requests.length ||
+    requests.some((request) => typeof request.path !== "string" || !["directory", "file"].includes(request.kind)) ||
+    creates.length > 1 ||
+    (requests.length > 1 &&
+      (first.kind !== "directory" ||
+        first.create ||
+        requests.slice(1).some((request) => request.kind !== "file" || path.dirname(request.path) !== file) ||
+        (creates.length && creates[0] !== requests.at(-1))))
+  )
+    throw new Error("Unsafe prompt ACL batch.");
+  const stageRequest = creates[0]?.kind === "file" ? creates[0] : null;
   const pending = requests
     .map((request) => {
       const directory = request.kind === "directory",
@@ -275,7 +322,7 @@ function windowsPrivate(file, kind, permissions, existingFile = null, create = f
       .trim()
       .split(/\r?\n/);
     let createdIdentity = null;
-    if (create && kind === "file" && output.length && output[0].startsWith("{")) {
+    if (stageRequest && output.length && output[0].startsWith("{")) {
       const receipt = JSON.parse(output.shift());
       if (
         !/^[0-9]{1,20}$/.test(receipt?.created?.dev) ||
@@ -288,7 +335,7 @@ function windowsPrivate(file, kind, permissions, existingFile = null, create = f
       createdIdentity = receipt.created;
       // Do not adopt a path replacement even when it is owned by this user.
       try {
-        const stat = fs.lstatSync(file, { bigint: true });
+        const stat = fs.lstatSync(stageRequest.path, { bigint: true });
         if (
           stat.isFile() &&
           !stat.isSymbolicLink() &&
@@ -321,20 +368,36 @@ function windowsPrivate(file, kind, permissions, existingFile = null, create = f
     }
     // Batch success is all-or-nothing; never cache a partly verified request.
     for (const item of pending) permissions.checked.add(item.identity);
-    return pending[0]?.createdEntry;
+    return pending.find((item) => item.createdEntry)?.createdEntry;
   } catch (error) {
     permissions.failed = true;
     throw error;
   }
 }
 
-function privateDirectory(directory, permissions, existingFile = null) {
+// stageFor (Windows only): also create the private stage for a later write of
+// that file, in the same helper call, after the directory and existing file.
+function privateDirectory(directory, permissions, existingFile = null, stageFor = null) {
   checkBudget(permissions);
   const stat = exactStat(directory);
   if (!stat.isDirectory() || stat.isSymbolicLink() || (typeof process.getuid === "function" && stat.uid !== BigInt(process.getuid())))
     throw new Error("Unsafe prompt directory.");
-  if (process.platform !== "win32") fs.chmodSync(directory, 0o700);
-  else windowsPrivate(directory, "directory", permissions, existingFile);
+  if (process.platform !== "win32") return void fs.chmodSync(directory, 0o700);
+  const stage = stageFor && !permissions.stage ? { path: stagePath(stageFor), file: stageFor, entry: null, used: false } : null;
+  if (stage) permissions.stage = stage;
+  windowsPrivate(
+    [
+      { path: directory, kind: "directory" },
+      ...(existingFile ? [{ path: existingFile, kind: "file" }] : []),
+      ...(stage ? [{ path: stage.path, kind: "file", create: true }] : []),
+    ],
+    permissions,
+    stage
+      ? (entry) => {
+          stage.entry = entry;
+        }
+      : null,
+  );
 }
 
 function sameEntry(a, b) {
@@ -354,7 +417,7 @@ function privateFile(file, descriptor, permissions) {
   )
     throw new Error("Unsafe prompt file.");
   if (process.platform !== "win32") fs.fchmodSync(descriptor, 0o600);
-  else windowsPrivate(file, "file", permissions);
+  else windowsPrivate([{ path: file, kind: "file" }], permissions);
   if (!sameEntry(stat, exactStat(file))) throw new Error("Prompt entry changed during permission check.");
   return stat;
 }
@@ -382,27 +445,48 @@ function readState(file, permissions, { withDigest = false } = {}) {
       used += read;
     } while (read && used < buffer.length);
     if (used > USER_PROMPT_REFERENCE_LIMITS.bytes) return null;
-    const state = JSON.parse(buffer.subarray(0, used).toString("utf8"));
-    if (state?.kind !== "UserPromptReference" || state.version !== 1 || !Array.isArray(state.prompts)) return null;
-    // Existing references may predate current masks. Never inject their raw text.
-    const prompts = state.prompts
-      .slice(-USER_PROMPT_REFERENCE_LIMITS.prompts)
-      .filter((prompt) => prompt && typeof prompt.text === "string")
-      .map((prompt) => ({
-        messageId: typeof prompt.messageId === "string" ? prompt.messageId.slice(0, 256) : null,
-        text: boundText(prompt.text),
-        ...(prompt.previousConversation === true ? { previousConversation: true } : {}),
-        ...(typeof prompt.visibleResponse === "string" ? { visibleResponse: boundText(prompt.visibleResponse) } : {}),
-      }))
-      .filter((prompt) => prompt.text);
-    return {
-      prompts,
-      reinject: state.reinject === true,
-      ...(typeof state.visibleAssistant === "string" ? { visibleAssistant: boundText(state.visibleAssistant) } : {}),
-      ...(state.visibleAssistantFromPreviousConversation === true ? { visibleAssistantFromPreviousConversation: true } : {}),
-      ...(withDigest ? { byteDigest: sha256Hex(buffer.subarray(0, used)), entry: stat } : {}),
-      revision: typeof state.revision === "string" ? state.revision : sha256Hex(buffer.subarray(0, used)),
-    };
+    const state = parseState(buffer.subarray(0, used));
+    return state && { ...state, ...(withDigest ? { byteDigest: sha256Hex(buffer.subarray(0, used)), entry: stat } : {}) };
+  } catch {
+    return null;
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+  }
+}
+
+function parseState(bytes) {
+  const state = JSON.parse(bytes.toString("utf8"));
+  if (state?.kind !== "UserPromptReference" || state.version !== 1 || !Array.isArray(state.prompts)) return null;
+  // Existing references may predate current masks. Never inject their raw text.
+  const prompts = state.prompts
+    .slice(-USER_PROMPT_REFERENCE_LIMITS.prompts)
+    .filter((prompt) => prompt && typeof prompt.text === "string")
+    .map((prompt) => ({
+      messageId: typeof prompt.messageId === "string" ? prompt.messageId.slice(0, 256) : null,
+      text: boundText(prompt.text),
+      ...(prompt.previousConversation === true ? { previousConversation: true } : {}),
+      ...(typeof prompt.visibleResponse === "string" ? { visibleResponse: boundText(prompt.visibleResponse) } : {}),
+    }))
+    .filter((prompt) => prompt.text);
+  return {
+    prompts,
+    reinject: state.reinject === true,
+    ...(typeof state.visibleAssistant === "string" ? { visibleAssistant: boundText(state.visibleAssistant) } : {}),
+    ...(state.visibleAssistantFromPreviousConversation === true ? { visibleAssistantFromPreviousConversation: true } : {}),
+    revision: typeof state.revision === "string" ? state.revision : sha256Hex(bytes),
+  };
+}
+
+// A guess only, read before the permission check: it decides whether the
+// helper call also creates a stage, never what is written or returned. The
+// operation reads the file again after verification and decides from that.
+function peekState(file) {
+  let descriptor;
+  try {
+    descriptor = openPrivate(file);
+    const buffer = Buffer.alloc(USER_PROMPT_REFERENCE_LIMITS.bytes + 1);
+    const used = fs.readSync(descriptor, buffer, 0, buffer.length, 0);
+    return used > USER_PROMPT_REFERENCE_LIMITS.bytes ? null : parseState(buffer.subarray(0, used));
   } catch {
     return null;
   } finally {
@@ -428,13 +512,19 @@ function writePrivate(file, body, permissions, publication = null) {
   privateDirectory(directory, permissions);
   const original = existingEntry(file, permissions);
   if (publication?.createOnly && original) throw new Error("Prompt destination already exists.");
-  const temporary = path.join(directory, `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
+  // A stage this operation already created with the directory check (Windows)
+  // is used once; every check below still runs on it before plaintext.
+  const prepared = permissions.stage?.file === file && permissions.stage.entry && !permissions.stage.used ? permissions.stage : null;
+  const temporary = prepared ? prepared.path : stagePath(file);
   let descriptor,
     owner,
     plaintextStarted = false;
   try {
-    if (process.platform === "win32")
-      windowsPrivate(temporary, "file", permissions, null, true, (entry) => {
+    if (prepared) {
+      prepared.used = true;
+      owner = prepared.entry;
+    } else if (process.platform === "win32")
+      windowsPrivate([{ path: temporary, kind: "file", create: true }], permissions, (entry) => {
         owner = entry;
       });
     descriptor = fs.openSync(temporary, process.platform === "win32" ? "r+" : "wx", 0o600);
@@ -533,28 +623,32 @@ export function captureUserPrompt({ root, runtime, nativeSessionId, agentId = nu
   let file;
   const permissions = privatePermissions();
   try {
-    file = callerFile(root, runtime, nativeSessionId, agentId, environment, true, permissions);
-  } catch {
-    return { captured: false };
-  }
-  if (!file) return { captured: false };
-  try {
-    return mutateReference(permissions, () => {
-      const state = readState(file, permissions) || { prompts: [], reinject: false };
-      // A freeze holds the pre-compaction text. Later synthetic turns cannot replace it.
-      if (state.reinject === true) return { captured: false, frozen: true };
-      const last = state.prompts.at(-1);
-      if (messageId && last?.messageId === messageId && !last.previousConversation) {
-        last.text =
-          last.text.includes(next) && next.length <= last.text.length ? last.text : boundText(last.text.includes(next) ? next : last.text + "\n" + next);
-      } else {
-        state.prompts.push({ messageId: messageId || null, text: next });
-      }
-      writeState(file, state, permissions);
-      return { captured: true };
-    });
-  } catch {
-    return { captured: false };
+    try {
+      file = callerFile(root, runtime, nativeSessionId, agentId, environment, true, permissions, () => true);
+    } catch {
+      return { captured: false };
+    }
+    if (!file) return { captured: false };
+    try {
+      return mutateReference(permissions, () => {
+        const state = readState(file, permissions) || { prompts: [], reinject: false };
+        // A freeze holds the pre-compaction text. Later synthetic turns cannot replace it.
+        if (state.reinject === true) return { captured: false, frozen: true };
+        const last = state.prompts.at(-1);
+        if (messageId && last?.messageId === messageId && !last.previousConversation) {
+          last.text =
+            last.text.includes(next) && next.length <= last.text.length ? last.text : boundText(last.text.includes(next) ? next : last.text + "\n" + next);
+        } else {
+          state.prompts.push({ messageId: messageId || null, text: next });
+        }
+        writeState(file, state, permissions);
+        return { captured: true };
+      });
+    } catch {
+      return { captured: false };
+    }
+  } finally {
+    discardStage(permissions);
   }
 }
 
@@ -562,21 +656,25 @@ export function freezeUserPromptReference({ root, runtime, nativeSessionId, agen
   let file;
   const permissions = privatePermissions();
   try {
-    file = callerFile(root, runtime, nativeSessionId, agentId, environment, false, permissions);
-  } catch {
-    return { frozen: false };
-  }
-  if (!file) return { frozen: false };
-  try {
-    return mutateReference(permissions, () => {
-      const state = readState(file, permissions);
-      if (!state?.prompts?.length) return { frozen: false };
-      state.reinject = true;
-      writeState(file, state, permissions);
-      return { frozen: true };
-    });
-  } catch {
-    return { frozen: false };
+    try {
+      file = callerFile(root, runtime, nativeSessionId, agentId, environment, false, permissions, (existing) => Boolean(existing));
+    } catch {
+      return { frozen: false };
+    }
+    if (!file) return { frozen: false };
+    try {
+      return mutateReference(permissions, () => {
+        const state = readState(file, permissions);
+        if (!state?.prompts?.length) return { frozen: false };
+        state.reinject = true;
+        writeState(file, state, permissions);
+        return { frozen: true };
+      });
+    } catch {
+      return { frozen: false };
+    }
+  } finally {
+    discardStage(permissions);
   }
 }
 
@@ -587,31 +685,44 @@ export function freezeUserPromptReference({ root, runtime, nativeSessionId, agen
 export function captureVisibleAssistantReference({ root, runtime, nativeSessionId, agentId = null, environment = process.env, text, turnId = null } = {}) {
   if (!["codex", "claude"].includes(runtime)) return { captured: false, reason: "unsupported-host-contract" };
   const permissions = privatePermissions();
+  const next = boundText(typeof text === "string" ? text : "");
   try {
-    const file = callerFile(root, runtime, nativeSessionId, agentId, environment, false, permissions);
+    const file = callerFile(root, runtime, nativeSessionId, agentId, environment, false, permissions, (existing) => {
+      const peeked = existing && peekState(existing);
+      return Boolean(peeked && visibleAssistantChange(peeked, runtime, next, turnId) === null);
+    });
     if (!file) return { captured: false };
     return mutateReference(permissions, () => {
       const state = readState(file, permissions);
-      if (!state?.prompts.length || state.reinject) return { captured: false };
-      const next = boundText(typeof text === "string" ? text : "");
-      if (runtime === "codex") {
-        const last = state.prompts.at(-1);
-        if (typeof turnId !== "string" || last.messageId !== turnId) return { captured: false, reason: "unverified-turn" };
-        if ((last.visibleResponse || "") === next) return { captured: false, reused: true };
-        if (next) last.visibleResponse = next;
-        else delete last.visibleResponse;
-      } else {
-        if ((state.visibleAssistant || "") === next && !state.visibleAssistantFromPreviousConversation) return { captured: false, reused: true };
-        if (next) state.visibleAssistant = next;
-        else delete state.visibleAssistant;
-        delete state.visibleAssistantFromPreviousConversation;
-      }
+      const unchanged = visibleAssistantChange(state, runtime, next, turnId);
+      if (unchanged) return unchanged;
       writeState(file, state, permissions);
       return { captured: Boolean(next), adjacency: "unverified", authorityChanged: false };
     });
   } catch {
     return { captured: false };
+  } finally {
+    discardStage(permissions);
   }
+}
+
+// Applies the visible assistant text to state and returns null when the
+// reference must be written, or the result to return without a write.
+function visibleAssistantChange(state, runtime, next, turnId) {
+  if (!state?.prompts.length || state.reinject) return { captured: false };
+  if (runtime === "codex") {
+    const last = state.prompts.at(-1);
+    if (typeof turnId !== "string" || last.messageId !== turnId) return { captured: false, reason: "unverified-turn" };
+    if ((last.visibleResponse || "") === next) return { captured: false, reused: true };
+    if (next) last.visibleResponse = next;
+    else delete last.visibleResponse;
+  } else {
+    if ((state.visibleAssistant || "") === next && !state.visibleAssistantFromPreviousConversation) return { captured: false, reused: true };
+    if (next) state.visibleAssistant = next;
+    else delete state.visibleAssistant;
+    delete state.visibleAssistantFromPreviousConversation;
+  }
+  return null;
 }
 
 function mutateReference(permissions, operation) {
