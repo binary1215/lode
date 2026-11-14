@@ -108,12 +108,17 @@ function discardStage(permissions) {
 // Dedicated P5 plaintext storage only. Never change permissions of the general
 // operational/artifact directories. Windows checks token SID and protected DACL
 // on this dedicated store; POSIX mode bits are not Windows privacy evidence.
-const WINDOWS_PRIVATE_ACL = String.raw`
+// The script reaches PowerShell over stdin after the request line (see
+// WINDOWS_PRIVATE_ACL_COMMAND) and reads the request from $lodeRequest. It stays
+// printable ASCII: Windows PowerShell 5.1 decodes stdin with the console code
+// page. Its last line is the end marker the command requires before it parses
+// anything; the try/catch around the body is a second barrier.
+export const WINDOWS_PRIVATE_ACL = String.raw`
 $ErrorActionPreference='Stop'
 try {
   # The parser ConvertFrom-Json uses in Windows PowerShell 5.1, without loading
   # its module or converting the result: an array of key/value dictionaries.
-  $requests=[Web.Script.Serialization.JavaScriptSerializer, System.Web.Extensions, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35]::new().DeserializeObject([Console]::In.ReadToEnd())
+  $requests=[Web.Script.Serialization.JavaScriptSerializer, System.Web.Extensions, Version=4.0.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35]::new().DeserializeObject($lodeRequest)
   $sid=[Security.Principal.WindowsIdentity]::GetCurrent().User
   $system=[Security.Principal.SecurityIdentifier]::new('S-1-5-18')
   if (@(foreach($each in @($requests)){if($each.create -eq $true){$each}}).Count -gt 0) {
@@ -221,7 +226,16 @@ try {
   }
   [Console]::Out.Write('private')
 } catch {[Console]::Error.Write($_.Exception.Message);exit 1}
+#lode-private-acl-end
 `;
+// Short and fixed: no script body or request data on the command line (a new
+// long command line costs about 0.25-0.3 s on the first child of a process).
+// Unless the text after the request line ends with the script's end marker
+// (ordinal comparison, trailing whitespace ignored), it exits 3 without
+// parsing or running any of it; so every incomplete script is refused.
+// Otherwise [scriptblock]::Create parses the whole script before it runs.
+export const WINDOWS_PRIVATE_ACL_COMMAND =
+  "$lodeRequest=[Console]::In.ReadLine(); $lodeScript=[Console]::In.ReadToEnd(); if(-not $lodeScript.TrimEnd().EndsWith('#lode-private-acl-end',[StringComparison]::Ordinal)){exit 3}; & ([scriptblock]::Create($lodeScript))";
 
 const privatePermissions = (deadlineAt = null) => ({
   checked: new Set(),
@@ -313,17 +327,22 @@ function windowsPrivate(requests, permissions, onCreate = null) {
   }
   const executable = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
   try {
-    const result = childProcess.spawnSync(executable, ["-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", WINDOWS_PRIVATE_ACL], {
-      cwd: path.dirname(file),
-      windowsHide: true,
-      shell: false,
-      // Windows PowerShell decodes stdin with the console code page. Plain
-      // ASCII JSON (\uXXXX escapes) reaches it intact under any code page.
-      input: asciiJson(pending.map((item) => item.request)),
-      encoding: "utf8",
-      timeout: remaining,
-      maxBuffer: 4096,
-    });
+    const result = childProcess.spawnSync(
+      executable,
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", WINDOWS_PRIVATE_ACL_COMMAND],
+      {
+        cwd: path.dirname(file),
+        windowsHide: true,
+        shell: false,
+        // Windows PowerShell decodes stdin with the console code page. Plain
+        // ASCII JSON (\uXXXX escapes, so never a raw line break) on the first
+        // line reaches it intact under any code page; the script follows.
+        input: asciiJson(pending.map((item) => item.request)) + "\n" + WINDOWS_PRIVATE_ACL,
+        encoding: "utf8",
+        timeout: remaining,
+        maxBuffer: 4096,
+      },
+    );
     const output = String(result.stdout || "")
       .trim()
       .split(/\r?\n/);

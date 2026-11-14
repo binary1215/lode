@@ -16,11 +16,30 @@ import {
   acknowledgeUserPromptReference,
   captureVisibleAssistantReference,
   USER_PROMPT_REFERENCE_LIMITS,
+  WINDOWS_PRIVATE_ACL,
+  WINDOWS_PRIVATE_ACL_COMMAND,
 } from "../scripts/lib/session/user-prompt-reference.mjs";
 import { runSessionHostHook, writeSessionHostOutput } from "../scripts/session-host-hook.mjs";
 import plugin from "../scripts/opencode-plugin.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
+// The permission helper's stdin: one request line, then the script. Anything
+// else (other children, a synthetic fixture) has no request batch.
+function helperStdin(options) {
+  const input = typeof options?.input === "string" ? options.input : "",
+    split = input.indexOf("\n");
+  if (split < 0) return { requests: null, script: "" };
+  let requests = null;
+  try {
+    requests = JSON.parse(input.slice(0, split));
+  } catch {}
+  return { requests, script: input.slice(split + 1) };
+}
+// Same request line, edited script.
+const withHelperScript = (options, edit) => ({
+  ...options,
+  input: options.input.slice(0, options.input.indexOf("\n") + 1) + edit(helperStdin(options).script),
+});
 const tree = (root) => (fs.existsSync(root) ? fs.readdirSync(root, { recursive: true }).sort() : []);
 
 function fixture(t) {
@@ -481,7 +500,7 @@ test(
     const spawn = childProcess.spawnSync;
     let privateCalls = 0;
     t.mock.method(childProcess, "spawnSync", function (executable, args, options) {
-      const request = JSON.parse(options.input);
+      const request = helperStdin(options).requests;
       if (Array.isArray(request) && request.every((item) => item.kind)) privateCalls++;
       t.diagnostic(
         JSON.stringify({ event: "planned-private-acl", executable, cwd: options?.cwd, parent: process.pid, ports: [], windowsHide: options?.windowsHide }),
@@ -556,7 +575,7 @@ test("Windows ACL privacy: failed verification never claims capture or leaves an
     verifierUnavailable = false;
   t.mock.method(childProcess, "spawnSync", function (executable, args, options) {
     if (verifierUnavailable) return { status: 1, stdout: "", stderr: "Synthetic unavailable ACL verifier" };
-    const request = options?.input && JSON.parse(options.input);
+    const request = helperStdin(options).requests;
     if ((Array.isArray(request) ? request : [request]).some((item) => item?.path?.endsWith(".tmp"))) {
       stageFailure = true;
       return { status: 1, stdout: "", stderr: "Synthetic ACL failure" };
@@ -588,7 +607,7 @@ test(
       calls++;
       assert(options.timeout > 0 && options.timeout <= 5000);
       if (phase === "partial-batch") {
-        const requests = JSON.parse(options.input);
+        const requests = helperStdin(options).requests;
         assert.deepEqual(
           requests.map((item) => item.kind + (item.create ? "+create" : "")),
           ["directory", "file", "file+create"],
@@ -753,7 +772,7 @@ test("Windows private creation supplies security at creation and never adopts an
     requests = [];
   let collision, before;
   t.mock.method(childProcess, "spawnSync", function (executable, args, options) {
-    const batch = options?.input && JSON.parse(options.input);
+    const batch = helperStdin(options).requests;
     if (Array.isArray(batch)) {
       requests.push(...batch);
       const stage = batch.find((item) => item.create && item.kind === "file");
@@ -817,7 +836,7 @@ test("Windows creation failures and receipts never delete an unproven stage repl
         injected = false,
         helperFailed = false;
       sub.mock.method(childProcess, "spawnSync", function (executable, args, options) {
-        const batch = options?.input && JSON.parse(options.input);
+        const batch = helperStdin(options).requests;
         const request = Array.isArray(batch) && batch.find((item) => item.create);
         if (request?.kind === "directory" && fault === "directory-collision") {
           fs.mkdirSync(request.path);
@@ -826,23 +845,21 @@ test("Windows creation failures and receipts never delete an unproven stage repl
         }
         if (request?.kind === "file") {
           stage = request.path;
-          args = [...args];
-          if (fault === "before-receipt" || fault === "partial-receipt") {
-            args[args.length - 1] = args
-              .at(-1)
-              .replace(
-                "$stageAcl=$stage.GetAccessControl()",
-                (fault === "partial-receipt" ? "[Console]::Out.Write('{\"created\":');" : "") +
-                  "$stageAcl=$stage.GetAccessControl();throw 'synthetic-before-receipt'",
-              );
+          // Edit the script part of stdin; each edit must hit exactly one place.
+          const inject = (from, to) => {
+            const script = helperStdin(options).script;
+            assert.equal(script.split(from).length, 2, from);
+            options = withHelperScript(options, () => script.replace(from, () => to));
             injected = true;
-          } else if (fault === "after-receipt") {
-            args[args.length - 1] = args.at(-1).replace("[Console]::Out.Flush()", "[Console]::Out.Flush();throw 'synthetic-after-receipt'");
-            injected = true;
-          } else if (fault === "after-clear") {
-            args[args.length - 1] = args.at(-1).replace("throw 'created-publication'}", "throw 'created-publication'};throw 'synthetic-after-clear'");
-            injected = true;
-          }
+          };
+          if (fault === "before-receipt" || fault === "partial-receipt")
+            inject(
+              "$stageAcl=$stage.GetAccessControl()",
+              (fault === "partial-receipt" ? "[Console]::Out.Write('{\"created\":');" : "") +
+                "$stageAcl=$stage.GetAccessControl();throw 'synthetic-before-receipt'",
+            );
+          else if (fault === "after-receipt") inject("[Console]::Out.Flush()", "[Console]::Out.Flush();throw 'synthetic-after-receipt'");
+          else if (fault === "after-clear") inject("throw 'created-publication'}", "throw 'created-publication'};throw 'synthetic-after-clear'");
         }
         const result = originalSpawn.call(this, executable, args, options);
         if (request?.kind === "file" && ["before-receipt", "partial-receipt", "after-receipt", "after-clear"].includes(fault))
@@ -907,7 +924,7 @@ function countPrivateCalls(t, override = null) {
   const spawn = childProcess.spawnSync,
     calls = [];
   t.mock.method(childProcess, "spawnSync", function (executable, args, options) {
-    const batch = options?.input && JSON.parse(options.input);
+    const batch = helperStdin(options).requests;
     if (!Array.isArray(batch) || !batch.every((item) => item.kind)) return spawn.call(this, executable, args, options);
     calls.push(batch.map((item) => item.kind + (item.create ? "+create" : "")));
     const result = spawn.call(this, executable, args, options);
@@ -1019,3 +1036,106 @@ test(
     }
   },
 );
+
+test("the Windows permission script and its fixed command line are printable ASCII only", () => {
+  // Windows PowerShell 5.1 decodes stdin with the console code page.
+  assert.match(WINDOWS_PRIVATE_ACL, /^[\t\r\n\x20-\x7e]+$/);
+  assert.match(WINDOWS_PRIVATE_ACL_COMMAND, /^[\x20-\x7e]+$/);
+  assert(WINDOWS_PRIVATE_ACL.includes("DeserializeObject($lodeRequest)"));
+  assert(!WINDOWS_PRIVATE_ACL.includes("[Console]::In"), "the script reads its request only from the line the command read");
+  assert(WINDOWS_PRIVATE_ACL_COMMAND.length < 240);
+  // The command refuses any text that does not end with this marker.
+  assert.equal(WINDOWS_PRIVATE_ACL.trimEnd().split("\n").at(-1), "#lode-private-acl-end");
+  assert.equal(WINDOWS_PRIVATE_ACL.split("#lode-private-acl-end").length, 2);
+  assert(WINDOWS_PRIVATE_ACL_COMMAND.includes("EndsWith('#lode-private-acl-end',[StringComparison]::Ordinal)"));
+});
+
+test(
+  "Windows: every helper call has the same short command line; the request line and the script arrive on stdin",
+  { skip: process.platform !== "win32" },
+  (t) => {
+    const { root, environment } = fixture(t),
+      caller = { root, runtime: "codex", nativeSessionId: "fixed-command", environment };
+    const spawn = childProcess.spawnSync,
+      seen = [];
+    t.mock.method(childProcess, "spawnSync", function (executable, args, options) {
+      const { requests, script } = helperStdin(options);
+      if (Array.isArray(requests) && requests.every((item) => item.kind)) seen.push({ args, requests, script, input: options.input });
+      return spawn.call(this, executable, args, options);
+    });
+    assert.equal(captureUserPrompt({ ...caller, text: "first prompt", messageId: "t1" }).captured, true);
+    assert.equal(captureVisibleAssistantReference({ ...caller, text: "visible answer", turnId: "t1" }).captured, true);
+    assert.equal(freezeUserPromptReference(caller).frozen, true);
+    assert(seen.length >= 4);
+    for (const call of seen) {
+      assert.deepEqual(call.args, ["-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", WINDOWS_PRIVATE_ACL_COMMAND]);
+      for (const request of call.requests) assert(!call.args.join(" ").includes(request.path), "no request path on the command line");
+      assert.equal(call.script, WINDOWS_PRIVATE_ACL, "the script follows the request line unchanged");
+      assert.match(call.input.slice(0, call.input.indexOf("\n")), /^[\x20-\x7e]+$/, "one ASCII request line");
+    }
+    assert.deepEqual(stages(environment), []);
+  },
+);
+
+test("Windows: a cut-off permission script is refused before any of it runs", { skip: process.platform !== "win32" }, async (t) => {
+  const { base, root, environment } = fixture(t);
+  const executable = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  // Every offset of the first and last 40 characters, directly after each line
+  // break, and a few points inside lines.
+  const cuts = new Set([100, 999, 2500, 5000]);
+  for (let at = 0; at <= 40; at++) cuts.add(at).add(WINDOWS_PRIVATE_ACL.length - at);
+  for (let at = WINDOWS_PRIVATE_ACL.indexOf("\n"); at >= 0; at = WINDOWS_PRIVATE_ACL.indexOf("\n", at + 1)) cuts.add(at + 1);
+  const whole = WINDOWS_PRIVATE_ACL.trimEnd();
+  const partial = [...cuts].filter((cut) => WINDOWS_PRIVATE_ACL.slice(0, cut).trimEnd() !== whole).sort((a, b) => a - b);
+  assert(partial.length > 180);
+  const run = (cut) =>
+    new Promise((resolve) => {
+      const parent = path.join(base, "cut-" + cut),
+        target = path.join(parent, "user-prompt-reference");
+      fs.mkdirSync(parent);
+      const child = childProcess.spawn(
+        executable,
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", WINDOWS_PRIVATE_ACL_COMMAND],
+        {
+          cwd: parent,
+          windowsHide: true,
+          shell: false,
+        },
+      );
+      let stdout = "";
+      child.stdout.setEncoding("utf8").on("data", (chunk) => (stdout += chunk));
+      let stderr = "";
+      child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += chunk));
+      child.on("close", (status) => resolve({ cut, status, stdout, stderr, created: fs.existsSync(target) }));
+      child.stdin.end(JSON.stringify([{ path: target, kind: "directory", create: true }]) + "\n" + WINDOWS_PRIVATE_ACL.slice(0, cut));
+    });
+  // The whole script, delivered the same way, does answer and create.
+  const control = await run(WINDOWS_PRIVATE_ACL.length);
+  assert.deepEqual([control.status, control.stdout, control.created], [0, "private", true]);
+  const results = [];
+  for (let next = 0; next < partial.length; next += 8) results.push(...(await Promise.all(partial.slice(next, next + 8).map(run))));
+  for (const result of results) {
+    // Refused by the command itself (exit 3): nothing parsed, ran or printed.
+    assert.deepEqual([result.status, result.stdout, result.stderr, result.created], [3, "", "", false], "cut at " + result.cut);
+  }
+  t.diagnostic(JSON.stringify({ cuts: results.length }));
+  // Through the operation: a cut-off script fails closed and leaves nothing.
+  const caller = { root, runtime: "codex", nativeSessionId: "cut-off", environment };
+  const spawn = childProcess.spawnSync;
+  let cutCalls = 0;
+  t.mock.method(childProcess, "spawnSync", function (executable, args, options) {
+    if (!Array.isArray(helperStdin(options).requests)) return spawn.call(this, executable, args, options);
+    cutCalls++;
+    return spawn.call(
+      this,
+      executable,
+      args,
+      withHelperScript(options, (script) => script.slice(0, Math.floor(script.length / 2))),
+    );
+  });
+  assert.equal(captureUserPrompt({ ...caller, text: "must not be captured" }).captured, false);
+  assert.equal(cutCalls, 1);
+  assert.equal(fs.existsSync(promptDirectory(environment)), false);
+  assert.equal(freezeUserPromptReference(caller).frozen, false);
+  assert.equal(takeUserPromptReference({ ...caller, force: true }), "");
+});

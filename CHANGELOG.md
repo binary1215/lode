@@ -11,6 +11,38 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.123 — publication tracked separately
+
+- Windows: every Hook that touches the private prompt reference
+  (UserPromptSubmit, Stop, PreCompact) takes about 0.25 to 0.3 seconds less.
+  - The permission helper now starts with a short command line that never
+    changes. Its request and its script arrive on standard input instead of
+    on the command line. On the measured machine the first child a process
+    starts with a long command line takes about 0.25 to 0.3 seconds longer,
+    and every Hook is a new process, so every such Hook paid that.
+  - Every permission check is the same as before, nothing is remembered from
+    one Hook to the next, and a failed check still stores nothing.
+  - The helper runs its script only when the text it received ends with the
+    script's fixed end marker. A script that arrives cut off is refused
+    before any of it is parsed or run, and the operation stores nothing.
+    Cutting the shipped script at each of its 7,889 incomplete lengths gave
+    the same refusal every time, with no output and nothing created.
+  - Measured with the real Hook process on Windows 11, before and after, on
+    a quiet machine: Claude Code prompt 0.85-1.17 s to 0.63-0.68 s; Codex
+    prompt 0.81-0.94 s to 0.57-0.62 s; Stop with new assistant text
+    0.80-1.15 s to 0.56-0.66 s; Stop with unchanged text 0.76-1.06 s to
+    0.48-0.50 s; PreCompact 0.78-0.92 s to 0.53-0.57 s. A second set on a
+    busier machine was slower on both sides and showed the same difference.
+    The number of helper starts per Hook is unchanged, and so is what is
+    stored.
+  - The Hook times with queued mail in the conversation-messaging document
+    were measured again.
+- Limits: measured on one Windows 11 machine. Why a long command line costs
+  that time there was not established; a machine without that cost is
+  expected to gain nothing and lose nothing, which was not measured. macOS
+  and Linux do not use the helper. Only the Korean console code page was
+  used.
+
 ## 0.3.0-beta.122 — publication tracked separately
 
 - Windows: the UserPromptSubmit, Stop and PreCompact Hooks take about half

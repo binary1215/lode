@@ -434,7 +434,11 @@ Existing directory/file checks share one fixed helper request. When the
 operation is likely to write, the same request also creates and checks the new
 stage, so an existing store costs one helper start per operation; a stage that
 turns out to be unused is removed by its proven identity while still empty, and
-a missing one is created and checked before plaintext. Helpers share one five-second monotonic
+a missing one is created and checked before plaintext. The helper starts with a
+short fixed command line; its request line and then its script arrive on
+standard input. The command runs the script only if it ends with its fixed end
+marker, so a cut-off script is refused before any of it is parsed or run, and
+the whole script is parsed before any of it runs. Helpers share one five-second monotonic
 budget per public operation, and a failed check is not retried within that call.
 Hooks still await completion of this optional work; it is not a no-overhead or
 nonblocking performance guarantee.
