@@ -254,6 +254,10 @@ function operationPermissions(operation) {
   return permissions;
 }
 
+// Every UTF-16 code unit outside printable ASCII becomes \uXXXX (surrogate
+// pairs stay pairs), so the JSON text decodes to the same strings.
+const asciiJson = (value) => JSON.stringify(value).replace(/[^\x20-\x7e]/g, (unit) => "\\u" + unit.charCodeAt(0).toString(16).padStart(4, "0"));
+
 // requests: one object, or a batch of the store directory followed by files
 // directly inside it (existing ones first, at most one new stage last).
 function windowsPrivate(requests, permissions, onCreate = null) {
@@ -313,7 +317,9 @@ function windowsPrivate(requests, permissions, onCreate = null) {
       cwd: path.dirname(file),
       windowsHide: true,
       shell: false,
-      input: JSON.stringify(pending.map((item) => item.request)),
+      // Windows PowerShell decodes stdin with the console code page. Plain
+      // ASCII JSON (\uXXXX escapes) reaches it intact under any code page.
+      input: asciiJson(pending.map((item) => item.request)),
       encoding: "utf8",
       timeout: remaining,
       maxBuffer: 4096,

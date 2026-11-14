@@ -992,3 +992,30 @@ test("Windows: a failed ACL call after the stage was created leaves no stage and
   assert.deepEqual(stages(environment), []);
   assert.deepEqual(fs.readFileSync(promptFile(environment)), before);
 });
+
+test(
+  "Windows: a state root under a non-ASCII folder keeps the private reference working, one helper call per operation",
+  { skip: process.platform !== "win32" },
+  (t) => {
+    const { base, root } = fixture(t);
+    const environment = { HEAD_AGENT_OPERATIONAL_STATE_ROOT: path.join(base, "한글-café-x", "operational") };
+    fs.mkdirSync(path.dirname(environment.HEAD_AGENT_OPERATIONAL_STATE_ROOT));
+    for (const runtime of ["claude", "codex"]) {
+      const caller = { root, runtime, nativeSessionId: "non-ascii-" + runtime, environment };
+      const id = (n) => (runtime === "codex" ? "t" + n : null);
+      assert.equal(captureUserPrompt({ ...caller, text: "first prompt", messageId: id(1) }).captured, true, runtime + " first capture");
+      const calls = countPrivateCalls(t);
+      assert.equal(captureUserPrompt({ ...caller, text: "second prompt", messageId: id(2) }).captured, true);
+      assert.deepEqual(calls.splice(0), [["directory", "file", "file+create"]]);
+      assert.equal(captureVisibleAssistantReference({ ...caller, text: "visible answer", turnId: "t2" }).captured, true);
+      assert.deepEqual(calls.splice(0), [["directory", "file", "file+create"]]);
+      assert.equal(freezeUserPromptReference(caller).frozen, true);
+      assert.deepEqual(calls.splice(0), [["directory", "file", "file+create"]]);
+      t.mock.restoreAll();
+      const text = takeUserPromptReference(caller);
+      assert.match(text, /second prompt/);
+      assert.match(text, /visible answer/);
+      assert.deepEqual(stages(environment), []);
+    }
+  },
+);
