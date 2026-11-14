@@ -1043,7 +1043,11 @@ test("the Windows permission script and its fixed command line are printable ASC
   assert.match(WINDOWS_PRIVATE_ACL_COMMAND, /^[\x20-\x7e]+$/);
   assert(WINDOWS_PRIVATE_ACL.includes("DeserializeObject($lodeRequest)"));
   assert(!WINDOWS_PRIVATE_ACL.includes("[Console]::In"), "the script reads its request only from the line the command read");
-  assert(WINDOWS_PRIVATE_ACL_COMMAND.length < 120);
+  assert(WINDOWS_PRIVATE_ACL_COMMAND.length < 240);
+  // The command refuses any text that does not end with this marker.
+  assert.equal(WINDOWS_PRIVATE_ACL.trimEnd().split("\n").at(-1), "#lode-private-acl-end");
+  assert.equal(WINDOWS_PRIVATE_ACL.split("#lode-private-acl-end").length, 2);
+  assert(WINDOWS_PRIVATE_ACL_COMMAND.includes("EndsWith('#lode-private-acl-end',[StringComparison]::Ordinal)"));
 });
 
 test(
@@ -1073,15 +1077,17 @@ test(
   },
 );
 
-test("Windows: a cut-off permission script never answers private or creates the requested entry", { skip: process.platform !== "win32" }, async (t) => {
+test("Windows: a cut-off permission script is refused before any of it runs", { skip: process.platform !== "win32" }, async (t) => {
   const { base, root, environment } = fixture(t);
   const executable = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-  // Directly after each line break, and a few points inside lines.
-  const cuts = new Set([0, 1, 7, 100, 999, 2500, 5000, WINDOWS_PRIVATE_ACL.length - 3, WINDOWS_PRIVATE_ACL.length - 2]);
+  // Every offset of the first and last 40 characters, directly after each line
+  // break, and a few points inside lines.
+  const cuts = new Set([100, 999, 2500, 5000]);
+  for (let at = 0; at <= 40; at++) cuts.add(at).add(WINDOWS_PRIVATE_ACL.length - at);
   for (let at = WINDOWS_PRIVATE_ACL.indexOf("\n"); at >= 0; at = WINDOWS_PRIVATE_ACL.indexOf("\n", at + 1)) cuts.add(at + 1);
   const whole = WINDOWS_PRIVATE_ACL.trimEnd();
   const partial = [...cuts].filter((cut) => WINDOWS_PRIVATE_ACL.slice(0, cut).trimEnd() !== whole).sort((a, b) => a - b);
-  assert(partial.length > 100);
+  assert(partial.length > 180);
   const run = (cut) =>
     new Promise((resolve) => {
       const parent = path.join(base, "cut-" + cut),
@@ -1098,8 +1104,9 @@ test("Windows: a cut-off permission script never answers private or creates the 
       );
       let stdout = "";
       child.stdout.setEncoding("utf8").on("data", (chunk) => (stdout += chunk));
-      child.stderr.resume();
-      child.on("close", (status) => resolve({ cut, status, stdout, created: fs.existsSync(target) }));
+      let stderr = "";
+      child.stderr.setEncoding("utf8").on("data", (chunk) => (stderr += chunk));
+      child.on("close", (status) => resolve({ cut, status, stdout, stderr, created: fs.existsSync(target) }));
       child.stdin.end(JSON.stringify([{ path: target, kind: "directory", create: true }]) + "\n" + WINDOWS_PRIVATE_ACL.slice(0, cut));
     });
   // The whole script, delivered the same way, does answer and create.
@@ -1108,10 +1115,10 @@ test("Windows: a cut-off permission script never answers private or creates the 
   const results = [];
   for (let next = 0; next < partial.length; next += 8) results.push(...(await Promise.all(partial.slice(next, next + 8).map(run))));
   for (const result of results) {
-    assert.notEqual(result.stdout.trim(), "private", "cut at " + result.cut);
-    assert.equal(result.created, false, "cut at " + result.cut);
+    // Refused by the command itself (exit 3): nothing parsed, ran or printed.
+    assert.deepEqual([result.status, result.stdout, result.stderr, result.created], [3, "", "", false], "cut at " + result.cut);
   }
-  t.diagnostic(JSON.stringify({ cuts: results.length, nonZeroExit: results.filter((result) => result.status !== 0).length }));
+  t.diagnostic(JSON.stringify({ cuts: results.length }));
   // Through the operation: a cut-off script fails closed and leaves nothing.
   const caller = { root, runtime: "codex", nativeSessionId: "cut-off", environment };
   const spawn = childProcess.spawnSync;

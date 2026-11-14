@@ -111,9 +111,8 @@ function discardStage(permissions) {
 // The script reaches PowerShell over stdin after the request line (see
 // WINDOWS_PRIVATE_ACL_COMMAND) and reads the request from $lodeRequest. It stays
 // printable ASCII: Windows PowerShell 5.1 decodes stdin with the console code
-// page. After the first line everything is one try/catch statement: cut-off
-// text fails to parse and nothing of it runs (cut right after the first line,
-// it only sets the error preference and answers nothing).
+// page. Its last line is the end marker the command requires before it parses
+// anything; the try/catch around the body is a second barrier.
 export const WINDOWS_PRIVATE_ACL = String.raw`
 $ErrorActionPreference='Stop'
 try {
@@ -227,12 +226,16 @@ try {
   }
   [Console]::Out.Write('private')
 } catch {[Console]::Error.Write($_.Exception.Message);exit 1}
+#lode-private-acl-end
 `;
 // Short and fixed: no script body or request data on the command line (a new
 // long command line costs about 0.25-0.3 s on the first child of a process).
-// [scriptblock]::Create parses the whole script before any of it runs; a parse
-// error throws, nothing runs and PowerShell exits non-zero.
-export const WINDOWS_PRIVATE_ACL_COMMAND = "$lodeRequest=[Console]::In.ReadLine(); & ([scriptblock]::Create([Console]::In.ReadToEnd()))";
+// Unless the text after the request line ends with the script's end marker
+// (ordinal comparison, trailing whitespace ignored), it exits 3 without
+// parsing or running any of it; so every incomplete script is refused.
+// Otherwise [scriptblock]::Create parses the whole script before it runs.
+export const WINDOWS_PRIVATE_ACL_COMMAND =
+  "$lodeRequest=[Console]::In.ReadLine(); $lodeScript=[Console]::In.ReadToEnd(); if(-not $lodeScript.TrimEnd().EndsWith('#lode-private-acl-end',[StringComparison]::Ordinal)){exit 3}; & ([scriptblock]::Create($lodeScript))";
 
 const privatePermissions = (deadlineAt = null) => ({
   checked: new Set(),
