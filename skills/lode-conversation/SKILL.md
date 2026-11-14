@@ -29,7 +29,7 @@ recovery direction.
 | `persisted: false` | That nothing was saved by this step. | That a read saved or recorded anything. |
 | `authorityChanged: false` | Nothing, unless the user asks whether something was approved. | That a save, review or result granted permission. |
 | `reasonCode` on a failure | The affected operation, the cause in plain words, and the next actor. | The code as the explanation. |
-| `lode_conversation_send` `state` (`delivered`, `sent`, `queued`, `unknown`, `refused`, `unreachable`) | Exactly that state; `unknown` stays unknown. | "Delivered" for `sent` or `queued`. |
+| `lode_conversation_send` `state` (`delivered`, `sent`, `queued`, `unknown`, `refused`, `unreachable`) | Exactly that state; `unknown` stays unknown. `queued` is handed over when the recipient's turn ends, by a later send through its live channel, or at its next prompt. | "Delivered" for `sent` or `queued`. |
 
 ## Distinctions to keep in the wording
 

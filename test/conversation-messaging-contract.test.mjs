@@ -299,17 +299,20 @@ input.on('close',()=>process.exit(0));
   } finally { clearInterval(monitor); clearTimeout(bound); }
 });
 
-test("Host startup discovers peers without changing Project; recovery and empty lookup do not publish", t => {
+test("Host startup and resume discover peers without changing Project; in-process transitions and empty lookup do not publish", t => {
   const f = fixture(t), projectBefore = inventory(f.root);
   const event = { hook_event_name: "SessionStart", source: "startup", session_id: "receiver", cwd: f.root };
   const registered = registerHookPresence({ runtime: "codex", event, environment: f.environment });
   assert.equal(registered.address, "codex:receiver");
   assert.deepEqual(inventory(f.root), projectBefore);
   assert.equal(fs.existsSync(f.mailbox), false);
+  // A resume is a new Host process: its presence replaces the earlier one.
+  assert.equal(registerHookPresence({ runtime: "codex", event: { ...event, source: "resume", session_id: "resumed" }, environment: f.environment }).address, "codex:resumed");
+  assert.deepEqual(inventory(f.root), projectBefore);
   const hostBefore = inventory(f.home);
   const listed = listProjectConversations({ root: f.root, environment: f.environment });
-  assert.equal(listed.conversations[0].address, "codex:receiver");
-  for (const source of ["resume", "clear", "compact", "fork"]) {
+  assert.deepEqual(listed.conversations.map((row) => row.address).sort(), ["codex:receiver", "codex:resumed"]);
+  for (const source of ["clear", "compact", "fork"]) {
     assert.equal(registerHookPresence({ runtime: "codex", event: { ...event, source, session_id: source }, environment: f.environment }), null);
   }
   assert.equal(registerHookPresence({ runtime: "codex", event, environment: f.environment, initialize: false }), null);
