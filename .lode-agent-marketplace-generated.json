@@ -1,0 +1,11 @@
+{
+  "protocolVersion": "0.1.0",
+  "kind": "LodeAgentCodexMarketplaceSnapshot",
+  "marketplaceName": "lode-agent-plugin",
+  "pluginName": "lode-agent-core",
+  "pluginVersion": "0.3.0-beta.123",
+  "distributionReleaseId": "release-4aa32eb06656bd0c9dc09ad6",
+  "sourceRepository": "binary1215/lode",
+  "sourceCommit": "139cd3b9f6465d480a8315a221c9a6bffcb08842",
+  "snapshotId": "codex-marketplace-e90078244fa1c538f9c1f729"
+}
