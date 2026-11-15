@@ -34,6 +34,16 @@ const contained = (base, file) => {
 };
 
 function boundedJson(root, relative) {
+  const bytes = boundedBytes(root, relative);
+  return {
+    bytes,
+    value: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
+  };
+}
+
+// The same bounded, identity-checked read for an original that is not JSON
+// (product graph documents are Markdown).
+function boundedBytes(root, relative) {
   const file = copiedProjectFile(root, relative),
     stat = fs.lstatSync(file);
   if (!stat.isFile() || stat.nlink !== 1 || stat.size > SNAPSHOT_STORAGE_LIMITS.decodedBytes) fail("PROJECT_BUNDLE_MANIFEST_UNSAFE");
@@ -44,10 +54,7 @@ function boundedJson(root, relative) {
     const bytes = readBoundedSnapshotDescriptor(fd, stat.size, SNAPSHOT_STORAGE_LIMITS.decodedBytes),
       after = fs.fstatSync(fd);
     if (after.size !== opened.size || after.mtimeMs !== opened.mtimeMs || after.ctimeMs !== opened.ctimeMs) fail("PROJECT_COPY_SOURCE_CHANGED");
-    return {
-      bytes,
-      value: JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
-    };
+    return bytes;
   } finally {
     fs.closeSync(fd);
   }
@@ -379,6 +386,12 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
       allowed.add(relative);
       return boundedJson(root, objectPath(entry)).bytes;
     },
+    originalRawBytes = (relative) => {
+      const entry = entries.get(relative);
+      if (!entry) fail("PROJECT_BUNDLE_REFERENCE_MISSING");
+      allowed.add(relative);
+      return boundedBytes(root, objectPath(entry));
+    },
     read = (relative) => JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(originalBytes(relative)));
   const projectPath = manifest.directory + "/project.json",
     projectEntry = entries.get(projectPath);
@@ -429,6 +442,7 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
       return verifyBundledRunOwner({ root, manifest, entries, allowed, runId, run });
     },
     read,
+    readBytes: originalRawBytes,
     has: (relative) => entries.has(relative),
     list: (relative) => [...entries.keys()].filter((name) => name.startsWith(relative + "/")).map((name) => name.slice(relative.length + 1)),
   });

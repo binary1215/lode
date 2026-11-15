@@ -73,6 +73,21 @@ function onlyFields(input, allowed, label) {
   return input;
 }
 
+// Product graph CLI: a project root, or a stand-alone run when --documents is
+// given (the positional root is then the source root; --rules and, for build,
+// --out are required and nothing is written outside --out).
+function productGraphCliOptions(root, options, { output }) {
+  const includeEstimates = options["include-estimates"] === true;
+  if (options.documents === undefined && options.rules === undefined && options.out === undefined) return { root, includeEstimates };
+  return {
+    sourceRoot: root,
+    documentsDirectory: options.documents ?? null,
+    rulesFile: options.rules ?? null,
+    outputDirectory: output ? (options.out ?? null) : null,
+    includeEstimates,
+  };
+}
+
 export const OPERATIONS = Object.freeze([
   {
     name: "lode_project_document_prepare",
@@ -1513,6 +1528,100 @@ export const OPERATIONS = Object.freeze([
       args: ({ root, options, inputJson }) => [{ ...inputJson(options, "Feature mapping ReviewDecision"), root }],
     },
     impl: () => import("../world/feature-mapping.mjs").then((module) => module.reviewFeatureMapping),
+  },
+  {
+    name: "lode_product_graph_build",
+    tool: {
+      name: "lode_product_graph_build",
+      description:
+        "Build the project's product graph (the original 제품 그래프 model, apart from the Product Model): 기능 and 코드 from the source tree by script, the other nodes from the user's documents in the store. Writes only the generated output folder; documents, policy, meaning lines and approvals are never rewritten. Includes the 정합성 검사 result.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          include_estimates: {
+            type: "boolean",
+            default: false,
+            description: "Also use unapproved (추정) documents in the check; every finding resting on one is labelled.",
+          },
+        },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root, includeEstimates: args.include_estimates === true }] },
+    cli: {
+      command: "product-graph-build",
+      flags: ["documents", "rules", "out", "include-estimates"],
+      args: ({ root, options }) => [productGraphCliOptions(root, options, { output: true })],
+    },
+    impl: () => import("../world/product-graph.mjs").then((module) => module.buildProductGraph),
+  },
+  {
+    name: "lode_product_graph_check",
+    tool: {
+      name: "lode_product_graph_check",
+      description:
+        "Read-only 정합성 검사 of the product graph: the original's six checks, each ending in findings with node IDs and positions, 0건, or 검사 못 함 with its reason, plus missing cited IDs, 기능 no 화면요소 or 화면 points to, unresolved handlers, UI wiring not taken as 기능, files that look like UI code but match no pattern, node counts and approved/estimated documents. Approved documents only unless include_estimates.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          include_estimates: {
+            type: "boolean",
+            default: false,
+            description: "Also use unapproved (추정) documents; every finding resting on one is labelled.",
+          },
+        },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root, includeEstimates: args.include_estimates === true }] },
+    cli: {
+      command: "product-graph-check",
+      flags: ["documents", "rules", "include-estimates"],
+      args: ({ root, options }) => [productGraphCliOptions(root, options, { output: false })],
+    },
+    impl: () => import("../world/product-graph.mjs").then((module) => module.checkProductGraph),
+  },
+  {
+    name: "lode_product_graph_approve",
+    tool: {
+      name: "lode_product_graph_approve",
+      description:
+        "Record the user's explicit approval of one product graph document (or the policy file) exactly as it is now. expected_sha256 is the digest of the content the user reviewed, as the check result lists it; a document changed since then is refused. Editing an approved document later makes it unapproved again. Requires explicit confirmation.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          document: { type: "string", minLength: 1, description: "Path inside the product graph folder, for example 화면설계서/CHT-01.md." },
+          expected_sha256: { type: "string", pattern: "^[a-f0-9]{64}$" },
+          rationale: { type: "string", minLength: 1, maxLength: 2000 },
+          confirm_user_review: { type: "boolean" },
+        },
+        required: ["project_root", "document", "expected_sha256", "rationale", "confirm_user_review"],
+        additionalProperties: false,
+      },
+    },
+    mcp: {
+      before: (args) =>
+        requireMcpConfirmation(
+          args.confirm_user_review,
+          "Product graph document approval requires explicit user confirmation.",
+          "PRODUCT_GRAPH_APPROVAL_CONFIRMATION_REQUIRED",
+        ),
+      args: (args) => [{ root: args.project_root, document: args.document, expectedSha256: args.expected_sha256, rationale: args.rationale }],
+    },
+    cli: {
+      command: "product-graph-approve",
+      flags: ["input"],
+      args: ({ root, options, inputJson }) => {
+        const input = onlyFields(inputJson(options, "Product graph approval"), ["document", "expectedSha256", "rationale"], "Product graph approval");
+        return [{ root, document: input.document, expectedSha256: input.expectedSha256, rationale: input.rationale }];
+      },
+    },
+    impl: () => import("../world/product-graph.mjs").then((module) => module.approveProductGraphDocument),
   },
   {
     name: "lode_change_set_status",
@@ -5873,6 +5982,9 @@ const supplementalReadOnlyHints = {
   lode_continuity_snapshot: true,
   lode_feature_mapping_propose: false,
   lode_feature_mapping_review: false,
+  lode_product_graph_build: false,
+  lode_product_graph_check: true,
+  lode_product_graph_approve: false,
   lode_conformance_propose: false,
   lode_conformance_disposition: false,
   lode_conformance_resolution_propose: false,

@@ -28,6 +28,7 @@ import { readSessionWorkEvidenceOwner } from "../session/session-work-context.mj
 import { sessionWorkPath, readSessionWorkEvidenceOriginalFile } from "../session/session-work-evidence-original.mjs";
 import { verifyRetainedRunOriginal } from "../runtime/run-lineage.mjs";
 import { sha256Hex as hash } from "../core/digest.mjs";
+import { classifyProductGraphPath, verifyProductGraphCanonFile, PRODUCT_GRAPH_DIRECTORY } from "../storage/product-graph-store.mjs";
 import { failCode as failure } from "../core/errors.mjs";
 
 const ids = (encoded) => [...new Set(encoded.match(/\b(?:world-model|graph-snapshot|source-snapshot)-[a-f0-9]{24}\b/g) || [])];
@@ -256,7 +257,7 @@ export async function buildSnapshotDeletionClosure({
       }
       if (
         relative &&
-        !/^(?:graph-discovery|context(?:\/capsules)?|generated|world-model(?:\/snapshots)?|graph-projection(?:\/snapshots)?|sessions(?:\/(?:records|ledger|work-evidence|runs(?:\/run-[0-9]+-[a-f0-9]{6})?|by-id(?:\/session-[a-f0-9-]{36}(?:\/(?:work-evidence|ledger))?)?))?|onboarding(?:\/storage-selections)?|roles|instructions|lineage(?:\/(?:whole-plans|execution-contracts|result-packets|review-decisions))?|change-sets(?:\/(?:records|vcs-evidence|impact-candidate-sets|impact-review-decisions))?|refresh(?:\/(?:requests|receipts))?|document-projection(?:\/post-refresh(?:\/(?:policies|receipts))?)?|observations(?:\/(?:source-bundles|descriptors|records(?:\/by-source-key)?|derived|receipts))?)$/.test(
+        !/^(?:graph-discovery|context(?:\/capsules)?|generated|world-model(?:\/snapshots)?|graph-projection(?:\/snapshots)?|sessions(?:\/(?:records|ledger|work-evidence|runs(?:\/run-[0-9]+-[a-f0-9]{6})?|by-id(?:\/session-[a-f0-9-]{36}(?:\/(?:work-evidence|ledger))?)?))?|onboarding(?:\/storage-selections)?|roles|instructions|lineage(?:\/(?:whole-plans|execution-contracts|result-packets|review-decisions))?|change-sets(?:\/(?:records|vcs-evidence|impact-candidate-sets|impact-review-decisions))?|refresh(?:\/(?:requests|receipts))?|document-projection(?:\/post-refresh(?:\/(?:policies|receipts))?)?|observations(?:\/(?:source-bundles|descriptors|records(?:\/by-source-key)?|derived|receipts))?|context\/product-graph(?:\/(?:유저플로우 기획서|화면설계서|승인|build))?)$/.test(
           relative,
         )
       ) {
@@ -273,6 +274,12 @@ export async function buildSnapshotDeletionClosure({
       failure("OBSERVATION_STORE_LIMIT");
     if ((storedBytes += stat.size) > 1024 ** 3) failure("GC_INVENTORY_INCOMPLETE");
     if (relative === "graph-discovery/index.json") return;
+    // Product graph: generated output is rebuildable (like the discovery index);
+    // Canon files are read as verified text roots, so a snapshot id written in a
+    // document still retains that snapshot. Unknown names stay issues.
+    const productGraphPath = relative.startsWith(PRODUCT_GRAPH_DIRECTORY + "/") ? relative.slice(PRODUCT_GRAPH_DIRECTORY.length + 1).normalize("NFC") : null;
+    const productGraphTarget = productGraphPath === null ? null : classifyProductGraphPath(productGraphPath);
+    if (productGraphTarget?.role === "build") return;
     const exact = fs.lstatSync(file, { bigint: true }),
       before = snapshotFileIdentity(exact),
       match = target.exec(relative);
@@ -291,7 +298,18 @@ export async function buildSnapshotDeletionClosure({
     if (!sameSnapshotFileIdentity(before, snapshotFileIdentity(fs.lstatSync(file, { bigint: true })))) failure("GC_INVENTORY_DRIFT");
     let document = read.document;
     if (!match) {
-      if (relative.endsWith(".json")) document = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(read.bytes));
+      if (productGraphTarget?.canon) {
+        try {
+          verifyProductGraphCanonFile(productGraphPath, read.bytes, { projectId: owner.projectId });
+        } catch (error) {
+          issue(storage.directory + "/" + relative, error.code || "GC_ORIGINAL_VERIFICATION_FAILED");
+          return;
+        }
+        document = new TextDecoder("utf-8", { fatal: true }).decode(read.bytes);
+      } else if (productGraphPath !== null) {
+        issue(relative, "UNSUPPORTED_GC_REFERENCE_ROOT");
+        return;
+      } else if (relative.endsWith(".json")) document = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(read.bytes));
       else if (
         relative === ".gitignore" ||
         /^(?:instructions\/project|generated\/(?:head|lode)-instructions|roles\/(?:head|lode|developer|coder|reviewer))\.md$/.test(relative)

@@ -1530,8 +1530,16 @@ function formatGraphInventory(value) {
   return lines.join("\n") + "\n";
 }
 
+// 제품 그래프: readable Korean text first, then the structured result.
+function formatProductGraph(value) {
+  if (!value || typeof value.text !== "string") return null;
+  const { text, ...structured } = value;
+  return `${text}\n구조화된 결과:\n${JSON.stringify(structured)}\n`;
+}
+
 export function formatMcpToolContent(name, value) {
   name = resolveOperation(name)?.semanticName ?? name;
+  if (["lode_product_graph_build", "lode_product_graph_check"].includes(name)) return formatProductGraph(value) ?? JSON.stringify(value);
   if (name === "lode_session_list") return formatSessionList(value);
   if (["lode_runtime_invocation_authorization", "lode_bounded_worker_status"].includes(name)) return formatPreparedRuntimeRead(value);
   if (name === "lode_project_graph") return formatGraphInventory(value) ?? formatTerminalGraph(value) ?? JSON.stringify(value);
@@ -1575,6 +1583,8 @@ export function formatCliError(error) {
 }
 
 export function formatCliResult(command, value, presentation = {}) {
+  if (["product-graph-build", "product-graph-check"].includes(command) && typeof value?.text === "string")
+    return command === "product-graph-build" ? `${value.text}\n만든 파일: ${value.outputLocation}\n` : value.text;
   if (command === "session-list") return formatSessionList(value);
   if (command === "runtime-invocation-read") return formatPreparedRuntimeRead(value);
   if (value?.status === "session_selection_unresolved") return formatUnavailableSession(value, { doctor: command === "doctor" });

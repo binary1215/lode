@@ -26,6 +26,8 @@ work logs are intentionally excluded from the distribution and are not runtime a
 - [Standalone legacy onboarding migrator boundary](onboarding-migrator.md)
 - [Product Model canon](product-model.md)
 - [Product Operating Loop](product-operating-loop.md)
+- [Product graph (제품 그래프)](product-graph.md)
+- [Using the product graph](product-graph-usage.md)
 - [Release observation](release-observation.md)
 - [Delivery state observation](delivery-observation.md)
 

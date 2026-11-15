@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "kind": "LodeProductGraphEntryRules",
+  "rules": [
+    {
+      "종류": "tool",
+      "판단": true,
+      "설명": "Lode MCP tool: operation registry entries and the work-document tool definitions.",
+      "파일": ["scripts/lib/session/operation-registry.mjs", "scripts/lib/world/work-document-surface.mjs"],
+      "패턴": "^\\s*name:\\s*\"(lode_[a-z0-9_]+)\""
+    },
+    {
+      "종류": "cli",
+      "판단": true,
+      "설명": "Lode CLI command: the cli.command field of an operation registry entry.",
+      "파일": ["scripts/lib/session/operation-registry.mjs"],
+      "패턴": "\\bcommand:\\s*\"([a-z0-9-]+)\"",
+      "처리 코드": "파일"
+    },
+    {
+      "종류": "cli",
+      "판단": true,
+      "설명": "Lode CLI command alias: each name in a cli.aliases list.",
+      "파일": ["scripts/lib/session/operation-registry.mjs"],
+      "패턴": "(?<=aliases:\\s*\\[[^\\]]*)\"([^\"]+)\"",
+      "처리 코드": "파일"
+    }
+  ]
+}

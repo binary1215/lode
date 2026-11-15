@@ -509,3 +509,9 @@ export function analyzeSourceFile(text, language, base, { maxSymbols = 200 } = {
     semanticFacts: { bindings: extractImportBindings(text, language), calls: extractCalls(text, language, context) },
   };
 }
+
+// The same comment/string masking the declaration and call scans use, for
+// callers that scan one file for their own syntax (offsets are unchanged).
+export function maskSourceText(text, language) {
+  return maskNonCode(text, language);
+}

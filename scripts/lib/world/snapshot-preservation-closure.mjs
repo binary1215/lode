@@ -259,6 +259,7 @@ export async function inspectSnapshotPreservationClosure({ root = "." } = {}) {
       writerLifetime: "not-locked-not-certified",
       readConsistency: "observed-sequence-not-atomic",
       sourceBytes: "exact-validated-bundles-where-present-otherwise-partial",
+      productGraph: "user-owned-canon-and-generated-output-hold-no-snapshot-references",
     },
     applyAvailable: false,
     deletedCount: 0,

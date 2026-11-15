@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "LodeProductGraphEntryRules",
+  "rules": [
+    {
+      "종류": "프론트",
+      "이름": "GTK widget.connect",
+      "판단": true,
+      "설명": "A toolkit with no built-in pattern, described only by this project rule.",
+      "확장자": [".py"],
+      "파일 표시": "\\bgi\\.repository\\b",
+      "모양": "(?<emitter>[A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)*)\\.connect\\(\\s*\"(?<event>[\\w-]+)\"\\s*,\\s*(?<target>)",
+      "코드만": true,
+      "대상 읽기": "식",
+      "요소 이름": ["보내는 쪽"],
+      "유저 조작": ["activate", "changed", "clicked", "toggled"]
+    }
+  ]
+}

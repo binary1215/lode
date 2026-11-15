@@ -95,12 +95,14 @@ test/*
 !test/worker-integration-result.test.mjs
 !test/worker-integration-native.test.mjs
 !test/worker-integration-surface.test.mjs
+!test/product-graph.test.mjs
 !test/helpers/
 test/helpers/*
 !test/fixtures/
 test/fixtures/*
 !test/fixtures/dispatch-recordings.json
 !test/fixtures/lib-layer-baseline.json
+!test/fixtures/product-graph/
 !test/helpers/session-work-linkage-fixture.mjs
 !test/helpers/session-work-reentry-flow.mjs
 !test/helpers/worker-integration-fixture.mjs
