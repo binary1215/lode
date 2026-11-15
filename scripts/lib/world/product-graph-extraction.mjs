@@ -254,7 +254,8 @@ function buildCodeLayer(sourceRoot, files, excludes) {
     const callers = analysis.symbols.filter((symbol) => symbol.kind === "function" || symbol.kind === "binding");
     const lineMask = codeMask(analysis.text, analysis.language === "python" ? "python" : "javascript");
     let view = "";
-    for (let index = 0; index < analysis.text.length; index += 1) view += lineMask[index] || analysis.text[index] === "\n" ? analysis.text[index] : " ";
+    for (let index = 0; index < analysis.text.length; index += 1)
+      view += !lineMask.trusted || lineMask[index] || analysis.text[index] === "\n" ? analysis.text[index] : " ";
     const maskedLines = view.split("\n");
     // The call scan keeps only a name for "expr).map(": look at the call's own
     // line to see whether every use of that name there follows a ".".
@@ -533,15 +534,30 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
     if (!maskOf.has(relative)) maskOf.set(relative, codeMask(text, codeMaskKind(path.posix.extname(relative).toLowerCase())));
     return maskOf.get(relative);
   };
+  // A file whose mask is not trusted (the lexer ended inside a string,
+  // template or comment) falls back to the line-local check for 코드만 and
+  // to its raw text for file signs; it is named in the limits block.
+  const untrustedMask = new Set();
   const maskedOf = new Map();
   const masked = (relative, text) => {
     if (!maskedOf.has(relative)) {
       const mask = maskFor(relative, text);
+      if (!mask.trusted) {
+        untrustedMask.add(relative);
+        maskedOf.set(relative, text);
+        return text;
+      }
       let view = "";
       for (let index = 0; index < text.length; index += 1) view += mask[index] || text[index] === "\n" ? text[index] : " ";
       maskedOf.set(relative, view);
     }
     return maskedOf.get(relative);
+  };
+  const inCode = (relative, text, start) => {
+    const mask = maskFor(relative, text);
+    if (mask.trusted) return Boolean(mask[start]);
+    untrustedMask.add(relative);
+    return startsInCodeOnLine(text, start, relative.endsWith(".py"));
   };
   const unnamed = new Map();
   const nextUnnamed = (key) => {
@@ -614,7 +630,7 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
         known = entry["그 밖의 이벤트"] ? new Set(entry["그 밖의 이벤트"]) : null;
       for (const match of text.matchAll(expression)) {
         const start = match.index || 0;
-        if (entry["코드만"] && !maskFor(relative, text)[start]) continue;
+        if (entry["코드만"] && !inCode(relative, text, start)) continue;
         const groups = match.groups || {};
         const rawEvent = groups.event ?? entry["이벤트 고정"];
         if (!rawEvent) continue;
@@ -668,7 +684,7 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
       }
     }
   }
-  return { notTaken, callbacks, wired, textOf, masked };
+  return { notTaken, callbacks, wired, textOf, masked, untrustedMask: [...untrustedMask].sort() };
 }
 
 // Finds 기능 (entry points) and links each to the code that receives it.
@@ -902,6 +918,7 @@ export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
     unresolvedHandlers: unresolvedHandlers.sort(
       (a, b) => compare(a.id, b.id) || compare(a.position.path, b.position.path) || a.position.line - b.position.line,
     ),
+    untrustedMaskFiles: ui.untrustedMask,
     notTakenBindings: ui.notTaken.sort((a, b) => compare(a.path, b.path) || a.line - b.line || compare(a.pattern, b.pattern)),
     uiWithoutRule: uiWithoutRule.sort((a, b) => compare(a.path, b.path)),
     outOfScope: outOfScope.sort((a, b) => compare(a.id, b.id)),
@@ -997,4 +1014,21 @@ export function assertUniqueIds(nodes) {
     seen.add(node.id);
   }
   if (clashes.length) fail("PRODUCT_GRAPH_DUPLICATE_NODE_ID", `같은 ID를 가진 노드가 둘 이상이다: ${[...new Set(clashes)].sort().slice(0, 20).join(", ")}`);
+}
+
+// The pre-lexer check, used only for a file whose lexer mask is not trusted:
+// a match is code when no line comment starts before it on its line and it is
+// not inside a string opened earlier on that line.
+function startsInCodeOnLine(text, index, python) {
+  const prefix = text.slice(text.lastIndexOf("\n", index - 1) + 1, index);
+  let quote = null;
+  for (let position = 0; position < prefix.length; position += 1) {
+    const character = prefix[position];
+    if (quote) {
+      if (character === "\\") position += 1;
+      else if (character === quote) quote = null;
+    } else if (character === '"' || character === "'" || (!python && character === "`")) quote = character;
+    else if (python ? character === "#" : character === "/" && prefix[position + 1] === "/") return false;
+  }
+  return quote === null;
 }

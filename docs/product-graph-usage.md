@@ -31,7 +31,7 @@ Through MCP the same operations are the grouped tool `lode_product_graph` with a
 
 ## Approve
 
-Approval records that the user read one document as it is now and accepts it as the product description. The check result lists each document with its digest; show the user that content, then record the decision with the same digest:
+Approval records that the user read one document as it is now and accepts it as the product description. The check text lists every document that is not 승인 with its approval digest (`승인할 digest …` on its line), and the structured result carries it as `approvalDigest` in `documents.list`. Show the user that content, then record the decision with the same digest:
 
 ```json
 { "document": "화면설계서/CHT-01.md", "expectedSha256": "<digest from the check result>", "rationale": "Read with the user on the screen." }

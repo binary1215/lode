@@ -31,6 +31,10 @@ function productGraphKeptEntries(root, storage) {
       const name = entry.name.normalize("NFC");
       const relative = prefix ? prefix + "/" + name : name;
       if (!prefix && name === "build") continue;
+      if (entry.isSymbolicLink()) {
+        kept.push({ path: storage.directory + "/" + PRODUCT_GRAPH_DIRECTORY + "/" + relative, kind: "link" });
+        continue;
+      }
       if (entry.isDirectory()) {
         if (!prefix && productGraphSubdirectories.includes(name)) visit(name, path.join(directory, entry.name));
         else kept.push({ path: storage.directory + "/" + PRODUCT_GRAPH_DIRECTORY + "/" + relative, kind: "folder" });

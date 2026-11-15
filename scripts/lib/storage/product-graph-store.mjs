@@ -94,7 +94,10 @@ export function decodeProductGraphText(bytes) {
 export const PRODUCT_GRAPH_APPROVAL_DIGEST_BASIS = "utf8-text-bom-dropped-lf-nfc-sha256";
 
 export function productGraphApprovalDigest(bytes) {
-  const text = decodeProductGraphText(bytes).replace(/\r\n?/g, "\n").normalize("NFC");
+  decodeProductGraphText(bytes); // size, UTF-8 and NUL checks
+  let text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  if (text.startsWith("\uFEFF")) text = text.slice(1);
+  text = text.replace(/\r\n?/g, "\n").normalize("NFC");
   return sha256Hex(Buffer.from(text, "utf8"));
 }
 

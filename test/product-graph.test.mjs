@@ -431,7 +431,9 @@ test("acceptance 14: with no documents a guide names each missing input; with ev
   assert(empty.guide.every((item) => item.unlocks.length && item.next));
   const lines = empty.text.split("\n");
   assert(lines.includes("처음 쓸 때 — 빠진 입력"));
-  assert(lines.some((line) => line.startsWith("- 화면설계서 (없음): 검사 2, 검사 4, 검사 5, 목록: 어떤 화면요소·화면도 가리키지 않는 기능")));
+  assert(lines.some((line) => line.startsWith("- 화면설계서 (없음). 쓰는 곳: 검사 2, 검사 4, 검사 5, 목록: 어떤 화면요소·화면도 가리키지 않는 기능. 다음: ")));
+  // Stand-alone: the next step is what works there, not an approval.
+  assert(empty.guide.every((item) => item.next.includes("--include-estimates") && !item.next.includes("product-graph-approve")));
   assert(empty.checks.every((item) => item.outcome === "검사 못 함" && item.reason));
   const head = lines.findIndex((line) => line.startsWith("어떤 화면요소·화면도 가리키지 않는 기능:"));
   assert(lines[head].endsWith("검사 못 함: 화면설계서가 없다"));
@@ -1054,7 +1056,7 @@ test("acceptance 18: an approval binds to the normalised text: line endings, BOM
     fs.writeFileSync(file, variant);
     assert.equal(listed().status, "승인");
   }
-  for (const variant of [text + " ", text.replace("저장 버튼", "저장 단추")]) {
+  for (const variant of [text + " ", text.replace("저장 버튼", "저장 단추"), "﻿﻿" + text]) {
     fs.writeFileSync(file, variant);
     assert.equal(listed().status, "승인 뒤 바뀜");
   }
@@ -1073,4 +1075,56 @@ test("acceptance 17: the usage doc says what an approval record is, in both lang
   assert.match(en, /version-control history of the `승인\/` folder/);
   assert.match(ko, /보안 경계가 아닙니다/);
   assert.match(ko, /`승인\/` 폴더의 버전 관리 이력/);
+});
+
+// ---------- review of ea56fd1: A, B, G, H ----------
+
+test("A: a regex after a keyword, an unrecognised regex and JSX text with a backtick do not hide later wiring", (t) => {
+  const tick = String.fromCharCode(96);
+  const wiring = 'el.addEventListener("click", save);';
+  const cases = {
+    "after-return.js": `document.getElementById("x");\nfunction f(s) { return /${tick}/.test(s); }\n${wiring}\nconst later = ${tick}x${tick};\nfunction save() {}\n`,
+    "after-condition.js": `document.getElementById("x");\nif (ok) /${tick}/.test(s);\n${wiring}\nfunction save() {}\n`,
+    "after-typeof.js": `document.getElementById("x");\nconst k = typeof /${tick}/;\n${wiring}\nfunction save() {}\n`,
+    "jsx-text.jsx": `document.getElementById("x");\nconst v = <p>Use ${tick} to quote</p>;\n${wiring}\nfunction save() {}\n`,
+  };
+  const { result, graph } = scratchProduct(t, cases).build();
+  const ids = graph.nodes.filter((node) => node.type === "기능").map((node) => node.id);
+  for (const name of Object.keys(cases)) {
+    const stem = name.replace(/\.[^.]+$/, "");
+    assert(ids.includes(`fe/${stem}/${stem}@click:save`), `${name}: ${ids.join(", ")}`);
+  }
+  // The keyword cases are read exactly; the other two trip the guard and are named.
+  assert.deepEqual(result.limits.lineLocalFallback.files, ["after-condition.js", "jsx-text.jsx"]);
+  assert.equal(result.limits.lineLocalFallback.count, 2);
+  const block = result.text.split("\n\n")[0];
+  assert.match(block, /코드만 판정을 줄 단위로 되돌린 파일 2개: after-condition\.js, jsx-text\.jsx/);
+});
+
+test("B: the check text prints the approval digest of every document that is not 승인, and approve accepts it", (t) => {
+  const f = productProject(t);
+  const text = checkProductGraph({ root: f.root }).text;
+  const line = text.split("\n").find((item) => item.includes("화면설계서/MAIN-01.md — 추정"));
+  const printed = /승인할 digest ([a-f0-9]{64})/.exec(line)?.[1];
+  assert(printed, line);
+  assert.equal(approveProductGraphDocument({ root: f.root, document: "화면설계서/MAIN-01.md", expectedSha256: printed, rationale: "ok" }).status, "recorded");
+  const after = checkProductGraph({ root: f.root })
+    .text.split("\n")
+    .find((item) => item.includes("화면설계서/MAIN-01.md — "));
+  assert(!after.includes("승인할 digest"), after);
+});
+
+test("G: a regular file where the build folder should be is refused with a product graph reason", (t) => {
+  const f = productProject(t);
+  fs.writeFileSync(path.join(f.family, "build"), "not a folder\n");
+  assert.throws(() => buildProductGraph({ root: f.root }), { code: "PRODUCT_GRAPH_OUTPUT_NOT_DIRECTORY" });
+});
+
+test("H: the preservation closure names a link in the family as a link", async (t) => {
+  const f = productProject(t);
+  const outside = path.join(f.base, "outside-notes");
+  fs.mkdirSync(outside);
+  if (!link(t, outside, path.join(f.family, "메모"))) return t.skip("cannot create a directory link here");
+  const preservation = await inspectSnapshotPreservationClosure({ root: f.root });
+  assert.deepEqual(preservation.productGraphKept, [{ path: ".lode/context/product-graph/메모", kind: "link" }]);
 });

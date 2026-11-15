@@ -582,7 +582,9 @@ function compute({ extraction, loaded, includeEstimates }) {
         ? loaded.approvalsRead
           ? "사용자에게 지금 내용을 보여 주고, 검사가 보여 주는 digest로 승인을 기록한다 (product-graph-approve)"
           : "독립 실행은 승인 기록을 읽지 않는다. 추정 문서까지 쓰려면 --include-estimates로 검사한다"
-        : `${file}를 쓰고 → 검사(product-graph-check) → 사용자가 읽은 뒤 승인(product-graph-approve)`,
+        : loaded.approvalsRead
+          ? `${file}를 쓰고 → 검사(product-graph-check) → 사용자가 읽은 뒤 승인(product-graph-approve)`
+          : `${file}를 쓰고 → --include-estimates로 검사한다 (승인은 Lode 프로젝트에서만 센다)`,
     });
   }
   const pointedFunctions = new Set(screenFunctions.keys());
@@ -858,7 +860,7 @@ export function renderProductGraphText(result) {
   const lines = [...renderLimits(result.limits), ""];
   if (result.guide?.length) {
     lines.push("처음 쓸 때 — 빠진 입력");
-    for (const item of result.guide) lines.push(`- ${item.input} (${item.state}): ${item.unlocks.join(", ")}이 이것을 쓴다. 다음: ${item.next}`);
+    for (const item of result.guide) lines.push(`- ${item.input} (${item.state}). 쓰는 곳: ${item.unlocks.join(", ")}. 다음: ${item.next}`);
     lines.push("");
   }
   lines.push("제품 그래프 정합성 검사", "");
@@ -956,7 +958,8 @@ export function renderProductGraphText(result) {
   lines.push(
     ...listLines(
       result.documents.list,
-      (item) => `${item.path} — ${item.status}${item.status !== "승인" ? ` (${item.estimateKind || "어느 쪽 추정인지 적지 않음"})` : ""}`,
+      (item) =>
+        `${item.path} — ${item.status}${item.status !== "승인" ? ` (${item.estimateKind || "어느 쪽 추정인지 적지 않음"}) — 승인할 digest ${item.approvalDigest}` : ""}`,
     ),
   );
   if (lists.formatIssues.length) {
@@ -991,10 +994,18 @@ function limitsOf({ extraction, computed, includeEstimates, loaded, callbacks })
   return {
     title: LIMITS_TITLE,
     codeReading: "코드는 정규식 기반 소스 분석으로 읽었다. 구문 트리가 아니고 타입 정보가 없다.",
-    calls: { resolved: extraction.referenceSummary.resolvedCalls, all: extraction.referenceSummary.allCalls, callbacks },
+    calls: {
+      resolved: extraction.referenceSummary.resolvedCalls,
+      all: extraction.referenceSummary.allCalls,
+      keywordPseudoCalls: extraction.referenceSummary.unresolvedByReason.find((reason) => reason.reason === "keyword")?.count || 0,
+      callbacks,
+    },
     referenceKinds: { emitted: ["call", "callback"], notToldApart: NOT_TOLD_APART },
     notExtracted: { nodeTypes: NOT_EXTRACTED, edges: ["navigate"], grouping: "C4 묶음" },
     uiBindingScan: UI_SCAN_LIMITS,
+    // Files whose lexer mask could not be trusted: 코드만 fell back to the
+    // line-local check there.
+    lineLocalFallback: { count: extraction.untrustedMaskFiles.length, files: extraction.untrustedMaskFiles },
     execution: "아무것도 실행하지 않았다. 문서와 코드를 비교할 뿐이고, 어느 발견도 실행 근거에 기대지 않는다.",
     documents: {
       approved: computed.documentSummary.approved,
@@ -1017,10 +1028,15 @@ function renderLimits(limits) {
   return [
     limits.title,
     `- ${limits.codeReading}`,
-    `- 호출 ${limits.calls.all}개 중 ${limits.calls.resolved}개를 하나의 선언으로 풀었다. 풀린 것만 코드→코드 연결이 된다.`,
+    `- 호출 ${limits.calls.all}개 중 ${limits.calls.resolved}개를 하나의 선언으로 풀었다(전체에는 호출처럼 보인 언어 키워드 ${limits.calls.keywordPseudoCalls}개가 들어 있다). 풀린 것만 코드→코드 연결이 된다.`,
     `- reference 종류는 ${limits.referenceKinds.emitted.join(", ")}만 적는다. ${limits.referenceKinds.notToldApart.join(", ")}는 구별하지 못해 적지 않는다.`,
     `- 뽑지 않은 것: ${limits.notExtracted.nodeTypes.join(", ")} 노드, ${limits.notExtracted.edges.join(", ")} 연결, ${limits.notExtracted.grouping}.`,
     ...limits.uiBindingScan.map((line) => `- ${line}`),
+    ...(limits.lineLocalFallback.count
+      ? [
+          `- lexer가 파일 끝에서 문자열·템플릿·주석 안에 있어 코드만 판정을 줄 단위로 되돌린 파일 ${limits.lineLocalFallback.count}개: ${limits.lineLocalFallback.files.slice(0, 10).join(", ")}${limits.lineLocalFallback.count > 10 ? ` 외 ${limits.lineLocalFallback.count - 10}개` : ""}.`,
+        ]
+      : []),
     `- ${limits.execution}`,
     `- 문서: 승인 ${documents.approved}, 승인 뒤 바뀜 ${documents.changedAfterApproval}, 추정 ${documents.estimated}. 승인 뒤 바뀜은 승인 기록의 본문과 지금 본문이 달라 추정으로 쓴다. ${usage}`,
   ];
@@ -1085,6 +1101,8 @@ export function buildProductGraph(options = {}) {
   ];
   const write = () => {
     if (inputs.mode === "project") assertNoLinkedComponents(inputs.projectRoot, output);
+    const existing = fs.lstatSync(output, { throwIfNoEntry: false });
+    if (existing && !existing.isDirectory()) fail("PRODUCT_GRAPH_OUTPUT_NOT_DIRECTORY", "출력 폴더 자리에 폴더가 아닌 것이 있다.");
     fs.mkdirSync(output, { recursive: true });
     if (inputs.mode === "project") assertNoLinkedComponents(inputs.projectRoot, output);
     if (inputs.mode === "project") {

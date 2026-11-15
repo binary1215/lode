@@ -33,7 +33,7 @@ MCP에서는 같은 연산이 묶음 tool `lode_product_graph`의 action `build`
 
 ## 승인
 
-승인은 사용자가 문서 하나를 지금 내용 그대로 읽고 제품 설명으로 받아들였다는 기록입니다. 검사 결과에 문서마다 digest가 나옵니다. 사용자에게 그 내용을 보여 준 뒤 같은 digest로 결정을 기록합니다.
+승인은 사용자가 문서 하나를 지금 내용 그대로 읽고 제품 설명으로 받아들였다는 기록입니다. 검사 글은 승인이 아닌 문서마다 그 줄에 승인 digest(`승인할 digest …`)를 적고, 구조화된 결과에는 `documents.list`의 `approvalDigest`로 들어갑니다. 사용자에게 그 내용을 보여 준 뒤 같은 digest로 결정을 기록합니다.
 
 ```json
 { "document": "화면설계서/CHT-01.md", "expectedSha256": "<digest from the check result>", "rationale": "Read with the user on the screen." }
