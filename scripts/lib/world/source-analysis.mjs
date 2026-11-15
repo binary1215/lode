@@ -1,4 +1,6 @@
-export const SOURCE_ANALYSIS_VERSION = "0.3.1";
+import { codeMask, TEMPLATE_EXPRESSION_OPEN } from "./source-code-mask.mjs";
+
+export const SOURCE_ANALYSIS_VERSION = "0.3.2";
 
 function compareText(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -10,6 +12,7 @@ function analysisContext(text, language) {
     text,
     language,
     masked: null,
+    readConfidence: null,
     declarations: null,
     lineAt(value, index) {
       let offsets = indexes.get(value);
@@ -83,7 +86,37 @@ function normalizedSignature(value) {
     .join("");
 }
 
+// Comments and string contents become spaces; line breaks and offsets stay.
+// JavaScript and TypeScript are read with the shared lexer (source-code-mask),
+// which follows template literals with nested ${...}, regular-expression
+// literals and comments. A template's ${ and its closing } are masked too, so
+// braces in the masked text stay balanced; the expression inside is code.
+// When the lexer cannot trust its reading (the file ends inside a template,
+// block comment or ${...}), a character counts as code if either the lexer or
+// the plain quote scan says so: that reading loses least, and the file is
+// reported as read with reduced confidence.
 function maskNonCode(text, language) {
+  return maskedReading(text, language).masked;
+}
+
+function maskedReading(text, language) {
+  if (!["javascript", "typescript"].includes(language)) return { masked: quoteScanMask(text, language), readConfidence: "full" };
+  const mask = codeMask(text, "javascript");
+  const fallback = mask.trusted ? null : quoteScanMask(text, language);
+  // Regex offsets and text[index] use UTF-16 code units, including lone surrogates.
+  const output = text.split("");
+  for (let index = 0; index < output.length; index += 1) {
+    const character = output[index];
+    if (character === "\n" || character === "\r") continue;
+    const code = (mask[index] && mask[index] !== TEMPLATE_EXPRESSION_OPEN) || (fallback !== null && fallback[index] !== " ");
+    if (!code) output[index] = " ";
+  }
+  return { masked: output.join(""), readConfidence: mask.trusted ? "full" : "reduced" };
+}
+
+// The plain quote scan: Python masking, and the fallback for JavaScript text
+// the lexer cannot trust. It knows comments and quoted strings only.
+function quoteScanMask(text, language) {
   if (!["javascript", "typescript", "python"].includes(language)) return text;
   // Regex offsets and text[index] use UTF-16 code units, including lone surrogates.
   const output = text.split("");
@@ -262,7 +295,8 @@ function matchingBrace(masked, openIndex) {
 
 function javascriptDeclarations(text, masked, maxSymbols, includeRanges = false, context) {
   const patterns = [
-    ["function", /\b(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/g],
+    // A generator declaration (function* name) is a function declaration too.
+    ["function", /\b(?:export\s+)?(?:async\s+)?function(?:\s*\*\s*|\s+)([A-Za-z_$][\w$]*)/g],
     ["class", /\b(?:export\s+)?class\s+([A-Za-z_$][\w$]*)/g],
     ["binding", /\b(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/g],
   ];
@@ -342,8 +376,13 @@ function markdownDeclarations(text, maxSymbols, context) {
   return finalizeDeclarations(declarations, maxSymbols);
 }
 
+function maskedText(context) {
+  if (context.masked === null) Object.assign(context, maskedReading(context.text, context.language));
+  return context.masked;
+}
+
 function analyzeDeclarations(text, language, maxSymbols, includeRanges = false, context = analysisContext(text, language)) {
-  const masked = (context.masked ??= maskNonCode(text, language));
+  const masked = maskedText(context);
   if (["javascript", "typescript"].includes(language)) return javascriptDeclarations(text, masked, maxSymbols, includeRanges, context);
   if (language === "python") return pythonDeclarations(text, masked, maxSymbols, includeRanges, context);
   if (language === "markdown") return markdownDeclarations(text, maxSymbols, context);
@@ -469,7 +508,7 @@ function callerLookup(declarations) {
 
 function extractCalls(text, language, context = analysisContext(text, language)) {
   if (!["javascript", "typescript", "python"].includes(language)) return [];
-  const masked = (context.masked ??= maskNonCode(text, language));
+  const masked = maskedText(context);
   const declarations = (context.declarations ??= analyzeDeclarations(text, language, 10_000, true, context));
   const callerAt = callerLookup(declarations);
   const excluded = new Set(["if", "for", "while", "switch", "catch", "function", "return", "typeof", "new", "class", "def", "with", "assert", "lambda"]);
@@ -477,7 +516,7 @@ function extractCalls(text, language, context = analysisContext(text, language))
   for (const match of masked.matchAll(/\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)\s*\(/g)) {
     const callee = match[1];
     const prefix = masked.slice(Math.max(0, (match.index || 0) - 24), match.index || 0);
-    if (excluded.has(callee) || /\b(?:function|class|def|new)\s*$/.test(prefix)) continue;
+    if (excluded.has(callee) || /\b(?:function\s*\*?|class|def|new)\s*$/.test(prefix)) continue;
     const callIndex = match.index || 0;
     const caller = callerAt(callIndex);
     calls.push({
@@ -498,16 +537,21 @@ export function extractSemanticSourceFacts(text, language) {
 }
 
 // Internal repository-analysis boundary. No context/cache escapes the exact file.
-export function analyzeSourceFile(text, language, base, { maxSymbols = 200 } = {}) {
+// withReadConfidence adds readConfidence: "full", or "reduced" when the lexer
+// could not trust its reading of the file (see maskNonCode). It is opt-in so
+// that records built from this result keep their stored shape.
+export function analyzeSourceFile(text, language, base, { maxSymbols = 200, withReadConfidence = false } = {}) {
   if (!Number.isInteger(maxSymbols) || maxSymbols < 1 || maxSymbols > 10_000)
     throw Object.assign(new Error("maxSymbols is invalid."), { code: "INVALID_SOURCE_SYMBOL_LIMIT" });
   const context = analysisContext(text, language);
   context.declarations = analyzeDeclarations(text, language, 10_000, true, context);
-  return {
+  const result = {
     symbols: context.declarations.slice(0, maxSymbols).map(({ startIndex, endIndex, ...symbol }) => symbol),
     dependencies: sourceDependencies(text, language, base, context),
     semanticFacts: { bindings: extractImportBindings(text, language), calls: extractCalls(text, language, context) },
   };
+  if (withReadConfidence) result.readConfidence = context.readConfidence ?? "full";
+  return result;
 }
 
 // The same comment/string masking the declaration and call scans use, for

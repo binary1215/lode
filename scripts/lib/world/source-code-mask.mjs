@@ -1,8 +1,9 @@
-// Which characters of a file are code, for the product graph's UI binding
-// scan. A small lexer per language family: comments and string contents are
-// not code; the ${...} parts of a JavaScript template literal are. It is a
-// lexer, not a parser: a regular expression literal is recognised from the
-// character before it, and an unterminated string ends at its line.
+// Which characters of a file are code. The one lexer for JavaScript and
+// TypeScript text, shared by the source analysis (declarations and calls) and
+// the product graph. A small lexer per language family: comments and string
+// contents are not code; the ${...} parts of a JavaScript template literal
+// are. It is a lexer, not a parser: a regular expression literal is recognised
+// from the character before it, and an unterminated string ends at its line.
 
 export function codeMaskKind(extension) {
   if ([".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts"].includes(extension)) return "javascript";
@@ -12,11 +13,14 @@ export function codeMaskKind(extension) {
 }
 
 // Returns a Uint8Array: 1 where the character is code, 0 in comments and
-// string contents. With no known kind, every character counts as code.
+// string contents, and TEMPLATE_EXPRESSION_OPEN (also code) on the "$" and
+// "{" that open a template literal's ${...}, whose closing "}" is 0. With no known kind, every character counts as code.
 // mask.trusted is false when the lexer reached the end of the file inside a
 // string, template, block comment or ${...}: its state may have been inverted
 // earlier (a regex or JSX text it did not recognise), so the caller should not
 // rely on the mask for that file.
+export const TEMPLATE_EXPRESSION_OPEN = 2;
+
 export function codeMask(text, kind) {
   const mask = new Uint8Array(text.length).fill(1);
   mask.trusted = true;
@@ -118,8 +122,8 @@ export function codeMask(text, kind) {
       if (end >= text.length) mask.trusted = false;
       blank(index, end + (text[end] === "`" ? 1 : 0));
       if (text[end] === "$") {
-        mask[end] = 1;
-        mask[end + 1] = 1;
+        mask[end] = TEMPLATE_EXPRESSION_OPEN;
+        mask[end + 1] = TEMPLATE_EXPRESSION_OPEN;
         expressions.push(0);
         index = end + 1;
       } else index = end;

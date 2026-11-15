@@ -4128,7 +4128,7 @@ test("routes deterministic repository scan v1 through a replaceable compute adap
     hashKey: "scanHash",
   });
   assert.doesNotThrow(() => validateRepositoryScanResult(identifiedLegacyV03));
-  assert.equal(first.summary.fileCount, 10);
+  assert.equal(first.summary.fileCount, 11);
   const duplicateSymbols = first.files.find((file) => file.path === "fixtures/duplicate-symbols.mjs").symbols;
   assert.equal(duplicateSymbols.length, 2);
   assert.equal(

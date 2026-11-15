@@ -7,7 +7,7 @@ import path from "node:path";
 import { analyzeSourceFile, classifySourcePath } from "./source-analysis.mjs";
 import { REPOSITORY_SCAN_EXCLUDED_DIRECTORIES } from "./repository-scan.mjs";
 import { BUILT_IN_UI_MARKERS, BUILT_IN_UI_PATTERNS } from "./product-graph-ui-patterns.mjs";
-import { codeMask, codeMaskKind } from "./product-graph-code-mask.mjs";
+import { codeMask, codeMaskKind } from "./source-code-mask.mjs";
 import { bracketPairs, dynamicImports, findRow, lineStarts, rowNames } from "./product-graph-table-rows.mjs";
 import { failCode as fail } from "../core/errors.mjs";
 

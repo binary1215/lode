@@ -2,12 +2,19 @@
 // 2026-11-15). Many products register entry points as rows of a table (an
 // array of objects, a name -> handler map, a chain of registration calls); a
 // pattern rule with "처리 코드": "항목" takes the 처리 코드 its own row names.
-// Brackets are counted only where the code mask says code.
+// Brackets are counted only where the code mask says code, and the "${" that
+// opens a template expression is not a bracket: its closing "}" is template
+// text, so counting the "{" would leave every ${...} unclosed.
+
+import { TEMPLATE_EXPRESSION_OPEN } from "./source-code-mask.mjs";
 
 const OPEN = "([{";
 const CLOSE = ")]}";
 const PAIR = { ")": "(", "]": "[", "}": "{" };
 const LITERAL_KEYWORDS = new Set(["return", "yield", "await", "case", "throw", "export", "default"]);
+
+// A character that can pair as a bracket: code, and not a template's "${".
+const bracketCode = (mask, index) => Boolean(mask[index]) && mask[index] !== TEMPLATE_EXPRESSION_OPEN;
 
 function previousSignificant(text, mask, index) {
   let position = index - 1;
@@ -24,7 +31,7 @@ function wordBefore(text, end) {
 function matchingClose(text, mask, open) {
   let depth = 0;
   for (let index = open; index < text.length; index += 1) {
-    if (!mask[index]) continue;
+    if (!bracketCode(mask, index)) continue;
     if (OPEN.includes(text[index])) depth += 1;
     else if (CLOSE.includes(text[index]) && --depth === 0) return index;
   }
@@ -44,7 +51,7 @@ export function bracketPairs(text, mask) {
   const partner = new Int32Array(text.length).fill(-1);
   const stack = [];
   for (let index = 0; index < text.length; index += 1) {
-    if (!mask[index]) continue;
+    if (!bracketCode(mask, index)) continue;
     const character = text[index];
     if (OPEN.includes(character)) stack.push(index);
     else if (CLOSE.includes(character)) {
@@ -89,7 +96,7 @@ export function findRow(text, mask, index, python, pairs = bracketPairs(text, ma
   // Enclosing openers, innermost first: walk back, jumping over closed pairs.
   const openers = [];
   for (let position = index - 1; position >= 0; position -= 1) {
-    if (!mask[position]) continue;
+    if (!bracketCode(mask, position)) continue;
     const character = text[position];
     if (CLOSE.includes(character) && pairs[position] >= 0) position = pairs[position];
     else if (OPEN.includes(character) && (pairs[position] < 0 || pairs[position] >= index)) openers.push(position);
@@ -103,7 +110,7 @@ export function findRow(text, mask, index, python, pairs = bracketPairs(text, ma
       continue;
     }
     const before = previousSignificant(text, mask, open);
-    const previous = before < 0 ? "" : text[before];
+    const previous = before < 0 ? "" : mask[before] === TEMPLATE_EXPRESSION_OPEN ? "(" : text[before];
     if (character === "[") {
       insideBody.push(open);
       if (/[\w$)\]]/.test(previous) && !LITERAL_KEYWORDS.has(wordBefore(text, before))) continue; // index access
@@ -122,7 +129,7 @@ export function findRow(text, mask, index, python, pairs = bracketPairs(text, ma
     let start = literal + 1,
       depth = 0;
     for (let position = literal + 1; position < close; position += 1) {
-      if (!mask[position]) continue;
+      if (!bracketCode(mask, position)) continue;
       const character = text[position];
       if (OPEN.includes(character)) depth += 1;
       else if (CLOSE.includes(character)) depth -= 1;
@@ -153,7 +160,7 @@ export function findRow(text, mask, index, python, pairs = bracketPairs(text, ma
     return { kind: "statement", start, end: position };
   };
   for (let position = outermostParen ?? start; position < text.length; position += 1) {
-    if (!mask[position]) continue;
+    if (!bracketCode(mask, position)) continue;
     const character = text[position];
     let ended = null;
     if (OPEN.includes(character)) depth += 1;
@@ -278,7 +285,7 @@ const NOT_NAMES = new Set([
 // and not a member after ".", and "namespace.member" pairs.
 export function rowNames(text, mask, start, end) {
   let view = "";
-  for (let index = start; index < end; index += 1) view += mask[index] ? text[index] : " ";
+  for (let index = start; index < end; index += 1) view += bracketCode(mask, index) ? text[index] : " ";
   const names = new Set(),
     members = [];
   for (const match of view.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*)(?:\s*\.\s*([A-Za-z_$][\w$]*))?/g)) {
