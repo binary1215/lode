@@ -196,6 +196,6 @@ test("0.4 scans remain readable but are reanalyzed instead of reused as 0.5 meta
   assert.deepEqual(upgraded.diagnostics.reusedPaths, []);
   assert.deepEqual(upgraded.diagnostics.analyzedPaths, ["app.py"]);
   assert.equal(upgraded.result.protocol.version, "0.5.1");
-  assert.equal(upgraded.result.sourceAnalysisVersion, "0.3.2");
+  assert.equal(upgraded.result.sourceAnalysisVersion, "0.3.3");
   assert.equal(upgraded.result.files[0].symbols[0].qualifiedName, "read_cancel_token");
 });

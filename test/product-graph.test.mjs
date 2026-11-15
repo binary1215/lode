@@ -659,7 +659,8 @@ test("acceptance 10: the limits block is the first block of build and check text
   for (const result of runs) {
     const block = firstBlock(result.text);
     assert.equal(block[0], "이 그래프가 답하지 못하는 것");
-    assert(block.some((line) => line.includes(`호출 ${result.limits.calls.all}개 중 ${result.limits.calls.resolved}개`)));
+    assert(block.some((line) => line.includes(`호출 ${result.limits.calls.all}개.`)));
+    assert(block.some((line) => line.includes(`제품 코드일 수 있는 호출 ${result.limits.calls.canBeProduct}개 중 ${result.limits.calls.resolved}개`)));
     assert(block.some((line) => line.includes("아무것도 실행하지 않았다")));
     assert(block.some((line) => line.includes("여러 줄 문자열과 템플릿 문자열")));
     assert(
@@ -1150,7 +1151,9 @@ test("acceptance 20: each table row names its own 처리 코드, never the table
     "cli:greet": ["decorated.py#greet"],
     "cli:leave": ["decorated.py#leave"],
     "cli:wave": ["decorated_after.py#wave"],
-    "cli:hide": [],
+    // A JS/TS class method is a declaration (call precision 마), so a decorated
+    // method is the 처리 코드 of its row.
+    "cli:hide": ["decorated.ts#Commands.hide"],
     // Partly resolved: the name that resolved stays the 처리 코드.
     "cli:plugin": ["wiring.mjs#pluginPath"],
     // A template's ${...} is balanced for row bracket counting: a template
@@ -1166,10 +1169,7 @@ test("acceptance 20: each table row names its own 처리 코드, never the table
   for (const node of graph.nodes.filter((item) => item.type === "기능")) assert(!handler(node.id).includes("commands.mjs"), node.id);
   assert.deepEqual(
     result.lists.unresolvedHandlers.map((item) => [item.id, item.reason]),
-    [
-      ["cli:broken", "항목의 동적 import가 경로를 글자로 쓰지 않았거나 같은 식에서 이름을 꺼내지 않음"],
-      ["cli:hide", "데코레이터가 꾸미는 정의를 스캔이 선언으로 갖고 있지 않음 (JS·TS 클래스 메서드는 선언이 아니다)"],
-    ],
+    [["cli:broken", "항목의 동적 import가 경로를 글자로 쓰지 않았거나 같은 식에서 이름을 꺼내지 않음"]],
   );
   assert.deepEqual(result.lists.partlyResolvedRows, [
     {

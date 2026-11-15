@@ -76,13 +76,13 @@ test("historical source producer remains readable but is reanalyzed rather than 
   };
   // Every earlier analysis version that a stored scan may carry stays readable
   // and is reanalyzed, never reused.
-  for (const version of ["0.3.0", "0.3.1"]) {
+  for (const version of ["0.3.0", "0.3.1", "0.3.2"]) {
     old.sourceAnalysisVersion = version;
     const historical = identify(old), original = JSON.stringify(historical);
     assert.doesNotThrow(() => validateRepositoryScanResult(historical));
     const { files, skipped, ...repositoryScan } = historical;
     const result = await executeIncrementalRepositoryScan({ ...f.options, previousSnapshot: { files, skipped, repositoryScan } });
-    assert.equal(result.result.sourceAnalysisVersion, "0.3.2");
+    assert.equal(result.result.sourceAnalysisVersion, "0.3.3");
     assert.equal(result.diagnostics.reusedFileCount, 0); assert.equal(result.diagnostics.analyzedFileCount, files.length);
     assert.deepEqual(result.result.files, historical.files); assert.notEqual(result.result.scanId, historical.scanId);
     assert.equal(JSON.stringify(historical), original);

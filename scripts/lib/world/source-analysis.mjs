@@ -1,6 +1,6 @@
 import { codeMask, TEMPLATE_EXPRESSION_OPEN } from "./source-code-mask.mjs";
 
-export const SOURCE_ANALYSIS_VERSION = "0.3.2";
+export const SOURCE_ANALYSIS_VERSION = "0.3.3";
 
 function compareText(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -14,6 +14,8 @@ function analysisContext(text, language) {
     masked: null,
     readConfidence: null,
     declarations: null,
+    methodSites: null,
+    withCallIndexes: false,
     lineAt(value, index) {
       let offsets = indexes.get(value);
       if (!offsets) {
@@ -293,6 +295,232 @@ function matchingBrace(masked, openIndex) {
   return -1;
 }
 
+// ASCII white space (the masked text turns comments and strings into spaces).
+const isBlank = (character) => character === " " || character === "\t" || character === "\n" || character === "\r" || character === "\v" || character === "\f";
+
+// Names that can stand before "(" without being a method name.
+const NOT_METHOD_NAMES = new Set([
+  "if",
+  "for",
+  "while",
+  "switch",
+  "catch",
+  "with",
+  "function",
+  "return",
+  "typeof",
+  "new",
+  "class",
+  "do",
+  "else",
+  "try",
+  "finally",
+  "yield",
+  "await",
+  "delete",
+  "void",
+  "throw",
+  "in",
+  "of",
+  "instanceof",
+  "super",
+  "import",
+  "export",
+  "case",
+  "default",
+]);
+const MEMBER_MODIFIERS = new Set(["static", "async", "get", "set", "public", "private", "protected", "readonly", "override", "abstract"]);
+
+// Partner of every bracket in masked text, by plain counting of ( [ { and
+// ) ] } (a closer pairs with the most recent opener of any kind), or -1.
+// The same counting as a forward scan for the matching closer.
+function bracketPartners(masked) {
+  const partner = new Int32Array(masked.length).fill(-1);
+  const stack = [];
+  for (let index = 0; index < masked.length; index += 1) {
+    const character = masked[index];
+    if (character === "(" || character === "[" || character === "{") stack.push(index);
+    else if ((character === ")" || character === "]" || character === "}") && stack.length) {
+      const open = stack.pop();
+      partner[open] = index;
+      partner[index] = open;
+    }
+  }
+  return partner;
+}
+
+// Partner of every "{" counting braces only (as matchingBrace does), or -1.
+function bracePartners(masked) {
+  const partner = new Int32Array(masked.length).fill(-1);
+  const stack = [];
+  for (let index = 0; index < masked.length; index += 1) {
+    if (masked[index] === "{") stack.push(index);
+    else if (masked[index] === "}" && stack.length) partner[stack.pop()] = index;
+  }
+  return partner;
+}
+
+// Method definitions in JavaScript / TypeScript text, in a class body or an
+// object literal: a name (optionally #private) followed by a parameter list
+// and a body ("name(...) {", "name(...): Type {"). Such a site is not a call.
+// Everything between ")" and "{" must be code in the original text too (a
+// template's blanked text is not), so "`${f()} ${ {a} }`" is not a definition.
+// Returns { nameIndex, startIndex, name, open, close } in source order.
+export function methodDefinitionSites(masked, text) {
+  const sites = [];
+  const brackets = bracketPartners(masked);
+  const braces = bracePartners(masked);
+  for (const match of masked.matchAll(/(?<![\w$.@#])(#?)([A-Za-z_$][\w$]*)(?:\s*<[^<>()\n]{0,80}>)?\s*\(/g)) {
+    const startIndex = match.index;
+    if (startIndex > 0 && /[\w$.@#]/.test(masked[startIndex - 1])) continue;
+    if (!match[1] && NOT_METHOD_NAMES.has(match[2])) continue;
+    if (/\bfunction\s*\*?\s*$/.test(masked.slice(Math.max(0, startIndex - 24), startIndex))) continue;
+    const close = brackets[startIndex + match[0].length - 1];
+    if (close < 0) continue;
+    let after = close + 1;
+    while (isBlank(masked[after])) after += 1;
+    if (masked[after] === ":") {
+      // A TypeScript return type: "): Type {".
+      after += 1;
+      while (isBlank(masked[after])) after += 1;
+      if (!masked[after] || "{};=".includes(masked[after])) continue;
+      while (after < masked.length && !"{};=(),".includes(masked[after])) after += 1;
+    }
+    if (masked[after] !== "{" || masked.slice(close + 1, after) !== text.slice(close + 1, after)) continue;
+    const bodyClose = braces[after];
+    if (bodyClose < 0) continue;
+    sites.push({ nameIndex: startIndex + match[1].length, startIndex, name: match[1] + match[2], open: after, close: bodyClose });
+  }
+  return sites;
+}
+
+// For each index (ascending, unique), the innermost "{" still open before it, or -1.
+function innermostBraces(masked, indexes) {
+  const result = new Map();
+  const stack = [];
+  let cursor = 0;
+  for (let index = 0; index <= masked.length && cursor < indexes.length; index += 1) {
+    while (cursor < indexes.length && indexes[cursor] === index) result.set(indexes[cursor++], stack.length ? stack[stack.length - 1] : -1);
+    if (masked[index] === "{") stack.push(index);
+    else if (masked[index] === "}") stack.pop();
+  }
+  return result;
+}
+
+// Bracket depth, counting ( [ and {, at each index (ascending, unique).
+function bracketDepths(masked, indexes) {
+  const result = new Map();
+  let depth = 0,
+    cursor = 0;
+  for (let index = 0; index <= masked.length && cursor < indexes.length; index += 1) {
+    while (cursor < indexes.length && indexes[cursor] === index) result.set(indexes[cursor++], depth);
+    const character = masked[index];
+    if (character === "(" || character === "[" || character === "{") depth += 1;
+    else if (character === ")" || character === "]" || character === "}") depth = Math.max(0, depth - 1);
+  }
+  return result;
+}
+
+function memberSignatureStart(masked, startIndex) {
+  // Modifiers before the name (static, async, get, set, *, ...) belong to the signature.
+  let signatureStart = startIndex;
+  for (;;) {
+    let cursor = signatureStart;
+    while (cursor > 0 && (masked[cursor - 1] === " " || masked[cursor - 1] === "\t")) cursor -= 1;
+    if (cursor > 0 && masked[cursor - 1] === "*") {
+      signatureStart = cursor - 1;
+      continue;
+    }
+    let wordStart = cursor;
+    while (wordStart > 0 && /[A-Za-z]/.test(masked[wordStart - 1])) wordStart -= 1;
+    if (wordStart < cursor && MEMBER_MODIFIERS.has(masked.slice(wordStart, cursor)) && !(wordStart > 0 && /[\w$.]/.test(masked[wordStart - 1]))) {
+      signatureStart = wordStart;
+      continue;
+    }
+    return signatureStart;
+  }
+}
+
+// Members that are declarations (item 마): methods of a class body, with the
+// qualified name <Class>.<method>, and function-valued members of an object
+// literal bound to a module-level name, as <binding>.<member>. Nested object
+// literals and literals not bound to a module-level name are left out.
+function javascriptMembers(text, masked, declarations, classOpens, sites, context) {
+  const literalCandidates = [...masked.matchAll(/\b(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;{]+)?=\s*\{/g)];
+  const depths = bracketDepths(
+    masked,
+    literalCandidates.map((match) => match.index),
+  );
+  const literalOpens = new Map();
+  for (const match of literalCandidates) if (depths.get(match.index) === 0) literalOpens.set(match.index + match[0].length - 1, match[1]);
+  // Key members ("key: (...) =>", "key: function"), looked for only inside
+  // those literals.
+  const keyMembers = [];
+  const keyPattern = /([A-Za-z_$][\w$]*)\s*:\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/g;
+  for (const open of literalOpens.keys()) {
+    const close = matchingBrace(masked, open);
+    keyPattern.lastIndex = open + 1;
+    for (let match = keyPattern.exec(masked); match && (close < 0 || match.index < close); match = keyPattern.exec(masked))
+      if (!(match.index > 0 && /[\w$.#]/.test(masked[match.index - 1]))) keyMembers.push(match);
+  }
+  const owners = innermostBraces(
+    masked,
+    [...new Set([...sites.map((site) => site.nameIndex), ...keyMembers.map((match) => match.index)])].sort((a, b) => a - b),
+  );
+  const classOf = new Map();
+  for (const declaration of declarations) if (classOpens.has(declaration.startIndex)) classOf.set(classOpens.get(declaration.startIndex), declaration);
+  const members = [];
+  const push = (name, scopePath, startIndex, signatureStart, signatureEnd, endIndex) =>
+    members.push({
+      name,
+      kind: "function",
+      line: context.lineAt(masked, startIndex),
+      endLine: context.lineAt(masked, Math.max(startIndex, endIndex - 1)),
+      scopePath,
+      qualifiedName: `${scopePath}.${name}`,
+      signature: normalizedSignature(text.slice(signatureStart, signatureEnd)),
+      startIndex,
+      endIndex,
+    });
+  for (const site of sites) {
+    const owner = owners.get(site.nameIndex);
+    const ownerClass = classOf.get(owner);
+    const literal = literalOpens.get(owner);
+    if (!ownerClass && literal === undefined) continue;
+    push(site.name, ownerClass ? ownerClass.qualifiedName : literal, site.startIndex, memberSignatureStart(masked, site.startIndex), site.open, site.close + 1);
+  }
+  for (const match of keyMembers) {
+    const literal = literalOpens.get(owners.get(match.index));
+    if (literal === undefined) continue;
+    let previous = match.index - 1;
+    while (previous >= 0 && isBlank(masked[previous])) previous -= 1;
+    if (masked[previous] !== "{" && masked[previous] !== ",") continue;
+    const matchEnd = match.index + match[0].length;
+    let open = -1;
+    if (match[0].endsWith("=>")) {
+      let body = matchEnd;
+      while (isBlank(masked[body])) body += 1;
+      if (masked[body] === "{") open = body;
+    } else open = masked.indexOf("{", matchEnd);
+    const close = open >= 0 ? matchingBrace(masked, open) : -1;
+    let endIndex = close >= 0 ? close + 1 : matchEnd;
+    if (close < 0) {
+      // An expression body runs to the next "," or closing bracket of the literal.
+      let depth = 0;
+      for (; endIndex < masked.length; endIndex += 1) {
+        const character = masked[endIndex];
+        if (character === "(" || character === "[" || character === "{") depth += 1;
+        else if (character === ")" || character === "]" || character === "}") {
+          if (depth === 0) break;
+          depth -= 1;
+        } else if (character === "," && depth === 0) break;
+      }
+    }
+    push(match[1], literal, match.index, match.index, close >= 0 ? open : endIndex, endIndex);
+  }
+  return members;
+}
+
 function javascriptDeclarations(text, masked, maxSymbols, includeRanges = false, context) {
   const patterns = [
     // A generator declaration (function* name) is a function declaration too.
@@ -301,6 +529,8 @@ function javascriptDeclarations(text, masked, maxSymbols, includeRanges = false,
     ["binding", /\b(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/g],
   ];
   const declarations = [];
+  // Body "{" of each class declaration, by the declaration's start.
+  const classOpens = new Map();
   for (const [kind, expression] of patterns)
     for (const match of masked.matchAll(expression)) {
       const startIndex = match.index || 0;
@@ -316,6 +546,7 @@ function javascriptDeclarations(text, masked, maxSymbols, includeRanges = false,
         boundedOpen = openIndex >= 0 && openIndex <= lineEnd + 500 ? openIndex : -1;
       }
       const closeIndex = matchingBrace(masked, boundedOpen);
+      if (kind === "class" && closeIndex >= 0) classOpens.set(startIndex, boundedOpen);
       const statementEnd = (() => {
         const semicolon = masked.indexOf(";", matchEnd);
         return semicolon >= 0 && semicolon <= lineEnd ? semicolon + 1 : lineEnd;
@@ -347,6 +578,9 @@ function javascriptDeclarations(text, masked, maxSymbols, includeRanges = false,
     declaration.qualifiedName = declaration.scopePath ? `${declaration.scopePath}.${declaration.name}` : declaration.name;
     sameStart.push(declaration);
   }
+  // Members get their scope from their class or binding; they are not
+  // containers for the declarations above, whose names stay as they were.
+  declarations.push(...javascriptMembers(text, masked, declarations, classOpens, methodSites(context, masked), context));
   const finalized = finalizeDeclarations(declarations, maxSymbols);
   if (includeRanges) return attachFirstRanges(finalized, declarations);
   return finalized;
@@ -374,6 +608,10 @@ function markdownDeclarations(text, maxSymbols, context) {
     scope[level - 1] = name;
   }
   return finalizeDeclarations(declarations, maxSymbols);
+}
+
+function methodSites(context, masked) {
+  return (context.methodSites ??= methodDefinitionSites(masked, context.text));
 }
 
 function maskedText(context) {
@@ -430,10 +668,15 @@ function extractImportBindings(text, language) {
     if (local && specifier) bindings.push({ local, imported, specifier, namespace });
   };
   if (["javascript", "typescript"].includes(language)) {
-    for (const match of text.matchAll(/\bimport\s+([^;\n]+?)\s+from\s+["']([^"']+)["']/g)) {
-      const clause = match[1].trim();
-      const specifier = match[2];
-      const namespace = clause.match(/^\*\s+as\s+([A-Za-z_$][\w$]*)$/);
+    // One import clause, whatever its layout: comments and line breaks are
+    // dropped first, so a list spread over lines reads like one on a line.
+    const addClause = (rawClause, specifier) => {
+      const clause = rawClause
+        .replace(/\/\*[\s\S]*?\*\//g, " ")
+        .replace(/\/\/[^\n]*/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      const namespace = clause.match(/(?:^|,)\s*\*\s*as\s+([A-Za-z_$][\w$]*)$/);
       if (namespace) add(namespace[1], "*", specifier, true);
       const named = clause.match(/\{([^}]+)\}/);
       if (named)
@@ -443,7 +686,13 @@ function extractImportBindings(text, language) {
         }
       const defaultBinding = clause.split(",")[0].trim();
       if (/^[A-Za-z_$][\w$]*$/.test(defaultBinding)) add(defaultBinding, "default", specifier);
-    }
+    };
+    for (const match of text.matchAll(/\bimport\s+([^;\n]+?)\s+from\s+["']([^"']+)["']/g)) addClause(match[1], match[2]);
+    // A clause spread over lines (the single-line form above never matches it).
+    for (const match of text.matchAll(
+      /\bimport\s+((?:type\s+)?(?:[A-Za-z_$][\w$]*\s*,\s*)?(?:\*\s*as\s+[A-Za-z_$][\w$]*|\{[^}]*\}))\s*from\s*["']([^"']+)["']/g,
+    ))
+      if (match[1].includes("\n")) addClause(match[1], match[2]);
     for (const match of text.matchAll(/\b(?:const|let|var)\s+\{([^}]+)\}\s*=\s*require\s*\(\s*["']([^"']+)["']\s*\)/g)) {
       for (const item of match[1].split(",")) {
         const parts = item.trim().split(/\s*:\s*/);
@@ -512,19 +761,24 @@ function extractCalls(text, language, context = analysisContext(text, language))
   const declarations = (context.declarations ??= analyzeDeclarations(text, language, 10_000, true, context));
   const callerAt = callerLookup(declarations);
   const excluded = new Set(["if", "for", "while", "switch", "catch", "function", "return", "typeof", "new", "class", "def", "with", "assert", "lambda"]);
+  // A method definition ("name(...) {" in a class body or object literal) is not a call.
+  const definitions = language === "python" ? null : new Set(methodSites(context, masked).map((site) => site.nameIndex));
   const calls = [];
-  for (const match of masked.matchAll(/\b([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)\s*\(/g)) {
+  for (const match of masked.matchAll(/\b([A-Za-z_$][\w$]*(?:\.#?[A-Za-z_$][\w$]*)?)\s*\(/g)) {
     const callee = match[1];
     const prefix = masked.slice(Math.max(0, (match.index || 0) - 24), match.index || 0);
     if (excluded.has(callee) || /\b(?:function\s*\*?|class|def|new)\s*$/.test(prefix)) continue;
     const callIndex = match.index || 0;
+    if (definitions?.has(callIndex)) continue;
     const caller = callerAt(callIndex);
-    calls.push({
+    const call = {
       callee,
       line: context.lineAt(masked, callIndex),
       callerQualifiedName: caller?.qualifiedName || null,
       callerIdentityAmbiguous: caller?.identityAmbiguous || false,
-    });
+    };
+    if (context.withCallIndexes) call.index = callIndex;
+    calls.push(call);
   }
   return calls.sort((left, right) => left.line - right.line || compareText(left.callee, right.callee));
 }
@@ -539,11 +793,19 @@ export function extractSemanticSourceFacts(text, language) {
 // Internal repository-analysis boundary. No context/cache escapes the exact file.
 // withReadConfidence adds readConfidence: "full", or "reduced" when the lexer
 // could not trust its reading of the file (see maskNonCode). It is opt-in so
-// that records built from this result keep their stored shape.
-export function analyzeSourceFile(text, language, base, { maxSymbols = 200, withReadConfidence = false } = {}) {
+// that records built from this result keep their stored shape. In the same way,
+// withCallIndexes adds each call's offset (index) and withMaskedText adds the
+// masked text the scans read (maskedText), for in-memory readers only.
+export function analyzeSourceFile(
+  text,
+  language,
+  base,
+  { maxSymbols = 200, withReadConfidence = false, withCallIndexes = false, withMaskedText = false } = {},
+) {
   if (!Number.isInteger(maxSymbols) || maxSymbols < 1 || maxSymbols > 10_000)
     throw Object.assign(new Error("maxSymbols is invalid."), { code: "INVALID_SOURCE_SYMBOL_LIMIT" });
   const context = analysisContext(text, language);
+  context.withCallIndexes = withCallIndexes;
   context.declarations = analyzeDeclarations(text, language, 10_000, true, context);
   const result = {
     symbols: context.declarations.slice(0, maxSymbols).map(({ startIndex, endIndex, ...symbol }) => symbol),
@@ -551,6 +813,7 @@ export function analyzeSourceFile(text, language, base, { maxSymbols = 200, with
     semanticFacts: { bindings: extractImportBindings(text, language), calls: extractCalls(text, language, context) },
   };
   if (withReadConfidence) result.readConfidence = context.readConfidence ?? "full";
+  if (withMaskedText) result.maskedText = maskedText(context);
   return result;
 }
 

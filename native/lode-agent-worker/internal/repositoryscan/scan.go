@@ -27,8 +27,9 @@ const (
 	ProducerName          = "head-agent-core-repository-scan"
 	LodeProducerName      = "lode-agent-core-repository-scan"
 	ProducerVersion       = "0.5.1"
-	SourceAnalysisVersion = "0.3.2"
+	SourceAnalysisVersion = "0.3.3"
 	maximumSymbolsPerFile = 200
+	analysisSymbolLimit   = 10000
 )
 
 type Limits struct {
@@ -67,7 +68,7 @@ var (
 	pythonDependency     = regexp.MustCompile(`(?m)^\s*(from|import)\s+([A-Za-z_][A-Za-z0-9_.]*)`)
 
 	javascriptImport       = regexp.MustCompile(`\bimport\s+([^;\n]+?)\s+from\s+["']([^"']+)["']`)
-	javascriptNamespace    = regexp.MustCompile(`^\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)$`)
+	javascriptNamespace    = regexp.MustCompile(`(?:^|,)\s*\*\s*as\s+([A-Za-z_$][A-Za-z0-9_$]*)$`)
 	javascriptNamed        = regexp.MustCompile(`\{([^}]+)\}`)
 	javascriptAsSplit      = regexp.MustCompile(`\s+as\s+`)
 	javascriptRequireNamed = regexp.MustCompile(`\b(const|let|var)\s+\{([^}]+)\}\s*=\s*require\s*\(\s*["']([^"']+)["']\s*\)`)
@@ -76,7 +77,7 @@ var (
 	pythonFromImport       = regexp.MustCompile(`(?m)^[ \t]*from\s+([.A-Za-z_][A-Za-z0-9_.]*)\s+import\s+([^#\n]+)`)
 	pythonAsSplit          = regexp.MustCompile(`\s+as\s+`)
 	pythonImport           = regexp.MustCompile(`(?m)^[ \t]*import\s+([A-Za-z_][A-Za-z0-9_.]*)(\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?`)
-	callPattern            = regexp.MustCompile(`\b([A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_$]*)?)\s*\(`)
+	callPattern            = regexp.MustCompile(`\b([A-Za-z_$][A-Za-z0-9_$]*(\.#?[A-Za-z_$][A-Za-z0-9_$]*)?)\s*\(`)
 	declarationPrefix      = regexp.MustCompile(`\b(function\s*\*?|class|def|new)\s*$`)
 )
 
@@ -423,6 +424,9 @@ func enrichSymbols(text, masked, language string, values []any, lines []int, inc
 				open = matchEnd + openRelative
 			}
 			end := braceEnd(masked, open)
+			if end >= 0 && symbol["kind"] == "class" {
+				symbol["bodyOpen"] = open
+			}
 			if end >= 0 {
 				endLine = lineAt(lines, end)
 				signature = normalizedSignature(text[start:open])
@@ -522,6 +526,11 @@ func enrichSymbols(text, masked, language string, values []any, lines []int, inc
 			}
 		}
 	}
+	if language == "javascript" || language == "typescript" {
+		// Members get their scope from their class or binding; they are not
+		// containers for the declarations above, whose names stay as they were.
+		values = sortSymbols(append(values, javascriptMembers(text, masked, values, methodDefinitionSites(masked, text), lines)...))
+	}
 	counts := map[string]int{}
 	for _, value := range values {
 		symbol := value.(map[string]any)
@@ -537,6 +546,7 @@ func enrichSymbols(text, masked, language string, values []any, lines []int, inc
 			delete(symbol, "endIndex")
 		}
 		delete(symbol, "matchEndIndex")
+		delete(symbol, "bodyOpen")
 	}
 	return values
 }
@@ -553,25 +563,33 @@ func sortSymbols(values []any) []any {
 	return values
 }
 
+// Like the JavaScript reference, every declaration is collected (up to
+// analysisSymbolLimit), sorted and given its scope; callers of calls see them
+// all, and only the stored list is cut to maximumSymbolsPerFile.
 func extractSymbolsInternal(text, language string, lines []int, includeRanges bool) []any {
 	masked := maskNonCode(text, language)
+	var values []any
 	switch language {
 	case "javascript", "typescript":
-		return enrichSymbols(text, masked, language, regexSymbols(masked, lines, []symbolPattern{
+		values = enrichSymbols(text, masked, language, regexSymbols(masked, lines, []symbolPattern{
 			{Kind: "function", Regex: javascriptFunction, Group: 4},
 			{Kind: "class", Regex: javascriptClass, Group: 2},
 			{Kind: "binding", Regex: javascriptBinding, Group: 3},
-		}, maximumSymbolsPerFile), lines, includeRanges)
+		}, analysisSymbolLimit), lines, includeRanges)
 	case "python":
-		return enrichSymbols(text, masked, language, regexSymbols(masked, lines, []symbolPattern{
+		values = enrichSymbols(text, masked, language, regexSymbols(masked, lines, []symbolPattern{
 			{Kind: "function", Regex: pythonFunction, Group: 2},
 			{Kind: "class", Regex: pythonClass, Group: 1},
-		}, maximumSymbolsPerFile), lines, includeRanges)
+		}, analysisSymbolLimit), lines, includeRanges)
 	case "markdown":
-		return enrichSymbols(text, text, language, regexSymbols(text, lines, []symbolPattern{{Kind: "heading", Regex: markdownHeading, Group: 1}}, maximumSymbolsPerFile), lines, includeRanges)
+		values = enrichSymbols(text, text, language, regexSymbols(text, lines, []symbolPattern{{Kind: "heading", Regex: markdownHeading, Group: 1}}, analysisSymbolLimit), lines, includeRanges)
 	default:
 		return []any{}
 	}
+	if !includeRanges && len(values) > maximumSymbolsPerFile {
+		values = values[:maximumSymbolsPerFile]
+	}
+	return values
 }
 
 func extractSymbols(text, language string, lines []int) []any {
@@ -642,9 +660,19 @@ func capture(text string, match []int, group int) string {
 func extractBindings(text, language string) []any {
 	result := make([]any, 0)
 	if language == "javascript" || language == "typescript" {
+		clauses := [][2]string{}
 		for _, match := range javascriptImport.FindAllStringSubmatchIndex(text, -1) {
-			clause := strings.TrimSpace(capture(text, match, 1))
-			specifier := capture(text, match, 2)
+			clauses = append(clauses, [2]string{capture(text, match, 1), capture(text, match, 2)})
+		}
+		// A clause spread over lines (the single-line form above never matches it).
+		for _, match := range javascriptImportLayout.FindAllStringSubmatchIndex(text, -1) {
+			if strings.Contains(capture(text, match, 1), "\n") {
+				clauses = append(clauses, [2]string{capture(text, match, 1), capture(text, match, 2)})
+			}
+		}
+		for _, pair := range clauses {
+			clause := normalizedImportClause(pair[0])
+			specifier := pair[1]
 			if namespace := javascriptNamespace.FindStringSubmatch(clause); namespace != nil {
 				addBinding(&result, namespace[1], "*", specifier, true)
 			}
@@ -819,6 +847,13 @@ func extractCalls(text, language string, lines []int) []any {
 	}
 	masked := maskNonCode(text, language)
 	symbols := extractSymbolsInternal(text, language, lines, true)
+	// A method definition ("name(...) {" in a class body or object literal) is not a call.
+	definitions := map[int]bool{}
+	if language != "python" {
+		for _, site := range methodDefinitionSites(masked, text) {
+			definitions[site.nameIndex] = true
+		}
+	}
 	result := make([]any, 0)
 	for _, match := range callPattern.FindAllStringSubmatchIndex(masked, -1) {
 		callee := capture(masked, match, 1)
@@ -826,6 +861,9 @@ func extractCalls(text, language string, lines []int) []any {
 			continue
 		}
 		callIndex := match[0]
+		if definitions[callIndex] {
+			continue
+		}
 		callLine := lineAt(lines, callIndex)
 		var caller map[string]any
 		for _, value := range symbols {

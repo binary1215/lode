@@ -97,6 +97,7 @@ test/*
 !test/worker-integration-surface.test.mjs
 !test/product-graph.test.mjs
 !test/source-scan-lexer.test.mjs
+!test/call-precision.test.mjs
 !test/helpers/
 test/helpers/*
 !test/fixtures/
