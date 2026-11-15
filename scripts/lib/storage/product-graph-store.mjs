@@ -88,6 +88,16 @@ export function decodeProductGraphText(bytes) {
   return text.startsWith("﻿") ? text.slice(1) : text;
 }
 
+// An approval binds to what the document says, not to its bytes: UTF-8
+// decoded, one leading BOM dropped, CRLF and lone CR turned into LF, NFC;
+// then SHA-256 of the UTF-8 bytes. Nothing else is normalised.
+export const PRODUCT_GRAPH_APPROVAL_DIGEST_BASIS = "utf8-text-bom-dropped-lf-nfc-sha256";
+
+export function productGraphApprovalDigest(bytes) {
+  const text = decodeProductGraphText(bytes).replace(/\r\n?/g, "\n").normalize("NFC");
+  return sha256Hex(Buffer.from(text, "utf8"));
+}
+
 // Approval record without its own identity fields, in a fixed field set.
 function approvalPayload(record) {
   return {
@@ -96,7 +106,8 @@ function approvalPayload(record) {
     protocol: { name: PRODUCT_GRAPH_APPROVAL_PROTOCOL, version: PRODUCT_GRAPH_APPROVAL_VERSION },
     projectId: record.projectId,
     document: record.document,
-    documentSha256: record.documentSha256,
+    documentTextSha256: record.documentTextSha256,
+    digestBasis: PRODUCT_GRAPH_APPROVAL_DIGEST_BASIS,
     rationale: record.rationale,
     authority: "explicit-user-product-graph-approval",
     instructionAuthority: false,
@@ -104,13 +115,13 @@ function approvalPayload(record) {
   };
 }
 
-export function productGraphApprovalRecord({ projectId, document, documentSha256, rationale }) {
+export function productGraphApprovalRecord({ projectId, document, documentTextSha256, digestBasis = PRODUCT_GRAPH_APPROVAL_DIGEST_BASIS, rationale }) {
   if (typeof projectId !== "string" || !projectId) fail("PRODUCT_GRAPH_APPROVAL_INVALID");
   const target = classifyProductGraphPath(document);
   if (!target?.approvable || nfc(document) !== document) fail("PRODUCT_GRAPH_APPROVAL_TARGET_INVALID");
-  if (!/^[a-f0-9]{64}$/.test(documentSha256 || "")) fail("PRODUCT_GRAPH_APPROVAL_INVALID");
+  if (!/^[a-f0-9]{64}$/.test(documentTextSha256 || "") || digestBasis !== PRODUCT_GRAPH_APPROVAL_DIGEST_BASIS) fail("PRODUCT_GRAPH_APPROVAL_INVALID");
   if (typeof rationale !== "string" || !rationale.trim() || rationale.length > 2000) fail("PRODUCT_GRAPH_APPROVAL_INVALID");
-  const payload = approvalPayload({ projectId, document, documentSha256, rationale: rationale.trim() });
+  const payload = approvalPayload({ projectId, document, documentTextSha256, rationale: rationale.trim() });
   const approvalHash = sha256Hex(canonicalJson(payload));
   return { ...payload, approvalId: `product-graph-approval-${approvalHash.slice(0, 24)}`, approvalHash };
 }
@@ -124,7 +135,8 @@ export function verifyProductGraphApproval(document, { projectId = null, approva
     "protocol",
     "projectId",
     "document",
-    "documentSha256",
+    "documentTextSha256",
+    "digestBasis",
     "rationale",
     "authority",
     "instructionAuthority",
@@ -379,4 +391,24 @@ export function verifyProductGraphCanonOriginals({ directory, list, readBytes, p
     normalised.set(key, file);
   }
   return { verified, unrecognized: [...new Set(unrecognized)].sort() };
+}
+
+// What a transfer did with the family, for export, import and adoption
+// results. paths are the verified Canon files (store-relative); notRecognised
+// are names inside the family Lode does not define.
+export function summarizeProductGraphTransfer({ directory, verified = [], notRecognised = [], carried }) {
+  const prefix = `${directory}/${PRODUCT_GRAPH_DIRECTORY}/`;
+  const within = verified.map((file) => (file.startsWith(prefix) ? file.slice(prefix.length) : file).normalize("NFC"));
+  const roles = within.map((file) => [file, classifyProductGraphPath(file)]);
+  return {
+    documents: roles.filter(([, target]) => target?.role === "document").length,
+    approvalRecords: roles.filter(([, target]) => target?.role === "approval").length,
+    otherUserFiles: roles
+      .filter(([, target]) => ["policy", "meaning", "rules"].includes(target?.role))
+      .map(([file]) => file)
+      .sort(),
+    buildOutput: carried ? "not-carried-rebuilt-by-product-graph-build" : "left-in-place-not-verified",
+    notRecognised: notRecognised.map((name) => `${prefix}${name}`).sort(),
+    notRecognisedHandling: carried ? "left-out-not-carried" : "left-in-place-not-verified",
+  };
 }

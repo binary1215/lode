@@ -9,6 +9,7 @@ import { COPIED_PROJECT_LOCATION_KIND } from "./project-copy-proof.mjs";
 import { withLocalMutation } from "./project-mutation-lock.mjs";
 import { sha256Hex as hash } from "../core/digest.mjs";
 import { failCode as fail } from "../core/errors.mjs";
+import { summarizeProductGraphTransfer } from "./product-graph-store.mjs";
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const read = (file) => fs.readFileSync(file);
@@ -73,6 +74,14 @@ function publishCopy(input, transaction, pendingBytes, onPublication, inspectOnl
   verifyRequiredOriginals();
   const result = {
     status: inspectOnly ? "verified-copy-publication-pending" : "verified-copy-adopted",
+    // The family stays where the copy put it: Canon files are verified, other
+    // names are left as they are and named.
+    productGraph: summarizeProductGraphTransfer({
+      directory,
+      verified: canon.productGraph?.verified,
+      notRecognised: canon.productGraph?.unrecognized,
+      carried: false,
+    }),
     projectId: before.projectId,
     projectRoot: currentRoot,
     previousRoot: before.projectRoot,

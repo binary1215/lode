@@ -82,7 +82,8 @@ The family lives in the Project store next to `context/product-model.json`:
 - Documents, the policy file, the meaning file, the entry-rule table and approval records are user-owned Canon, like `product-model.json`: Lode reads them and never rewrites them on its own, and they are not in the managed manifest digest.
 - `build/` is generated output. It is rebuilt from the files above and the source tree, and it is ignored by Git (a generated storage rule for new Projects, and its own `.gitignore` written on each build for existing ones).
 - File names are the original's document names and the node IDs. Korean names are used as is.
-- Portable export and import carry the Canon files (not `build/`); importing into an existing Project archives them like other Canon instead of replacing the target's. Folder-copy adoption verifies them and requires them unchanged. Snapshot GC reads them as verified roots and skips `build/`; an unknown file in the family keeps every snapshot. None of these files is a World input: World ids do not change when they change.
+- Portable export and import carry the Canon files (not `build/`); importing into an existing Project archives them like other Canon instead of replacing the target's. Folder-copy adoption verifies them and requires them unchanged. Each of the three results says, under `productGraph`, how many documents and approval records it handled, which other user files, that `build/` is not carried, and which names it left out because Lode does not recognise them; a refusal on a differing existing file names that file. None of these files is a World input: World ids do not change when they change.
+- Snapshot GC reads the Canon files as verified roots and skips `build/`. A file or folder in the family that Lode does not recognise is the user's own: never deleted, not a root, not an issue, and named as kept (`productGraphKept`). A recognised file that fails verification, or a link anywhere in the family, still stops the collection.
 
 ## Document formats
 
@@ -217,7 +218,9 @@ It also lists, with counts: IDs a document cites that do not exist; 기능 that 
 
 ## Approval
 
-Only documents the user approved count as the product description. A document (or the policy file) is 승인 only while an approval record exists for its current content digest; editing it makes it 추정 again until it is approved again. A status word typed into a document proves nothing. An unapproved document carries which estimate it is, written in its `| 항목 | 내용 |` table as 추정: 코드만 보고 쓴 추정 or 화면만 보고 쓴 추정. By default the check uses approved documents only; with the estimate option it also uses 추정 documents and labels every finding that rests on one.
+Only documents the user approved count as the product description. A document (or the policy file) is 승인 only while an approval record exists for its current text digest; editing it makes it 추정 again until it is approved again, and the check shows it as 승인 뒤 바뀜, apart from a document never approved.
+
+The approval digest is taken over the document's text, not its bytes, because the user approved what the document says: decode the bytes as UTF-8, drop one leading BOM, turn every CRLF and lone CR into LF, normalise to NFC, and take SHA-256 of the UTF-8 bytes of the result. Nothing else is normalised: trailing spaces, a final newline, blank lines and every visible character still change it. The record names this basis in `digestBasis`. Other digests (generated files, export and import integrity, the GC inventory) stay raw-byte digests. A status word typed into a document proves nothing. An unapproved document carries which estimate it is, written in its `| 항목 | 내용 |` table as 추정: 코드만 보고 쓴 추정 or 화면만 보고 쓴 추정. By default the check uses approved documents only; with the estimate option it also uses 추정 documents and labels every finding that rests on one.
 
 ## Code layer and its precision
 

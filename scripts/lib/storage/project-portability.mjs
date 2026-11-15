@@ -23,6 +23,7 @@ import { atomicCreateArtifact } from "../core/fs-atomic.mjs";
 import { readBoundedSnapshotDescriptor, SNAPSHOT_STORAGE_LIMITS } from "../world/snapshot-storage-codec.mjs";
 import { sha256Hex as sha } from "../core/digest.mjs";
 import { failCode as fail } from "../core/errors.mjs";
+import { summarizeProductGraphTransfer } from "./product-graph-store.mjs";
 
 const json = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
 const check = (signal) => {
@@ -67,7 +68,8 @@ function exactCreate(root, relative, bytes) {
   const file = copiedProjectFile(root, relative);
   if (fs.existsSync(file)) {
     const current = inspectCopiedProjectFile(root, relative);
-    if (current.bytes !== bytes.length || current.sha256 !== sha(bytes)) fail("PROJECT_BUNDLE_CONFLICT");
+    if (current.bytes !== bytes.length || current.sha256 !== sha(bytes))
+      fail("PROJECT_BUNDLE_CONFLICT", `The target already has a different file at ${relative}; nothing was replaced.`);
     return;
   }
   atomicCreateArtifact(file, bytes);
@@ -321,9 +323,14 @@ function exportProjectBundleUncoordinated({
     },
     exportScope,
     coverage: manifest.coverage,
-    // Product graph files the family does not define are not carried; they are
-    // named here so a near-miss document name is not lost silently.
-    productGraphNotCarried: (canon.productGraph?.unrecognized || []).map((name) => `${directory}/context/product-graph/${name}`),
+    // What was carried for the product graph family; files the family does
+    // not define are left out and named, never dropped silently.
+    productGraph: summarizeProductGraphTransfer({
+      directory,
+      verified: canon.productGraph?.verified,
+      notRecognised: canon.productGraph?.unrecognized,
+      carried: true,
+    }),
     authorityPlane: "P3",
     grantsRecoveryAuthority: false,
     restoresExecutionPermission: false,
@@ -590,7 +597,23 @@ function portableImportPlan({ inspected, root, pluginRoot, createdAt }) {
   };
 }
 
-export function importProjectBundle({ bundleRoot, root, pluginRoot, expectedBundleId = null, signal, onPublication = null } = {}) {
+// The import result also says what it did with the product graph family: a
+// bundle carries only recognised family files (export left the others out).
+export function importProjectBundle(options = {}) {
+  const result = importProjectBundleOriginals(options);
+  if (!result || typeof result !== "object" || !options.bundleRoot) return result;
+  const { value: manifest } = boundedJson(fs.realpathSync(path.resolve(options.bundleRoot)), "manifest.json");
+  const verified = manifest.files.map((file) => file.path).filter((name) => name.startsWith(`${manifest.directory}/context/product-graph/`));
+  return {
+    ...result,
+    productGraph: {
+      ...summarizeProductGraphTransfer({ directory: manifest.directory, verified, notRecognised: [], carried: true }),
+      placement: result.sourceOriginalsReceipt ? "existing-project-archived-with-imported-session-target-family-unchanged" : "written-to-the-new-project-store",
+    },
+  };
+}
+
+function importProjectBundleOriginals({ bundleRoot, root, pluginRoot, expectedBundleId = null, signal, onPublication = null } = {}) {
   const inspected = inspectProjectBundle({ bundleRoot, expectedBundleId, signal });
   if (!inspected.projectAdmissionReady) fail("PROJECT_BUNDLE_PROVENANCE_INCOMPLETE");
   const targetRoot = fs.realpathSync(path.resolve(root)),
@@ -683,7 +706,15 @@ export function importProjectBundle({ bundleRoot, root, pluginRoot, expectedBund
     for (const entry of expected) {
       check(signal);
       const file = copiedProjectFile(targetRoot, entry.path);
-      if (fs.existsSync(file)) verifyCopiedProjectFile(targetRoot, entry);
+      if (!fs.existsSync(file)) continue;
+      try {
+        verifyCopiedProjectFile(targetRoot, entry);
+      } catch (error) {
+        // Same refusal, now naming the target file that differs.
+        if (error.code === "PROJECT_COPY_SOURCE_CHANGED")
+          fail("PROJECT_COPY_SOURCE_CHANGED", `The target already has a different file at ${entry.path}; nothing was replaced.`);
+        throw error;
+      }
     }
   };
   verifyExisting();
@@ -935,7 +966,14 @@ function importSelectedSessionIntoExisting({ inspected, targetRoot, storage, sig
     }
     for (const entry of [...active, ...historical]) {
       const file = copiedProjectFile(targetRoot, entry.path);
-      if (fs.existsSync(file)) verifyCopiedProjectFile(targetRoot, entry);
+      if (!fs.existsSync(file)) continue;
+      try {
+        verifyCopiedProjectFile(targetRoot, entry);
+      } catch (error) {
+        if (error.code === "PROJECT_COPY_SOURCE_CHANGED")
+          fail("PROJECT_COPY_SOURCE_CHANGED", `The target already has a different file at ${entry.path}; nothing was replaced.`);
+        throw error;
+      }
     }
   };
   assertTargetBasis();

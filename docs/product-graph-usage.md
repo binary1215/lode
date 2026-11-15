@@ -41,7 +41,9 @@ Approval records that the user read one document as it is now and accepts it as 
 lode-agent product-graph-approve <project> --input approval.json
 ```
 
-If the document changed after the digest was taken, the approval is refused. Editing an approved document makes it an estimate again. On MCP the call needs `confirm_user_review: true`, and a subagent cannot record it.
+If the document changed after the digest was taken, the approval is refused. Editing an approved document makes it an estimate again, listed as 승인 뒤 바뀜. The digest is taken over the text (see the definitions page), so a line-ending or BOM change by another editor does not drop an approval. On MCP the call needs `confirm_user_review: true`, and a subagent cannot record it.
+
+**What an approval record is.** It is the record of the user's word, not a security boundary. Whoever can write files in the Project store can create one. The MCP path asks for the confirmation flag and is closed to subagent callers; the CLI path is the user's own hand. The audit trail is the version-control history of the `승인/` folder.
 
 ## Reading the result
 
@@ -49,6 +51,7 @@ If the document changed after the digest was taken, the approval is refused. Edi
 - **검사 못 함: <reason>** means the check could not run, and says why: a missing document (제품 정의서가 없다), documents that exist but are not approved yet, a document that does not hold what the check needs, or a link this version does not extract (navigate 연결을 뽑지 않음). It never means "nothing wrong".
 - **뽑지 않음** next to a node type (데이터, 외부 연결, DB, 계측 이벤트) means this version does not extract that type. It is not a count of zero.
 - 제품코어 against 정책 is always left to a reader: the check prints both side by side.
+- **처음 쓸 때 — 빠진 입력** appears only when a document the checks need is missing or not yet approved: each line names the input, the checks and lists it unlocks, and the next step. The checks below it still end in 검사 못 함 with the same reason.
 - **이 그래프가 답하지 못하는 것** comes first. Read it before the findings: it says how much of the code was resolved, what is not extracted, what the UI scan cannot see, that nothing was run, and which documents this run used.
 - **어느 기능에서도 닿지 않는 코드** lists declarations no 기능 reaches through resolved references, most-affected files first. With few resolved calls, many entries are expected; an entry is a question for a reader (a missing 기능, or dead code), not a verdict.
 - **하나로 정하지 못한 호출** gives one count per reason and what would settle it. **코드로 읽지 않은 파일** counts what was not looked at, so a gap in coverage is visible.

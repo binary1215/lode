@@ -285,8 +285,8 @@ test("acceptance 4: only approved documents count; an edit unapproves; the estim
   let result = checkProductGraph({ root: f.root });
   assert.deepEqual([result.documents.approved, result.documents.estimated], [0, 4]);
   assert.equal(check(result, "element-function-without-activity").reason, "승인된 화면설계서가 없다 (추정 2개는 기본 검사에 쓰지 않는다)");
-  assert.match(result.text, /문서: 승인 0, 추정 4/);
-  const digest = (relative) => result.documents.list.find((item) => item.path === relative).sha256;
+  assert.match(result.text, /문서: 승인 0, 승인 뒤 바뀜 0, 추정 4/);
+  const digest = (relative) => result.documents.list.find((item) => item.path === relative).approvalDigest;
   // Through the router, the review needs explicit confirmation.
   const call = (args) =>
     dispatch({
@@ -334,8 +334,8 @@ test("acceptance 4: only approved documents count; an edit unapproves; the estim
   const main = path.join(f.family, "화면설계서", "MAIN-01.md");
   fs.writeFileSync(main, fs.readFileSync(main, "utf8") + "\n상태: 승인\n");
   result = checkProductGraph({ root: f.root });
-  assert.deepEqual([result.documents.approved, result.documents.estimated], [3, 1]);
-  assert.equal(result.documents.list.find((item) => item.path === "화면설계서/MAIN-01.md").status, "추정");
+  assert.deepEqual([result.documents.approved, result.documents.changedAfterApproval, result.documents.estimated], [3, 1, 0]);
+  assert.equal(result.documents.list.find((item) => item.path === "화면설계서/MAIN-01.md").status, "승인 뒤 바뀜");
   assert.deepEqual(
     check(result, "element-function-without-activity").findings.map((item) => item.id),
     ["DLG-01#1"],
@@ -343,11 +343,25 @@ test("acceptance 4: only approved documents count; an edit unapproves; the estim
   assert(result.lists.missingIds.some((item) => item.id === "MAIN-01#1" && item.note === "추정 문서에만 있음"));
   const estimated = checkProductGraph({ root: f.root, includeEstimates: true });
   const finding = check(estimated, "element-function-without-activity").findings.find((item) => item.id === "MAIN-01#2");
-  assert.deepEqual(finding.labels, ["추정: 코드만 보고 쓴 추정"]);
-  assert.match(estimated.text, /MAIN-01#2 .*\[추정: 코드만 보고 쓴 추정\]/);
+  assert.deepEqual(finding.labels, ["추정: 코드만 보고 쓴 추정, 승인 뒤 바뀜"]);
+  assert.match(estimated.text, /MAIN-01#2 .*\[추정: 코드만 보고 쓴 추정, 승인 뒤 바뀜\]/);
 });
 
-test("acceptance 5: two builds of the same input are byte-identical", (t) => {
+// H3: every generated file, both modes, byte for byte.
+const filesUnder = (directory) => {
+  const out = new Map();
+  const visit = (relative) => {
+    for (const entry of fs.readdirSync(path.join(directory, relative), { withFileTypes: true })) {
+      const child = relative ? `${relative}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) visit(child);
+      else out.set(child, fs.readFileSync(path.join(directory, child)));
+    }
+  };
+  visit("");
+  return out;
+};
+
+test("acceptance 5 / 15: two builds of the same input give byte-identical files, in stand-alone and project mode", (t) => {
   const base = temporary(t);
   for (const name of ["first", "second"])
     buildProductGraph({
@@ -357,8 +371,21 @@ test("acceptance 5: two builds of the same input are byte-identical", (t) => {
       outputDirectory: path.join(base, name),
       includeEstimates: true,
     });
-  for (const file of ["graph.json", "check.json", "check.txt"])
-    assert.deepEqual(fs.readFileSync(path.join(base, "first", file)), fs.readFileSync(path.join(base, "second", file)), file);
+  const first = filesUnder(path.join(base, "first")),
+    second = filesUnder(path.join(base, "second"));
+  assert.deepEqual([...first.keys()].sort(), ["check.json", "check.txt", "graph.json"]);
+  assert.deepEqual([...second.keys()].sort(), [...first.keys()].sort());
+  for (const [name, bytes] of first) assert.deepEqual(second.get(name), bytes, name);
+
+  const f = productProject(t);
+  const build = path.join(f.family, "build");
+  buildProductGraph({ root: f.root });
+  const projectFirst = filesUnder(build);
+  buildProductGraph({ root: f.root });
+  const projectSecond = filesUnder(build);
+  assert.deepEqual([...projectFirst.keys()].sort(), [".gitignore", "check.json", "check.txt", "graph.json"]);
+  assert.deepEqual([...projectSecond.keys()].sort(), [...projectFirst.keys()].sort());
+  for (const [name, bytes] of projectFirst) assert.deepEqual(projectSecond.get(name), bytes, name);
 });
 
 test("acceptance 6: with no documents the build gives the code layer and the check names what is missing", (t) => {
@@ -383,8 +410,44 @@ test("acceptance 6: with no documents the build gives the code layer and the che
       ["검사 못 함", "유저 저니맵이 없다"],
     ],
   );
-  assert.match(result.text, /화면설계서가 없어 모든 기능이 여기에 든다/);
+  assert.match(result.text, /어떤 화면요소·화면도 가리키지 않는 기능: 기능 12개 중 — 검사 못 함: 화면설계서가 없다/);
   assert(result.checks.every((item) => item.outcome !== "0건"));
+});
+
+test("acceptance 14: with no documents a guide names each missing input; with everything approved there is none", (t) => {
+  const base = temporary(t);
+  fs.mkdirSync(path.join(base, "documents"));
+  const empty = checkProductGraph({ sourceRoot: signalProduct, documentsDirectory: path.join(base, "documents"), rulesFile: emptyRules });
+  assert.deepEqual(
+    empty.guide.map((item) => [item.input, item.state]),
+    [
+      ["제품 정의서", "없음"],
+      ["유저 저니맵", "없음"],
+      ["화면설계서", "없음"],
+      ["유저플로우 기획서", "없음"],
+      ["정책 파일", "없음"],
+    ],
+  );
+  assert(empty.guide.every((item) => item.unlocks.length && item.next));
+  const lines = empty.text.split("\n");
+  assert(lines.includes("처음 쓸 때 — 빠진 입력"));
+  assert(lines.some((line) => line.startsWith("- 화면설계서 (없음): 검사 2, 검사 4, 검사 5, 목록: 어떤 화면요소·화면도 가리키지 않는 기능")));
+  assert(empty.checks.every((item) => item.outcome === "검사 못 함" && item.reason));
+  const head = lines.findIndex((line) => line.startsWith("어떤 화면요소·화면도 가리키지 않는 기능:"));
+  assert(lines[head].endsWith("검사 못 함: 화면설계서가 없다"));
+  assert(!lines[head + 1].startsWith("  - "), "the unpointed list prints a count, not every 기능");
+  assert.equal(empty.lists.unpointedFunctionsReason, "화면설계서가 없다");
+
+  // Every input written and approved: no guide block.
+  const f = productProject(t);
+  const write = (name, text) => fs.writeFileSync(path.join(f.family, name), text);
+  write("제품 정의서.md", "# 제품 정의서\n\n## 정체성\n\n스테이션\n\n## 타겟 유저\n\n운영자\n\n## 제공 가치\n\n상태\n\n## 브랜딩\n\n없음\n");
+  write("유저 저니맵.md", "# 유저 저니맵\n\n## 단계\n\n| 단계 | 유저 활동 |\n|---|---|\n| 시작 | UA-MAIN-01 |\n");
+  for (const item of checkProductGraph({ root: f.root }).documents.list)
+    approveProductGraphDocument({ root: f.root, document: item.path, expectedSha256: item.approvalDigest, rationale: "ok" });
+  const full = checkProductGraph({ root: f.root });
+  assert.deepEqual(full.guide, []);
+  assert(!full.text.includes("처음 쓸 때 — 빠진 입력"));
 });
 
 test("acceptance 7: stand-alone mode writes only under the output directory; project mode only the build folder", async (t) => {
@@ -431,7 +494,7 @@ test("the family travels through export and import with Korean names; build outp
   approveProductGraphDocument({
     root: f.root,
     document: relative,
-    expectedSha256: result.documents.list.find((item) => item.path === relative).sha256,
+    expectedSha256: result.documents.list.find((item) => item.path === relative).approvalDigest,
     rationale: "ok",
   });
   buildProductGraph({ root: f.root });
@@ -458,7 +521,7 @@ test("folder-copy adoption verifies the family and keeps it byte-identical; a br
   approveProductGraphDocument({
     root: f.root,
     document: "정책.md",
-    expectedSha256: result.documents.list.find((item) => item.path === "정책.md").sha256,
+    expectedSha256: result.documents.list.find((item) => item.path === "정책.md").approvalDigest,
     rationale: "ok",
   });
   const unverified = (root) => {
@@ -484,7 +547,7 @@ test("folder-copy adoption verifies the family and keeps it byte-identical; a br
   assert.throws(() => adoptVerifiedProjectCopy({ root: broken, pluginRoot }), { code: "PRODUCT_GRAPH_APPROVAL_INVALID" });
 });
 
-test("snapshot GC reads the family as verified roots, skips build output and keeps unknown names as issues", async (t) => {
+test("acceptance 19: unrecognised files in the family are kept and named, not GC issues; broken records and links still are", async (t) => {
   const f = productProject(t);
   buildProductGraph({ root: f.root });
   const closure = await buildSnapshotDeletionClosure({ root: f.root });
@@ -494,12 +557,44 @@ test("snapshot GC reads the family as verified roots, skips build output and kee
   );
   assert(closure.entries.some((row) => row.path === ".lode/context/product-graph/화면설계서/MAIN-01.md"));
   assert(!closure.entries.some((row) => row.path.includes("/product-graph/build/")));
+  const certifiedBefore = closure.certified;
   fs.writeFileSync(path.join(f.family, "메모.txt"), "unknown\n");
-  const preserved = await buildSnapshotDeletionClosure({ root: f.root });
-  assert(preserved.issues.some((item) => item.path.endsWith("product-graph/메모.txt") && item.reasonCode === "UNSUPPORTED_GC_REFERENCE_ROOT"));
-  assert.equal(preserved.certified, false);
+  fs.mkdirSync(path.join(f.family, "초안"));
+  fs.writeFileSync(path.join(f.family, "초안", "생각.md"), "draft\n");
+  const before = tree(f.family);
+  const kept = await buildSnapshotDeletionClosure({ root: f.root });
+  assert.deepEqual(
+    kept.issues.filter((item) => item.path.includes("product-graph")),
+    [],
+  );
+  assert.equal(certifiedBefore, true);
+  assert.equal(kept.certified, true);
+  assert.deepEqual(kept.productGraphKept, [
+    { path: ".lode/context/product-graph/메모.txt", kind: "file" },
+    { path: ".lode/context/product-graph/초안", kind: "folder" },
+  ]);
+  assert(!kept.entries.some((row) => row.path.includes("메모.txt") || row.path.includes("초안")));
   const preservation = await inspectSnapshotPreservationClosure({ root: f.root });
   assert.equal(preservation.coverage.productGraph, "user-owned-canon-and-generated-output-hold-no-snapshot-references");
+  assert.deepEqual(preservation.productGraphKept, kept.productGraphKept);
+  assert.deepEqual(tree(f.family), before);
+  // A recognised file that fails verification is still an issue.
+  const approvals = path.join(f.family, "승인");
+  fs.mkdirSync(approvals, { recursive: true });
+  fs.writeFileSync(path.join(approvals, `product-graph-approval-${"a".repeat(24)}.json`), "{}\n");
+  const broken = await buildSnapshotDeletionClosure({ root: f.root });
+  assert(broken.issues.some((item) => item.path.includes("승인/product-graph-approval-") && item.reasonCode === "PRODUCT_GRAPH_APPROVAL_INVALID"));
+  assert.equal(broken.certified, false);
+  fs.rmSync(approvals, { recursive: true });
+  // A link in place of a family folder is refused.
+  const outside = path.join(f.base, "outside-screens");
+  fs.mkdirSync(outside);
+  fs.renameSync(path.join(f.family, "화면설계서"), path.join(f.base, "screens-moved"));
+  if (link(t, outside, path.join(f.family, "화면설계서"))) {
+    const linked = await buildSnapshotDeletionClosure({ root: f.root });
+    assert.equal(linked.certified, false);
+    assert(linked.issues.length > 0);
+  }
 });
 
 test("the product graph tools are routed, not listed by default, and check is read-only", async () => {
@@ -565,7 +660,13 @@ test("acceptance 10: the limits block is the first block of build and check text
     assert(block.some((line) => line.includes(`호출 ${result.limits.calls.all}개 중 ${result.limits.calls.resolved}개`)));
     assert(block.some((line) => line.includes("아무것도 실행하지 않았다")));
     assert(block.some((line) => line.includes("여러 줄 문자열과 템플릿 문자열")));
-    assert(block.some((line) => line.startsWith(`- 문서: 승인 ${result.limits.documents.approved}, 추정 ${result.limits.documents.estimated}`)));
+    assert(
+      block.some((line) =>
+        line.startsWith(
+          `- 문서: 승인 ${result.limits.documents.approved}, 승인 뒤 바뀜 ${result.limits.documents.changedAfterApproval}, 추정 ${result.limits.documents.estimated}`,
+        ),
+      ),
+    );
     assert.deepEqual(result.limits.referenceKinds.emitted, ["call", "callback"]);
     assert.deepEqual(result.limits.notExtracted.nodeTypes, ["데이터", "외부 연결", "DB", "계측 이벤트"]);
   }
@@ -768,7 +869,7 @@ test("S1: a linked build/ or 승인/ is refused before anything is written", (t)
   const approvals = path.join(f.base, "approvals-outside");
   fs.mkdirSync(approvals);
   assert(link(t, approvals, path.join(f.family, "승인")));
-  const digest = checkProductGraph({ root: f.root }).documents.list.find((item) => item.path === "정책.md").sha256;
+  const digest = checkProductGraph({ root: f.root }).documents.list.find((item) => item.path === "정책.md").approvalDigest;
   assert.throws(() => approveProductGraphDocument({ root: f.root, document: "정책.md", expectedSha256: digest, rationale: "ok" }), {
     code: "PRODUCT_GRAPH_LINKED_PATH",
   });
@@ -783,7 +884,7 @@ test("S2/S3: export names the family files it does not carry; a file named like 
   fs.writeFileSync(path.join(f.family, "유저플로우 기획서"), "a file, not a folder\n");
   const exported = f.route(() => exportProjectBundle({ root: f.root, destination: path.join(f.base, "bundle") }));
   assert.equal(exported.status, "exported");
-  assert.deepEqual(exported.productGraphNotCarried.sort(), [
+  assert.deepEqual(exported.productGraph.notRecognised, [
     ".lode/context/product-graph/메모.md",
     ".lode/context/product-graph/유저플로우 기획서",
     ".lode/context/product-graph/화면설계서/cht-01.md",
@@ -816,7 +917,7 @@ test("S4: NFC and NFD spellings of one document name are a listed problem, never
 
 test("S5: a family folder stored under its NFD name does not block snapshot GC; an approval record is a verified root", async (t) => {
   const f = productProject(t);
-  const digest = checkProductGraph({ root: f.root }).documents.list.find((item) => item.path === "정책.md").sha256;
+  const digest = checkProductGraph({ root: f.root }).documents.list.find((item) => item.path === "정책.md").approvalDigest;
   approveProductGraphDocument({ root: f.root, document: "정책.md", expectedSha256: digest, rationale: "ok" });
   const before = tree(f.family);
   let closure = await buildSnapshotDeletionClosure({ root: f.root });
@@ -859,4 +960,117 @@ test("S7: an oversized family file is refused from its size, before it is read",
   });
   assert.throws(() => checkProductGraph({ root: f.root }), { code: "PRODUCT_GRAPH_FILE_TOO_LARGE" });
   assert.equal(readBig, false);
+});
+
+test("acceptance 13: export, import and adoption say what they carried for the family and name what they left out", (t) => {
+  const f = fixture(t);
+  fs.cpSync(signalProduct, f.root, { recursive: true });
+  const family = path.join(f.root, ".lode", "context", "product-graph");
+  fs.mkdirSync(path.join(family, "화면설계서"), { recursive: true });
+  for (const name of ["MAIN-01.md", "DLG-01.md"]) fs.copyFileSync(path.join(signalDocuments, "화면설계서", name), path.join(family, "화면설계서", name));
+  fs.writeFileSync(path.join(family, "메모.md"), "note\n");
+  const digest = checkProductGraph({ root: f.root }).documents.list.find((item) => item.path === "화면설계서/MAIN-01.md").approvalDigest;
+  approveProductGraphDocument({ root: f.root, document: "화면설계서/MAIN-01.md", expectedSha256: digest, rationale: "ok" });
+  const expected = {
+    documents: 2,
+    approvalRecords: 1,
+    otherUserFiles: [],
+    notRecognised: [".lode/context/product-graph/메모.md"],
+  };
+  const pick = (summary) => ({
+    documents: summary.documents,
+    approvalRecords: summary.approvalRecords,
+    otherUserFiles: summary.otherUserFiles,
+    notRecognised: summary.notRecognised,
+  });
+  const exported = f.route(() => exportProjectBundle({ root: f.root, destination: path.join(f.base, "bundle") }));
+  assert.deepEqual(pick(exported.productGraph), expected);
+  assert.equal(exported.productGraph.buildOutput, "not-carried-rebuilt-by-product-graph-build");
+  const manifest = JSON.parse(fs.readFileSync(path.join(exported.bundleRoot, "manifest.json"), "utf8"));
+  assert(!Object.hasOwn(manifest, "productGraph"));
+  const target = path.join(f.base, "imported");
+  fs.mkdirSync(target);
+  const imported = importProjectBundle({ bundleRoot: exported.bundleRoot, root: target, pluginRoot });
+  assert.deepEqual(pick(imported.productGraph), { ...expected, notRecognised: [] });
+  assert.equal(imported.productGraph.placement, "written-to-the-new-project-store");
+  // A differing existing file is named in the refusal.
+  const clash = path.join(f.base, "clash");
+  fs.mkdirSync(path.join(clash, ".lode", "context", "product-graph", "화면설계서"), { recursive: true });
+  fs.writeFileSync(path.join(clash, ".lode", "context", "product-graph", "화면설계서", "MAIN-01.md"), "different\n");
+  assert.throws(
+    () => importProjectBundle({ bundleRoot: exported.bundleRoot, root: clash, pluginRoot }),
+    (error) => error.code === "PROJECT_COPY_SOURCE_CHANGED" && error.message.includes(".lode/context/product-graph/화면설계서/MAIN-01.md"),
+  );
+  assert.equal(fs.readFileSync(path.join(clash, ".lode", "context", "product-graph", "화면설계서", "MAIN-01.md"), "utf8"), "different\n");
+  const copy = path.join(f.base, "copy");
+  fs.cpSync(f.root, copy, { recursive: true });
+  const file = path.join(copy, ".lode/project.json");
+  fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file)), projectRoot: "C:/unverified-origin/synthetic-project" }, null, 2) + "\n");
+  const manifestFile = path.join(copy, ".lode/generated/manifest.json"),
+    generated = JSON.parse(fs.readFileSync(manifestFile));
+  generated.managed.find((entry) => entry.path === ".lode/project.json").sha256 = sha(fs.readFileSync(file));
+  fs.writeFileSync(manifestFile, JSON.stringify(generated, null, 2) + "\n");
+  const adopted = adoptVerifiedProjectCopy({ root: copy, pluginRoot });
+  assert.deepEqual(pick(adopted.productGraph), expected);
+  assert.equal(adopted.productGraph.notRecognisedHandling, "left-in-place-not-verified");
+});
+
+test("acceptance 16: a document changed after approval is shown apart, not used, and approved again once restored", (t) => {
+  const f = productProject(t);
+  const policy = path.join(f.family, "정책.md");
+  const original = fs.readFileSync(policy);
+  const status = () => checkProductGraph({ root: f.root }).documents.list.find((item) => item.path === "정책.md").status;
+  const digest = checkProductGraph({ root: f.root }).documents.list.find((item) => item.path === "정책.md").approvalDigest;
+  approveProductGraphDocument({ root: f.root, document: "정책.md", expectedSha256: digest, rationale: "ok" });
+  assert.equal(status(), "승인");
+  fs.writeFileSync(policy, original.toString("utf8").replace("저장 버튼을 막는다", "저장 버튼을 숨긴다"));
+  const changed = checkProductGraph({ root: f.root });
+  assert.equal(changed.documents.list.find((item) => item.path === "정책.md").status, "승인 뒤 바뀜");
+  assert.deepEqual([changed.documents.approved, changed.documents.changedAfterApproval, changed.documents.estimated], [0, 1, 3]);
+  assert.equal(changed.documents.list.find((item) => item.path === "정책.md").estimateKind, "코드만 보고 쓴 추정");
+  assert.match(check(changed, "screen-policy-differs").reason, /승인된 정책 파일이 없다/);
+  assert.match(changed.text, /- 문서: 승인 0, 승인 뒤 바뀜 1, 추정 3\./);
+  assert.match(changed.text, /정책\.md — 승인 뒤 바뀜 \(코드만 보고 쓴 추정\)/);
+  fs.writeFileSync(policy, original);
+  assert.equal(status(), "승인");
+});
+
+test("acceptance 18: an approval binds to the normalised text: line endings, BOM and NFD keep it; a trailing space or a letter does not", async (t) => {
+  const f = productProject(t);
+  const relative = "화면설계서/MAIN-01.md";
+  const file = path.join(f.family, ...relative.split("/"));
+  const text = fs.readFileSync(file, "utf8");
+  const listed = () => checkProductGraph({ root: f.root }).documents.list.find((item) => item.path === relative);
+  const printed = listed().approvalDigest;
+  const { productGraphApprovalDigest, PRODUCT_GRAPH_APPROVAL_DIGEST_BASIS } = await import("../scripts/lib/storage/product-graph-store.mjs");
+  assert.equal(printed, productGraphApprovalDigest(fs.readFileSync(file)));
+  const recorded = approveProductGraphDocument({ root: f.root, document: relative, expectedSha256: printed, rationale: "ok" });
+  assert.equal(recorded.digestBasis, PRODUCT_GRAPH_APPROVAL_DIGEST_BASIS);
+  const record = JSON.parse(fs.readFileSync(path.join(f.family, "승인", fs.readdirSync(path.join(f.family, "승인"))[0]), "utf8"));
+  assert.equal(record.digestBasis, PRODUCT_GRAPH_APPROVAL_DIGEST_BASIS);
+  assert.equal(record.documentTextSha256, printed);
+  const crlf = text.replace(/\n/g, "\r\n");
+  for (const variant of [crlf, "﻿" + text, text.normalize("NFD"), "﻿" + crlf.normalize("NFD")]) {
+    fs.writeFileSync(file, variant);
+    assert.equal(listed().status, "승인");
+  }
+  for (const variant of [text + " ", text.replace("저장 버튼", "저장 단추")]) {
+    fs.writeFileSync(file, variant);
+    assert.equal(listed().status, "승인 뒤 바뀜");
+  }
+  // A digest of the raw CRLF bytes is not the approval digest: refused as stale.
+  fs.writeFileSync(file, crlf);
+  assert.throws(() => approveProductGraphDocument({ root: f.root, document: relative, expectedSha256: sha(Buffer.from(crlf, "utf8")), rationale: "x" }), {
+    code: "PRODUCT_GRAPH_APPROVAL_STALE",
+  });
+  assert.equal(approveProductGraphDocument({ root: f.root, document: relative, expectedSha256: listed().approvalDigest, rationale: "ok" }).status, "existing");
+});
+
+test("acceptance 17: the usage doc says what an approval record is, in both languages", () => {
+  const en = fs.readFileSync(path.join(pluginRoot, "docs", "product-graph-usage.md"), "utf8");
+  const ko = fs.readFileSync(path.join(pluginRoot, "docs", "ko", "product-graph-usage.md"), "utf8");
+  assert.match(en, /not a security boundary/);
+  assert.match(en, /version-control history of the `승인\/` folder/);
+  assert.match(ko, /보안 경계가 아닙니다/);
+  assert.match(ko, /`승인\/` 폴더의 버전 관리 이력/);
 });

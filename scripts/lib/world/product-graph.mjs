@@ -21,6 +21,7 @@ import {
   PRODUCT_GRAPH_RULES_FILE,
   classifyProductGraphPath,
   decodeProductGraphText,
+  productGraphApprovalDigest,
   productGraphApprovalRecord,
   productGraphSubdirectories,
   verifyProductGraphApproval,
@@ -251,13 +252,16 @@ function readRules(inputs) {
 
 function loadDocuments(inputs) {
   const read = readDocumentFiles(inputs.documentsDirectory);
-  const approvals = new Set();
+  // Approved digests per document path, so a document whose text changed
+  // after approval can be told apart from one never approved.
+  const approvals = new Map();
   const approvalIssues = [];
   for (const file of read.files.filter((item) => item.role === "approval")) {
     if (!inputs.approvals) continue;
     try {
       const record = verifyProductGraphApproval(JSON.parse(decodeProductGraphText(file.bytes)), { projectId: inputs.projectId, approvalId: file.approvalId });
-      approvals.add(`${record.document}\0${record.documentSha256}`);
+      if (!approvals.has(record.document)) approvals.set(record.document, new Set());
+      approvals.get(record.document).add(record.documentTextSha256);
     } catch (error) {
       const code = error.code || "PRODUCT_GRAPH_APPROVAL_INVALID";
       approvalIssues.push({
@@ -285,15 +289,18 @@ function loadDocuments(inputs) {
     else if (file.nodeType === "유저저니") parsed = parseJourneyDocument(base);
     else if (file.nodeType === "IA") parsed = parseIaDocument(base);
     else parsed = parseCoreDocument(base);
-    const approved = file.approvable ? approvals.has(`${file.path}\0${file.sha256}`) : null;
+    const approvalDigest = file.approvable ? productGraphApprovalDigest(file.bytes) : null;
+    const approved = file.approvable ? Boolean(approvals.get(file.path)?.has(approvalDigest)) : null;
+    const changedAfterApproval = file.approvable && !approved && approvals.has(file.path);
     documents.push({
       path: file.path,
       role: file.role,
       nodeType: file.nodeType,
       id: file.id || null,
       sha256: file.sha256,
+      approvalDigest,
       approvable: Boolean(file.approvable),
-      status: file.approvable ? (approved ? "승인" : "추정") : "직접 씀",
+      status: file.approvable ? (approved ? "승인" : changedAfterApproval ? "승인 뒤 바뀜" : "추정") : "직접 씀",
       estimateKind: approved || !file.approvable ? null : parsed.estimate?.kind || null,
       estimateWritten: parsed.estimate?.written ?? null,
       parsed,
@@ -302,22 +309,27 @@ function loadDocuments(inputs) {
   return { documents, unrecognized: read.unrecognized, twins: read.twins, approvalIssues, approvalsRead: inputs.approvals };
 }
 
+// A document is used as the product description only while 승인. One whose
+// text changed after approval is an estimate again and keeps its kind.
+const isEstimate = (document) => document.status === "추정" || document.status === "승인 뒤 바뀜";
+
 function basisLabel(document) {
-  if (document.status !== "추정") return null;
-  return document.estimateKind ? `추정: ${document.estimateKind}` : "추정: 어느 쪽 추정인지 적지 않음";
+  if (!isEstimate(document)) return null;
+  const kind = document.estimateKind ? `추정: ${document.estimateKind}` : "추정: 어느 쪽 추정인지 적지 않음";
+  return document.status === "승인 뒤 바뀜" ? `${kind}, 승인 뒤 바뀜` : kind;
 }
 
 function absence(documents, nodeType, includeEstimates) {
   const name = DOCUMENT_NAMES[nodeType];
   const all = documents.filter((item) => item.nodeType === nodeType && item.role !== "meaning");
   if (!all.length) return `${SUBJECT[name]} 없다`;
-  if (!includeEstimates && all.every((item) => item.status === "추정")) return `승인된 ${SUBJECT[name]} 없다 (추정 ${all.length}개는 기본 검사에 쓰지 않는다)`;
+  if (!includeEstimates && all.every(isEstimate)) return `승인된 ${SUBJECT[name]} 없다 (추정 ${all.length}개는 기본 검사에 쓰지 않는다)`;
   return null;
 }
 
 function compute({ extraction, loaded, includeEstimates }) {
   const { documents } = loaded;
-  const used = (document) => document.status !== "추정" || includeEstimates;
+  const used = (document) => !isEstimate(document) || includeEstimates;
   const ofType = (nodeType, onlyUsed = true) => documents.filter((item) => item.nodeType === nodeType && item.role !== "meaning" && (!onlyUsed || used(item)));
   const screens = ofType("화면"),
     activities = ofType("유저 활동"),
@@ -548,6 +560,31 @@ function compute({ extraction, loaded, includeEstimates }) {
     }
   }
 
+  // First-run guide: each missing input, what it unlocks and what to do next.
+  const guide = [];
+  const GUIDE_INPUTS = [
+    ["제품코어", "제품 정의서.md", ["검사 1"]],
+    ["유저저니", "유저 저니맵.md", ["검사 6"]],
+    ["화면", "화면설계서/<화면 ID>.md", ["검사 2", "검사 4", "검사 5", "목록: 어떤 화면요소·화면도 가리키지 않는 기능"]],
+    ["유저 활동", "유저플로우 기획서/<유저 활동 ID>.md", ["검사 2", "검사 4", "검사 6"]],
+    ["정책", "정책.md", ["검사 1", "검사 5"]],
+  ];
+  for (const [nodeType, file, unlocks] of GUIDE_INPUTS) {
+    const reason = absence(documents, nodeType, includeEstimates);
+    if (!reason) continue;
+    const unapproved = reason.startsWith("승인된");
+    guide.push({
+      input: DOCUMENT_NAMES[nodeType],
+      state: unapproved ? "승인 안 됨" : "없음",
+      reason,
+      unlocks,
+      next: unapproved
+        ? loaded.approvalsRead
+          ? "사용자에게 지금 내용을 보여 주고, 검사가 보여 주는 digest로 승인을 기록한다 (product-graph-approve)"
+          : "독립 실행은 승인 기록을 읽지 않는다. 추정 문서까지 쓰려면 --include-estimates로 검사한다"
+        : `${file}를 쓰고 → 검사(product-graph-check) → 사용자가 읽은 뒤 승인(product-graph-approve)`,
+    });
+  }
   const pointedFunctions = new Set(screenFunctions.keys());
   for (const screen of screens) for (const element of screen.parsed.elements) for (const id of element.operates) pointedFunctions.add(id);
   const unpointed = extraction.functionNodes.filter((item) => !pointedFunctions.has(item.id)).map((item) => item.id);
@@ -587,7 +624,7 @@ function compute({ extraction, loaded, includeEstimates }) {
       else elementSeen.set(element.id, `${screen.path}:${element.line}`);
     }
   for (const document of documents)
-    if (document.status === "추정" && document.estimateWritten && !document.estimateKind)
+    if (isEstimate(document) && document.estimateWritten && !document.estimateKind)
       formatIssues.push({ path: document.path, line: 1, kind: "추정 종류를 읽지 못함", detail: document.estimateWritten });
 
   return {
@@ -603,9 +640,13 @@ function compute({ extraction, loaded, includeEstimates }) {
     screenFunctions,
     elementOwner: allElementOwner,
     checks,
+    guide,
     lists: {
       missingIds: missing.sort((a, b) => compare(a.at.path, b.at.path) || a.at.line - b.at.line || compare(a.id, b.id)),
       unpointedFunctions: unpointed,
+      // Only meaningful against 화면설계서: without any in use the list is a
+      // count and a reason, not every 기능 of the product.
+      unpointedFunctionsReason: absence(documents, "화면", includeEstimates),
       vanishedMeanings,
       unreachedCode: extraction.unreachedCode,
       unresolvedReferences: {
@@ -628,12 +669,13 @@ function compute({ extraction, loaded, includeEstimates }) {
     usedCounts,
     documentSummary: {
       approved: approvable.filter((item) => item.status === "승인").length,
+      changedAfterApproval: approvable.filter((item) => item.status === "승인 뒤 바뀜").length,
       estimated: approvable.filter((item) => item.status === "추정").length,
-      list: approvable.map(({ path: documentPath, nodeType, id, sha256, status, estimateKind }) => ({
+      list: approvable.map(({ path: documentPath, nodeType, id, approvalDigest, status, estimateKind }) => ({
         path: documentPath,
         nodeType,
         id,
-        sha256,
+        approvalDigest,
         status,
         estimateKind,
       })),
@@ -813,7 +855,13 @@ function listLines(items, render) {
 }
 
 export function renderProductGraphText(result) {
-  const lines = [...renderLimits(result.limits), "", "제품 그래프 정합성 검사", ""];
+  const lines = [...renderLimits(result.limits), ""];
+  if (result.guide?.length) {
+    lines.push("처음 쓸 때 — 빠진 입력");
+    for (const item of result.guide) lines.push(`- ${item.input} (${item.state}): ${item.unlocks.join(", ")}이 이것을 쓴다. 다음: ${item.next}`);
+    lines.push("");
+  }
+  lines.push("제품 그래프 정합성 검사", "");
   result.checks.forEach((check, index) => {
     lines.push(`${index + 1}. ${check.heading} — ${check.meaning}`);
     if (check.outcome === "검사 못 함") lines.push(`   검사 못 함: ${check.reason}`);
@@ -847,9 +895,12 @@ export function renderProductGraphText(result) {
   lines.push(
     ...listLines(lists.missingIds, (item) => `${item.kind} ${item.id} (${where(item.at)})${item.note ? ` — ${item.note}` : ""}${labelText(item.labels)}`),
   );
-  const noScreens = result.counts["화면"] === 0;
-  lines.push(`어떤 화면요소·화면도 가리키지 않는 기능: ${lists.unpointedFunctions.length}개${noScreens ? " (화면설계서가 없어 모든 기능이 여기에 든다)" : ""}`);
-  lines.push(...listLines(lists.unpointedFunctions, (id) => id));
+  if (lists.unpointedFunctionsReason) {
+    lines.push(`어떤 화면요소·화면도 가리키지 않는 기능: 기능 ${lists.unpointedFunctions.length}개 중 — 검사 못 함: ${lists.unpointedFunctionsReason}`);
+  } else {
+    lines.push(`어떤 화면요소·화면도 가리키지 않는 기능: ${lists.unpointedFunctions.length}개`);
+    lines.push(...listLines(lists.unpointedFunctions, (id) => id));
+  }
   const unreached = lists.unreachedCode;
   const calls = lists.unresolvedReferences;
   lines.push(
@@ -905,7 +956,7 @@ export function renderProductGraphText(result) {
   lines.push(
     ...listLines(
       result.documents.list,
-      (item) => `${item.path} — ${item.status}${item.status === "추정" ? ` (${item.estimateKind || "어느 쪽 추정인지 적지 않음"})` : ""}`,
+      (item) => `${item.path} — ${item.status}${item.status !== "승인" ? ` (${item.estimateKind || "어느 쪽 추정인지 적지 않음"})` : ""}`,
     ),
   );
   if (lists.formatIssues.length) {
@@ -947,6 +998,7 @@ function limitsOf({ extraction, computed, includeEstimates, loaded, callbacks })
     execution: "아무것도 실행하지 않았다. 문서와 코드를 비교할 뿐이고, 어느 발견도 실행 근거에 기대지 않는다.",
     documents: {
       approved: computed.documentSummary.approved,
+      changedAfterApproval: computed.documentSummary.changedAfterApproval,
       estimated: computed.documentSummary.estimated,
       approvalsRead: loaded.approvalsRead,
       includeEstimates,
@@ -970,7 +1022,7 @@ function renderLimits(limits) {
     `- 뽑지 않은 것: ${limits.notExtracted.nodeTypes.join(", ")} 노드, ${limits.notExtracted.edges.join(", ")} 연결, ${limits.notExtracted.grouping}.`,
     ...limits.uiBindingScan.map((line) => `- ${line}`),
     `- ${limits.execution}`,
-    `- 문서: 승인 ${documents.approved}, 추정 ${documents.estimated}. ${usage}`,
+    `- 문서: 승인 ${documents.approved}, 승인 뒤 바뀜 ${documents.changedAfterApproval}, 추정 ${documents.estimated}. 승인 뒤 바뀜은 승인 기록의 본문과 지금 본문이 달라 추정으로 쓴다. ${usage}`,
   ];
 }
 
@@ -999,6 +1051,7 @@ function run(options, { requireOutput }) {
       ...(compared ? { compared } : {}),
       ...(sideBySide ? { sideBySide } : {}),
     })),
+    guide: computed.guide,
     lists: computed.lists,
     counts: computed.counts,
     usedCounts: computed.usedCounts,
@@ -1086,10 +1139,10 @@ export function approveProductGraphDocument({ root = ".", document, expectedSha2
     if (!file) fail("PRODUCT_GRAPH_DOCUMENT_MISSING", `${relative} 문서가 없다.`);
     const bytes = readBounded(file);
     decodeProductGraphText(bytes);
-    const current = sha256Hex(bytes);
+    const current = productGraphApprovalDigest(bytes);
     if (current !== expectedSha256)
       fail("PRODUCT_GRAPH_APPROVAL_STALE", `${relative}가 사용자가 본 내용과 다르다. 지금 내용을 다시 보여 주고 다시 승인받아야 한다.`);
-    const record = productGraphApprovalRecord({ projectId: inspected.project.projectId, document: relative, documentSha256: current, rationale });
+    const record = productGraphApprovalRecord({ projectId: inspected.project.projectId, document: relative, documentTextSha256: current, rationale });
     const directory = path.join(family, PRODUCT_GRAPH_APPROVAL_DIRECTORY);
     const destination = path.join(directory, `${record.approvalId}.json`);
     assertNoLinkedComponents(projectRoot, destination);
@@ -1108,7 +1161,8 @@ export function approveProductGraphDocument({ root = ".", document, expectedSha2
     return {
       status,
       document: relative,
-      documentSha256: current,
+      documentTextSha256: current,
+      digestBasis: record.digestBasis,
       approved: true,
       authority: "explicit-user-product-graph-approval",
       note: "이 문서는 지금 내용 그대로일 때만 승인으로 센다. 고치면 다시 승인받아야 한다.",

@@ -221,7 +221,8 @@ export async function buildSnapshotDeletionClosure({
     entries = [],
     snapshots = [],
     roots = [],
-    issues = [];
+    issues = [],
+    productGraphKept = [];
   let storedBytes = 0,
     decodedBytes = 0,
     summaryBytes = 0,
@@ -261,6 +262,13 @@ export async function buildSnapshotDeletionClosure({
           relative.normalize("NFC"),
         )
       ) {
+        // The product graph folder is written by hand: a folder Lode does not
+        // recognise there is the user's own. Kept, never walked or deleted,
+        // and not an issue. Links never reach here (rejected above).
+        if (relative.normalize("NFC").startsWith(PRODUCT_GRAPH_DIRECTORY + "/")) {
+          productGraphKept.push({ path: storage.directory + "/" + relative, kind: "folder" });
+          return;
+        }
         issue(relative, "UNSUPPORTED_GC_STORAGE_DIRECTORY");
         return;
       }
@@ -276,10 +284,15 @@ export async function buildSnapshotDeletionClosure({
     if (relative === "graph-discovery/index.json") return;
     // Product graph: generated output is rebuildable (like the discovery index);
     // Canon files are read as verified text roots, so a snapshot id written in a
-    // document still retains that snapshot. Unknown names stay issues.
+    // document still retains that snapshot. A name Lode does not recognise is
+    // the user's own: kept, not read, not a root and not an issue.
     const productGraphPath = relative.startsWith(PRODUCT_GRAPH_DIRECTORY + "/") ? relative.slice(PRODUCT_GRAPH_DIRECTORY.length + 1).normalize("NFC") : null;
     const productGraphTarget = productGraphPath === null ? null : classifyProductGraphPath(productGraphPath);
     if (productGraphTarget?.role === "build") return;
+    if (productGraphPath !== null && !productGraphTarget?.canon) {
+      productGraphKept.push({ path: storage.directory + "/" + relative, kind: "file" });
+      return;
+    }
     const exact = fs.lstatSync(file, { bigint: true }),
       before = snapshotFileIdentity(exact),
       match = target.exec(relative);
@@ -306,9 +319,6 @@ export async function buildSnapshotDeletionClosure({
           return;
         }
         document = new TextDecoder("utf-8", { fatal: true }).decode(read.bytes);
-      } else if (productGraphPath !== null) {
-        issue(relative, "UNSUPPORTED_GC_REFERENCE_ROOT");
-        return;
       } else if (relative.endsWith(".json")) document = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(read.bytes));
       else if (
         relative === ".gitignore" ||
@@ -488,6 +498,9 @@ export async function buildSnapshotDeletionClosure({
     candidates: issues.length ? [] : snapshots.filter((row) => !retained.has(row.path)),
     issues,
     omittedIssues,
+    // Files and folders in the product graph folder that Lode does not
+    // recognise: the user's own, kept and named, never deleted.
+    productGraphKept: productGraphKept.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
     certified: issues.length === 0,
     backend: "typed-local-file-git-domain-source",
     basisDigest: hash(JSON.stringify([...entries, ...mixed.files.values()].map(({ path, sha256 }) => ({ path, sha256 })))),
