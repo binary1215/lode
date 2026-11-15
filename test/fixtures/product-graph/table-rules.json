@@ -18,7 +18,8 @@
       "설명": "Commands registered by a call.",
       "파일": [
         "commands.mjs",
-        "wiring.mjs"
+        "wiring.mjs",
+        "templates.mjs"
       ],
       "패턴": "\\.register\\(\"([a-z]+)\"",
       "처리 코드": "항목"
@@ -41,6 +42,16 @@
         "wiring.mjs"
       ],
       "패턴": "name: \"([a-z]+)\"",
+      "처리 코드": "항목"
+    },
+    {
+      "종류": "tool",
+      "판단": true,
+      "설명": "Rows next to template literals with ${...}.",
+      "파일": [
+        "templates.mjs"
+      ],
+      "패턴": "\\bname:\\s*\"([a-z]+)\"",
       "처리 코드": "항목"
     },
     {

@@ -1153,6 +1153,14 @@ test("acceptance 20: each table row names its own 처리 코드, never the table
     "cli:hide": [],
     // Partly resolved: the name that resolved stays the 처리 코드.
     "cli:plugin": ["wiring.mjs#pluginPath"],
+    // A template's ${...} is balanced for row bracket counting: a template
+    // before the match, inside the matched row, and a nested template before a
+    // statement-form registration.
+    "tool:save": ["template-handlers.mjs#saveFile"],
+    "tool:load": ["template-handlers.mjs#loadFile"],
+    "tool:print": ["template-handlers.mjs#printFile"],
+    "tool:last": ["template-handlers.mjs#saveFile"],
+    "cli:tail": ["templates.mjs#afterBanner"],
   };
   for (const [id, handlers] of Object.entries(expected)) assert.deepEqual(handler(id), handlers, id);
   for (const node of graph.nodes.filter((item) => item.type === "기능")) assert(!handler(node.id).includes("commands.mjs"), node.id);
