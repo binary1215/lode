@@ -15,7 +15,8 @@
 //                 이벤트 고정), target, optional emitter
 //   메서드        instead of 모양: regex over method names declared in a class,
 //                 with an event group (overridden event methods)
-//   코드만        true: a match must start in code, not in a comment or string
+//   코드만        true: a match must start in code: not in a comment or a
+//                 string (a lexer mask; in markup files, not in <!-- -->)
 //   대상 읽기     "식": the target runs from the target group to the end of the
 //                 expression (balanced brackets and strings); "그룹": as captured
 //   이벤트 고정   the event name when the wiring has none of its own
@@ -60,6 +61,38 @@ const DOM_USER_EVENTS = Object.freeze([
   "touchend",
   "touchstart",
   "wheel",
+]);
+// DOM events that are not a user's operation. Listed so that the on<event>
+// property entry can tell a real event from an ordinary property.
+const DOM_OTHER_EVENTS = Object.freeze([
+  "abort",
+  "animationend",
+  "beforeunload",
+  "blur",
+  "close",
+  "error",
+  "focus",
+  "hashchange",
+  "message",
+  "mouseenter",
+  "mouseleave",
+  "mousemove",
+  "mouseout",
+  "mouseover",
+  "offline",
+  "online",
+  "open",
+  "pointercancel",
+  "pointermove",
+  "pointerout",
+  "pointerover",
+  "popstate",
+  "resize",
+  "scroll",
+  "storage",
+  "transitionend",
+  "unload",
+  "visibilitychange",
 ]);
 // React spells DOM events in camelCase after "on" (onClick -> click, onKeyDown -> keyDown).
 const COMPONENT_USER_EVENTS = Object.freeze([
@@ -143,6 +176,7 @@ export const BUILT_IN_UI_PATTERNS = Object.freeze(
       "요소 이름": NAME_FIRST,
       "유저 조작": DOM_USER_EVENTS,
       "스스로 도는": ["load"],
+      "그 밖의 이벤트": DOM_OTHER_EVENTS,
     },
     {
       이름: "DOM 타이머",
@@ -156,6 +190,7 @@ export const BUILT_IN_UI_PATTERNS = Object.freeze(
     },
     {
       이름: "HTML on<event> 속성",
+      코드만: true,
       확장자: [".html", ".htm"],
       모양: String.raw`\son(?<event>[a-zA-Z]+)\s*=\s*"(?<target>[^"]*)"`,
       "이벤트 바꾸기": ["소문자"],
@@ -184,6 +219,7 @@ export const BUILT_IN_UI_PATTERNS = Object.freeze(
     },
     {
       이름: "Vue @event / v-on:",
+      코드만: true,
       확장자: [".vue"],
       모양: String.raw`\s(?:@|v-on:)(?<event>[\w-]+)(?:\.[\w-]+)*\s*=\s*"(?<target>[^"]*)"`,
       "요소 이름": ["같은 태그 id"],
@@ -191,6 +227,7 @@ export const BUILT_IN_UI_PATTERNS = Object.freeze(
     },
     {
       이름: "Vue onMounted",
+      코드만: true,
       확장자: [".vue"],
       모양: String.raw`\bonMounted\(\s*(?<target>)`,
       "대상 읽기": "식",
@@ -199,6 +236,7 @@ export const BUILT_IN_UI_PATTERNS = Object.freeze(
     },
     {
       이름: "Svelte on:event",
+      코드만: true,
       확장자: [".svelte"],
       모양: String.raw`\son:(?<event>[\w-]+)(?:\|[\w|]+)?\s*=\s*\{(?<target>)`,
       "대상 읽기": "식",
@@ -207,6 +245,7 @@ export const BUILT_IN_UI_PATTERNS = Object.freeze(
     },
     {
       이름: "Svelte onMount",
+      코드만: true,
       확장자: [".svelte"],
       모양: String.raw`\bonMount\(\s*(?<target>)`,
       "대상 읽기": "식",

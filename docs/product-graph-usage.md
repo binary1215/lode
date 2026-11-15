@@ -63,4 +63,4 @@ lode-agent product-graph-build <source-root> --documents <folder> --rules <entry
 lode-agent product-graph-check <source-root> --documents <folder> --rules <entry-rules.json> --include-estimates
 ```
 
-The documents folder uses the same layout as the store folder. The rule file may hold an empty rule list.
+The documents folder uses the same layout as the store folder. The rule file may hold an empty rule list. `--out` may not be the documents folder (or inside it) or the source root; in the folder you name, the three output files are replaced on each build.

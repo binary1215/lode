@@ -65,4 +65,4 @@ lode-agent product-graph-build <source-root> --documents <folder> --rules <entry
 lode-agent product-graph-check <source-root> --documents <folder> --rules <entry-rules.json> --include-estimates
 ```
 
-문서 폴더는 저장소 폴더와 같은 구조를 씁니다. 규칙 파일의 규칙 목록은 비어 있어도 됩니다.
+문서 폴더는 저장소 폴더와 같은 구조를 씁니다. 규칙 파일의 규칙 목록은 비어 있어도 됩니다. `--out`은 문서 폴더(또는 그 안)나 소스 루트일 수 없고, 지정한 폴더의 출력 파일 세 개는 빌드할 때마다 바뀝니다.

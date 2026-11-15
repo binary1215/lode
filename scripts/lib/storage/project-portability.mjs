@@ -321,6 +321,9 @@ function exportProjectBundleUncoordinated({
     },
     exportScope,
     coverage: manifest.coverage,
+    // Product graph files the family does not define are not carried; they are
+    // named here so a near-miss document name is not lost silently.
+    productGraphNotCarried: (canon.productGraph?.unrecognized || []).map((name) => `${directory}/context/product-graph/${name}`),
     authorityPlane: "P3",
     grantsRecoveryAuthority: false,
     restoresExecutionPermission: false,
@@ -370,11 +373,11 @@ export function inspectProjectBundle({ bundleRoot, expectedBundleId = null, sign
       !/^[a-f0-9]{64}$/.test(entry.sha256) ||
       !Number.isSafeInteger(entry.bytes) ||
       entry.bytes < 0 ||
-      names.has(entry.path.toLowerCase())
+      names.has(entry.path.normalize("NFC").toLowerCase())
     )
       fail("PROJECT_BUNDLE_MANIFEST_INVALID");
     copiedProjectFile(root, entry.path);
-    names.add(entry.path.toLowerCase());
+    names.add(entry.path.normalize("NFC").toLowerCase());
     entries.set(entry.path, entry);
     if (!entry.path.startsWith(manifest.directory + "/")) fail("PROJECT_BUNDLE_SCOPE_MISMATCH");
     verifyCopiedProjectFile(root, { ...entry, path: objectPath(entry) });

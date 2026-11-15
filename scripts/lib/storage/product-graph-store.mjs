@@ -166,6 +166,7 @@ const UI_ENTRY_KEYS = [
   "유저 조작",
   "유저 조작 아님",
   "스스로 도는",
+  "그 밖의 이벤트",
 ];
 const NAME_SOURCES = ["보내는 쪽", "같은 태그 id", "줄 앞 대입"];
 
@@ -192,7 +193,7 @@ export function verifyUiBindingPattern(entry, where = "UI 연결 패턴", { allo
   if ((entry["모양"] === undefined) === (entry["메서드"] === undefined)) invalid(`${where}에는 모양이나 메서드 중 하나만 있어야 한다`);
   if (entry["메서드"] !== undefined) {
     regexOrFail(entry["메서드"], "", invalid, `${where}.메서드`);
-    for (const key of ["코드만", "대상 읽기", "이벤트 고정", "요소 이름", "유저 조작", "유저 조작 아님", "스스로 도는"])
+    for (const key of ["코드만", "대상 읽기", "이벤트 고정", "요소 이름", "유저 조작", "유저 조작 아님", "스스로 도는", "그 밖의 이벤트"])
       if (entry[key] !== undefined) invalid(`${where}: 메서드 항목에는 ${key}를 쓰지 않는다`);
   } else {
     const expression = regexOrFail(entry["모양"], "gmd", invalid, `${where}.모양`);
@@ -204,7 +205,7 @@ export function verifyUiBindingPattern(entry, where = "UI 연결 패턴", { allo
     if (entry["대상 읽기"] !== undefined && !["식", "그룹"].includes(entry["대상 읽기"])) invalid(`${where}.대상 읽기는 식 또는 그룹이다`);
     if (entry["요소 이름"] !== undefined && (!Array.isArray(entry["요소 이름"]) || entry["요소 이름"].some((item) => !NAME_SOURCES.includes(item))))
       invalid(`${where}.요소 이름은 ${NAME_SOURCES.join(", ")} 중에서 고른 배열이다`);
-    for (const key of ["유저 조작", "유저 조작 아님", "스스로 도는"])
+    for (const key of ["유저 조작", "유저 조작 아님", "스스로 도는", "그 밖의 이벤트"])
       if (entry[key] !== undefined && (!Array.isArray(entry[key]) || entry[key].some((item) => typeof item !== "string" || !item)))
         invalid(`${where}.${key}는 이벤트 이름 배열이다`);
     if (!(entry["유저 조작"] || []).length && !(entry["스스로 도는"] || []).length) invalid(`${where}에는 유저 조작이나 스스로 도는 이벤트가 있어야 한다`);
@@ -355,6 +356,27 @@ export function verifyProductGraphCanonOriginals({ directory, list, readBytes, p
     if (productGraphSubdirectories.includes(nfc(first))) subdirectories.add(first);
     else if (name.includes("/") && nfc(first) !== PRODUCT_GRAPH_BUILD_DIRECTORY) unrecognized.push(name);
   }
-  for (const name of [...subdirectories].sort()) visit(name, list(`${base}/${name}`));
+  for (const name of [...subdirectories].sort()) {
+    let names;
+    try {
+      names = list(`${base}/${name}`);
+    } catch (error) {
+      // A regular file named like a family folder is not a folder.
+      if (error.code === "ENOTDIR") {
+        unrecognized.push(name);
+        continue;
+      }
+      throw error;
+    }
+    visit(name, names);
+  }
+  // Two names that differ only by Unicode normalisation (NFC and NFD) would be
+  // one document under two spellings: refuse rather than carry both.
+  const normalised = new Map();
+  for (const file of verified) {
+    const key = file.normalize("NFC");
+    if (normalised.has(key) && normalised.get(key) !== file) fail("PRODUCT_GRAPH_NAME_TWIN", `같은 이름이 유니코드 정규화만 다르게 두 번 있다: ${key}`);
+    normalised.set(key, file);
+  }
   return { verified, unrecognized: [...new Set(unrecognized)].sort() };
 }

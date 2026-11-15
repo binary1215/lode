@@ -16,6 +16,7 @@ import {
   PRODUCT_GRAPH_APPROVAL_DIRECTORY,
   PRODUCT_GRAPH_BUILD_DIRECTORY,
   PRODUCT_GRAPH_DIRECTORY,
+  PRODUCT_GRAPH_MAX_FILE_BYTES,
   PRODUCT_GRAPH_MAX_FILES,
   PRODUCT_GRAPH_RULES_FILE,
   classifyProductGraphPath,
@@ -35,7 +36,7 @@ import {
   parsePolicyFile,
   parseScreenDocument,
 } from "./product-graph-documents.mjs";
-import { extractProductGraphCode } from "./product-graph-extraction.mjs";
+import { assertUniqueIds, extractProductGraphCode } from "./product-graph-extraction.mjs";
 
 export const PRODUCT_GRAPH_VERSION = 1;
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
@@ -115,7 +116,24 @@ function listDirectory(directory) {
 function readBounded(file) {
   const stat = fs.lstatSync(file);
   if (!stat.isFile() || stat.isSymbolicLink()) fail("PRODUCT_GRAPH_FILE_INVALID");
+  if (stat.size > PRODUCT_GRAPH_MAX_FILE_BYTES) fail("PRODUCT_GRAPH_FILE_TOO_LARGE");
   return fs.readFileSync(file);
+}
+
+// S1: every existing component from the Project root to target must be a real
+// directory or file, not a link or junction, so nothing is written or read
+// through a link to somewhere outside the Project.
+function assertNoLinkedComponents(projectRoot, target) {
+  const relative = path.relative(projectRoot, target);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) fail("PRODUCT_GRAPH_LINKED_PATH", "제품 그래프 경로가 프로젝트 밖을 가리킨다.");
+  let current = projectRoot;
+  for (const part of relative.split(path.sep)) {
+    current = path.join(current, part);
+    const stat = fs.lstatSync(current, { throwIfNoEntry: false });
+    if (!stat) return;
+    if (stat.isSymbolicLink())
+      fail("PRODUCT_GRAPH_LINKED_PATH", `제품 그래프 경로에 링크가 있어 쓰지 않는다: ${path.relative(projectRoot, current).replaceAll("\\", "/")}`);
+  }
 }
 
 // Reads the documents directory in the family layout. Unknown names are
@@ -144,7 +162,14 @@ function readDocumentFiles(directory) {
     }
   };
   visit("", directory);
-  return { files: files.sort((a, b) => compare(a.path, b.path)), unrecognized: unrecognized.sort() };
+  const byPath = new Map();
+  for (const file of files) byPath.set(file.path, (byPath.get(file.path) || 0) + 1);
+  const twins = [...byPath.entries()].filter(([, count]) => count > 1).map(([name]) => name);
+  return {
+    files: files.filter((file) => !twins.includes(file.path)).sort((a, b) => compare(a.path, b.path)),
+    unrecognized: unrecognized.sort(),
+    twins: twins.sort(),
+  };
 }
 
 function resolveInputs(options) {
@@ -164,6 +189,15 @@ function resolveInputs(options) {
       );
     const documents = path.resolve(documentsDirectory);
     if (!fs.existsSync(documents) || !fs.statSync(documents).isDirectory()) fail("PRODUCT_GRAPH_DOCUMENTS_MISSING");
+    if (outputDirectory) {
+      const output = path.resolve(outputDirectory);
+      const inside = (parent) => {
+        const relative = path.relative(parent, output);
+        return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+      };
+      if (inside(documents) || output === path.resolve(sourceRoot))
+        fail("PRODUCT_GRAPH_OUTPUT_OVERLAPS", "출력 폴더는 문서 폴더(또는 그 안)나 소스 루트와 같을 수 없다.");
+    }
     return {
       mode: "standalone",
       sourceRoot: path.resolve(sourceRoot),
@@ -265,7 +299,7 @@ function loadDocuments(inputs) {
       parsed,
     });
   }
-  return { documents, unrecognized: read.unrecognized, approvalIssues, approvalsRead: inputs.approvals };
+  return { documents, unrecognized: read.unrecognized, twins: read.twins, approvalIssues, approvalsRead: inputs.approvals };
 }
 
 function basisLabel(document) {
@@ -538,6 +572,20 @@ function compute({ extraction, loaded, includeEstimates }) {
   const formatIssues = [];
   for (const document of documents)
     for (const issue of document.parsed.issues || []) formatIssues.push({ path: document.path, line: issue.line, kind: issue.kind, detail: issue.detail });
+  for (const twin of loaded.twins || [])
+    formatIssues.push({ path: twin, line: 1, kind: "유니코드 정규화만 다른 같은 이름이 둘 이상 (둘 다 읽지 않음)", detail: twin });
+  const elementSeen = new Map();
+  for (const screen of allScreens)
+    for (const element of screen.parsed.elements) {
+      if (elementSeen.has(element.id))
+        formatIssues.push({
+          path: screen.path,
+          line: element.line,
+          kind: "같은 화면요소 ID가 두 번",
+          detail: `${element.id} (처음: ${elementSeen.get(element.id)})`,
+        });
+      else elementSeen.set(element.id, `${screen.path}:${element.line}`);
+    }
   for (const document of documents)
     if (document.status === "추정" && document.estimateWritten && !document.estimateKind)
       formatIssues.push({ path: document.path, line: 1, kind: "추정 종류를 읽지 못함", detail: document.estimateWritten });
@@ -697,11 +745,25 @@ function graphDocument({ extraction, loaded, computed, inputs, rules, result }) 
     }
   for (const entry of extraction.functionNodes) {
     nodes.push({ id: entry.id, type: "기능", kind: entry.kind, oneLine: meaning.get(entry.id) || "", handling: entry.handling, positions: entry.positions });
-    for (const handler of entry.handlers) edges.push({ type: "기능→코드", from: entry.id, to: handler, at: entry.positions[0] || null });
+    for (const handler of entry.handlers)
+      edges.push({ type: "기능→코드", from: entry.id, to: handler, at: entry.handlerAt?.[handler] || entry.positions[0] || null });
   }
   for (const node of extraction.codeNodes) nodes.push(node);
   for (const reference of extraction.references)
     edges.push({ type: reference.type, from: reference.from, to: reference.to, at: reference.source, count: reference.count });
+  // A 화면요소 or 정책 ID written twice in the documents is a 형식 문제
+  // (listed by the check); the graph keeps its first occurrence.
+  const kept = new Set();
+  const unique = nodes.filter((node) => {
+    if (!["화면요소", "정책"].includes(node.type)) return true;
+    const key = `${node.type}\0${node.id}`;
+    if (kept.has(key)) return false;
+    kept.add(key);
+    return true;
+  });
+  nodes.length = 0;
+  nodes.push(...unique);
+  assertUniqueIds(nodes);
   const typeOrder = new Map(NODE_TYPES.map((type, index) => [type, index]));
   nodes.sort((a, b) => typeOrder.get(a.type) - typeOrder.get(b.type) || compare(a.id, b.id));
   edges.sort(
@@ -793,6 +855,9 @@ export function renderProductGraphText(result) {
   lines.push(
     `어느 기능에서도 닿지 않는 코드: 선언 ${unreached.declarations}개 — 풀린 호출 ${calls.resolved} / 전체 ${calls.all}로 따라간 결과다. '닿지 않음'은 풀린 경로를 찾지 못했다는 뜻이고, 죽은 코드라는 뜻이 아니다.`,
   );
+  lines.push(
+    "  처리 코드가 파일 전체인 기능(스크립트, command 파일, 등록 파일 등)은 그 파일과 파일 맨 위의 호출까지 닿은 것으로 본다. 그 파일 안의 선언은 풀린 호출로만 닿는다. 클래스에 닿으면 생성자에 닿은 것으로 본다.",
+  );
   lines.push(`  아무것도 닿지 않는 파일 ${unreached.filesNothingReached}개, 일부만 닿는 파일 ${unreached.filesPartlyReached}개. 많은 파일부터:`);
   lines.push(
     ...listLines(unreached.files, (file) =>
@@ -864,7 +929,7 @@ export const LIMITS_TITLE = "이 그래프가 답하지 못하는 것";
 const NOT_TOLD_APART = Object.freeze(["framework-invoked", "render", "type reference", "re-render", "response", "enqueue", "navigate", "http", "defines"]);
 const UI_SCAN_LIMITS = Object.freeze([
   "UI 연결은 패턴을 글자에 맞춰 찾는다. 여러 줄에 걸친 연결, 문자열로 만든 연결, 툴킷이 이름으로 자동으로 잇는 연결, 이벤트 이름을 실행 중에 계산하는 연결은 보지 못한다.",
-  "코드인지는 줄 단위로만 가린다(그 줄의 앞쪽 주석과 문자열). 블록 주석이나 여러 줄 문자열 안의 연결은 걸러내지 못하고, HTML·Vue·Svelte 파일에서는 주석도 걸러내지 못한다.",
+  "코드인지는 글자 단위 lexer로 가린다. JS·TS·Python 파일에서는 주석과 문자열(여러 줄 문자열과 템플릿 문자열 포함) 안의 연결을 걸러내고, HTML·Vue·Svelte 파일에서는 <!-- --> 주석만 걸러낸다. JSX의 on<Event>={…} 속성은 주석과 문자열을 가리지 않는다. lexer는 파서가 아니어서 정규식 리터럴을 바로 앞 글자로만 알아본다.",
   "템플릿의 같은 태그 id는 가장 가까운 < 와 > 사이에서 찾는다. 이벤트 메서드는 이름으로만 찾고 상속은 확인하지 않는다.",
 ]);
 
@@ -966,7 +1031,9 @@ export function buildProductGraph(options = {}) {
     ["check.txt", text],
   ];
   const write = () => {
+    if (inputs.mode === "project") assertNoLinkedComponents(inputs.projectRoot, output);
     fs.mkdirSync(output, { recursive: true });
+    if (inputs.mode === "project") assertNoLinkedComponents(inputs.projectRoot, output);
     if (inputs.mode === "project") {
       const ignore = path.join(output, ".gitignore");
       if (!fs.existsSync(ignore))
@@ -994,9 +1061,10 @@ export function buildProductGraph(options = {}) {
 function physicalFile(base, relative) {
   let current = base;
   for (const part of relative.split("/")) {
-    const match = listDirectory(current).find((entry) => nfc(entry.name) === part);
-    if (!match) return null;
-    current = path.join(current, match.name);
+    const matches = listDirectory(current).filter((entry) => nfc(entry.name) === part);
+    if (matches.length > 1) fail("PRODUCT_GRAPH_NAME_TWIN", `같은 이름이 유니코드 정규화만 다르게 두 번 있다: ${relative}`);
+    if (!matches.length) return null;
+    current = path.join(current, matches[0].name);
   }
   return current;
 }
@@ -1013,6 +1081,7 @@ export function approveProductGraphDocument({ root = ".", document, expectedSha2
   const projectRoot = inspected.project.projectRoot;
   const family = path.join(projectRoot, inspected.storage.directory, ...PRODUCT_GRAPH_DIRECTORY.split("/"));
   return withProjectMutation({ root: projectRoot, storage: inspected.storage, scope: "product-graph-approval", timeoutMs: 0 }, () => {
+    assertNoLinkedComponents(projectRoot, family);
     const file = physicalFile(family, relative);
     if (!file) fail("PRODUCT_GRAPH_DOCUMENT_MISSING", `${relative} 문서가 없다.`);
     const bytes = readBounded(file);
@@ -1023,6 +1092,7 @@ export function approveProductGraphDocument({ root = ".", document, expectedSha2
     const record = productGraphApprovalRecord({ projectId: inspected.project.projectId, document: relative, documentSha256: current, rationale });
     const directory = path.join(family, PRODUCT_GRAPH_APPROVAL_DIRECTORY);
     const destination = path.join(directory, `${record.approvalId}.json`);
+    assertNoLinkedComponents(projectRoot, destination);
     let status = "recorded";
     if (fs.existsSync(destination)) {
       const existing = verifyProductGraphApproval(JSON.parse(decodeProductGraphText(readBounded(destination))), {

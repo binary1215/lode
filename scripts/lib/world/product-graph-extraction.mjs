@@ -4,9 +4,10 @@
 // clock, and no absolute path enters the result.
 import fs from "node:fs";
 import path from "node:path";
-import { analyzeSourceFile, classifySourcePath, maskSourceText } from "./source-analysis.mjs";
+import { analyzeSourceFile, classifySourcePath } from "./source-analysis.mjs";
 import { REPOSITORY_SCAN_EXCLUDED_DIRECTORIES } from "./repository-scan.mjs";
 import { BUILT_IN_UI_MARKERS, BUILT_IN_UI_PATTERNS } from "./product-graph-ui-patterns.mjs";
+import { codeMask, codeMaskKind } from "./product-graph-code-mask.mjs";
 import { failCode as fail } from "../core/errors.mjs";
 
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
@@ -112,20 +113,22 @@ function readText(sourceRoot, relative) {
   }
 }
 
-// A 코드 ID carries no line number. A declaration whose kind and qualified
-// name repeat in its file gets ~<n>, its order among those declarations in the
-// file (1-based). That does not move when lines change elsewhere; it changes
-// only when a same-named declaration is added, removed or moved before it, or
-// when a second one appears (the first then gains ~1).
+// A 코드 ID carries no line number. A declaration whose qualified name repeats
+// in its file (whatever its kind) gets ~<n>, its order among those
+// declarations in source order (1-based), so two on one line differ too. That
+// does not move when lines change elsewhere; it changes only when a
+// same-named declaration is added, removed or moved before it, or when a
+// second one appears (the first then gains ~1).
 const symbolId = (file, symbol) => symbol.id ?? `${file}#${symbol.qualifiedName}`;
 
 function assignSymbolIds(relative, symbols) {
+  const total = new Map();
+  for (const symbol of symbols) total.set(symbol.qualifiedName, (total.get(symbol.qualifiedName) || 0) + 1);
   const seen = new Map();
   for (const symbol of symbols) {
-    const key = `${symbol.kind}\0${symbol.qualifiedName}`;
-    const ordinal = (seen.get(key) || 0) + 1;
-    seen.set(key, ordinal);
-    symbol.id = `${relative}#${symbol.qualifiedName}${symbol.identityAmbiguous ? `~${ordinal}` : ""}`;
+    const ordinal = (seen.get(symbol.qualifiedName) || 0) + 1;
+    seen.set(symbol.qualifiedName, ordinal);
+    symbol.id = `${relative}#${symbol.qualifiedName}${total.get(symbol.qualifiedName) > 1 ? `~${ordinal}` : ""}`;
   }
 }
 
@@ -249,7 +252,10 @@ function buildCodeLayer(sourceRoot, files, excludes) {
   for (const [relative, analysis] of analyses) {
     const bindings = new Map(analysis.semanticFacts.bindings.map((binding) => [binding.local, binding]));
     const callers = analysis.symbols.filter((symbol) => symbol.kind === "function" || symbol.kind === "binding");
-    const maskedLines = maskSourceText(analysis.text, analysis.language).split("\n");
+    const lineMask = codeMask(analysis.text, analysis.language === "python" ? "python" : "javascript");
+    let view = "";
+    for (let index = 0; index < analysis.text.length; index += 1) view += lineMask[index] || analysis.text[index] === "\n" ? analysis.text[index] : " ";
+    const maskedLines = view.split("\n");
     // The call scan keeps only a name for "expr).map(": look at the call's own
     // line to see whether every use of that name there follows a ".".
     const receiverOf = (line, callee) => {
@@ -423,33 +429,19 @@ function readExpression(text, start) {
   return text.slice(start);
 }
 
-// Whether a match starts in code: not after a line comment and not inside a
-// string opened earlier on the same line. Line-local on purpose: a file-wide
-// string scan loses its place in template literals and would hide real code.
-function startsInCode(text, index, python) {
-  const prefix = text.slice(text.lastIndexOf("\n", index - 1) + 1, index);
-  let quote = null;
-  for (let position = 0; position < prefix.length; position += 1) {
-    const character = prefix[position];
-    if (quote) {
-      if (character === "\\") position += 1;
-      else if (character === quote) quote = null;
-    } else if (character === '"' || character === "'" || (!python && character === "`")) quote = character;
-    else if (python ? character === "#" : character === "/" && prefix[position + 1] === "/") return false;
-  }
-  return quote === null;
-}
-
 const NO_NAME_EMITTERS = new Set(["self", "this", "cls"]);
-// The emitting object's name: an element id it is looked up by, else the
-// last name of the expression; self/this/cls alone have none.
+// The emitting object's name: an element id it is looked up by with a
+// literal, else the last name of a plain dotted name. A call or an indexed
+// expression without a literal id ("$(id)", "list[i]") names no element, and
+// self/this/cls alone have none.
 function emitterName(emitter) {
   if (!emitter) return null;
-  const id = /(?:getElementById|\$)\(\s*["'`]#?([\w-]+)["'`]\s*\)|querySelector\(\s*["'`]#([\w-]+)["'`]\s*\)/.exec(emitter);
+  const id = /(?:getElementById|\$)\(\s*["'`]#?([\w-]+)["'`]\s*\)$|querySelector\(\s*["'`]#([\w-]+)["'`]\s*\)$/.exec(emitter);
   if (id) return id[1] || id[2];
-  if (NO_NAME_EMITTERS.has(emitter)) return null;
-  const last = /([A-Za-z_$][\w$]*)\s*$/.exec(emitter.replace(/\([^()]*\)\s*$/, ""));
-  return last && !NO_NAME_EMITTERS.has(last[1]) ? last[1] : null;
+  const plain = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(emitter);
+  if (!plain) return null;
+  const last = emitter.split(".").at(-1);
+  return NO_NAME_EMITTERS.has(last) || NO_NAME_EMITTERS.has(emitter) ? null : last;
 }
 
 function tagId(text, index) {
@@ -534,11 +526,20 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
     if (!texts.has(relative)) texts.set(relative, readText(root, relative));
     return texts.get(relative);
   };
+  // Code only: comments and string contents blanked by the lexer mask, so a
+  // file sign or a wiring written in a comment or a string does not count.
+  const maskOf = new Map();
+  const maskFor = (relative, text) => {
+    if (!maskOf.has(relative)) maskOf.set(relative, codeMask(text, codeMaskKind(path.posix.extname(relative).toLowerCase())));
+    return maskOf.get(relative);
+  };
   const maskedOf = new Map();
   const masked = (relative, text) => {
     if (!maskedOf.has(relative)) {
-      const language = code.analyses.get(relative)?.language;
-      maskedOf.set(relative, language ? maskSourceText(text, language) : text);
+      const mask = maskFor(relative, text);
+      let view = "";
+      for (let index = 0; index < text.length; index += 1) view += mask[index] || text[index] === "\n" ? text[index] : " ";
+      maskedOf.set(relative, view);
     }
     return maskedOf.get(relative);
   };
@@ -609,10 +610,11 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
       const expression = new RegExp(entry["모양"], "gmd");
       const user = new Set(entry["유저 조작"] || []),
         notUser = new Set(entry["유저 조작 아님"] || []),
-        selfRun = new Set(entry["스스로 도는"] || []);
+        selfRun = new Set(entry["스스로 도는"] || []),
+        known = entry["그 밖의 이벤트"] ? new Set(entry["그 밖의 이벤트"]) : null;
       for (const match of text.matchAll(expression)) {
         const start = match.index || 0;
-        if (entry["코드만"] && !startsInCode(text, start, relative.endsWith(".py"))) continue;
+        if (entry["코드만"] && !maskFor(relative, text)[start]) continue;
         const groups = match.groups || {};
         const rawEvent = groups.event ?? entry["이벤트 고정"];
         if (!rawEvent) continue;
@@ -625,6 +627,9 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
         const handler = resolve(relative, component, name, target);
         wired.add(relative);
         const role = selfRun.has(event) ? "effect" : (user.has("*") && !notUser.has(event)) || user.has(event) ? "user" : "other";
+        // An entry that lists its other known events treats any other name as
+        // not a wiring at all ("state.online = true" is not an event).
+        if (role === "other" && known && !known.has(event)) continue;
         if (role === "other") {
           notTaken.push({
             path: relative,
@@ -689,12 +694,17 @@ export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
       outOfScope.push({ id, kind, position });
       return;
     }
-    if (!functions.has(id)) functions.set(id, { id, type: "기능", kind, oneLine: oneLine || "", handling: ruleHandling, positions: [], handlers: [] });
+    if (!functions.has(id))
+      functions.set(id, { id, type: "기능", kind, oneLine: oneLine || "", handling: ruleHandling, positions: [], handlers: [], handlerAt: {} });
     const entry = functions.get(id);
     if (!entry.positions.some((item) => item.path === position.path && item.line === position.line)) entry.positions.push(position);
     if (ruleHandling === "경계로 둔다") return;
     if (handler) {
-      if (!entry.handlers.includes(handler)) entry.handlers.push(handler);
+      if (!entry.handlers.includes(handler)) {
+        entry.handlers.push(handler);
+        // The wiring site this handler came from, for the 기능→코드 edge.
+        entry.handlerAt[handler] = position;
+      }
     } else unresolvedHandlers.push({ id, position, reason: handlerReason || "처리 코드를 찾지 못함" });
   };
   const fileNode = (relative, kind = "file") => {
@@ -733,9 +743,10 @@ export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
       continue;
     }
     if (!document?.hooks || typeof document.hooks !== "object" || Array.isArray(document.hooks)) continue;
-    const base = /(?:^|\/)hooks\/[^/]+\.json$/.test(relative)
-      ? path.posix.dirname(path.posix.dirname(relative))
-      : path.posix.dirname(path.posix.dirname(relative));
+    // Script paths in a hook command are relative to the plugin or project
+    // root: the folder above hooks/ for a plugin's hooks/*.json, the folder
+    // above .claude/ or .codex/ for a project's settings. Both are two levels up.
+    const base = path.posix.dirname(path.posix.dirname(relative));
     for (const [event, groups] of Object.entries(document.hooks).sort(([a], [b]) => compare(a, b))) {
       if (!/^[A-Z][A-Za-z]+$/.test(event) || !Array.isArray(groups)) continue;
       const index = text.indexOf(`"${event}"`);
@@ -881,6 +892,7 @@ export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
     .map((entry) => ({ ...entry, positions: entry.positions.sort((a, b) => compare(a.path, b.path) || a.line - b.line), handlers: entry.handlers.sort() }))
     .sort((a, b) => compare(a.id, b.id));
   const codeNodes = [...code.nodes, ...extraCodeNodes.values()].sort((a, b) => compare(a.id, b.id));
+  assertUniqueIds([...codeNodes, ...functionNodes]);
   return {
     rules: { 기본과프로젝트: rules, 패턴: patterns, "UI 연결 패턴": uiPatterns, "화면 코드 표시": uiMarkers, "화면 파일": uiFiles },
     codeNodes,
@@ -973,4 +985,16 @@ function unreachedCode(code, functionNodes, extraCodeNodes) {
     startedFrom: functionNodes.reduce((sum, entry) => sum + entry.handlers.length, 0),
     extraCodeNodes: extraCodeNodes.size,
   };
+}
+
+// Two nodes never share an ID: a clash is a defect in ID construction, so the
+// build stops with a reason instead of keeping both.
+export function assertUniqueIds(nodes) {
+  const seen = new Set(),
+    clashes = [];
+  for (const node of nodes) {
+    if (seen.has(node.id)) clashes.push(node.id);
+    seen.add(node.id);
+  }
+  if (clashes.length) fail("PRODUCT_GRAPH_DUPLICATE_NODE_ID", `같은 ID를 가진 노드가 둘 이상이다: ${[...new Set(clashes)].sort().slice(0, 20).join(", ")}`);
 }

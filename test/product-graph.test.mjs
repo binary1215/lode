@@ -564,7 +564,7 @@ test("acceptance 10: the limits block is the first block of build and check text
     assert.equal(block[0], "이 그래프가 답하지 못하는 것");
     assert(block.some((line) => line.includes(`호출 ${result.limits.calls.all}개 중 ${result.limits.calls.resolved}개`)));
     assert(block.some((line) => line.includes("아무것도 실행하지 않았다")));
-    assert(block.some((line) => line.includes("블록 주석이나 여러 줄 문자열")));
+    assert(block.some((line) => line.includes("여러 줄 문자열과 템플릿 문자열")));
     assert(block.some((line) => line.startsWith(`- 문서: 승인 ${result.limits.documents.approved}, 추정 ${result.limits.documents.estimated}`)));
     assert.deepEqual(result.limits.referenceKinds.emitted, ["call", "callback"]);
     assert.deepEqual(result.limits.notExtracted.nodeTypes, ["데이터", "외부 연결", "DB", "계측 이벤트"]);
@@ -657,4 +657,206 @@ test("acceptance 12: IDs carry no line numbers, survive inserted lines, and a va
   assert(built.lists.missingIds.some((item) => item.kind === "정책이 가리키는 기능" && item.id === "cli:reach-tool"));
   assert.match(built.text, /사라진 기능의 뜻: 1개\n {2}- cli:reach-tool — "단계를 차례로 돈다"/);
   assert.deepEqual(fs.readFileSync(meanings), meaningBytes);
+});
+
+// ---------- review findings F1-F4, S1-S7 ----------
+
+function scratchProduct(t, files) {
+  const base = temporary(t);
+  const source = path.join(base, "source");
+  for (const [name, text] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(source, name)), { recursive: true });
+    fs.writeFileSync(path.join(source, name), text);
+  }
+  fs.mkdirSync(path.join(base, "documents"));
+  let run = 0;
+  const build = () => {
+    const out = path.join(base, `out-${(run += 1)}`);
+    const result = buildProductGraph({ sourceRoot: source, documentsDirectory: path.join(base, "documents"), rulesFile: emptyRules, outputDirectory: out });
+    return { result, graph: JSON.parse(fs.readFileSync(path.join(out, "graph.json"), "utf8")) };
+  };
+  return { base, source, build };
+}
+
+test("F1: two same-named declarations on one line get distinct IDs; a duplicate ID stops the build", async (t) => {
+  const { graph } = scratchProduct(t, { "page.js": "function a() { return 1; } function a() { return 2; }\n" }).build();
+  const ids = graph.nodes.filter((node) => node.type === "코드").map((node) => node.id);
+  assert.deepEqual(ids, ["page.js", "page.js#a~1", "page.js#a~2"]);
+  const { assertUniqueIds } = await import("../scripts/lib/world/product-graph-extraction.mjs");
+  assert.throws(() => assertUniqueIds([{ id: "x" }, { id: "x" }]), { code: "PRODUCT_GRAPH_DUPLICATE_NODE_ID" });
+});
+
+test("F2: a lookup call without a literal id names no element; each 기능→코드 edge points at its own wiring site", (t) => {
+  const { graph } = scratchProduct(t, {
+    "page.js": [
+      'const menu = document.getElementById("menu");',
+      'for (const id of ["a", "b"]) $(id).addEventListener("click", () => go(id));',
+      'menu.addEventListener("click", () => openA());',
+      "",
+      "",
+      'menu.addEventListener("click", () => openB());',
+      "function go(id) { return id; }",
+      "function openA() { return 1; }",
+      "function openB() { return 2; }",
+      "",
+    ].join("\n"),
+  }).build();
+  const front = graph.nodes.filter((node) => node.type === "기능").map((node) => node.id);
+  assert.deepEqual(front, ["fe/page/page@click:menu", "fe/page/page@click:요소#1"]);
+  const at = (to) => graph.edges.find((edge) => edge.type === "기능→코드" && edge.from === "fe/page/page@click:menu" && edge.to === to).at.line;
+  assert.equal(at("page.js#openA"), 3);
+  assert.equal(at("page.js#openB"), 6);
+});
+
+test("F3: wiring inside a block comment or a multi-line string is not a 기능", (t) => {
+  const tick = String.fromCharCode(96);
+  const { graph, result } = scratchProduct(t, {
+    "page.js": [
+      'document.getElementById("x");',
+      "/*",
+      '  old.addEventListener("click", save);',
+      "*/",
+      `const help = ${tick}`,
+      '  button.addEventListener("click", load);',
+      `${tick};`,
+      `const live = ${tick}\${document.body.addEventListener("click", real)}${tick};`,
+      "function save() {}",
+      "function load() {}",
+      "function real() {}",
+      "",
+    ].join("\n"),
+  }).build();
+  assert.deepEqual(
+    graph.nodes.filter((node) => node.type === "기능").map((node) => node.id),
+    ["fe/page/page@click:real"],
+  );
+  assert.deepEqual(result.lists.notTakenBindings, []);
+});
+
+test("F4: an ordinary property that starts with 'on' is not a DOM event", (t) => {
+  const { graph, result } = scratchProduct(t, {
+    "page.js": ['document.getElementById("x");', "state.online = true;", "state.only = save;", "button.onclick = save;", "function save() {}", ""].join("\n"),
+  }).build();
+  assert.deepEqual(result.lists.notTakenBindings, []);
+  assert(!graph.edges.some((edge) => edge.type === "callback"));
+  assert.deepEqual(
+    graph.nodes.filter((node) => node.type === "기능").map((node) => node.id),
+    ["fe/page/page@click:save"],
+  );
+});
+
+function link(t, target, at) {
+  try {
+    fs.symlinkSync(target, at, process.platform === "win32" ? "junction" : "dir");
+    return true;
+  } catch (error) {
+    t.diagnostic(`link not created: ${error.code}`);
+    return false;
+  }
+}
+
+test("S1: a linked build/ or 승인/ is refused before anything is written", (t) => {
+  const f = productProject(t);
+  const outside = path.join(f.base, "outside");
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside, "graph.json"), "keep\n");
+  if (!link(t, outside, path.join(f.family, "build"))) return t.skip("cannot create a directory link here");
+  assert.throws(() => buildProductGraph({ root: f.root }), { code: "PRODUCT_GRAPH_LINKED_PATH" });
+  assert.deepEqual(fs.readdirSync(outside), ["graph.json"]);
+  assert.equal(fs.readFileSync(path.join(outside, "graph.json"), "utf8"), "keep\n");
+  fs.unlinkSync(path.join(f.family, "build"));
+  const approvals = path.join(f.base, "approvals-outside");
+  fs.mkdirSync(approvals);
+  assert(link(t, approvals, path.join(f.family, "승인")));
+  const digest = checkProductGraph({ root: f.root }).documents.list.find((item) => item.path === "정책.md").sha256;
+  assert.throws(() => approveProductGraphDocument({ root: f.root, document: "정책.md", expectedSha256: digest, rationale: "ok" }), {
+    code: "PRODUCT_GRAPH_LINKED_PATH",
+  });
+  assert.deepEqual(fs.readdirSync(approvals), []);
+});
+
+test("S2/S3: export names the family files it does not carry; a file named like a family folder is not a crash", (t) => {
+  const f = productProject(t);
+  fs.writeFileSync(path.join(f.family, "메모.md"), "note\n");
+  fs.writeFileSync(path.join(f.family, "화면설계서", "cht-01.md"), "near miss\n");
+  fs.rmSync(path.join(f.family, "유저플로우 기획서"), { recursive: true });
+  fs.writeFileSync(path.join(f.family, "유저플로우 기획서"), "a file, not a folder\n");
+  const exported = f.route(() => exportProjectBundle({ root: f.root, destination: path.join(f.base, "bundle") }));
+  assert.equal(exported.status, "exported");
+  assert.deepEqual(exported.productGraphNotCarried.sort(), [
+    ".lode/context/product-graph/메모.md",
+    ".lode/context/product-graph/유저플로우 기획서",
+    ".lode/context/product-graph/화면설계서/cht-01.md",
+  ]);
+  const copy = path.join(f.base, "copy");
+  fs.cpSync(f.root, copy, { recursive: true });
+  const file = path.join(copy, ".lode/project.json");
+  fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file)), projectRoot: "C:/unverified-origin/synthetic-project" }, null, 2) + "\n");
+  const manifestFile = path.join(copy, ".lode/generated/manifest.json"),
+    manifest = JSON.parse(fs.readFileSync(manifestFile));
+  manifest.managed.find((entry) => entry.path === ".lode/project.json").sha256 = sha(fs.readFileSync(file));
+  fs.writeFileSync(manifestFile, JSON.stringify(manifest, null, 2) + "\n");
+  assert.equal(adoptVerifiedProjectCopy({ root: copy, pluginRoot }).status, "verified-copy-adopted");
+});
+
+const nfd = (text) => text.normalize("NFD");
+
+test("S4: NFC and NFD spellings of one document name are a listed problem, never two documents", (t) => {
+  const f = productProject(t);
+  fs.writeFileSync(path.join(f.family, nfd("정책.md")), "# 정책\n\n다른 내용\n");
+  if (fs.readdirSync(f.family).filter((name) => name.normalize("NFC") === "정책.md").length < 2) return t.skip("this filesystem keeps one spelling");
+  const result = checkProductGraph({ root: f.root });
+  assert(!result.documents.list.some((item) => item.path === "정책.md"));
+  assert(result.lists.formatIssues.some((item) => item.path === "정책.md" && item.kind.startsWith("유니코드 정규화만 다른")));
+  assert.throws(() => approveProductGraphDocument({ root: f.root, document: "정책.md", expectedSha256: "0".repeat(64), rationale: "x" }), {
+    code: "PRODUCT_GRAPH_NAME_TWIN",
+  });
+  assert.throws(() => f.route(() => exportProjectBundle({ root: f.root, destination: path.join(f.base, "bundle") })), { code: "PRODUCT_GRAPH_NAME_TWIN" });
+});
+
+test("S5: a family folder stored under its NFD name does not block snapshot GC; an approval record is a verified root", async (t) => {
+  const f = productProject(t);
+  const digest = checkProductGraph({ root: f.root }).documents.list.find((item) => item.path === "정책.md").sha256;
+  approveProductGraphDocument({ root: f.root, document: "정책.md", expectedSha256: digest, rationale: "ok" });
+  const before = tree(f.family);
+  let closure = await buildSnapshotDeletionClosure({ root: f.root });
+  assert.deepEqual(
+    closure.issues.filter((item) => item.path.normalize("NFC").includes("product-graph")),
+    [],
+  );
+  assert(closure.entries.some((row) => /\/승인\/product-graph-approval-[a-f0-9]{24}\.json$/.test(row.path)));
+  fs.renameSync(path.join(f.family, "화면설계서"), path.join(f.family, nfd("화면설계서")));
+  if (fs.readdirSync(f.family).includes(nfd("화면설계서"))) {
+    closure = await buildSnapshotDeletionClosure({ root: f.root });
+    assert.deepEqual(
+      closure.issues.filter((item) => item.path.normalize("NFC").includes("product-graph")),
+      [],
+    );
+  }
+  fs.renameSync(path.join(f.family, nfd("화면설계서")), path.join(f.family, "화면설계서"));
+  assert.deepEqual(tree(f.family), before);
+});
+
+test("S6: stand-alone --out may not be the documents folder or the source root", (t) => {
+  const base = temporary(t);
+  const documents = path.join(base, "documents");
+  fs.cpSync(signalDocuments, documents, { recursive: true });
+  for (const out of [documents, path.join(documents, "out"), signalProduct])
+    assert.throws(() => buildProductGraph({ sourceRoot: signalProduct, documentsDirectory: documents, rulesFile: emptyRules, outputDirectory: out }), {
+      code: "PRODUCT_GRAPH_OUTPUT_OVERLAPS",
+    });
+});
+
+test("S7: an oversized family file is refused from its size, before it is read", (t) => {
+  const f = productProject(t);
+  const big = path.join(f.family, "정책.md");
+  fs.writeFileSync(big, "x".repeat(1024 * 1024 + 1));
+  const read = fs.readFileSync;
+  let readBig = false;
+  t.mock.method(fs, "readFileSync", function (file, ...rest) {
+    if (String(file) === big) readBig = true;
+    return read.call(this, file, ...rest);
+  });
+  assert.throws(() => checkProductGraph({ root: f.root }), { code: "PRODUCT_GRAPH_FILE_TOO_LARGE" });
+  assert.equal(readBig, false);
 });
