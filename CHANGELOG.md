@@ -11,6 +11,45 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.125 — publication tracked separately
+
+- Fix: the source scan no longer loses declarations and calls after text it
+  misread. It is the scan behind the World model, the project graph and the
+  product graph's 코드 layer.
+  - Before, a template literal inside another template's `${…}`, or a
+    regular expression containing a quote or a backtick, flipped the scan's
+    idea of what is a string. Everything up to the next matching quote,
+    sometimes hundreds of lines, was skipped. In Lode's own `scripts/`, 207
+    of 3,619 top-level functions were not found, in 27 files; now 6 are not,
+    and those 6 really are inside strings.
+  - JavaScript and TypeScript are now read by one lexer that follows nested
+    `${…}`, regular-expression literals and comments. The product graph
+    already used it, so the two no longer disagree. Code inside a
+    template's `${…}` is read as code. Python is read as before.
+  - Generator declarations (`function* name`) are found.
+  - Text inside a string, a regular expression or a template that only
+    looked like a declaration is no longer reported as one.
+  - When the lexer cannot trust its reading of a file (the file ends inside
+    a template, a block comment or `${…}`), a character counts as code if
+    either the lexer or the earlier quote scan says so, so the rest of the
+    file is not dropped.
+  - The Go worker's copy of the scan has the same change, and the shared
+    corpus has a parity file with CRLF line ends, a non-BMP character and a
+    no-break space.
+  - Source analysis version 0.3.2. Stored scans of 0.3.1 stay readable and
+    are analysed again instead of being reused, so the next World build
+    scans every file once. No stored format changes.
+- Fix (product graph, since 0.3.0-beta.124): with `"처리 코드": "항목"`, a
+  table row containing a template literal with `${…}` made every 기능 of
+  that table take the handlers of the whole table. The `${` that opens a
+  template expression is no longer counted as a bracket.
+- Limits: scanning Lode's own repository takes about 1.2 times as long as
+  before. A file read with reduced confidence is listed by the product
+  graph but is not marked in the World model's stored scan. On Lode itself
+  the product graph now resolves 21,963 of 62,294 calls. The Go change was
+  not compiled or run locally; CI builds and tests it and compares its
+  output with the JavaScript scan.
+
 ## 0.3.0-beta.124 — publication tracked separately
 
 - New: 제품 그래프 (product graph), a second description of a product next to
