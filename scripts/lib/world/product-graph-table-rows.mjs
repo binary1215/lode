@@ -38,36 +38,87 @@ function matchingClose(text, mask, open) {
 //  - a Python decorator line: the decorated definition (handled by the caller);
 //  - otherwise: the statement holding index (a registration call, a call
 //    chain continuing on lines that start with ".").
-export function findRow(text, mask, index, python) {
+// Partner of every bracket that is code: an opener's matching closer and a
+// closer's matching opener, or -1. Computed once per file.
+export function bracketPairs(text, mask) {
+  const partner = new Int32Array(text.length).fill(-1);
+  const stack = [];
+  for (let index = 0; index < text.length; index += 1) {
+    if (!mask[index]) continue;
+    const character = text[index];
+    if (OPEN.includes(character)) stack.push(index);
+    else if (CLOSE.includes(character)) {
+      if (stack.length && text[stack.at(-1)] === PAIR[character]) {
+        const open = stack.pop();
+        partner[open] = index;
+        partner[index] = open;
+      }
+    }
+  }
+  return partner;
+}
+
+// Start offset of every line (0-based offsets of line 1, 2, ...).
+export function lineStarts(text) {
+  const starts = [0];
+  for (let index = text.indexOf("\n"); index >= 0; index = text.indexOf("\n", index + 1)) starts.push(index + 1);
+  return starts;
+}
+
+function lineAt(starts, index) {
+  let low = 0,
+    high = starts.length - 1;
+  while (low < high) {
+    const middle = (low + high + 1) >>> 1;
+    if (starts[middle] <= index) low = middle;
+    else high = middle - 1;
+  }
+  return low + 1;
+}
+
+// The row that holds index:
+//  - inside a list / object / dict literal: the direct element (between
+//    top-level commas) of the outermost such literal, not crossing a
+//    function, class or block body;
+//  - a decorator line (the match's line starts with "@"): the decorated
+//    definition (resolved by the caller);
+//  - otherwise: the statement holding index, started only by brackets opened
+//    inside the innermost enclosing body (a registration call, a call chain
+//    continuing on lines that start with ".").
+export function findRow(text, mask, index, python, pairs = bracketPairs(text, mask)) {
+  // Enclosing openers, innermost first: walk back, jumping over closed pairs.
   const openers = [];
-  const closers = [];
   for (let position = index - 1; position >= 0; position -= 1) {
     if (!mask[position]) continue;
     const character = text[position];
-    if (CLOSE.includes(character)) closers.push(character);
-    else if (OPEN.includes(character)) {
-      if (closers.length && PAIR[closers.at(-1)] === character) closers.pop();
-      else openers.push(position);
-    }
+    if (CLOSE.includes(character) && pairs[position] >= 0) position = pairs[position];
+    else if (OPEN.includes(character) && (pairs[position] < 0 || pairs[position] >= index)) openers.push(position);
   }
   let literal = null;
+  const insideBody = [];
   for (const open of openers) {
     const character = text[open];
-    if (character === "(") continue;
+    if (character === "(") {
+      insideBody.push(open);
+      continue;
+    }
     const before = previousSignificant(text, mask, open);
     const previous = before < 0 ? "" : text[before];
     if (character === "[") {
+      insideBody.push(open);
       if (/[\w$)\]]/.test(previous) && !LITERAL_KEYWORDS.has(wordBefore(text, before))) continue; // index access
       literal = open;
       continue;
     }
     // "{": a Python brace is always a literal; in JavaScript a brace after an
     // operator or at the start of an element is an object, anything else a body.
-    if (python || previous === "" || "(,=:[?".includes(previous) || LITERAL_KEYWORDS.has(wordBefore(text, before))) literal = open;
-    else break;
+    if (python || previous === "" || "(,=:[?".includes(previous) || LITERAL_KEYWORDS.has(wordBefore(text, before))) {
+      insideBody.push(open);
+      literal = open;
+    } else break;
   }
   if (literal !== null) {
-    const close = matchingClose(text, mask, literal);
+    const close = pairs[literal] >= 0 ? pairs[literal] : text.length;
     let start = literal + 1,
       depth = 0;
     for (let position = literal + 1; position < close; position += 1) {
@@ -83,18 +134,35 @@ export function findRow(text, mask, index, python) {
     return { kind: "element", start, end: close };
   }
   const lineStart = text.lastIndexOf("\n", index - 1) + 1;
-  if (python && /^\s*@/.test(text.slice(lineStart, index)))
-    return { kind: "decorator", start: lineStart, end: text.indexOf("\n", index) < 0 ? text.length : text.indexOf("\n", index) };
-  const outermostParen = openers.filter((open) => text[open] === "(").at(-1);
-  const start = outermostParen === undefined ? lineStart : text.lastIndexOf("\n", outermostParen - 1) + 1;
+  const lineEnd = text.indexOf("\n", index) < 0 ? text.length : text.indexOf("\n", index);
+  if (/^\s*@/.test(text.slice(lineStart, lineEnd))) return { kind: "decorator", start: lineStart, end: lineEnd };
+  // Only brackets opened inside the innermost enclosing body start the statement.
+  const outermostParen = insideBody.filter((open) => text[open] === "(").at(-1);
+  // The body the walk stopped at bounds the statement's start.
+  const body = openers.find((open) => !insideBody.includes(open));
+  const bound = body === undefined ? 0 : body + 1;
+  let start = Math.max(bound, outermostParen === undefined ? lineStart : text.lastIndexOf("\n", outermostParen - 1) + 1);
   let depth = 0;
-  for (let position = start; position < text.length; position += 1) {
+  // A ";", a line end or an unmatched closer before index ends an earlier
+  // statement: the row starts after it.
+  const boundary = (position) => {
+    if (position < index) {
+      start = position + 1;
+      return null;
+    }
+    return { kind: "statement", start, end: position };
+  };
+  for (let position = outermostParen ?? start; position < text.length; position += 1) {
     if (!mask[position]) continue;
     const character = text[position];
+    let ended = null;
     if (OPEN.includes(character)) depth += 1;
-    else if (CLOSE.includes(character)) depth = Math.max(0, depth - 1);
-    else if (depth === 0 && character === ";") return { kind: "statement", start, end: position };
-    else if (depth === 0 && character === "\n" && !/^\s*\./.test(text.slice(position + 1, position + 200))) return { kind: "statement", start, end: position };
+    else if (CLOSE.includes(character)) {
+      if (depth === 0) ended = boundary(position);
+      else depth -= 1;
+    } else if (depth === 0 && character === ";") ended = boundary(position);
+    else if (depth === 0 && character === "\n" && !/^\s*\./.test(text.slice(position + 1, position + 200))) ended = boundary(position);
+    if (ended) return ended;
   }
   return { kind: "statement", start, end: text.length };
 }
@@ -107,7 +175,7 @@ const IDENTIFIER = /[A-Za-z_$][\w$]*/y;
 //   import("<path>").then((m) => m.<name>)      (also "m => m.<name>")
 //   (await import("<path>")).<name>
 //   const { <name>, <name>: <alias> } = await import("<path>")
-export function dynamicImports(text, mask) {
+export function dynamicImports(text, mask, starts = lineStarts(text)) {
   const found = [];
   for (const match of text.matchAll(/\bimport\s*\(/g)) {
     const at = match.index;
@@ -128,7 +196,7 @@ export function dynamicImports(text, mask) {
         }
       }
     }
-    const line = text.slice(0, at).split("\n").length;
+    const line = lineAt(starts, at);
     const members = [];
     if (specifier !== null) {
       const rest = text.slice(position, position + 300);

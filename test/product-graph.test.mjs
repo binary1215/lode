@@ -1141,13 +1141,36 @@ test("acceptance 20: each table row names its own 처리 코드, never the table
     "cli:compile": ["handlers.py#run_build"],
     "cli:clean": ["handlers.py#run_clean"],
     "cli:broken": [],
+    // A statement row never crosses a function, class or block body.
+    "cli:open": ["wiring.mjs#openDoc"],
+    "cli:close": ["wiring.mjs#closeDoc"],
+    "cli:print": ["wiring.mjs#printDoc"],
+    // A decorator is read from the match's line, whether the pattern starts
+    // with "@" or after it; blank lines and other decorators are skipped.
+    "cli:greet": ["decorated.py#greet"],
+    "cli:leave": ["decorated.py#leave"],
+    "cli:wave": ["decorated_after.py#wave"],
+    "cli:hide": [],
+    // Partly resolved: the name that resolved stays the 처리 코드.
+    "cli:plugin": ["wiring.mjs#pluginPath"],
   };
   for (const [id, handlers] of Object.entries(expected)) assert.deepEqual(handler(id), handlers, id);
   for (const node of graph.nodes.filter((item) => item.type === "기능")) assert(!handler(node.id).includes("commands.mjs"), node.id);
   assert.deepEqual(
     result.lists.unresolvedHandlers.map((item) => [item.id, item.reason]),
-    [["cli:broken", "항목의 동적 import가 경로를 글자로 쓰지 않았거나 같은 식에서 이름을 꺼내지 않음"]],
+    [
+      ["cli:broken", "항목의 동적 import가 경로를 글자로 쓰지 않았거나 같은 식에서 이름을 꺼내지 않음"],
+      ["cli:hide", "데코레이터가 꾸미는 정의를 스캔이 선언으로 갖고 있지 않음 (JS·TS 클래스 메서드는 선언이 아니다)"],
+    ],
   );
+  assert.deepEqual(result.lists.partlyResolvedRows, [
+    {
+      id: "cli:plugin",
+      position: { path: "wiring.mjs", line: 24 },
+      reason: "일부만 풀림: 항목의 동적 import가 경로를 글자로 쓰지 않았거나 같은 식에서 이름을 꺼내지 않음",
+    },
+  ]);
+  assert.match(result.text, /표 항목의 일부만 풀린 기능: 1개/);
   const unreached = result.lists.unreachedCode.files.flatMap((file) => file.declarations);
   assert(unreached.includes("commands.mjs#neverNamed"));
   assert(!unreached.includes("files.mjs#writeOut"), "called only by row (a)'s handler");
@@ -1164,7 +1187,7 @@ test("acceptance 20: each table row names its own 처리 코드, never the table
   assert.match(result.text.split("\n\n")[0], /처리 코드를 표 항목에서 찾는 규칙은/);
   // A literal dynamic import is a call to the member it names, everywhere.
   assert(graph.edges.some((edge) => edge.type === "call" && edge.to === "lazy.mjs#runLazy"));
-  assert.equal(result.lists.unresolvedReferences.byReason.find((reason) => reason.reason === "dynamic-import").count, 1);
+  assert.equal(result.lists.unresolvedReferences.byReason.find((reason) => reason.reason === "dynamic-import").count, 2);
 });
 
 test("acceptance 21: on Lode itself no tool: or cli: 기능 of the registry has the registry file as 처리 코드", (t) => {

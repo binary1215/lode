@@ -660,6 +660,7 @@ function compute({ extraction, loaded, includeEstimates }) {
       notLookedAt: extraction.notLookedAt,
       unresolvedHandlers: extraction.unresolvedHandlers,
       multiRowFunctions: extraction.multiRowFunctions,
+      partlyResolvedRows: extraction.partlyResolvedRows,
       notTakenBindings: extraction.notTakenBindings,
       uiWithoutRule: extraction.uiWithoutRule,
       outOfScope: extraction.outOfScope,
@@ -929,6 +930,10 @@ export function renderProductGraphText(result) {
   if (looked.skipped.length) lines.push(`  건너뛴 것: ${looked.skipped.map((item) => `${item.reason} ${item.count}`).join(", ")}`);
   lines.push(`사라진 기능의 뜻: ${lists.vanishedMeanings.length}개`);
   lines.push(...listLines(lists.vanishedMeanings, (item) => `${item.id} — "${item.text}" (${where(item.at)})`));
+  if (lists.partlyResolvedRows.length) {
+    lines.push(`표 항목의 일부만 풀린 기능: ${lists.partlyResolvedRows.length}개 (풀린 처리 코드는 그대로 쓰고, 풀리지 않은 부분을 적는다)`);
+    lines.push(...listLines(lists.partlyResolvedRows, (item) => `${item.id} (${where(item.position)}) — ${item.reason}`));
+  }
   if (lists.multiRowFunctions.length) {
     lines.push(`여러 표 항목에서 나온 기능: ${lists.multiRowFunctions.length}개 (모든 항목의 처리 코드를 함께 쓴다. 언급까지 맞는 패턴이면 규칙을 고친다)`);
     lines.push(...listLines(lists.multiRowFunctions, (item) => `${item.id} — ${item.positions.map(where).join(", ")}`));
@@ -993,7 +998,7 @@ const UI_SCAN_LIMITS = Object.freeze([
 ]);
 
 const TABLE_ROW_LIMITS =
-  "처리 코드를 표 항목에서 찾는 규칙은 맞은 곳을 감싼 리스트·객체·딕셔너리의 원소(그런 것이 없으면 그 문장, Python 데코레이터면 꾸미는 정의)를 함수 본문처럼 읽는다: 값으로 쓴 함수 이름, 항목 안 함수의 호출, 경로를 글자로 쓴 동적 import에서 같은 식으로 꺼낸 이름. 한 항목에서 나온 기능 둘은 그 항목의 처리 코드를 함께 쓴다. Python의 동적 import(importlib)는 읽지 않는다.";
+  "처리 코드를 표 항목에서 찾는 규칙은 맞은 곳을 감싼 리스트·객체·딕셔너리의 원소(그런 것이 없으면 그 문장, 데코레이터 줄이면 꾸미는 정의(스캔이 그 정의를 선언으로 가질 때만: JS·TS 클래스 메서드는 선언이 아니라 읽지 못한다))를 함수 본문처럼 읽는다: 값으로 쓴 함수 이름, 항목 안 함수의 호출, 경로를 글자로 쓴 동적 import에서 같은 식으로 꺼낸 이름. 한 항목에서 나온 기능 둘은 그 항목의 처리 코드를 함께 쓴다. Python의 동적 import(importlib)는 읽지 않는다.";
 
 // One object for the structured result and generated files; the text renders
 // it first. Facts here are not repeated elsewhere in the text.

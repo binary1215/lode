@@ -8,7 +8,7 @@ import { analyzeSourceFile, classifySourcePath } from "./source-analysis.mjs";
 import { REPOSITORY_SCAN_EXCLUDED_DIRECTORIES } from "./repository-scan.mjs";
 import { BUILT_IN_UI_MARKERS, BUILT_IN_UI_PATTERNS } from "./product-graph-ui-patterns.mjs";
 import { codeMask, codeMaskKind } from "./product-graph-code-mask.mjs";
-import { dynamicImports, findRow, rowNames } from "./product-graph-table-rows.mjs";
+import { bracketPairs, dynamicImports, findRow, lineStarts, rowNames } from "./product-graph-table-rows.mjs";
 import { failCode as fail } from "../core/errors.mjs";
 
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
@@ -922,6 +922,7 @@ export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
 
   // tool / cli by project pattern rules.
   const rowsOf = new Map();
+  const partlyResolved = [];
   for (const rule of patterns) {
     for (const relative of rule.파일) {
       if (!fileSet.has(relative)) {
@@ -942,6 +943,7 @@ export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
           rowsOf.get(id).set(`${relative}:${row.start}`, position);
           if (row.targets.length) for (const handler of row.targets) addFunction({ id, kind: rule.종류, position, handler, rule });
           else addFunction({ id, kind: rule.종류, position, handlerReason: row.reason, rule });
+          if (row.partial) partlyResolved.push({ id, position, reason: `일부만 풀림: ${row.partial}` });
           continue;
         }
         const handler = rule["처리 코드"] === "파일" ? fileNode(relative) : enclosingCode(code, relative, line) || fileNode(relative);
@@ -995,6 +997,7 @@ export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
       .map(([id, rows]) => ({ id, positions: [...rows.values()].sort((a, b) => compare(a.path, b.path) || a.line - b.line) }))
       .sort((a, b) => compare(a.id, b.id)),
     tableRowRules: patterns.filter((rule) => rule["처리 코드"] === "항목").length,
+    partlyResolvedRows: partlyResolved.sort((a, b) => compare(a.id, b.id) || compare(a.position.path, b.position.path) || a.position.line - b.position.line),
     unresolvedHandlers: unresolvedHandlers.sort(
       (a, b) => compare(a.id, b.id) || compare(a.position.path, b.position.path) || a.position.line - b.position.line,
     ),
@@ -1121,17 +1124,33 @@ function startsInCodeOnLine(text, index, python) {
 function readTableRow(code, relative, text, index) {
   const analysis = code.analyses.get(relative);
   const python = relative.endsWith(".py");
-  const mask = codeMask(text, python ? "python" : "javascript");
-  if (!mask.trusted) mask.fill(1);
-  const row = findRow(text, mask, index, python);
+  // Per file, once: the code mask, its bracket pairs, line starts and the
+  // dynamic imports. A file read for several rows reuses them.
+  code.rowFiles ??= new Map();
+  if (!code.rowFiles.has(relative)) {
+    const mask = codeMask(text, python ? "python" : "javascript");
+    if (!mask.trusted) mask.fill(1);
+    const starts = lineStarts(text);
+    code.rowFiles.set(relative, { mask, pairs: bracketPairs(text, mask), starts, dynamic: python ? [] : dynamicImports(text, mask, starts) });
+  }
+  const { mask, pairs, dynamic } = code.rowFiles.get(relative);
+  const row = findRow(text, mask, index, python, pairs);
   const targets = new Map();
-  if (row.kind === "decorator" && analysis) {
-    const line = lineOf(text, index);
-    const next = analysis.symbols
-      .filter((symbol) => (symbol.kind === "function" || symbol.kind === "class") && symbol.line > line)
-      .sort((a, b) => a.line - b.line)[0];
-    if (next) targets.set(next.id, next);
-    return { ...row, targets: [...targets.keys()].sort(), reason: next ? null : "데코레이터 아래에 정의가 없음" };
+  if (row.kind === "decorator") {
+    // The decorated definition: the first line after the decorator lines that
+    // is neither blank nor another decorator, if the scan has a declaration there.
+    const lines = text.slice(row.end + 1).split("\n");
+    let offset = 1;
+    while (offset <= lines.length && /^\s*(?:@|$)/.test(lines[offset - 1])) offset += 1;
+    const line = lineOf(text, index) + offset;
+    const decorated = analysis?.symbols.find((symbol) => (symbol.kind === "function" || symbol.kind === "class") && symbol.line === line);
+    if (decorated) targets.set(decorated.id, decorated);
+    return {
+      ...row,
+      targets: [...targets.keys()].sort(),
+      reason: decorated ? null : "데코레이터가 꾸미는 정의를 스캔이 선언으로 갖고 있지 않음 (JS·TS 클래스 메서드는 선언이 아니다)",
+      partial: null,
+    };
   }
   const { names, members } = rowNames(text, mask, row.start, row.end);
   for (const name of names) {
@@ -1143,21 +1162,22 @@ function readTableRow(code, relative, text, index) {
     if (target) targets.set(target.id, target);
   }
   let dynamicReason = null;
-  if (!python)
-    for (const item of dynamicImports(text, mask).filter((entry) => entry.index >= row.start && entry.index < row.end)) {
-      const outcome = code.resolveDynamic(relative, item);
-      if (outcome.targets) for (const target of outcome.targets) targets.set(target.id, target);
-      else
-        dynamicReason =
-          outcome.reason === "dynamic-import"
-            ? "항목의 동적 import가 경로를 글자로 쓰지 않았거나 같은 식에서 이름을 꺼내지 않음"
-            : outcome.reason === "external-import"
-              ? "항목의 동적 import가 제품 밖 모듈을 가리킴"
-              : "항목의 동적 import가 가리키는 모듈에서 그 이름의 함수·클래스 선언을 찾지 못함 (상수일 수 있음)";
-    }
+  for (const item of dynamic.filter((entry) => entry.index >= row.start && entry.index < row.end)) {
+    const outcome = code.resolveDynamic(relative, item);
+    if (outcome.targets) for (const target of outcome.targets) targets.set(target.id, target);
+    else
+      dynamicReason =
+        outcome.reason === "dynamic-import"
+          ? "항목의 동적 import가 경로를 글자로 쓰지 않았거나 같은 식에서 이름을 꺼내지 않음"
+          : outcome.reason === "external-import"
+            ? "항목의 동적 import가 제품 밖 모듈을 가리킴"
+            : "항목의 동적 import가 가리키는 모듈에서 그 이름의 함수·클래스 선언을 찾지 못함 (상수일 수 있음)";
+  }
   return {
     ...row,
     targets: [...targets.keys()].sort(),
     reason: targets.size ? null : dynamicReason || "항목 안에 하나의 선언으로 풀리는 이름이 없음",
+    // Some of the row resolved, but a dynamic import in it did not.
+    partial: targets.size && dynamicReason ? dynamicReason : null,
   };
 }
