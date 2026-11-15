@@ -8,7 +8,7 @@ import { analyzeSourceFile, classifySourcePath, methodDefinitionSites, signature
 import { REPOSITORY_SCAN_EXCLUDED_DIRECTORIES } from "./repository-scan.mjs";
 import { BUILT_IN_UI_MARKERS, BUILT_IN_UI_PATTERNS } from "./product-graph-ui-patterns.mjs";
 import { codeMask, codeMaskKind } from "./source-code-mask.mjs";
-import { bracketPairs, dynamicImports, findRow, lineStarts, rowNames } from "./product-graph-table-rows.mjs";
+import { bracketPairs, dynamicImports, findRow, lineStarts, rowNames, statementCallChain } from "./product-graph-table-rows.mjs";
 import { effectiveGlobals } from "./product-graph-builtins.mjs";
 import { bindingAt, definedMemberNames, javascriptFacts, pythonFacts } from "./product-graph-scopes.mjs";
 import { failCode as fail } from "../core/errors.mjs";
@@ -1497,7 +1497,10 @@ function readTableRow(code, relative, text, index) {
       partial: null,
     };
   }
-  const { names, members } = rowNames(text, mask, row.start, row.end);
+  // In a statement row the registering call itself is not a handler; its
+  // arguments are read as before. Element rows are read whole.
+  const skip = row.kind === "statement" ? statementCallChain(text, mask, pairs, row.start, row.end, index) : [];
+  const { names, members } = rowNames(text, mask, row.start, row.end, skip);
   for (const name of names) {
     const target = code.resolveName(relative, name);
     if (target && target.kind !== "file") targets.set(target.id, target);

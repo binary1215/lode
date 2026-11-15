@@ -283,9 +283,43 @@ const NOT_NAMES = new Set([
 
 // Names in a row that may name code: a plain name that is not an object key
 // and not a member after ".", and "namespace.member" pairs.
-export function rowNames(text, mask, start, end) {
+// The statement's own call chain in a statement row: "registry.register(...)",
+// "program.command(...).action(...)", after "await", "return", "export
+// default" or an assignment. Returns the callee ranges [start, end) when the
+// match (index) lies in that chain, else none. The function that performs a
+// registration is not the code that receives the request.
+export function statementCallChain(text, mask, pairs, start, end, index) {
+  let position = start;
+  const blanks = () => {
+    while (position < end && /\s/.test(text[position])) position += 1;
+  };
+  blanks();
+  const prefix = /^(?:(?:await|return|void|yield)\s+|export\s+default\s+|(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*|[A-Za-z_$][\w$.]*\s*=(?![=>])\s*)/.exec(
+    text.slice(position, Math.min(end, position + 200)),
+  );
+  if (prefix) position += prefix[0].length;
+  const ranges = [];
+  let chainStart = -1,
+    chainEnd = -1;
+  for (let first = true; ; first = false) {
+    const callee = (first ? /^[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*/ : /^\s*\.\s*[A-Za-z_$][\w$]*/).exec(text.slice(position, end));
+    if (!callee || !bracketCode(mask, position + callee[0].search(/\S/))) break;
+    const calleeEnd = position + callee[0].length;
+    let open = calleeEnd;
+    while (open < end && /\s/.test(text[open])) open += 1;
+    if (text[open] !== "(" || !bracketCode(mask, open) || pairs[open] < 0) break;
+    ranges.push([position, calleeEnd]);
+    if (chainStart < 0) chainStart = position;
+    chainEnd = pairs[open];
+    position = pairs[open] + 1;
+  }
+  return chainStart >= 0 && index >= chainStart && index <= chainEnd ? ranges : [];
+}
+
+export function rowNames(text, mask, start, end, skip = []) {
   let view = "";
-  for (let index = start; index < end; index += 1) view += bracketCode(mask, index) ? text[index] : " ";
+  for (let index = start; index < end; index += 1)
+    view += bracketCode(mask, index) && !skip.some(([from, to]) => index >= from && index < to) ? text[index] : " ";
   const names = new Set(),
     members = [];
   for (const match of view.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*)(?:\s*\.\s*([A-Za-z_$][\w$]*))?/g)) {

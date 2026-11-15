@@ -19,9 +19,20 @@
       "파일": [
         "commands.mjs",
         "wiring.mjs",
-        "templates.mjs"
+        "templates.mjs",
+        "registered.mjs"
       ],
       "패턴": "\\.register\\(\"([a-z]+)\"",
+      "처리 코드": "항목"
+    },
+    {
+      "종류": "cli",
+      "판단": true,
+      "설명": "Commands registered through a chained call.",
+      "파일": [
+        "registered.mjs"
+      ],
+      "패턴": "\\.command\\(\"([a-z]+)\"\\)",
       "처리 코드": "항목"
     },
     {

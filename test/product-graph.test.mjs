@@ -1164,6 +1164,10 @@ test("acceptance 20: each table row names its own 처리 코드, never the table
     "tool:print": ["template-handlers.mjs#printFile"],
     "tool:last": ["template-handlers.mjs#saveFile"],
     "cli:tail": ["templates.mjs#afterBanner"],
+    // The registering call itself is not a handler, even when the registrar
+    // is product code; its arguments are.
+    "cli:sync": ["registered.mjs#syncNow"],
+    "cli:push": ["registered.mjs#pushAll"],
   };
   for (const [id, handlers] of Object.entries(expected)) assert.deepEqual(handler(id), handlers, id);
   for (const node of graph.nodes.filter((item) => item.type === "기능")) assert(!handler(node.id).includes("commands.mjs"), node.id);
