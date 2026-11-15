@@ -4,13 +4,13 @@
 // clock, and no absolute path enters the result.
 import fs from "node:fs";
 import path from "node:path";
-import { analyzeSourceFile, classifySourcePath, methodDefinitionSites } from "./source-analysis.mjs";
+import { analyzeSourceFile, classifySourcePath, methodDefinitionSites, signatureSites } from "./source-analysis.mjs";
 import { REPOSITORY_SCAN_EXCLUDED_DIRECTORIES } from "./repository-scan.mjs";
 import { BUILT_IN_UI_MARKERS, BUILT_IN_UI_PATTERNS } from "./product-graph-ui-patterns.mjs";
 import { codeMask, codeMaskKind } from "./source-code-mask.mjs";
 import { bracketPairs, dynamicImports, findRow, lineStarts, rowNames } from "./product-graph-table-rows.mjs";
 import { effectiveGlobals } from "./product-graph-builtins.mjs";
-import { bindingAt, javascriptFacts, pythonFacts } from "./product-graph-scopes.mjs";
+import { bindingAt, definedMemberNames, javascriptFacts, pythonFacts } from "./product-graph-scopes.mjs";
 import { failCode as fail } from "../core/errors.mjs";
 
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
@@ -139,7 +139,7 @@ function assignSymbolIds(relative, symbols) {
   }
 }
 
-const LANGUAGE_KEYWORDS = new Set(["async", "await", "elif", "except", "import", "in", "is", "not", "or", "and", "super", "yield", "print"]);
+const LANGUAGE_KEYWORDS = new Set(["async", "await", "elif", "except", "import", "in", "is", "not", "or", "and", "super", "yield"]);
 
 // Why an unresolved call stayed unresolved. Only what the scan determined;
 // every unresolved call is counted under exactly one reason. The "group" says
@@ -204,7 +204,8 @@ export const UNRESOLVED_REASONS = Object.freeze([
   Object.freeze({
     key: "inherited",
     group: "product",
-    label: "상속받은 멤버일 수 있음: 클래스에 그 이름이 없고 클래스가 다른 클래스를 상속함 (super.x( 포함)",
+    label:
+      "상속받은 멤버일 수 있음: 클래스에 그 이름의 메서드가 없고, 클래스가 다른 클래스를 상속하거나 그 이름을 본문 없는 선언(abstract, 시그니처)으로만 가짐 (super.x( 포함)",
     settle: "상속을 따라가는 해석기",
   }),
   Object.freeze({
@@ -272,18 +273,63 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
     const text = readText(sourceRoot, relative);
     if (text === null) continue;
     const language = CODE_LANGUAGES[path.posix.extname(relative).toLowerCase()];
-    const { maskedText, ...analysis } = analyzeSourceFile(text, language, path.posix.basename(relative), {
+    const { maskedText, classBodies, ...analysis } = analyzeSourceFile(text, language, path.posix.basename(relative), {
       maxSymbols: 10_000,
       withCallIndexes: true,
       withMaskedText: true,
     });
     assignSymbolIds(relative, analysis.symbols);
     const starts = lineStarts(text);
-    const facts =
+    const sites = language === "python" ? [] : methodDefinitionSites(maskedText, text);
+    const signatures =
       language === "python"
-        ? pythonFacts(text, maskedText, analysis.symbols, starts)
-        : javascriptFacts(text, maskedText, methodDefinitionSites(maskedText, text));
-    analyses.set(relative, { text, language, lineCount: text.split("\n").length, starts, facts, ...analysis });
+        ? []
+        : signatureSites(
+            maskedText,
+            classBodies.map((body) => body.open),
+          );
+    const facts = language === "python" ? pythonFacts(text, maskedText, analysis.symbols, starts) : javascriptFacts(text, maskedText, sites);
+    // Names a class has only as a signature without a body (abstract, overloads).
+    const bodyOwner = new Map(classBodies.map((body) => [body.open, body.qualifiedName]));
+    const abstractMembers = new Map();
+    for (const site of signatures) {
+      const owner = bodyOwner.get(site.owner);
+      if (!owner) continue;
+      if (!abstractMembers.has(owner)) abstractMembers.set(owner, new Set());
+      abstractMembers.get(owner).add(site.name);
+    }
+    // "new C(...)" is a reference to C (and so to its constructor): read here
+    // as a call of the product graph, not a call fact of the shared scan.
+    const lineAtIndex = (index) => {
+      let low = 0,
+        high = starts.length - 1;
+      while (low < high) {
+        const middle = (low + high + 1) >>> 1;
+        if (starts[middle] <= index) low = middle;
+        else high = middle - 1;
+      }
+      return low + 1;
+    };
+    const constructions = facts.constructions.map((item) => ({
+      callee: item.callee,
+      line: lineAtIndex(item.index),
+      index: item.index,
+      callerQualifiedName: null,
+      callerIdentityAmbiguous: false,
+      construction: true,
+    }));
+    const calls = [...analysis.semanticFacts.calls, ...constructions].sort((left, right) => left.line - right.line);
+    analyses.set(relative, {
+      text,
+      language,
+      lineCount: text.split("\n").length,
+      starts,
+      facts,
+      abstractMembers,
+      definedNames: definedMemberNames(text, maskedText, language, sites, signatures),
+      ...analysis,
+      semanticFacts: { ...analysis.semanticFacts, calls },
+    });
   }
   const nodes = [];
   const declarations = new Map();
@@ -329,8 +375,12 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
   }
   // A method name that exists in the product: a declaration's name or a value
   // binding's name. A method call whose name is neither cannot be product code.
+  // Every spelling that can define a callable member name counts too (class
+  // fields, class expressions, object literals anywhere, signatures, quoted
+  // names, assignments of functions), whether or not it became a declaration.
   const memberNames = new Set(names);
   for (const values of valuesOf.values()) for (const name of values.keys()) memberNames.add(name);
+  for (const analysis of analyses.values()) for (const name of analysis.definedNames) memberNames.add(name);
   const found = (relative, qualifiedName) => declarations.get(relative)?.get(qualifiedName) || [];
   const unique = (relative, qualifiedName) => {
     const list = found(relative, qualifiedName);
@@ -378,7 +428,10 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
     for (const item of analysis.facts.exports) {
       if (item.kind === "re-export" && item.exported === name) {
         const next = item.specifier.startsWith(".") ? resolveModule(module, item.specifier, analysis.language, fileSet) : null;
-        return next ? follow(next, item.imported === "default" ? name : item.imported, seen) : null;
+        if (!next) return null;
+        // "default" is the module's default export; a module that does not say
+        // which name that is may still declare the requested name.
+        return item.imported === "default" ? follow(next, "default", new Set(seen)) || follow(next, name, seen) : follow(next, item.imported, seen);
       }
       if (item.kind === "local" && item.exported === name) return declaresName(module, item.local) ? { module, name: item.local } : viaBinding(item.local);
     }
@@ -524,7 +577,7 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
     const language = analyses.get(relative)?.language;
     if (isExternalSpecifier(relative, binding.specifier, language, fileSet)) return null;
     const module = resolveModule(relative, binding.specifier, language, fileSet);
-    const place = module && follow(module, binding.imported === "default" ? name : binding.imported);
+    const place = module && (binding.imported === "default" ? follow(module, name) || follow(module, "default") : follow(module, binding.imported));
     return place ? unique(place.module, place.name) || nodeValue(place.module, place.name) : null;
   };
   const resolveMember = (relative, head, member) => {
@@ -612,7 +665,7 @@ function resolveCall(relative, analysis, call, bindings, context) {
       needsStatic && language !== "python" ? (symbol) => /(^|\s)static\s/.test(symbol.signature || "") : null,
     );
     if (outcome) return outcome;
-    if (classExtends(analyses.get(module), className)) return { reason: "inherited" };
+    if (classExtends(analyses.get(module), className) || analyses.get(module)?.abstractMembers?.get(className)?.has(member)) return { reason: "inherited" };
     return unknownMember(member);
   };
   // The scope chain of the caller, innermost first, for a plain name.
@@ -628,7 +681,9 @@ function resolveCall(relative, analysis, call, bindings, context) {
   const imported = (binding, local) => {
     if (isExternalSpecifier(relative, binding.specifier, language, fileSet)) return { reason: "external-import" };
     const module = resolveModule(relative, binding.specifier, language, fileSet);
-    const place = module && follow(module, binding.imported === "default" ? local : binding.imported);
+    // A default import: the declaration of the local's name (as before), else
+    // the module's default export.
+    const place = module && (binding.imported === "default" ? follow(module, local) || follow(module, "default") : follow(module, binding.imported));
     return place ? { place } : { reason: "rest" };
   };
   const self = language === "python" ? "self." : "this.";
@@ -644,6 +699,15 @@ function resolveCall(relative, analysis, call, bindings, context) {
     if (call.receiver === "method") return unknownMember(callee);
     const inner = nested(callee);
     if (inner) return inner;
+    // Python "cls(...)" in a classmethod constructs the enclosing class.
+    if (language === "python" && callee === "cls") {
+      const owner = enclosingClass(analysis, call.callerQualifiedName);
+      const method = analysis.symbols.find((symbol) => symbol.qualifiedName === call.callerQualifiedName && symbol.kind === "function");
+      if (owner && /\(\s*cls\b/.test(method?.signature || "")) {
+        const outcome = pick(relative, owner);
+        if (outcome) return outcome;
+      }
+    }
     // A parameter or local of an enclosing function holds the function (바).
     if (call.index !== undefined && bindingAt(analysis.facts, call.index, callee)) return { reason: "local-function" };
     const top = pick(relative, callee) || valueAt(relative, callee);

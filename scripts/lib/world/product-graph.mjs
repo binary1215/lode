@@ -1003,11 +1003,12 @@ const TABLE_ROW_LIMITS =
 // How calls are resolved beyond plain names (call precision, approved
 // 2026-11-15). Each is a stated limit of the lexical reading.
 const CALL_READING_LIMITS = Object.freeze([
-  "멤버 선언: JS·TS 클래스 본문의 메서드(<클래스>.<메서드>)와 모듈 수준 이름에 묶인 객체 리터럴의 함수 멤버(<이름>.<멤버>)만 선언이다. 중첩된 객체 리터럴, 이름에 묶이지 않은 리터럴, 클래스 필드에 담은 화살표 함수는 선언이 아니다. 메서드를 정의하는 자리(name(…) {)는 호출로 세지 않는다.",
-  "받는 쪽은 글자로만 정한다: 클래스 안의 this.x(·self.x(, 클래스 이름의 C.x((JS는 static 메서드), 객체 리터럴 이름의 name.x(, 같은 함수나 모듈 수준에서 한 번 new C(…)(Python은 C(…))로 만든 const의 v.x(. 다시 대입하는 변수는 추론하지 않고, 상속은 따라가지 않으며(상속받은 멤버일 수 있음), 이름이 제품에 하나뿐이라는 이유로 정하지 않는다.",
+  '멤버 선언: JS·TS 클래스 본문의 메서드와 함수를 담은 클래스 필드(<클래스>.<멤버>), 이름에 묶은 클래스 식(const A = class {)과 이름 없는 default 클래스(default)의 멤버, 모듈 수준 이름에 묶인 객체 리터럴의 함수 멤버(<이름>.<멤버>)가 선언이다. 중첩된 객체 리터럴, 이름에 묶이지 않은 리터럴, 따옴표나 계산한 이름([Symbol.iterator]() {, "이름"() {)은 선언이 아니다. 메서드를 정의하는 자리(name(…) {)와 본문 없는 TypeScript 시그니처(abstract run(): void;, 오버로드, interface 멤버)는 호출로 세지 않는다.',
+  "받는 쪽은 글자로만 정한다: 클래스 안(필드 포함)의 this.x(·self.x(, 클래스 이름의 C.x((JS는 static 메서드), 객체 리터럴 이름의 name.x(, 같은 함수나 모듈 수준에서 한 번 new C(…)(Python은 C(…))로 만든 const의 v.x(, Python classmethod 안의 cls(…)(그 클래스). 다시 대입하는 변수는 추론하지 않고, 상속은 따라가지 않으며(상속받았거나 본문 없는 선언만 있는 멤버일 수 있음), 이름이 제품에 하나뿐이라는 이유로 정하지 않는다.",
+  "new C(…)는 C를 부르는 참조로 센다(클래스에 닿으면 생성자에 닿는다). 내장 클래스나 제품 밖 모듈의 클래스면 그 이유로 센다. 타입 인자를 적은 TypeScript 호출(this.format<number>(x), make<T>(x))은 호출로 보지 못한다.",
   '값 바인딩: 함수식이 아닌 값으로 정한 모듈 수준 이름(const fail = failWith("X"))은 어디선가 함수로 불릴 때만 값 노드가 되고, 그 참조는 초기값 안의 호출이다. 불리지 않는 값 바인딩은 노드가 아니다.',
-  "다시 내보내기: export { a as b } from, export * from, import한 이름을 적은 export 목록(Python은 패키지 모듈이 들여온 이름)을 선언까지 따라간다. 단계 수에 한도가 있고, 고리는 끊고 원래 이유를 둔다. export * as 이름 from은 읽지 않는다.",
-  "내장 호출: 언어·런타임의 전역 이름 표(판단, 프로젝트 규칙의 내장 이름으로 더함)에 있고 파일이 그 이름을 선언·들여오거나 묶지 않을 때만 내장으로 본다. 메서드 이름이 제품 어디에도 없으면 제품 코드일 수 없다고 본다. 제품이 같은 이름을 선언하면 받는 쪽 타입을 모르는 호출로 둔다.",
+  "다시 내보내기: export { a as b } from, export * from, import한 이름을 적은 export 목록, default(export { default } from, export { x as default }, export default 이름)를 선언까지 따라간다(Python은 패키지 모듈이 들여온 이름). 단계 수에 한도가 있고, 고리는 끊고 원래 이유를 둔다. export * as 이름 from은 읽지 않는다.",
+  "내장 호출: 언어·런타임의 전역 이름 표(판단, 프로젝트 규칙의 내장 이름으로 더함)에 있고 파일이 그 이름을 선언·들여오거나 묶지 않을 때만 내장으로 본다. 메서드 이름이 제품 어디에서도 정의되지 않을 때만(선언이 아닌 것까지 넓게 본다: 클래스 필드, 클래스 식, 어느 객체 리터럴의 멤버, 시그니처, 따옴표 이름, x.y = function, prototype 대입, defineProperty) 제품 코드일 수 없다고 본다. 실행 중에 만든 이름(obj[name] = fn, Object.assign, 섞어 넣기)은 보지 못하므로, 그런 메서드는 제품 코드인데도 이 이유에 들 수 있다. 제품이 같은 이름을 정의하면 받는 쪽 타입을 모르는 호출로 둔다.",
 ]);
 
 // One object for the structured result and generated files; the text renders

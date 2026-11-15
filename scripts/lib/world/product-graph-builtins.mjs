@@ -176,6 +176,7 @@ export const BUILT_IN_GLOBALS = Object.freeze({
       "open",
       "ord",
       "pow",
+      "print",
       "property",
       "range",
       "repr",

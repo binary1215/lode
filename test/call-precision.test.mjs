@@ -101,11 +101,13 @@ test("마: this.x, C.staticX, name.x and v = new C() resolve lexically; a reassi
   assert.deepEqual(calls, [
     "consumer.mjs#consume -> members.mjs#Store.create",
     "consumer.mjs#consume -> members.mjs#api.stop",
+    "members.mjs#Store.create -> members.mjs#Store",
     "members.mjs#Store.load -> members.mjs#Store.#decode",
     "members.mjs#Store.save -> members.mjs#Store.count",
     "members.mjs#api.go -> members.mjs#helper",
     "members.mjs#api.run -> members.mjs#helper",
     "members.mjs#api.stop -> members.mjs#helper",
+    "members.mjs#useAll -> members.mjs#Store",
     "members.mjs#useAll -> members.mjs#Store.create",
     "members.mjs#useAll -> members.mjs#Store.save",
     "members.mjs#useAll -> members.mjs#api.run",
@@ -183,8 +185,49 @@ test("나: in a product that declares its own map, x.map( stays under the unknow
 
 test("바: a function held in a parameter or local is counted under its own reason", (t) => {
   const { reasons, calls } = build(t, path.join(fixtures, "params"));
-  assert.deepEqual(reasons, { "local-function": ["callback", "handler", "resolve"] });
+  assert.deepEqual(reasons, { "builtin-global": ["Promise"], "local-function": ["callback", "handler", "resolve"] });
   assert.deepEqual(calls, []);
+});
+
+const review = path.join(fixtures, "review");
+
+test("class fields, class expressions and abstract signatures; product member names are never called built-in; new C() reaches the constructor", (t) => {
+  const { calls, reasons, result } = build(t, path.join(review, "classes"), path.join(review, "classes", "rules.json"));
+  assert.deepEqual(calls, [
+    "classes.ts#Odd.onClick -> classes.ts#Odd.multi",
+    "classes.ts#direct -> classes.ts#Store",
+    "classes.ts#useAll -> classes.ts#Anonymous",
+    "classes.ts#useAll -> classes.ts#Anonymous.run",
+    "classes.ts#useAll -> classes.ts#Odd",
+    "classes.ts#useAll -> classes.ts#Odd.onClick",
+  ]);
+  assert.deepEqual(reasons, {
+    "builtin-global": ["Map"],
+    "member-nowhere": ["thing.nothingDefinesThis"],
+    "external-import": ["External"],
+    "unknown-receiver": ["port.ping", "thing.legacyMethod", "thing.nested", "thing.quoted"],
+    inherited: ["this.render"],
+  });
+  const unreached = result.lists.unreachedCode.files.flatMap((file) => file.declarations);
+  assert(!unreached.includes("classes.ts#Store.constructor"), "new Store(1) in a reached function reaches the constructor");
+  assert(unreached.includes("classes.ts#Odd.multi"));
+});
+
+test("a default export is followed through re-export lists", (t) => {
+  const { calls, reasons } = build(t, path.join(review, "defaults"));
+  assert.deepEqual(calls, ["use.mjs#use -> lib/helper.mjs#helper", "use.mjs#use -> lib/run.mjs#run"]);
+  assert.deepEqual(reasons, {});
+});
+
+test("Python: a parenthesised import list is read, print is a built-in function and cls() constructs the class", (t) => {
+  const { calls, reasons } = build(t, path.join(review, "python"));
+  assert.deepEqual(calls, [
+    "models.py#Item.make -> models.py#Item",
+    "models.py#make_item -> models.py#Item",
+    "use.py#use -> models.py#Item",
+    "use.py#use -> models.py#make_item",
+  ]);
+  assert.deepEqual(reasons["builtin-global"], ["print"]);
 });
 
 test("Lode itself: the reasons add up, every 값 node is called, and two builds are byte-identical", (t) => {

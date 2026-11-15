@@ -215,7 +215,51 @@ export function javascriptFacts(text, masked, sites) {
     const specifier = specifierAt(match.index + match[0].length);
     if (specifier) exports.push({ kind: "star", specifier });
   }
-  return { scopes, moduleScope, values, exports };
+  // The default export by name: "export default function run", "export
+  // default class Store", "export default run;". An anonymous default class
+  // is itself the declaration "default".
+  for (const match of masked.matchAll(/\bexport\s+default\s+(?:async\s+)?(?:function\s*\*?\s*|class\s+)?([A-Za-z_$][\w$]*)/g))
+    if (!["function", "class", "async", "extends"].includes(match[1])) exports.push({ kind: "local", local: match[1], exported: "default" });
+  // "new C(...)" sites: a construction is a reference to C (its constructor).
+  const constructions = [];
+  for (const match of masked.matchAll(/\bnew\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)?)\s*[(<]/g))
+    constructions.push({ callee: match[1], index: match.index + match[0].indexOf(match[1], 3) });
+  return { scopes, moduleScope, values, exports, constructions };
+}
+
+// Every name the scanned code can define as a callable member, whether or not
+// it is a declaration: a deliberately wide net, so that a method name outside
+// it cannot be product code. Names built at run time are not seen.
+export function definedMemberNames(text, masked, language, sites = [], signatures = []) {
+  const names = new Set();
+  const add = (name) => {
+    if (!name) return;
+    names.add(name);
+    names.add(name.replace(/^#/, ""));
+  };
+  if (language === "python") {
+    for (const match of masked.matchAll(/\bdef\s+([A-Za-z_]\w*)/g)) add(match[1]);
+    // An assignment (a class attribute, self.x = ..., a lambda) can hold a callable.
+    for (const match of masked.matchAll(/(?<!\w)([A-Za-z_]\w*)\s*(?::[^=\n]+)?=(?!=)/g)) add(match[1]);
+    for (const match of text.matchAll(/setattr\s*\([^,]+,\s*["']([A-Za-z_]\w*)["']/g)) add(match[1]);
+    return names;
+  }
+  for (const site of sites) add(site.name);
+  for (const site of signatures) add(site.name);
+  // Members of any object literal ("key: (...) =>", "key: function").
+  // (Each pattern starts at a word start: an identifier never starts inside one.)
+  for (const match of masked.matchAll(/(?<![\w$])([A-Za-z_$][\w$]*)\s*:\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/g)) add(match[1]);
+  // Fields and assignments holding a function ("name = () =>", "x.y = function",
+  // "X.prototype.y = (...)").
+  for (const match of masked.matchAll(/(?<![\w$#])(#?[A-Za-z_$][\w$]*)\s*(?::[^=;{}()]+)?=\s*(?:async\s*)?(?:function\b|\(|[A-Za-z_$][\w$]*\s*=>)/g))
+    add(match[1]);
+  // Interface and type members ("run(): void", "run?: () => void").
+  for (const match of masked.matchAll(/(?<![\w$])([A-Za-z_$][\w$]*)\s*\??\s*:\s*\(/g)) add(match[1]);
+  // Quoted and computed names ("'run'() {", "['run']: function", "\"run\": () =>").
+  for (const match of text.matchAll(/["'`]([A-Za-z_$][\w$]*)["'`]\s*\]?\s*(?:\(|:\s*(?:async\s*)?(?:function\b|\(|[A-Za-z_$][\w$]*\s*=>))/g)) add(match[1]);
+  // Object.defineProperty(x, "name", ...) and Reflect.defineProperty.
+  for (const match of text.matchAll(/defineProperty\s*\([^,]+,\s*["'`]([A-Za-z_$][\w$]*)["'`]/g)) add(match[1]);
+  return names;
 }
 
 export function pythonFacts(text, masked, symbols, starts) {
@@ -266,7 +310,7 @@ export function pythonFacts(text, masked, symbols, starts) {
     }
     values.push({ name: match[1], startIndex: match.index, endIndex: end });
   }
-  return { scopes, moduleScope, values, exports: [] };
+  return { scopes, moduleScope, values, exports: [], constructions: [] };
 }
 
 // A name bound at index: a parameter or local of an enclosing function. Returns

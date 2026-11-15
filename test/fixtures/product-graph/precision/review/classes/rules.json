@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "kind": "LodeProductGraphEntryRules",
+  "rules": [
+    {
+      "종류": "cli",
+      "판단": true,
+      "설명": "Rows of the command table.",
+      "파일": ["commands.mjs"],
+      "패턴": "name: \"([a-z]+)\"",
+      "처리 코드": "항목"
+    }
+  ]
+}
