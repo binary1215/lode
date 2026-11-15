@@ -23,13 +23,13 @@ func TestTrackedCorpusMatchesReviewedIdentity(t *testing.T) {
 		t.Fatal(operationFailure)
 	}
 	document := result.(map[string]any)
-	// Source analysis 0.3.1 deliberately changes aggregate identity even when
-	// ASCII file facts are unchanged. Independently matched to the JS producer.
-	if document["scanId"] != "repository-scan-6feed2133bb5f04eb779efee" {
+	// Source analysis 0.3.2 (shared lexer, fixtures/lexer-parity.mjs added) changes
+	// aggregate identity. Computed with the JS producer on this corpus.
+	if document["scanId"] != "repository-scan-45efeb3c17162bfdf5348762" {
 		t.Fatalf("unexpected scan identity: %v", document["scanId"])
 	}
 	summary := document["summary"].(map[string]any)
-	if summary["fileCount"] != 10 || summary["symbolCount"].(int) < 1 || summary["bindingCount"].(int) < 1 {
+	if summary["fileCount"] != 11 || summary["symbolCount"].(int) < 1 || summary["bindingCount"].(int) < 1 {
 		t.Fatalf("unexpected scan summary: %#v", summary)
 	}
 	skipped := document["skipped"].(map[string]any)

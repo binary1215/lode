@@ -27,7 +27,7 @@ const (
 	ProducerName          = "head-agent-core-repository-scan"
 	LodeProducerName      = "lode-agent-core-repository-scan"
 	ProducerVersion       = "0.5.1"
-	SourceAnalysisVersion = "0.3.1"
+	SourceAnalysisVersion = "0.3.2"
 	maximumSymbolsPerFile = 200
 )
 
@@ -55,7 +55,8 @@ var (
 	drivePathPattern = regexp.MustCompile(`^[A-Za-z]:`)
 	identifier       = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
 
-	javascriptFunction = regexp.MustCompile(`\b(export\s+)?(async\s+)?function\s+([A-Za-z_$][A-Za-z0-9_$]*)`)
+	// A generator declaration (function* name) is a function declaration too.
+	javascriptFunction = regexp.MustCompile(`\b(export\s+)?(async\s+)?function(\s*\*\s*|\s+)([A-Za-z_$][A-Za-z0-9_$]*)`)
 	javascriptClass    = regexp.MustCompile(`\b(export\s+)?class\s+([A-Za-z_$][A-Za-z0-9_$]*)`)
 	javascriptBinding  = regexp.MustCompile(`\b(export\s+)?(const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(async\s*)?(function\b|\([^)]*\)\s*=>|[A-Za-z_$][A-Za-z0-9_$]*\s*=>)`)
 	pythonFunction     = regexp.MustCompile(`(?m)^[ \t]*(async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)`)
@@ -76,7 +77,7 @@ var (
 	pythonAsSplit          = regexp.MustCompile(`\s+as\s+`)
 	pythonImport           = regexp.MustCompile(`(?m)^[ \t]*import\s+([A-Za-z_][A-Za-z0-9_.]*)(\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?`)
 	callPattern            = regexp.MustCompile(`\b([A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_$]*)?)\s*\(`)
-	declarationPrefix      = regexp.MustCompile(`\b(function|class|def|new)\s*$`)
+	declarationPrefix      = regexp.MustCompile(`\b(function\s*\*?|class|def|new)\s*$`)
 )
 
 var excludedDirectories = map[string]bool{
@@ -557,7 +558,7 @@ func extractSymbolsInternal(text, language string, lines []int, includeRanges bo
 	switch language {
 	case "javascript", "typescript":
 		return enrichSymbols(text, masked, language, regexSymbols(masked, lines, []symbolPattern{
-			{Kind: "function", Regex: javascriptFunction, Group: 3},
+			{Kind: "function", Regex: javascriptFunction, Group: 4},
 			{Kind: "class", Regex: javascriptClass, Group: 2},
 			{Kind: "binding", Regex: javascriptBinding, Group: 3},
 		}, maximumSymbolsPerFile), lines, includeRanges)
@@ -729,7 +730,9 @@ func prefixByUTF16(text string, byteIndex, maximumUnits int) string {
 	return string(utf16.Decode(units))
 }
 
-func maskNonCode(text, language string) string {
+// quoteScanMask is the plain quote scan: Python masking, and the fallback for
+// JavaScript text the lexer cannot trust (see maskNonCode in codemask.go).
+func quoteScanMask(text, language string) string {
 	masked := []byte(text)
 	mode := "code"
 	quote := byte(0)
