@@ -1,0 +1,6 @@
+[project]
+name = "reach-sample"
+version = "0.1.0"
+
+[project.scripts]
+reach-tool = "tool.cli:main"

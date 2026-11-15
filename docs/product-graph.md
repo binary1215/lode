@@ -44,7 +44,7 @@ For a product without screens (a CLI, a plugin, a library), one kind of output t
 | 유저 활동 | `UA-<묶음 앞머리>-<번호>` | `UA-CHT-01` |
 | 기능 (hook, command, tool, cli) | `<종류>:<이름>` | `hook:SessionStart`, `tool:lode_project_status` |
 | 기능 (프론트) | `fe/<path without extension>/<component>@<event>:<target>` | `fe/app/ui/main_window/MainWindow@clicked:_save` |
-| 코드 | `<path>` for a file, `<path>#<qualified name>` for a declaration | `app/ui/main_window.py#MainWindow._save` |
+| 코드 | `<path>` for a file, `<path>#<qualified name>` for a declaration, with `~<n>` when the name repeats in the file | `app/ui/main_window.py#MainWindow._save`, `app/util.py#helper~2` |
 | 정책 | written in the policy file | `P1` |
 
 ## Edges
@@ -213,7 +213,7 @@ Each row ends in exactly one of: findings with node IDs and positions, 0건, or 
 - The 화면 정책 row compares, by 정책 ID, the condition, actor and action written in the screen document with the policy line, and flags a 처리 policy listed as a screen policy.
 - The journey row needs a 유저 저니맵 that lists activity IDs per stage. It flags a 다음 활동 that sits in an earlier stage, or an activity missing from the journey.
 
-It also lists, with counts: IDs a document cites that do not exist; 기능 that no 화면요소 or 화면 points to; 기능 whose code did not resolve; wiring not taken as 기능 (기능으로 삼지 않은 연결); files that look like UI code but match no pattern (화면 코드인데 규칙이 없음); node counts per type (뽑지 않음 where it applies); and how many documents are 승인 and 추정.
+It also lists, with counts: IDs a document cites that do not exist; 기능 that no 화면요소 or 화면 points to; code no 기능 reaches (어느 기능에서도 닿지 않는 코드); unresolved calls by reason; files not read as code; 뜻 lines whose 기능 no longer exists (사라진 기능의 뜻); 기능 whose code did not resolve, with the reason; wiring not taken as 기능 (기능으로 삼지 않은 연결); files that look like UI code but match no pattern (화면 코드인데 규칙이 없음); node counts per type (뽑지 않음 where it applies); and each document's status. Before all of this comes one block, 이 그래프가 답하지 못하는 것 (Lode addition 6).
 
 ## Approval
 
@@ -230,6 +230,15 @@ The 코드 layer reuses Lode's regex-based source analysis (the same scan as the
 - Handlers in HTML, Vue and Svelte files are not resolved to code, because those files are not part of the source analysis; their 기능 are listed under 처리 코드를 찾지 못한 기능.
 - 데이터, 외부 연결, DB, 계측 이벤트, navigate and C4 grouping are not extracted; the output says 뽑지 않음 for them instead of zero.
 
+### Code no 기능 reaches
+
+The original's 코드 definition asks for a list of the code that cannot be reached from the code handling any 기능 by following reference. Lode prints it as 어느 기능에서도 닿지 않는 코드:
+
+- The walk starts from every 기능's resolved handler and follows the resolved call and callback references, transitively.
+- A handler that is a whole file (a hook script, a command file, a bin script) reaches that file and the calls made at its top level; a declaration in that file is reached only through a resolved reference. Reaching a class reaches its constructor (`__init__` or `constructor`).
+- Every declaration not visited is listed. Files where nothing is reached are told apart from unreached declarations inside a file that is otherwise reached.
+- The list is bounded by the references: its head gives the resolved calls out of all calls, and 닿지 않음 means that no resolved path was found, not that the code is dead. Whether an entry is a missing 기능 or dead code is a reader's judgement; the script gives no reason it did not find.
+
 ## Lode additions approved by the user on 2026-11-15
 
 These are additions to the original, approved by the user, and are not in the original page.
@@ -239,3 +248,6 @@ These are additions to the original, approved by the user, and are not in the or
 3. **Evidence for a product that was not run.** Evidence is a code position (file and line) only, the document is marked 코드만 보고 쓴 추정, and no run evidence is invented.
 4. **유저 활동 ID.** `UA-<묶음 앞머리>-<번호>`.
 5. **Skills.** Skills the user can invoke count as command.
+6. **이 그래프가 답하지 못하는 것.** Build and check text start with one fixed block, and the structured result and the generated files carry the same object (`limits`): how the code was read (a regex scan, no syntax tree, no types), resolved calls out of all calls, the reference kinds written (call, callback) and those not told apart, the node types and edges not extracted, the limits of the UI binding scan, that nothing was run and no finding rests on execution, and how many documents are 승인 and 추정 and which this run used. These facts are not repeated elsewhere in the text.
+7. **Unresolved calls by reason.** Each unresolved call is counted under exactly one reason the scan determined: several declarations of the same name; a language keyword read as a call; no declaration of that name anywhere in the scanned code; a name imported from outside the product; a receiver of unknown type (including a method called on an expression, read from the call's own line); a declaration only in another file with no import linking it; and an explicit rest reason for anything else. The reasons add up to the total, and each has one line saying what would settle it. Files under the source root that are not read as code are counted by extension as not looked at, apart from code that was read. A 기능 whose handler did not resolve says why.
+8. **Identity and preservation.** A node ID is the name structure and never contains a line number; file, line range and digest are attributes. A declaration whose kind and qualified name repeat in its file gets `~<n>`, its order among those declarations in the file; it moves only when a same-named declaration is added, removed or reordered before it, and the first one gains `~1` when a second appears. `요소#순번` in a 프론트 ID is the original's own fallback and stays. `기능 뜻.md` and `정책.md` are never rewritten, reordered or trimmed by a build. A renamed 기능 gets a new ID: its old 뜻 line stays as written and is listed under 사라진 기능의 뜻 so a person can move it, and a 정책 line citing the old ID appears among the cited IDs that do not exist.

@@ -35,7 +35,7 @@ import {
   parsePolicyFile,
   parseScreenDocument,
 } from "./product-graph-documents.mjs";
-import { CODE_PRECISION, extractProductGraphCode } from "./product-graph-extraction.mjs";
+import { extractProductGraphCode } from "./product-graph-extraction.mjs";
 
 export const PRODUCT_GRAPH_VERSION = 1;
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
@@ -352,9 +352,13 @@ function compute({ extraction, loaded, includeEstimates }) {
     for (const policy of policyDocument.parsed.policies)
       for (const id of policy.functions)
         cite("정책이 가리키는 기능", id, { path: policyDocument.path, line: policy.line }, functionIds.has(id), false, policyDocument);
-  if (meaningDocument)
-    for (const meaning of meaningDocument.parsed.meanings)
-      cite("기능 뜻이 가리키는 기능", meaning.id, { path: meaningDocument.path, line: meaning.line }, functionIds.has(meaning.id), false, null);
+  // A 뜻 line whose 기능 no longer exists is kept as written and listed, so a
+  // person can re-attach it to a renamed 기능. It is not an error.
+  const vanishedMeanings = meaningDocument
+    ? meaningDocument.parsed.meanings
+        .filter((meaning) => !functionIds.has(meaning.id))
+        .map((meaning) => ({ id: meaning.id, text: meaning.text, at: { path: meaningDocument.path, line: meaning.line } }))
+    : [];
   if (journeyDocument && used(journeyDocument))
     for (const stage of journeyDocument.parsed.stages)
       for (const item of stage.activities)
@@ -554,6 +558,15 @@ function compute({ extraction, loaded, includeEstimates }) {
     lists: {
       missingIds: missing.sort((a, b) => compare(a.at.path, b.at.path) || a.at.line - b.at.line || compare(a.id, b.id)),
       unpointedFunctions: unpointed,
+      vanishedMeanings,
+      unreachedCode: extraction.unreachedCode,
+      unresolvedReferences: {
+        all: extraction.referenceSummary.allCalls,
+        resolved: extraction.referenceSummary.resolvedCalls,
+        unresolved: extraction.referenceSummary.unresolvedCalls,
+        byReason: extraction.referenceSummary.unresolvedByReason,
+      },
+      notLookedAt: extraction.notLookedAt,
       unresolvedHandlers: extraction.unresolvedHandlers,
       notTakenBindings: extraction.notTakenBindings,
       uiWithoutRule: extraction.uiWithoutRule,
@@ -580,7 +593,7 @@ function compute({ extraction, loaded, includeEstimates }) {
   };
 }
 
-function graphDocument({ extraction, loaded, computed, inputs, rules }) {
+function graphDocument({ extraction, loaded, computed, inputs, rules, result }) {
   const nodes = [];
   const edges = [];
   const basisOf = (document) => (document ? { path: document.path, status: document.status, estimateKind: document.estimateKind } : null);
@@ -715,10 +728,11 @@ function graphDocument({ extraction, loaded, computed, inputs, rules }) {
       sourceExcludes: extraction.excludes,
     },
     nodeTypes: NODE_TYPES.map((type) => ({ type, count: computed.counts[type] })),
-    notExtracted: { nodeTypes: NOT_EXTRACTED, edges: ["navigate"], grouping: "C4 묶음" },
+    limits: result.limits,
     rules: extraction.rules,
-    precision: CODE_PRECISION,
     referenceSummary: extraction.referenceSummary,
+    unreachedCode: extraction.unreachedCode,
+    notLookedAt: extraction.notLookedAt,
     nodes,
     edges,
   };
@@ -737,15 +751,7 @@ function listLines(items, render) {
 }
 
 export function renderProductGraphText(result) {
-  const lines = [];
-  lines.push("제품 그래프 정합성 검사");
-  lines.push(
-    `문서: 승인 ${result.documents.approved}, 추정 ${result.documents.estimated}. ${
-      result.includeEstimates ? "추정 문서도 쓴다. 추정 문서에 기댄 결과에는 [추정: …]을 붙인다." : "승인된 문서만 쓴다."
-    }`,
-  );
-  if (!result.documents.approvalsRead) lines.push("독립 실행이라 승인 기록을 읽지 않는다. 모든 문서는 추정이다.");
-  lines.push("");
+  const lines = [...renderLimits(result.limits), "", "제품 그래프 정합성 검사", ""];
   result.checks.forEach((check, index) => {
     lines.push(`${index + 1}. ${check.heading} — ${check.meaning}`);
     if (check.outcome === "검사 못 함") lines.push(`   검사 못 함: ${check.reason}`);
@@ -782,6 +788,28 @@ export function renderProductGraphText(result) {
   const noScreens = result.counts["화면"] === 0;
   lines.push(`어떤 화면요소·화면도 가리키지 않는 기능: ${lists.unpointedFunctions.length}개${noScreens ? " (화면설계서가 없어 모든 기능이 여기에 든다)" : ""}`);
   lines.push(...listLines(lists.unpointedFunctions, (id) => id));
+  const unreached = lists.unreachedCode;
+  const calls = lists.unresolvedReferences;
+  lines.push(
+    `어느 기능에서도 닿지 않는 코드: 선언 ${unreached.declarations}개 — 풀린 호출 ${calls.resolved} / 전체 ${calls.all}로 따라간 결과다. '닿지 않음'은 풀린 경로를 찾지 못했다는 뜻이고, 죽은 코드라는 뜻이 아니다.`,
+  );
+  lines.push(`  아무것도 닿지 않는 파일 ${unreached.filesNothingReached}개, 일부만 닿는 파일 ${unreached.filesPartlyReached}개. 많은 파일부터:`);
+  lines.push(
+    ...listLines(unreached.files, (file) =>
+      file.declarations.length
+        ? `${file.path} — 선언 ${file.declarations.length}개${file.nothingReached ? " (파일 전체가 닿지 않음)" : ""}`
+        : `${file.path} — 선언 없는 파일, 닿지 않음`,
+    ),
+  );
+  lines.push(`하나로 정하지 못한 호출: ${calls.unresolved}개 (전체 ${calls.all}개 중). 이유별:`);
+  for (const reason of calls.byReason) lines.push(`  - ${reason.label}: ${reason.count}개 — 정하려면: ${reason.settle}`);
+  const looked = lists.notLookedAt;
+  lines.push(
+    `코드로 읽지 않은 파일(보지 않음): ${looked.files}개${looked.byExtension.length ? ` (${looked.byExtension.map((item) => `${item.extension} ${item.count}`).join(", ")})` : ""}. 테스트로 분류해 코드 층에 넣지 않은 코드 파일 ${looked.testCodeFiles}개, 읽지 못한 코드 파일 ${looked.unreadableCodeFiles}개.`,
+  );
+  if (looked.skipped.length) lines.push(`  건너뛴 것: ${looked.skipped.map((item) => `${item.reason} ${item.count}`).join(", ")}`);
+  lines.push(`사라진 기능의 뜻: ${lists.vanishedMeanings.length}개`);
+  lines.push(...listLines(lists.vanishedMeanings, (item) => `${item.id} — "${item.text}" (${where(item.at)})`));
   lines.push(`처리 코드를 찾지 못한 기능: ${lists.unresolvedHandlers.length}개`);
   lines.push(...listLines(lists.unresolvedHandlers, (item) => `${item.id} (${where(item.position)}) — ${item.reason}`));
   lines.push(`기능으로 삼지 않은 연결: ${lists.notTakenBindings.length}개`);
@@ -808,10 +836,7 @@ export function renderProductGraphText(result) {
     const usedCount = result.usedCounts[type];
     lines.push(`  - ${type} ${count}${typeof usedCount === "number" && usedCount !== count ? ` (검사에 쓴 것 ${usedCount})` : ""}`);
   }
-  lines.push(
-    `코드→코드 reference: call·callback ${result.referenceSummary.resolvedCalls + result.referenceSummary.callbacks}개, 하나로 정하지 못한 호출 ${result.referenceSummary.unresolvedCalls}개`,
-  );
-  lines.push(`문서: 승인 ${result.documents.approved}, 추정 ${result.documents.estimated}`);
+  lines.push("문서별 상태:");
   lines.push(
     ...listLines(
       result.documents.list,
@@ -831,6 +856,57 @@ export function renderProductGraphText(result) {
     lines.push(...listLines(lists.approvalIssues, (item) => `${item.path} — ${item.reason}`));
   }
   return lines.join("\n") + "\n";
+}
+
+// ---------- what this graph cannot answer ----------
+
+export const LIMITS_TITLE = "이 그래프가 답하지 못하는 것";
+const NOT_TOLD_APART = Object.freeze(["framework-invoked", "render", "type reference", "re-render", "response", "enqueue", "navigate", "http", "defines"]);
+const UI_SCAN_LIMITS = Object.freeze([
+  "UI 연결은 패턴을 글자에 맞춰 찾는다. 여러 줄에 걸친 연결, 문자열로 만든 연결, 툴킷이 이름으로 자동으로 잇는 연결, 이벤트 이름을 실행 중에 계산하는 연결은 보지 못한다.",
+  "코드인지는 줄 단위로만 가린다(그 줄의 앞쪽 주석과 문자열). 블록 주석이나 여러 줄 문자열 안의 연결은 걸러내지 못하고, HTML·Vue·Svelte 파일에서는 주석도 걸러내지 못한다.",
+  "템플릿의 같은 태그 id는 가장 가까운 < 와 > 사이에서 찾는다. 이벤트 메서드는 이름으로만 찾고 상속은 확인하지 않는다.",
+]);
+
+// One object for the structured result and generated files; the text renders
+// it first. Facts here are not repeated elsewhere in the text.
+function limitsOf({ extraction, computed, includeEstimates, loaded, callbacks }) {
+  const used = computed.documentSummary.list.filter((item) => item.status === "승인" || includeEstimates).map((item) => item.path);
+  return {
+    title: LIMITS_TITLE,
+    codeReading: "코드는 정규식 기반 소스 분석으로 읽었다. 구문 트리가 아니고 타입 정보가 없다.",
+    calls: { resolved: extraction.referenceSummary.resolvedCalls, all: extraction.referenceSummary.allCalls, callbacks },
+    referenceKinds: { emitted: ["call", "callback"], notToldApart: NOT_TOLD_APART },
+    notExtracted: { nodeTypes: NOT_EXTRACTED, edges: ["navigate"], grouping: "C4 묶음" },
+    uiBindingScan: UI_SCAN_LIMITS,
+    execution: "아무것도 실행하지 않았다. 문서와 코드를 비교할 뿐이고, 어느 발견도 실행 근거에 기대지 않는다.",
+    documents: {
+      approved: computed.documentSummary.approved,
+      estimated: computed.documentSummary.estimated,
+      approvalsRead: loaded.approvalsRead,
+      includeEstimates,
+      used,
+    },
+  };
+}
+
+function renderLimits(limits) {
+  const documents = limits.documents;
+  const usage = !documents.approvalsRead
+    ? `독립 실행이라 승인 기록을 읽지 않았다(모든 문서가 추정). 이번 실행은 ${documents.includeEstimates ? `추정 문서 ${documents.used.length}개를 썼고, 그것에 기댄 결과에는 [추정: …]을 붙였다` : "추정 문서를 쓰지 않았다"}.`
+    : documents.includeEstimates
+      ? `이번 실행은 승인과 추정 문서 ${documents.used.length}개를 모두 썼고, 추정에 기댄 결과에는 [추정: …]을 붙였다.`
+      : `이번 실행은 승인된 문서 ${documents.used.length}개만 썼다.`;
+  return [
+    limits.title,
+    `- ${limits.codeReading}`,
+    `- 호출 ${limits.calls.all}개 중 ${limits.calls.resolved}개를 하나의 선언으로 풀었다. 풀린 것만 코드→코드 연결이 된다.`,
+    `- reference 종류는 ${limits.referenceKinds.emitted.join(", ")}만 적는다. ${limits.referenceKinds.notToldApart.join(", ")}는 구별하지 못해 적지 않는다.`,
+    `- 뽑지 않은 것: ${limits.notExtracted.nodeTypes.join(", ")} 노드, ${limits.notExtracted.edges.join(", ")} 연결, ${limits.notExtracted.grouping}.`,
+    ...limits.uiBindingScan.map((line) => `- ${line}`),
+    `- ${limits.execution}`,
+    `- 문서: 승인 ${documents.approved}, 추정 ${documents.estimated}. ${usage}`,
+  ];
 }
 
 // ---------- operations ----------
@@ -868,6 +944,7 @@ function run(options, { requireOutput }) {
     },
     documents: { ...computed.documentSummary, approvalsRead: loaded.approvalsRead },
   };
+  result.limits = limitsOf({ extraction, computed, includeEstimates, loaded, callbacks });
   result.text = renderProductGraphText(result);
   return { inputs, rules, extraction, loaded, computed, result };
 }

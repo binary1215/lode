@@ -1,0 +1,3 @@
+# Synthetic sample
+
+Not code.

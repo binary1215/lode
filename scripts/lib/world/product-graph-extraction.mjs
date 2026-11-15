@@ -63,18 +63,9 @@ export const BUILT_IN_ENTRY_RULES = Object.freeze([
   }),
 ]);
 
-export const CODE_PRECISION = Object.freeze({
-  method: "정규식 기반 소스 분석(구문 트리가 아님)",
-  references:
-    "코드→코드 reference는 이름으로 하나로 정해지는 호출만 call로 적는다(같은 파일의 선언, self./this. 메서드, import로 들여온 이름). UI 연결 중 기능으로 삼지 않은 것은 callback으로 적는다. 그 밖의 종류(framework-invoked, render, type reference, re-render, response, enqueue, navigate, http, defines)는 구별하지 못하므로 적지 않는다.",
-  javascriptMethods:
-    "JavaScript 클래스 메서드는 선언으로 잡히지 않는다(function, class, 함수 바인딩만). 그래서 그 안의 UI 연결은 감싼 클래스나 함수, 없으면 파일 이름을 구성요소로 쓴다.",
-  uiBindings:
-    "UI 연결은 패턴의 정규식으로만 찾는다. 여러 줄에 걸친 연결, 문자열로 만든 연결, 툴킷이 이름으로 자동으로 잇는 연결은 보지 못한다. 템플릿의 같은 태그 id는 가장 가까운 < 와 > 사이에서 찾으므로 속성 안의 > 에 흔들릴 수 있다. 이벤트 메서드는 이름으로만 찾고 상속은 확인하지 않는다.",
-});
-
-function walkSource(sourceRoot, excludes) {
+function walkSource(sourceRoot, excludes, skipped = new Map()) {
   const files = [];
+  const skip = (reason) => skipped.set(reason, (skipped.get(reason) || 0) + 1);
   const excluded = (relative) => excludes.some((prefix) => relative === prefix || relative.startsWith(prefix + "/"));
   const visit = (relative) => {
     const absolute = relative ? path.join(sourceRoot, ...relative.split("/")) : sourceRoot;
@@ -86,9 +77,19 @@ function walkSource(sourceRoot, excludes) {
     }
     for (const entry of entries.sort((a, b) => compare(a.name, b.name))) {
       const child = relative ? `${relative}/${entry.name}` : entry.name;
-      if (excluded(child) || entry.isSymbolicLink()) continue;
+      if (excluded(child)) {
+        skip("호출 방식 표의 source.제외");
+        continue;
+      }
+      if (entry.isSymbolicLink()) {
+        skip("심볼릭 링크");
+        continue;
+      }
       if (entry.isDirectory()) {
-        if (EXCLUDED.has(entry.name) || (entry.name.startsWith(".") && !KEPT_HIDDEN_DIRECTORIES.has(entry.name))) continue;
+        if (EXCLUDED.has(entry.name) || (entry.name.startsWith(".") && !KEPT_HIDDEN_DIRECTORIES.has(entry.name))) {
+          skip(`읽지 않는 폴더 ${entry.name}/`);
+          continue;
+        }
         visit(child);
       } else if (entry.isFile()) {
         if (files.length >= MAX_FILES) fail("PRODUCT_GRAPH_SOURCE_TOO_LARGE");
@@ -111,7 +112,63 @@ function readText(sourceRoot, relative) {
   }
 }
 
-const symbolId = (file, symbol) => `${file}#${symbol.qualifiedName}${symbol.identityAmbiguous ? `@${symbol.line}` : ""}`;
+// A 코드 ID carries no line number. A declaration whose kind and qualified
+// name repeat in its file gets ~<n>, its order among those declarations in the
+// file (1-based). That does not move when lines change elsewhere; it changes
+// only when a same-named declaration is added, removed or moved before it, or
+// when a second one appears (the first then gains ~1).
+const symbolId = (file, symbol) => symbol.id ?? `${file}#${symbol.qualifiedName}`;
+
+function assignSymbolIds(relative, symbols) {
+  const seen = new Map();
+  for (const symbol of symbols) {
+    const key = `${symbol.kind}\0${symbol.qualifiedName}`;
+    const ordinal = (seen.get(key) || 0) + 1;
+    seen.set(key, ordinal);
+    symbol.id = `${relative}#${symbol.qualifiedName}${symbol.identityAmbiguous ? `~${ordinal}` : ""}`;
+  }
+}
+
+const LANGUAGE_KEYWORDS = new Set(["async", "await", "elif", "except", "import", "in", "is", "not", "or", "and", "super", "yield", "print"]);
+
+// Why an unresolved call stayed unresolved. Only what the scan determined.
+export const UNRESOLVED_REASONS = Object.freeze([
+  Object.freeze({
+    key: "ambiguous",
+    label: "같은 이름의 선언이 여럿이라 하나로 정하지 못함",
+    settle: "어느 선언인지 정해 줄 import 경로나 타입 정보",
+  }),
+  Object.freeze({
+    key: "keyword",
+    label: "호출처럼 보이지만 언어 키워드임 (import(, async (, super( 같은 것)",
+    settle: "정할 것이 없다. 호출이 아니다",
+  }),
+  Object.freeze({
+    key: "no-declaration",
+    label: "스캔한 코드 어디에도 그 이름의 선언이 없음",
+    settle: "언어 내장·런타임 이름이면 정할 것이 없다. 제품 코드라면 그 파일이 스캔 범위(확장자, source.제외)에 드는지 확인",
+  }),
+  Object.freeze({
+    key: "external-import",
+    label: "제품 밖 모듈(상대 경로가 아닌 import)에서 들여온 이름",
+    settle: "그 패키지 코드를 스캔 범위에 넣거나, 제품 밖 경계로 둔다는 판단",
+  }),
+  Object.freeze({
+    key: "unknown-receiver",
+    label: "받는 쪽(객체)의 타입을 모르는 호출",
+    settle: "타입 정보(구문 트리와 타입 검사기)",
+  }),
+  Object.freeze({
+    key: "declared-elsewhere",
+    label: "이 파일에는 그 이름의 함수·클래스 선언이 없고 다른 파일에만 있으며, 잇는 import도 없음",
+    settle: "지역 변수에 담긴 함수, 전역 이름, star import까지 읽는 해석기 (타입 정보)",
+  }),
+  Object.freeze({
+    key: "rest",
+    label: "그 밖: 스캔이 이유를 정하지 못함 (들여온 모듈을 찾지 못함, 모듈에 그 이름이 없음, 한 줄에 같은 이름이 메서드와 함수로 함께 쓰임)",
+    settle: "구문 트리 기반의 더 정밀한 해석기",
+  }),
+]);
 
 function resolveModule(fromFile, specifier, language, fileSet) {
   const tries = [];
@@ -135,6 +192,14 @@ function resolveModule(fromFile, specifier, language, fileSet) {
   return tries.find((candidate) => fileSet.has(candidate.replace(/^\.\//, ""))) || null;
 }
 
+// A specifier that names a module of the product: relative in JavaScript;
+// in Python, one that resolves to a scanned file (an absolute name that does
+// not is taken as outside the product).
+function isExternalSpecifier(relative, specifier, language, fileSet) {
+  if (language === "python") return !specifier.startsWith(".") && !resolveModule(relative, specifier, language, fileSet);
+  return !specifier.startsWith(".");
+}
+
 // Builds the 코드 layer: one node per file and per declaration, and call
 // references that resolve to exactly one declaration.
 function buildCodeLayer(sourceRoot, files, excludes) {
@@ -149,54 +214,104 @@ function buildCodeLayer(sourceRoot, files, excludes) {
     if (text === null) continue;
     const language = CODE_LANGUAGES[path.posix.extname(relative).toLowerCase()];
     const analysis = analyzeSourceFile(text, language, path.posix.basename(relative), { maxSymbols: 10_000 });
+    assignSymbolIds(relative, analysis.symbols);
     analyses.set(relative, { text, language, lineCount: text.split("\n").length, ...analysis });
   }
   const nodes = [];
   const declarations = new Map();
+  const names = new Set();
   for (const [relative, analysis] of analyses) {
     nodes.push({ id: relative, type: "코드", kind: "file", file: relative, lines: [1, analysis.lineCount] });
     const byName = new Map();
     for (const symbol of analysis.symbols) {
-      const id = symbolId(relative, symbol);
-      nodes.push({ id, type: "코드", kind: symbol.kind, file: relative, lines: [symbol.line, symbol.endLine ?? symbol.line] });
+      nodes.push({ id: symbol.id, type: "코드", kind: symbol.kind, file: relative, lines: [symbol.line, symbol.endLine ?? symbol.line] });
       if (!byName.has(symbol.qualifiedName)) byName.set(symbol.qualifiedName, []);
-      byName.get(symbol.qualifiedName).push({ ...symbol, id });
+      byName.get(symbol.qualifiedName).push(symbol);
+      names.add(symbol.name);
     }
     declarations.set(relative, byName);
   }
+  const found = (relative, qualifiedName) => declarations.get(relative)?.get(qualifiedName) || [];
   const unique = (relative, qualifiedName) => {
-    const found = declarations.get(relative)?.get(qualifiedName) || [];
-    return found.length === 1 ? found[0] : null;
+    const list = found(relative, qualifiedName);
+    return list.length === 1 ? list[0] : null;
   };
   const references = new Map();
-  const unresolved = new Map();
-  let resolvedCount = 0;
+  const unresolvedByReason = new Map(UNRESOLVED_REASONS.map((reason) => [reason.key, new Map()]));
+  let resolvedCount = 0,
+    allCount = 0;
   const addReference = (from, to, kind, file, line) => {
     const key = `${from}\0${to}\0${kind}`;
     if (!references.has(key)) references.set(key, { type: kind, from, to, source: { path: file, line }, count: 0 });
     references.get(key).count += 1;
   };
+  const context = { found, unique, fileSet, names };
   for (const [relative, analysis] of analyses) {
     const bindings = new Map(analysis.semanticFacts.bindings.map((binding) => [binding.local, binding]));
+    const callers = analysis.symbols.filter((symbol) => symbol.kind === "function" || symbol.kind === "binding");
+    const maskedLines = maskSourceText(analysis.text, analysis.language).split("\n");
+    // The call scan keeps only a name for "expr).map(": look at the call's own
+    // line to see whether every use of that name there follows a ".".
+    const receiverOf = (line, callee) => {
+      const text = maskedLines[line - 1] || "";
+      const name = callee.replace(/[$]/g, "\\$");
+      const methods = [...text.matchAll(new RegExp(`\\.\\s*${name}\\s*\\(`, "g"))].length;
+      const plain = [...text.matchAll(new RegExp(`(?<![\\w$.]\\s*)(?<![\\w$.])${name}\\s*\\(`, "g"))].length;
+      if (!methods && !plain) return "unknown";
+      return methods && !plain ? "method" : methods ? "mixed" : "plain";
+    };
     for (const call of analysis.semanticFacts.calls) {
-      const caller = call.callerQualifiedName && !call.callerIdentityAmbiguous ? unique(relative, call.callerQualifiedName) : null;
-      const from = caller?.id || relative;
-      const target = resolveCall(relative, analysis, call, bindings, unique, fileSet);
-      if (target) {
+      allCount += 1;
+      // The innermost function or binding whose lines hold the call: exact even
+      // when its name repeats in the file.
+      let caller = null;
+      for (const symbol of callers)
+        if (
+          symbol.line <= call.line &&
+          call.line <= (symbol.endLine ?? symbol.line) &&
+          (!caller || (symbol.endLine ?? symbol.line) - symbol.line < (caller.endLine ?? caller.line) - caller.line)
+        )
+          caller = symbol;
+      const outcome = resolveCall(
+        relative,
+        analysis,
+        {
+          ...call,
+          callerQualifiedName: caller?.qualifiedName ?? call.callerQualifiedName,
+          receiver: call.callee.includes(".") ? null : receiverOf(call.line, call.callee),
+        },
+        bindings,
+        context,
+      );
+      if (outcome.target) {
         resolvedCount += 1;
-        addReference(from, target.id, "call", relative, call.line);
-      } else unresolved.set(call.callee, (unresolved.get(call.callee) || 0) + 1);
+        addReference(caller?.id || relative, outcome.target.id, "call", relative, call.line);
+      } else {
+        const bucket = unresolvedByReason.get(outcome.reason);
+        bucket.set(call.callee, (bucket.get(call.callee) || 0) + 1);
+      }
     }
   }
+  const byReason = UNRESOLVED_REASONS.map((reason) => {
+    const bucket = unresolvedByReason.get(reason.key);
+    return {
+      reason: reason.key,
+      label: reason.label,
+      settle: reason.settle,
+      count: [...bucket.values()].reduce((sum, count) => sum + count, 0),
+      callees: [...bucket.entries()].map(([callee, count]) => ({ callee, count })).sort((a, b) => b.count - a.count || compare(a.callee, b.callee)),
+    };
+  });
   return {
     analyses,
     nodes,
     unique,
     references,
     referenceSummary: {
+      allCalls: allCount,
       resolvedCalls: resolvedCount,
-      unresolvedCalls: [...unresolved.values()].reduce((sum, count) => sum + count, 0),
-      unresolved: [...unresolved.entries()].map(([callee, count]) => ({ callee, count })).sort((a, b) => b.count - a.count || compare(a.callee, b.callee)),
+      unresolvedCalls: allCount - resolvedCount,
+      unresolvedByReason: byReason,
     },
     excludes,
   };
@@ -212,30 +327,48 @@ function enclosingClass(analysis, qualifiedName) {
   return null;
 }
 
-function resolveCall(relative, analysis, call, bindings, unique, fileSet) {
+// Resolves one call to exactly one declaration, or says why it did not.
+function resolveCall(relative, analysis, call, bindings, { found, unique, fileSet, names }) {
   const callee = call.callee;
+  const pick = (file, qualifiedName) => {
+    const list = found(file, qualifiedName);
+    return list.length === 1 ? { target: list[0] } : list.length > 1 ? { reason: "ambiguous" } : null;
+  };
   const self = analysis.language === "python" ? "self." : "this.";
   if (callee.startsWith(self)) {
     const owner = enclosingClass(analysis, call.callerQualifiedName);
-    return owner ? unique(relative, `${owner}.${callee.slice(self.length)}`) : null;
+    return (owner && pick(relative, `${owner}.${callee.slice(self.length)}`)) || { reason: "unknown-receiver" };
   }
   if (!callee.includes(".")) {
-    const local = unique(relative, callee);
-    if (local) return local;
+    if (LANGUAGE_KEYWORDS.has(callee)) return { reason: "keyword" };
+    // A method called on an expression the scan dropped ("a().map(").
+    if (call.receiver === "method") return { reason: "unknown-receiver" };
+    // The caller's own scope first (a nested declaration), then outwards.
+    const scope = call.callerQualifiedName ? call.callerQualifiedName.split(".") : [];
+    for (let length = scope.length; length >= 0; length -= 1) {
+      const outcome = pick(relative, [...scope.slice(0, length), callee].join("."));
+      if (outcome) return outcome;
+    }
     const binding = bindings.get(callee);
     if (binding && !binding.namespace) {
+      if (isExternalSpecifier(relative, binding.specifier, analysis.language, fileSet)) return { reason: "external-import" };
       const module = resolveModule(relative, binding.specifier, analysis.language, fileSet);
-      return module ? unique(module, binding.imported === "default" ? callee : binding.imported) : null;
+      return (module && pick(module, binding.imported === "default" ? callee : binding.imported)) || { reason: "rest" };
     }
-    return null;
+    if (binding?.namespace) return { reason: isExternalSpecifier(relative, binding.specifier, analysis.language, fileSet) ? "external-import" : "rest" };
+    if (call.receiver !== "plain") return { reason: "rest" };
+    return { reason: names.has(callee) ? "declared-elsewhere" : "no-declaration" };
   }
   const [head, member] = callee.split(".");
   const binding = bindings.get(head);
-  if (binding?.namespace) {
-    const module = resolveModule(relative, binding.specifier, analysis.language, fileSet);
-    return module ? unique(module, member) : null;
+  if (binding) {
+    if (isExternalSpecifier(relative, binding.specifier, analysis.language, fileSet)) return { reason: "external-import" };
+    if (binding.namespace) {
+      const module = resolveModule(relative, binding.specifier, analysis.language, fileSet);
+      return (module && pick(module, member)) || { reason: "rest" };
+    }
   }
-  return null;
+  return { reason: "unknown-receiver" };
 }
 
 // Innermost declaration whose line range holds one line, else the file.
@@ -538,7 +671,8 @@ export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
   const root = path.resolve(sourceRoot);
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) fail("PRODUCT_GRAPH_SOURCE_ROOT_MISSING");
   const excludes = (projectRules?.source?.["제외"] || []).map((item) => item.replace(/\/$/, ""));
-  const files = walkSource(root, excludes);
+  const skipped = new Map();
+  const files = walkSource(root, excludes, skipped);
   const code = buildCodeLayer(root, files, excludes);
   const { rules, patterns, uiPatterns, uiMarkers, uiFiles } = effectiveEntryRules(projectRules);
   const handling = Object.fromEntries(rules.map((rule) => [rule.종류, rule.처리]));
@@ -610,11 +744,13 @@ export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
         .flatMap((group) => (Array.isArray(group?.hooks) ? group.hooks : []))
         .map((hook) => hook?.command)
         .filter((value) => typeof value === "string");
-      const handlers = [];
+      const handlers = [],
+        missingScripts = [];
       for (const command of commands) {
         const script = /(?:\$\{[A-Z_]+\}\/|\$[A-Z_]+\/)?((?:[\w.-]+\/)*[\w.-]+\.(?:mjs|cjs|js|ts|py|sh|ps1))/.exec(command)?.[1];
         const resolved = script ? path.posix.normalize(path.posix.join(base === "." ? "" : base, script)).replace(/^\.\//, "") : null;
         if (resolved && fileSet.has(resolved)) handlers.push(fileNode(resolved));
+        else if (resolved) missingScripts.push(resolved);
       }
       const mcpTools = groups
         .flatMap((group) => (Array.isArray(group?.hooks) ? group.hooks : []))
@@ -622,7 +758,9 @@ export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
         .map((hook) => hook.tool);
       const reason = mcpTools.length
         ? `mcp_tool hook은 파일이 아니라 MCP tool ${[...new Set(mcpTools)].sort().join(", ")}을 부른다`
-        : "hook 명령에서 스크립트 파일을 찾지 못함";
+        : missingScripts.length
+          ? `hook 명령이 가리키는 스크립트 파일이 없음: ${[...new Set(missingScripts)].sort().join(", ")}`
+          : "hook 명령에 스크립트 파일이 적혀 있지 않음";
       if (!handlers.length) addFunction({ id: `hook:${event}`, kind: "hook", position, handlerReason: reason });
       for (const handler of handlers) addFunction({ id: `hook:${event}`, kind: "hook", position, handler });
     }
@@ -756,8 +894,83 @@ export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
     uiWithoutRule: uiWithoutRule.sort((a, b) => compare(a.path, b.path)),
     outOfScope: outOfScope.sort((a, b) => compare(a.id, b.id)),
     ruleIssues,
+    notLookedAt: notLookedAt(files, code, skipped),
+    unreachedCode: unreachedCode(code, functionNodes, extraCodeNodes),
     scannedFiles: files.length,
     codeFiles: code.analyses.size,
     excludes: [...excludes].sort(),
+  };
+}
+
+// Files under the source root that were not read as code, kept apart from
+// code that was read and left unresolved.
+function notLookedAt(files, code, skipped) {
+  const byExtension = new Map();
+  let testCode = 0,
+    unreadable = 0;
+  for (const relative of files) {
+    const extension = path.posix.extname(relative).toLowerCase() || "(확장자 없음)";
+    if (code.analyses.has(relative)) continue;
+    if (CODE_LANGUAGES[extension]) {
+      if (classifySourcePath(relative, extension) === "test") testCode += 1;
+      else unreadable += 1;
+      continue;
+    }
+    byExtension.set(extension, (byExtension.get(extension) || 0) + 1);
+  }
+  return {
+    files: [...byExtension.values()].reduce((sum, count) => sum + count, 0),
+    byExtension: [...byExtension.entries()]
+      .map(([extension, count]) => ({ extension, count }))
+      .sort((a, b) => b.count - a.count || compare(a.extension, b.extension)),
+    testCodeFiles: testCode,
+    unreadableCodeFiles: unreadable,
+    skipped: [...skipped.entries()].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count || compare(a.reason, b.reason)),
+  };
+}
+
+// The original asks for the code no 기능's 처리 코드 reaches by following
+// reference. Start from every 기능's resolved handler and follow resolved
+// call and callback references. A file-level handler (a script, a command
+// file) reaches the file and the calls made at its top level; a declaration in
+// that file is reached only through a resolved reference. Reaching a class
+// reaches its constructor (__init__ / constructor). "Not reached" means no
+// resolved path was found, not that the code is dead.
+function unreachedCode(code, functionNodes, extraCodeNodes) {
+  const edges = new Map();
+  for (const reference of code.references.values()) {
+    if (!edges.has(reference.from)) edges.set(reference.from, []);
+    edges.get(reference.from).push(reference.to);
+  }
+  const constructors = new Map();
+  for (const [relative, analysis] of code.analyses)
+    for (const symbol of analysis.symbols)
+      if (symbol.kind === "function" && ["__init__", "constructor"].includes(symbol.name)) {
+        const owner = analysis.symbols.find((item) => item.kind === "class" && item.qualifiedName === symbol.scopePath);
+        if (owner) constructors.set(owner.id, [...(constructors.get(owner.id) || []), symbol.id]);
+      }
+  const visited = new Set();
+  const queue = functionNodes.flatMap((entry) => entry.handlers);
+  while (queue.length) {
+    const id = queue.pop();
+    if (visited.has(id)) continue;
+    visited.add(id);
+    queue.push(...(edges.get(id) || []), ...(constructors.get(id) || []));
+  }
+  const files = [];
+  for (const [relative, analysis] of code.analyses) {
+    const unreached = analysis.symbols.filter((symbol) => !visited.has(symbol.id)).map((symbol) => symbol.id);
+    const anyReached = visited.has(relative) || analysis.symbols.some((symbol) => visited.has(symbol.id));
+    if (!unreached.length && anyReached) continue;
+    files.push({ path: relative, nothingReached: !anyReached, declarations: unreached });
+  }
+  files.sort((a, b) => b.declarations.length - a.declarations.length || compare(a.path, b.path));
+  return {
+    declarations: files.reduce((sum, file) => sum + file.declarations.length, 0),
+    filesNothingReached: files.filter((file) => file.nothingReached).length,
+    filesPartlyReached: files.filter((file) => !file.nothingReached).length,
+    files,
+    startedFrom: functionNodes.reduce((sum, entry) => sum + entry.handlers.length, 0),
+    extraCodeNodes: extraCodeNodes.size,
   };
 }

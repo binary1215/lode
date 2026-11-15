@@ -518,3 +518,143 @@ test("every built-in UI binding pattern is an ordinary table entry: it passes th
   assert.doesNotThrow(() => verifyProductGraphRules(JSON.parse(JSON.stringify(rules))));
   assert(new Set(BUILT_IN_UI_PATTERNS.map((entry) => entry.이름)).size === BUILT_IN_UI_PATTERNS.length);
 });
+
+const reachProduct = path.join(fixtures, "reach");
+
+test("acceptance 9: code no 기능 reaches is listed; code two resolved hops away is not; the head carries the bounds", (t) => {
+  const { result } = family(t, reachProduct);
+  const unreached = result.lists.unreachedCode.files.flatMap((file) => file.declarations);
+  assert(unreached.includes("tool/cli.py#orphan"));
+  assert(unreached.includes("tool/steps.py#unused"));
+  assert(!unreached.includes("tool/steps.py#second"), "two hops: main -> first -> second");
+  assert(!unreached.includes("tool/steps.py#first"));
+  assert.equal(result.lists.unreachedCode.files.find((file) => file.path === "tool/mixed.py").nothingReached, true);
+  const head = result.text.split("\n").find((line) => line.startsWith("어느 기능에서도 닿지 않는 코드:"));
+  const { resolved, all } = result.lists.unresolvedReferences;
+  assert(head.includes(`풀린 호출 ${resolved} / 전체 ${all}`), head);
+  assert(head.includes("죽은 코드라는 뜻이 아니다"), head);
+});
+
+test("acceptance 9 on Lode itself: the unreached-code list prints (no count pinned)", (t) => {
+  const base = temporary(t);
+  fs.mkdirSync(path.join(base, "documents"));
+  const result = checkProductGraph({
+    sourceRoot: pluginRoot,
+    documentsDirectory: path.join(base, "documents"),
+    rulesFile: path.join(fixtures, "lode-entry-rules.json"),
+  });
+  assert(result.text.includes("어느 기능에서도 닿지 않는 코드: 선언 "));
+  assert(Array.isArray(result.lists.unreachedCode.files));
+});
+
+test("acceptance 10: the limits block is the first block of build and check text, in both modes, and the structured result carries it", async (t) => {
+  const firstBlock = (text) => text.split("\n\n")[0].split("\n");
+  const base = temporary(t);
+  fs.mkdirSync(path.join(base, "documents"));
+  const standalone = { sourceRoot: reachProduct, documentsDirectory: path.join(base, "documents"), rulesFile: emptyRules };
+  const f = productProject(t);
+  const runs = [
+    checkProductGraph(standalone),
+    buildProductGraph({ ...standalone, outputDirectory: path.join(base, "out") }),
+    checkProductGraph({ root: f.root }),
+    buildProductGraph({ root: f.root }),
+  ];
+  for (const result of runs) {
+    const block = firstBlock(result.text);
+    assert.equal(block[0], "이 그래프가 답하지 못하는 것");
+    assert(block.some((line) => line.includes(`호출 ${result.limits.calls.all}개 중 ${result.limits.calls.resolved}개`)));
+    assert(block.some((line) => line.includes("아무것도 실행하지 않았다")));
+    assert(block.some((line) => line.includes("블록 주석이나 여러 줄 문자열")));
+    assert(block.some((line) => line.startsWith(`- 문서: 승인 ${result.limits.documents.approved}, 추정 ${result.limits.documents.estimated}`)));
+    assert.deepEqual(result.limits.referenceKinds.emitted, ["call", "callback"]);
+    assert.deepEqual(result.limits.notExtracted.nodeTypes, ["데이터", "외부 연결", "DB", "계측 이벤트"]);
+  }
+  for (const directory of [path.join(base, "out"), path.join(f.family, "build")]) {
+    assert.deepEqual(
+      JSON.parse(fs.readFileSync(path.join(directory, "graph.json"), "utf8")).limits,
+      JSON.parse(fs.readFileSync(path.join(directory, "check.json"), "utf8")).limits,
+    );
+    assert(fs.readFileSync(path.join(directory, "check.txt"), "utf8").startsWith("이 그래프가 답하지 못하는 것\n"));
+  }
+  // The same facts are not repeated as prose further down.
+  assert(!runs[0].text.includes("코드→코드 reference:"));
+});
+
+test("acceptance 11: unresolved calls are counted per reason, the reasons add up, and files not read as code are counted", (t) => {
+  const { result } = family(t, reachProduct);
+  const calls = result.lists.unresolvedReferences;
+  const count = (key) => calls.byReason.find((reason) => reason.reason === key);
+  assert.deepEqual(
+    count("ambiguous").callees.map((item) => item.callee),
+    ["helper"],
+  );
+  assert.deepEqual(
+    count("no-declaration").callees.map((item) => item.callee),
+    ["undefined_thing"],
+  );
+  assert.deepEqual(
+    count("external-import").callees.map((item) => item.callee),
+    ["get"],
+  );
+  assert.equal(
+    calls.byReason.reduce((sum, reason) => sum + reason.count, 0),
+    calls.unresolved,
+  );
+  assert.equal(calls.resolved + calls.unresolved, calls.all);
+  for (const reason of calls.byReason) assert(reason.settle.length > 0);
+  assert.deepEqual(result.lists.notLookedAt.byExtension, [
+    { extension: ".csv", count: 1 },
+    { extension: ".md", count: 1 },
+    { extension: ".toml", count: 1 },
+  ]);
+  assert.match(result.text, /코드로 읽지 않은 파일\(보지 않음\): 3개/);
+});
+
+test("acceptance 12: IDs carry no line numbers, survive inserted lines, and a vanished 기능's 뜻 line is kept and listed", (t) => {
+  const base = temporary(t);
+  const source = path.join(base, "source");
+  fs.cpSync(reachProduct, source, { recursive: true });
+  fs.mkdirSync(path.join(base, "documents"));
+  const graphOf = (name) => {
+    buildProductGraph({ sourceRoot: source, documentsDirectory: path.join(base, "documents"), rulesFile: emptyRules, outputDirectory: path.join(base, name) });
+    return JSON.parse(fs.readFileSync(path.join(base, name, "graph.json"), "utf8"));
+  };
+  const before = graphOf("before");
+  for (const name of ["cli.py", "steps.py", "mixed.py"]) {
+    const file = path.join(source, "tool", name);
+    fs.writeFileSync(file, "\n\n\n" + fs.readFileSync(file, "utf8"));
+  }
+  const after = graphOf("after");
+  const ids = (graph) => graph.nodes.map((node) => node.id);
+  const ends = (graph) => graph.edges.map((edge) => `${edge.type}|${edge.from}|${edge.to}`);
+  assert.deepEqual(ids(after), ids(before));
+  assert.deepEqual(ends(after), ends(before));
+  assert.notDeepEqual(
+    after.nodes.filter((node) => node.type === "코드").map((node) => node.lines),
+    before.nodes.filter((node) => node.type === "코드").map((node) => node.lines),
+  );
+  assert(ids(before).includes("tool/mixed.py#helper~1") && ids(before).includes("tool/mixed.py#helper~2"));
+  for (const id of ids(before)) assert(!/@\d+$/.test(id), id);
+
+  // Project mode: the 뜻 line of a removed 기능 is listed, never touched.
+  const f = fixture(t);
+  fs.cpSync(reachProduct, f.root, { recursive: true });
+  const family = path.join(f.root, ".lode", "context", "product-graph");
+  fs.mkdirSync(family, { recursive: true });
+  const meanings = path.join(family, "기능 뜻.md");
+  fs.writeFileSync(meanings, "# 기능 뜻\n\n| 기능 | 뜻 |\n|---|---|\n| cli:reach-tool | 단계를 차례로 돈다 |\n");
+  fs.writeFileSync(
+    path.join(family, "정책.md"),
+    "# 정책\n\n| ID | 종류 | 조건 | 주체 | 행위 | 지키는 기능 |\n|---|---|---|---|---|---|\n| P1 | 처리 | 언제나 | 도구 | 한 번만 돈다 | cli:reach-tool |\n",
+  );
+  const meaningBytes = fs.readFileSync(meanings);
+  assert.deepEqual(checkProductGraph({ root: f.root }).lists.vanishedMeanings, []);
+  const project = path.join(f.root, "pyproject.toml");
+  fs.writeFileSync(project, fs.readFileSync(project, "utf8").replace('reach-tool = "tool.cli:main"', ""));
+  const built = buildProductGraph({ root: f.root, includeEstimates: true });
+  assert.deepEqual(built.lists.vanishedMeanings, [{ id: "cli:reach-tool", text: "단계를 차례로 돈다", at: { path: "기능 뜻.md", line: 5 } }]);
+  assert(!built.lists.missingIds.some((item) => item.kind === "기능 뜻이 가리키는 기능"));
+  assert(built.lists.missingIds.some((item) => item.kind === "정책이 가리키는 기능" && item.id === "cli:reach-tool"));
+  assert.match(built.text, /사라진 기능의 뜻: 1개\n {2}- cli:reach-tool — "단계를 차례로 돈다"/);
+  assert.deepEqual(fs.readFileSync(meanings), meaningBytes);
+});
