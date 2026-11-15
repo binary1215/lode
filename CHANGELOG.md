@@ -11,6 +11,67 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.124 — publication tracked separately
+
+- New: 제품 그래프 (product graph), a second description of a product next to
+  the existing Product Model, which is unchanged. It starts from the
+  product's user and goes down to the code: 제품코어 → 유저 활동 → 화면 →
+  기능 → 코드. Definitions are in `docs/product-graph.md`, use in
+  `docs/product-graph-usage.md`.
+  - Store: `.lode/context/product-graph/` holds the documents people write
+    (제품 정의서, 유저 저니맵, 화면설계서, 유저플로우 기획서, `정책.md`,
+    `기능 뜻.md`, `호출 방식 표.json`) and approval records under `승인/`.
+    Generated output goes to `build/` and is rebuilt, never carried.
+  - 기능 and 코드 are read from the code by script. A 기능 is one entry
+    point: a hook, a command, an MCP tool, a CLI command, or a place where
+    a UI wires a user's signal to code. UI toolkits are entries of one
+    pattern table, so a project adds a toolkit, a tool table or a command
+    table with a rule and no change to Lode's code.
+  - A tool or CLI rule can take a 기능's 처리 코드 from its own table row
+    (`"처리 코드": "항목"`): a function named as a value, a call inside an
+    inline function, or a member taken from a dynamic import with a literal
+    path. That form of dynamic import is now followed everywhere calls are
+    read.
+  - The user-side nodes come only from documents. A document counts as 승인
+    only while an approval record exists for its current text; a document
+    changed after approval is shown as 승인 뒤 바뀜 and is not used as
+    approved. The approval digest is taken over the text (one leading BOM
+    dropped, line endings as LF, NFC), so another machine's line endings do
+    not drop approvals; any visible change does. An approval record is the
+    record of the user's word, not a security boundary.
+  - `product-graph-check` prints the six consistency checks. Each ends in
+    findings, `0건`, or `검사 못 함: <이유>`; a check that could not run
+    never prints `0건`. With inputs missing, a short guide says what to
+    write and what each input unlocks.
+  - Build and check start with one block that says what the graph cannot
+    answer: how the code was read, how many calls were resolved, what is
+    not extracted, and how many documents are approved. They also list the
+    code no 기능 reaches, unresolved calls by reason, 기능 whose 처리 코드
+    was not found (with the reason), and wiring that was not taken as a
+    기능.
+  - Node IDs are name structure and never contain a line number. A build
+    never rewrites `기능 뜻.md` or `정책.md`; a line whose 기능 disappeared
+    is listed, not removed. Two builds of the same input are byte-identical.
+  - Commands: `product-graph-build`, `product-graph-check`,
+    `product-graph-approve`; through MCP, the grouped tool
+    `lode_product_graph` via `lode_tools_call`. Build and check also work
+    on a folder that is not a Lode project and then write only to the given
+    output folder.
+  - Portable export, import and folder-copy adoption say what they carried
+    of this folder and name what they left out. Snapshot GC keeps files it
+    does not recognise in this folder and names them; a broken approval
+    record or a link there still stops the collection.
+- Limits: the code is read by a regex scan with no syntax tree and no type
+  information. On Lode itself 19,530 of 55,626 calls resolve to one
+  declaration, and the list of unreached code is bounded by that. 데이터,
+  외부 연결, DB, 계측 이벤트, navigate and the C4 grouping are not
+  extracted. The Graph Explorer does not show this graph yet. JS/TS
+  decorators above class methods are not read. The source scan shared with
+  the World model misses some declarations after a nested template string
+  or a regular expression containing a quote (207 of 3,613 top-level
+  functions in Lode's own scripts); that is not fixed here. Not verified on
+  macOS or Linux; file symbolic links were not exercised on Windows.
+
 ## 0.3.0-beta.123 — publication tracked separately
 
 - Windows: every Hook that touches the private prompt reference

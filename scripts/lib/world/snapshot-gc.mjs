@@ -324,6 +324,7 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
       issues: closure.issues.slice(0, 200),
       omittedIssues: closure.omittedIssues || 0,
     };
+    if (closure.productGraphKept?.length) result.productGraphKept = closure.productGraphKept;
     result.basis = { digest: closure.basisDigest, readConsistency: "cooperative-lifetime-and-exact-file-identity" };
     result.snapshotCount = closure.snapshots.length;
     result.physicalStorage = summarizeObservedStorageFiles(

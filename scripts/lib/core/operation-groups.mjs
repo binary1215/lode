@@ -98,6 +98,11 @@ const GROUPS = [
     actions: ["propose", "status", "review"],
   },
   {
+    name: "lode_product_graph",
+    summary: "Build, check or approve documents of the product graph (the original's 제품 그래프), apart from the Product Model.",
+    actions: ["build", "check", "approve"],
+  },
+  {
     name: "lode_vcs",
     summary: "Inspect change sets, VCS evidence and Git history.",
     actions: [other("lode_change_set_status"), "evidence", other("lode_git_history")],

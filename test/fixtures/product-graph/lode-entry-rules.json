@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "kind": "LodeProductGraphEntryRules",
+  "rules": [
+    {
+      "종류": "tool",
+      "판단": true,
+      "설명": "Lode MCP tool: the name of an operation registry row (the row's own name, not the nested tool definition).",
+      "파일": ["scripts/lib/session/operation-registry.mjs"],
+      "패턴": "^ {4}name: \"(lode_[a-z0-9_]+)\",$",
+      "처리 코드": "항목"
+    },
+    {
+      "종류": "cli",
+      "판단": true,
+      "설명": "Lode CLI command: the command of an operation registry row's cli block (not a command named inside a result).",
+      "파일": ["scripts/lib/session/operation-registry.mjs"],
+      "패턴": "^ {4}cli: \\{ command: \"([a-z0-9-]+)\"|^ {6}command: \"([a-z0-9-]+)\",$",
+      "처리 코드": "항목"
+    },
+    {
+      "종류": "cli",
+      "판단": true,
+      "설명": "Lode CLI command alias: each name in a registry row's cli.aliases list.",
+      "파일": ["scripts/lib/session/operation-registry.mjs"],
+      "패턴": "(?<=^ {6}aliases: \\[[^\\]]*)\"([^\"]+)\"",
+      "처리 코드": "항목"
+    }
+  ]
+}

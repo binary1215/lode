@@ -13,6 +13,38 @@ import { readChangeSet } from "./change-set.mjs";
 import { CHANGE_SET_DIRECTORY } from "./change-set-projection.mjs";
 import { SNAPSHOT_GC_UNCOVERED_WRITERS } from "./snapshot-gc.mjs";
 import { sha256Hex as hash } from "../core/digest.mjs";
+import { classifyProductGraphPath, productGraphSubdirectories, PRODUCT_GRAPH_DIRECTORY } from "../storage/product-graph-store.mjs";
+
+// Files and folders in the product graph folder that Lode does not recognise
+// are the user's own: named as kept, never roots, never issues.
+function productGraphKeptEntries(root, storage) {
+  const base = path.join(root, storage.directory, ...PRODUCT_GRAPH_DIRECTORY.split("/"));
+  const kept = [];
+  const visit = (prefix, directory) => {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const name = entry.name.normalize("NFC");
+      const relative = prefix ? prefix + "/" + name : name;
+      if (!prefix && name === "build") continue;
+      if (entry.isSymbolicLink()) {
+        kept.push({ path: storage.directory + "/" + PRODUCT_GRAPH_DIRECTORY + "/" + relative, kind: "link" });
+        continue;
+      }
+      if (entry.isDirectory()) {
+        if (!prefix && productGraphSubdirectories.includes(name)) visit(name, path.join(directory, entry.name));
+        else kept.push({ path: storage.directory + "/" + PRODUCT_GRAPH_DIRECTORY + "/" + relative, kind: "folder" });
+      } else if (!classifyProductGraphPath(relative)?.canon)
+        kept.push({ path: storage.directory + "/" + PRODUCT_GRAPH_DIRECTORY + "/" + relative, kind: "file" });
+    }
+  };
+  visit("", base);
+  return kept.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
 // This projection proves only observed typed dependencies. It never authorizes
 // deletion, owns no lifetime lease, and never turns unknown input into absence.
 export async function inspectSnapshotPreservationClosure({ root = "." } = {}) {
@@ -259,7 +291,12 @@ export async function inspectSnapshotPreservationClosure({ root = "." } = {}) {
       writerLifetime: "not-locked-not-certified",
       readConsistency: "observed-sequence-not-atomic",
       sourceBytes: "exact-validated-bundles-where-present-otherwise-partial",
+      productGraph: "user-owned-canon-and-generated-output-hold-no-snapshot-references",
     },
+    ...(() => {
+      const kept = productGraphKeptEntries(root, storage);
+      return kept.length ? { productGraphKept: kept } : {};
+    })(),
     applyAvailable: false,
     deletedCount: 0,
     refDeletionCount: 0,

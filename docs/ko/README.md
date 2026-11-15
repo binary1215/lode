@@ -26,6 +26,8 @@
 - [독립 실행 legacy 온보딩 migrator 경계](onboarding-migrator.md)
 - [Product Model 정본](product-model.md)
 - [Product Operating Loop](product-operating-loop.md)
+- [제품 그래프](product-graph.md)
+- [제품 그래프 쓰는 법](product-graph-usage.md)
 - [Release observation](release-observation.md)
 - [전달 상태 관측](delivery-observation.md)
 

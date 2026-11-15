@@ -5545,6 +5545,179 @@
   },
   {
    "surface": "mcp",
+   "tool": "lode_product_graph_approve",
+   "input": {
+    "project_root": "<root>",
+    "document": "sample-document",
+    "expected_sha256": "sample-expected_sha256",
+    "rationale": "sample-rationale",
+    "confirm_user_review": true
+   },
+   "calls": [
+    {
+     "fn": "product-graph#approveProductGraphDocument",
+     "args": [
+      {
+       "root": "<root>",
+       "document": "sample-document",
+       "expectedSha256": "sample-expected_sha256",
+       "rationale": "sample-rationale"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_approve",
+   "input": {
+    "project_root": "<root>",
+    "document": "sample-document",
+    "expected_sha256": "sample-expected_sha256",
+    "rationale": "sample-rationale",
+    "confirm_user_review": false
+   },
+   "calls": [],
+   "outcome": {
+    "error": "PRODUCT_GRAPH_APPROVAL_CONFIRMATION_REQUIRED",
+    "message": "Product graph document approval requires explicit user confirmation."
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_build",
+   "input": {
+    "project_root": "<root>"
+   },
+   "calls": [
+    {
+     "fn": "product-graph#buildProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "includeEstimates": false
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_build",
+   "input": {
+    "project_root": "<root>",
+    "include_estimates": true
+   },
+   "calls": [
+    {
+     "fn": "product-graph#buildProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "includeEstimates": true
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_build",
+   "input": {
+    "project_root": "<root>",
+    "include_estimates": false
+   },
+   "calls": [
+    {
+     "fn": "product-graph#buildProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "includeEstimates": false
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_check",
+   "input": {
+    "project_root": "<root>"
+   },
+   "calls": [
+    {
+     "fn": "product-graph#checkProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "includeEstimates": false
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_check",
+   "input": {
+    "project_root": "<root>",
+    "include_estimates": true
+   },
+   "calls": [
+    {
+     "fn": "product-graph#checkProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "includeEstimates": true
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_check",
+   "input": {
+    "project_root": "<root>",
+    "include_estimates": false
+   },
+   "calls": [
+    {
+     "fn": "product-graph#checkProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "includeEstimates": false
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
    "tool": "lode_product_hypothesis_record",
    "input": {
     "project_root": "<root>",
@@ -15605,6 +15778,144 @@
    ],
    "outcome": {
     "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-approve",
+   "argv": [
+    "product-graph-approve",
+    "<root>"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Product graph approval requires --input <json-file>."
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-approve",
+   "argv": [
+    "product-graph-approve",
+    "<root>",
+    "--input",
+    "<cwd>/input.json"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph#approveProductGraphDocument",
+     "args": [
+      {
+       "root": "<root>",
+       "document": "$undefined",
+       "expectedSha256": "$undefined",
+       "rationale": "$undefined"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-approve",
+   "argv": [
+    "product-graph-approve",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Product graph approval contains unsupported fields: lodeRecordingUnsupportedField"
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-build",
+   "argv": [
+    "product-graph-build",
+    "<root>"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph#buildProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "includeEstimates": false
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-build",
+   "argv": [
+    "product-graph-build",
+    "<root>",
+    "--documents",
+    "sample-documents",
+    "--include-estimates",
+    "sample-include-estimates",
+    "--out",
+    "sample-out",
+    "--rules",
+    "sample-rules"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Unexpected argument: sample-include-estimates"
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-check",
+   "argv": [
+    "product-graph-check",
+    "<root>"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph#checkProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "includeEstimates": false
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-check",
+   "argv": [
+    "product-graph-check",
+    "<root>",
+    "--documents",
+    "sample-documents",
+    "--include-estimates",
+    "sample-include-estimates",
+    "--rules",
+    "sample-rules"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Unexpected argument: sample-include-estimates"
    }
   },
   {

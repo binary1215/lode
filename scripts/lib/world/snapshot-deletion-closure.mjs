@@ -28,6 +28,7 @@ import { readSessionWorkEvidenceOwner } from "../session/session-work-context.mj
 import { sessionWorkPath, readSessionWorkEvidenceOriginalFile } from "../session/session-work-evidence-original.mjs";
 import { verifyRetainedRunOriginal } from "../runtime/run-lineage.mjs";
 import { sha256Hex as hash } from "../core/digest.mjs";
+import { classifyProductGraphPath, verifyProductGraphCanonFile, PRODUCT_GRAPH_DIRECTORY } from "../storage/product-graph-store.mjs";
 import { failCode as failure } from "../core/errors.mjs";
 
 const ids = (encoded) => [...new Set(encoded.match(/\b(?:world-model|graph-snapshot|source-snapshot)-[a-f0-9]{24}\b/g) || [])];
@@ -220,7 +221,8 @@ export async function buildSnapshotDeletionClosure({
     entries = [],
     snapshots = [],
     roots = [],
-    issues = [];
+    issues = [],
+    productGraphKept = [];
   let storedBytes = 0,
     decodedBytes = 0,
     summaryBytes = 0,
@@ -256,10 +258,17 @@ export async function buildSnapshotDeletionClosure({
       }
       if (
         relative &&
-        !/^(?:graph-discovery|context(?:\/capsules)?|generated|world-model(?:\/snapshots)?|graph-projection(?:\/snapshots)?|sessions(?:\/(?:records|ledger|work-evidence|runs(?:\/run-[0-9]+-[a-f0-9]{6})?|by-id(?:\/session-[a-f0-9-]{36}(?:\/(?:work-evidence|ledger))?)?))?|onboarding(?:\/storage-selections)?|roles|instructions|lineage(?:\/(?:whole-plans|execution-contracts|result-packets|review-decisions))?|change-sets(?:\/(?:records|vcs-evidence|impact-candidate-sets|impact-review-decisions))?|refresh(?:\/(?:requests|receipts))?|document-projection(?:\/post-refresh(?:\/(?:policies|receipts))?)?|observations(?:\/(?:source-bundles|descriptors|records(?:\/by-source-key)?|derived|receipts))?)$/.test(
-          relative,
+        !/^(?:graph-discovery|context(?:\/capsules)?|generated|world-model(?:\/snapshots)?|graph-projection(?:\/snapshots)?|sessions(?:\/(?:records|ledger|work-evidence|runs(?:\/run-[0-9]+-[a-f0-9]{6})?|by-id(?:\/session-[a-f0-9-]{36}(?:\/(?:work-evidence|ledger))?)?))?|onboarding(?:\/storage-selections)?|roles|instructions|lineage(?:\/(?:whole-plans|execution-contracts|result-packets|review-decisions))?|change-sets(?:\/(?:records|vcs-evidence|impact-candidate-sets|impact-review-decisions))?|refresh(?:\/(?:requests|receipts))?|document-projection(?:\/post-refresh(?:\/(?:policies|receipts))?)?|observations(?:\/(?:source-bundles|descriptors|records(?:\/by-source-key)?|derived|receipts))?|context\/product-graph(?:\/(?:유저플로우 기획서|화면설계서|승인|build))?)$/.test(
+          relative.normalize("NFC"),
         )
       ) {
+        // The product graph folder is written by hand: a folder Lode does not
+        // recognise there is the user's own. Kept, never walked or deleted,
+        // and not an issue. Links never reach here (rejected above).
+        if (relative.normalize("NFC").startsWith(PRODUCT_GRAPH_DIRECTORY + "/")) {
+          productGraphKept.push({ path: storage.directory + "/" + relative, kind: "folder" });
+          return;
+        }
         issue(relative, "UNSUPPORTED_GC_STORAGE_DIRECTORY");
         return;
       }
@@ -273,6 +282,17 @@ export async function buildSnapshotDeletionClosure({
       failure("OBSERVATION_STORE_LIMIT");
     if ((storedBytes += stat.size) > 1024 ** 3) failure("GC_INVENTORY_INCOMPLETE");
     if (relative === "graph-discovery/index.json") return;
+    // Product graph: generated output is rebuildable (like the discovery index);
+    // Canon files are read as verified text roots, so a snapshot id written in a
+    // document still retains that snapshot. A name Lode does not recognise is
+    // the user's own: kept, not read, not a root and not an issue.
+    const productGraphPath = relative.startsWith(PRODUCT_GRAPH_DIRECTORY + "/") ? relative.slice(PRODUCT_GRAPH_DIRECTORY.length + 1).normalize("NFC") : null;
+    const productGraphTarget = productGraphPath === null ? null : classifyProductGraphPath(productGraphPath);
+    if (productGraphTarget?.role === "build") return;
+    if (productGraphPath !== null && !productGraphTarget?.canon) {
+      productGraphKept.push({ path: storage.directory + "/" + relative, kind: "file" });
+      return;
+    }
     const exact = fs.lstatSync(file, { bigint: true }),
       before = snapshotFileIdentity(exact),
       match = target.exec(relative);
@@ -291,7 +311,15 @@ export async function buildSnapshotDeletionClosure({
     if (!sameSnapshotFileIdentity(before, snapshotFileIdentity(fs.lstatSync(file, { bigint: true })))) failure("GC_INVENTORY_DRIFT");
     let document = read.document;
     if (!match) {
-      if (relative.endsWith(".json")) document = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(read.bytes));
+      if (productGraphTarget?.canon) {
+        try {
+          verifyProductGraphCanonFile(productGraphPath, read.bytes, { projectId: owner.projectId });
+        } catch (error) {
+          issue(storage.directory + "/" + relative, error.code || "GC_ORIGINAL_VERIFICATION_FAILED");
+          return;
+        }
+        document = new TextDecoder("utf-8", { fatal: true }).decode(read.bytes);
+      } else if (relative.endsWith(".json")) document = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(read.bytes));
       else if (
         relative === ".gitignore" ||
         /^(?:instructions\/project|generated\/(?:head|lode)-instructions|roles\/(?:head|lode|developer|coder|reviewer))\.md$/.test(relative)
@@ -470,6 +498,9 @@ export async function buildSnapshotDeletionClosure({
     candidates: issues.length ? [] : snapshots.filter((row) => !retained.has(row.path)),
     issues,
     omittedIssues,
+    // Files and folders in the product graph folder that Lode does not
+    // recognise: the user's own, kept and named, never deleted.
+    productGraphKept: productGraphKept.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
     certified: issues.length === 0,
     backend: "typed-local-file-git-domain-source",
     basisDigest: hash(JSON.stringify([...entries, ...mixed.files.values()].map(({ path, sha256 }) => ({ path, sha256 })))),

@@ -41,6 +41,10 @@ export function parse(argv) {
       if (value === "true" || value === "false") index += 1;
       continue;
     }
+    if (["product-graph-build", "product-graph-check"].includes(command) && key === "include-estimates") {
+      options[key] = true;
+      continue;
+    }
     if (key === "fresh") {
       options[key] = true;
       continue;
@@ -112,6 +116,11 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
     `${cliDisplay} feature-mapping-review <project> --input <review.json>`,
     `${cliDisplay} feature-mapping-candidates <project> --candidate-set <feature-mapping-candidate-set-id>`,
     `${cliDisplay} feature-mapping-review-read <project> --review <feature-mapping-review-decision-id>`,
+    `${cliDisplay} product-graph-build <project> [--include-estimates]  # writes only the generated product graph output`,
+    `${cliDisplay} product-graph-build <source-root> --documents <folder> --rules <entry-rules.json> --out <folder> [--include-estimates]  # stand-alone; writes only under --out`,
+    `${cliDisplay} product-graph-check <project> [--include-estimates]`,
+    `${cliDisplay} product-graph-check <source-root> --documents <folder> --rules <entry-rules.json> [--include-estimates]  # stand-alone, read-only`,
+    `${cliDisplay} product-graph-approve <project> --input <approval.json>  # the user's approval of one document's current content`,
     `${cliDisplay} change-set-record <project> --input <change-set.json>`,
     `${cliDisplay} change-set-status <project>`,
     `${cliDisplay} change-set-read <project> --change-set <change-set-id>`,
