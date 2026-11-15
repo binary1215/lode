@@ -5,25 +5,26 @@
     {
       "종류": "tool",
       "판단": true,
-      "설명": "Lode MCP tool: operation registry entries and the work-document tool definitions.",
-      "파일": ["scripts/lib/session/operation-registry.mjs", "scripts/lib/world/work-document-surface.mjs"],
-      "패턴": "^\\s*name:\\s*\"(lode_[a-z0-9_]+)\""
+      "설명": "Lode MCP tool: the name of an operation registry row (the row's own name, not the nested tool definition).",
+      "파일": ["scripts/lib/session/operation-registry.mjs"],
+      "패턴": "^ {4}name: \"(lode_[a-z0-9_]+)\",$",
+      "처리 코드": "항목"
     },
     {
       "종류": "cli",
       "판단": true,
-      "설명": "Lode CLI command: the cli.command field of an operation registry entry.",
+      "설명": "Lode CLI command: the command of an operation registry row's cli block (not a command named inside a result).",
       "파일": ["scripts/lib/session/operation-registry.mjs"],
-      "패턴": "\\bcommand:\\s*\"([a-z0-9-]+)\"",
-      "처리 코드": "파일"
+      "패턴": "^ {4}cli: \\{ command: \"([a-z0-9-]+)\"|^ {6}command: \"([a-z0-9-]+)\",$",
+      "처리 코드": "항목"
     },
     {
       "종류": "cli",
       "판단": true,
-      "설명": "Lode CLI command alias: each name in a cli.aliases list.",
+      "설명": "Lode CLI command alias: each name in a registry row's cli.aliases list.",
       "파일": ["scripts/lib/session/operation-registry.mjs"],
-      "패턴": "(?<=aliases:\\s*\\[[^\\]]*)\"([^\"]+)\"",
-      "처리 코드": "파일"
+      "패턴": "(?<=^ {6}aliases: \\[[^\\]]*)\"([^\"]+)\"",
+      "처리 코드": "항목"
     }
   ]
 }

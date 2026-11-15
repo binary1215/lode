@@ -1128,3 +1128,90 @@ test("H: the preservation closure names a link in the family as a link", async (
   const preservation = await inspectSnapshotPreservationClosure({ root: f.root });
   assert.deepEqual(preservation.productGraphKept, [{ path: ".lode/context/product-graph/메모", kind: "link" }]);
 });
+
+// ---------- T1: 표 항목의 처리 코드 ----------
+
+test("acceptance 20: each table row names its own 처리 코드, never the table's file", (t) => {
+  const { result, graph, handler } = family(t, path.join(fixtures, "table"), path.join(fixtures, "table-rules.json"));
+  const expected = {
+    "cli:save": ["files.mjs#saveFile"],
+    "cli:inline": ["commands.mjs#localHelper"],
+    "cli:lazy": ["lazy.mjs#runLazy"],
+    "cli:deploy": ["commands.mjs#buildProject"],
+    "cli:compile": ["handlers.py#run_build"],
+    "cli:clean": ["handlers.py#run_clean"],
+    "cli:broken": [],
+  };
+  for (const [id, handlers] of Object.entries(expected)) assert.deepEqual(handler(id), handlers, id);
+  for (const node of graph.nodes.filter((item) => item.type === "기능")) assert(!handler(node.id).includes("commands.mjs"), node.id);
+  assert.deepEqual(
+    result.lists.unresolvedHandlers.map((item) => [item.id, item.reason]),
+    [["cli:broken", "항목의 동적 import가 경로를 글자로 쓰지 않았거나 같은 식에서 이름을 꺼내지 않음"]],
+  );
+  const unreached = result.lists.unreachedCode.files.flatMap((file) => file.declarations);
+  assert(unreached.includes("commands.mjs#neverNamed"));
+  assert(!unreached.includes("files.mjs#writeOut"), "called only by row (a)'s handler");
+  assert.deepEqual(result.lists.multiRowFunctions, [
+    {
+      id: "cli:save",
+      positions: [
+        { path: "commands.mjs", line: 15 },
+        { path: "commands.mjs", line: 19 },
+      ],
+    },
+  ]);
+  assert.match(result.text, /여러 표 항목에서 나온 기능: 1개/);
+  assert.match(result.text.split("\n\n")[0], /처리 코드를 표 항목에서 찾는 규칙은/);
+  // A literal dynamic import is a call to the member it names, everywhere.
+  assert(graph.edges.some((edge) => edge.type === "call" && edge.to === "lazy.mjs#runLazy"));
+  assert.equal(result.lists.unresolvedReferences.byReason.find((reason) => reason.reason === "dynamic-import").count, 1);
+});
+
+test("acceptance 21: on Lode itself no tool: or cli: 기능 of the registry has the registry file as 처리 코드", (t) => {
+  const base = temporary(t);
+  fs.mkdirSync(path.join(base, "documents"));
+  const out = path.join(base, "out");
+  const result = buildProductGraph({
+    sourceRoot: pluginRoot,
+    documentsDirectory: path.join(base, "documents"),
+    rulesFile: path.join(fixtures, "lode-entry-rules.json"),
+    outputDirectory: out,
+  });
+  const graph = JSON.parse(fs.readFileSync(path.join(out, "graph.json"), "utf8"));
+  const registry = "scripts/lib/session/operation-registry.mjs";
+  const unresolved = new Map(result.lists.unresolvedHandlers.map((item) => [item.id, item.reason]));
+  const fromRegistry = graph.nodes.filter(
+    (node) => node.type === "기능" && /^(tool|cli):/.test(node.id) && node.positions.some((position) => position.path === registry),
+  );
+  const registered = new Set([
+    ...registryCatalog().map((tool) => `tool:${tool.name}`),
+    ...OPERATIONS.filter((entry) => entry.cli)
+      .flatMap((entry) => [entry.cli.command, ...(entry.cli.aliases ?? [])])
+      .map((name) => `cli:${name}`),
+  ]);
+  assert.deepEqual(new Set(fromRegistry.map((node) => node.id)), registered);
+  for (const node of fromRegistry) {
+    const handlers = graph.edges.filter((edge) => edge.type === "기능→코드" && edge.from === node.id).map((edge) => edge.to);
+    assert(!handlers.includes(registry), node.id);
+    assert(handlers.length > 0 || unresolved.has(node.id), node.id);
+  }
+  assert.deepEqual(result.lists.multiRowFunctions, []);
+});
+
+test("acceptance 22: with table-row rules, two builds are byte-identical and no ID carries a line number", (t) => {
+  const base = temporary(t);
+  fs.mkdirSync(path.join(base, "documents"));
+  const run = (name) =>
+    buildProductGraph({
+      sourceRoot: path.join(fixtures, "table"),
+      documentsDirectory: path.join(base, "documents"),
+      rulesFile: path.join(fixtures, "table-rules.json"),
+      outputDirectory: path.join(base, name),
+    });
+  run("first");
+  run("second");
+  const first = filesUnder(path.join(base, "first"));
+  for (const [name, bytes] of first) assert.deepEqual(filesUnder(path.join(base, "second")).get(name), bytes, name);
+  const graph = JSON.parse(first.get("graph.json").toString("utf8"));
+  for (const node of graph.nodes) assert(!/@\d+$/.test(node.id), node.id);
+});

@@ -8,6 +8,7 @@ import { analyzeSourceFile, classifySourcePath } from "./source-analysis.mjs";
 import { REPOSITORY_SCAN_EXCLUDED_DIRECTORIES } from "./repository-scan.mjs";
 import { BUILT_IN_UI_MARKERS, BUILT_IN_UI_PATTERNS } from "./product-graph-ui-patterns.mjs";
 import { codeMask, codeMaskKind } from "./product-graph-code-mask.mjs";
+import { dynamicImports, findRow, rowNames } from "./product-graph-table-rows.mjs";
 import { failCode as fail } from "../core/errors.mjs";
 
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
@@ -167,6 +168,11 @@ export const UNRESOLVED_REASONS = Object.freeze([
     settle: "지역 변수에 담긴 함수, 전역 이름, star import까지 읽는 해석기 (타입 정보)",
   }),
   Object.freeze({
+    key: "dynamic-import",
+    label: "동적 import: 경로가 글자 그대로가 아니거나, 같은 식에서 꺼내는 이름이 없음",
+    settle: "경로를 글자로 쓰고 같은 식에서 이름을 꺼내기(.then((m) => m.이름) 또는 const { 이름 } = await import(...)), 또는 프로젝트 규칙",
+  }),
+  Object.freeze({
     key: "rest",
     label: "그 밖: 스캔이 이유를 정하지 못함 (들여온 모듈을 찾지 못함, 모듈에 그 이름이 없음, 한 줄에 같은 이름이 메서드와 함수로 함께 쓰임)",
     settle: "구문 트리 기반의 더 정밀한 해석기",
@@ -257,6 +263,13 @@ function buildCodeLayer(sourceRoot, files, excludes) {
     for (let index = 0; index < analysis.text.length; index += 1)
       view += !lineMask.trusted || lineMask[index] || analysis.text[index] === "\n" ? analysis.text[index] : " ";
     const maskedLines = view.split("\n");
+    // Dynamic imports on each line, in order, for the "import" pseudo-calls.
+    const dynamicByLine = new Map();
+    if (analysis.language !== "python")
+      for (const item of dynamicImports(analysis.text, lineMask)) {
+        if (!dynamicByLine.has(item.line)) dynamicByLine.set(item.line, []);
+        dynamicByLine.get(item.line).push(item);
+      }
     // The call scan keeps only a name for "expr).map(": look at the call's own
     // line to see whether every use of that name there follows a ".".
     const receiverOf = (line, callee) => {
@@ -279,6 +292,20 @@ function buildCodeLayer(sourceRoot, files, excludes) {
           (!caller || (symbol.endLine ?? symbol.line) - symbol.line < (caller.endLine ?? caller.line) - caller.line)
         )
           caller = symbol;
+      if (call.callee === "import" && analysis.language !== "python") {
+        const item = dynamicByLine.get(call.line)?.shift();
+        if (item) {
+          const outcome = resolveDynamicImport(relative, item, context);
+          if (outcome.targets) {
+            resolvedCount += 1;
+            for (const target of outcome.targets) addReference(caller?.id || relative, target.id, "call", relative, call.line);
+          } else {
+            const bucket = unresolvedByReason.get(outcome.reason);
+            bucket.set("import", (bucket.get("import") || 0) + 1);
+          }
+          continue;
+        }
+      }
       const outcome = resolveCall(
         relative,
         analysis,
@@ -309,10 +336,34 @@ function buildCodeLayer(sourceRoot, files, excludes) {
       callees: [...bucket.entries()].map(([callee, count]) => ({ callee, count })).sort((a, b) => b.count - a.count || compare(a.callee, b.callee)),
     };
   });
+  // Resolution helpers for table rows (T1): the same rules as for calls.
+  const bindingsOf = new Map(
+    [...analyses].map(([relative, analysis]) => [relative, new Map(analysis.semanticFacts.bindings.map((binding) => [binding.local, binding]))]),
+  );
+  const resolveName = (relative, name) => {
+    const local = unique(relative, name);
+    if (local) return local;
+    const binding = bindingsOf.get(relative)?.get(name);
+    if (!binding || binding.namespace) return null;
+    const language = analyses.get(relative)?.language;
+    if (isExternalSpecifier(relative, binding.specifier, language, fileSet)) return null;
+    const module = resolveModule(relative, binding.specifier, language, fileSet);
+    return module ? unique(module, binding.imported === "default" ? name : binding.imported) : null;
+  };
+  const resolveMember = (relative, head, member) => {
+    const binding = bindingsOf.get(relative)?.get(head);
+    if (!binding?.namespace) return null;
+    const language = analyses.get(relative)?.language;
+    const module = resolveModule(relative, binding.specifier, language, fileSet);
+    return module ? unique(module, member) : null;
+  };
   return {
     analyses,
     nodes,
     unique,
+    resolveName,
+    resolveMember,
+    resolveDynamic: (relative, item) => resolveDynamicImport(relative, item, context),
     references,
     referenceSummary: {
       allCalls: allCount,
@@ -322,6 +373,17 @@ function buildCodeLayer(sourceRoot, files, excludes) {
     },
     excludes,
   };
+}
+
+// A dynamic import with a literal relative path and a member named in the
+// same expression resolves to that export; anything else says why not.
+function resolveDynamicImport(relative, item, { unique, fileSet }) {
+  if (item.specifier === null || !item.members.length) return { reason: "dynamic-import" };
+  if (!item.specifier.startsWith(".")) return { reason: "external-import" };
+  const module = resolveModule(relative, item.specifier, "javascript", fileSet);
+  if (!module) return { reason: "rest" };
+  const targets = item.members.map((member) => unique(module, member));
+  return targets.every(Boolean) ? { targets } : { reason: "rest" };
 }
 
 function enclosingClass(analysis, qualifiedName) {
@@ -859,6 +921,7 @@ export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
   }
 
   // tool / cli by project pattern rules.
+  const rowsOf = new Map();
   for (const rule of patterns) {
     for (const relative of rule.파일) {
       if (!fileSet.has(relative)) {
@@ -871,8 +934,18 @@ export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
         const name = match.slice(1).find((value) => typeof value === "string" && value);
         if (!name) continue;
         const line = lineOf(text, match.index || 0);
+        const id = `${rule.종류}:${name}`;
+        const position = { path: relative, line };
+        if (rule["처리 코드"] === "항목") {
+          const row = readTableRow(code, relative, text, match.index || 0);
+          if (!rowsOf.has(id)) rowsOf.set(id, new Map());
+          rowsOf.get(id).set(`${relative}:${row.start}`, position);
+          if (row.targets.length) for (const handler of row.targets) addFunction({ id, kind: rule.종류, position, handler, rule });
+          else addFunction({ id, kind: rule.종류, position, handlerReason: row.reason, rule });
+          continue;
+        }
         const handler = rule["처리 코드"] === "파일" ? fileNode(relative) : enclosingCode(code, relative, line) || fileNode(relative);
-        addFunction({ id: `${rule.종류}:${name}`, kind: rule.종류, position: { path: relative, line }, handler, rule });
+        addFunction({ id, kind: rule.종류, position, handler, rule });
       }
     }
   }
@@ -915,6 +988,13 @@ export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
     functionNodes,
     references: [...code.references.values()].sort((a, b) => compare(a.from, b.from) || compare(a.to, b.to) || compare(a.type, b.type)),
     referenceSummary: code.referenceSummary,
+    // 기능 found in more than one table row: kept with every row's handlers
+    // and listed, so a pattern that also matches a mention shows up.
+    multiRowFunctions: [...rowsOf.entries()]
+      .filter(([, rows]) => rows.size > 1)
+      .map(([id, rows]) => ({ id, positions: [...rows.values()].sort((a, b) => compare(a.path, b.path) || a.line - b.line) }))
+      .sort((a, b) => compare(a.id, b.id)),
+    tableRowRules: patterns.filter((rule) => rule["처리 코드"] === "항목").length,
     unresolvedHandlers: unresolvedHandlers.sort(
       (a, b) => compare(a.id, b.id) || compare(a.position.path, b.position.path) || a.position.line - b.position.line,
     ),
@@ -1031,4 +1111,53 @@ function startsInCodeOnLine(text, index, python) {
     else if (python ? character === "#" : character === "/" && prefix[position + 1] === "/") return false;
   }
   return quote === null;
+}
+
+// T1: the code a table row names. The row is found with the code mask
+// (findRow); it is read like a function body: names that resolve to one
+// declaration (a function named as a value, calls in inline functions),
+// "namespace.member" through an import, and members of literal dynamic
+// imports. A Python decorator row's handler is the definition it decorates.
+function readTableRow(code, relative, text, index) {
+  const analysis = code.analyses.get(relative);
+  const python = relative.endsWith(".py");
+  const mask = codeMask(text, python ? "python" : "javascript");
+  if (!mask.trusted) mask.fill(1);
+  const row = findRow(text, mask, index, python);
+  const targets = new Map();
+  if (row.kind === "decorator" && analysis) {
+    const line = lineOf(text, index);
+    const next = analysis.symbols
+      .filter((symbol) => (symbol.kind === "function" || symbol.kind === "class") && symbol.line > line)
+      .sort((a, b) => a.line - b.line)[0];
+    if (next) targets.set(next.id, next);
+    return { ...row, targets: [...targets.keys()].sort(), reason: next ? null : "데코레이터 아래에 정의가 없음" };
+  }
+  const { names, members } = rowNames(text, mask, row.start, row.end);
+  for (const name of names) {
+    const target = code.resolveName(relative, name);
+    if (target && target.kind !== "file") targets.set(target.id, target);
+  }
+  for (const [head, member] of members) {
+    const target = code.resolveMember(relative, head, member);
+    if (target) targets.set(target.id, target);
+  }
+  let dynamicReason = null;
+  if (!python)
+    for (const item of dynamicImports(text, mask).filter((entry) => entry.index >= row.start && entry.index < row.end)) {
+      const outcome = code.resolveDynamic(relative, item);
+      if (outcome.targets) for (const target of outcome.targets) targets.set(target.id, target);
+      else
+        dynamicReason =
+          outcome.reason === "dynamic-import"
+            ? "항목의 동적 import가 경로를 글자로 쓰지 않았거나 같은 식에서 이름을 꺼내지 않음"
+            : outcome.reason === "external-import"
+              ? "항목의 동적 import가 제품 밖 모듈을 가리킴"
+              : "항목의 동적 import가 가리키는 모듈에서 그 이름의 함수·클래스 선언을 찾지 못함 (상수일 수 있음)";
+    }
+  return {
+    ...row,
+    targets: [...targets.keys()].sort(),
+    reason: targets.size ? null : dynamicReason || "항목 안에 하나의 선언으로 풀리는 이름이 없음",
+  };
 }

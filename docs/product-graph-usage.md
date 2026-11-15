@@ -67,3 +67,22 @@ lode-agent product-graph-check <source-root> --documents <folder> --rules <entry
 ```
 
 The documents folder uses the same layout as the store folder. The rule file may hold an empty rule list. `--out` may not be the documents folder (or inside it) or the source root; in the folder you name, the three output files are replaced on each build.
+
+## A rule for a command table
+
+When a product registers its commands as rows of a table, a project rule can take each command's 처리 코드 from its own row. For a table like this:
+
+```javascript
+export const COMMANDS = [
+  { command: "save", handler: saveFile },
+  { command: "export", load: () => import("./export.mjs").then((m) => m.runExport) },
+];
+```
+
+write the rule in `호출 방식 표.json`:
+
+```json
+{ "종류": "cli", "판단": true, "파일": ["src/commands.mjs"], "패턴": "command: \"([a-z-]+)\"", "처리 코드": "항목" }
+```
+
+`cli:save` then has `saveFile` as its 처리 코드 and `cli:export` has `runExport`. Make the pattern match the row's own key, not a mention of a command elsewhere; a 기능 found in more than one row is listed so you can tighten it.

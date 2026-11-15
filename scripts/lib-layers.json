@@ -148,6 +148,7 @@
     "product-graph-documents.mjs": "world",
     "product-graph-extraction.mjs": "world",
     "product-graph-store.mjs": "storage",
+    "product-graph-table-rows.mjs": "world",
     "product-graph-ui-patterns.mjs": "world",
     "product-graph.mjs": "world",
     "product-model-revision-verification.mjs": "world",

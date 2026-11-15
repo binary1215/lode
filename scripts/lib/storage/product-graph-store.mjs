@@ -265,8 +265,8 @@ export function verifyProductGraphRules(document) {
       if (typeof rule["패턴"] !== "string" || !rule["패턴"]) invalid(`${where}.패턴이 필요하다`);
       const expression = regexOrFail(rule["패턴"], "gm", invalid, `${where}.패턴`);
       if (!/\((?!\?)/.test(expression.source)) invalid(`${where}.패턴에는 이름을 잡는 괄호가 하나 있어야 한다`);
-      if (rule["처리 코드"] !== undefined && !["줄을 감싼 코드", "파일"].includes(rule["처리 코드"]))
-        invalid(`${where}.처리 코드는 줄을 감싼 코드 또는 파일이다`);
+      if (rule["처리 코드"] !== undefined && !["줄을 감싼 코드", "파일", "항목"].includes(rule["처리 코드"]))
+        invalid(`${where}.처리 코드는 줄을 감싼 코드, 파일 또는 항목이다`);
     } else if (rule["파일"] !== undefined || rule["패턴"] !== undefined || rule["처리 코드"] !== undefined) invalid(`${where}: 파일·패턴은 tool, cli에만 쓴다`);
   }
   const markers = document["화면 코드 표시"];

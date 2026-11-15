@@ -69,3 +69,22 @@ lode-agent product-graph-check <source-root> --documents <folder> --rules <entry
 ```
 
 문서 폴더는 저장소 폴더와 같은 구조를 씁니다. 규칙 파일의 규칙 목록은 비어 있어도 됩니다. `--out`은 문서 폴더(또는 그 안)나 소스 루트일 수 없고, 지정한 폴더의 출력 파일 세 개는 빌드할 때마다 바뀝니다.
+
+## 명령 표를 위한 규칙
+
+제품이 명령을 표의 항목으로 등록한다면, 프로젝트 규칙으로 명령마다 그 항목에서 처리 코드를 가져올 수 있습니다. 이런 표라면:
+
+```javascript
+export const COMMANDS = [
+  { command: "save", handler: saveFile },
+  { command: "export", load: () => import("./export.mjs").then((m) => m.runExport) },
+];
+```
+
+`호출 방식 표.json`에 이렇게 씁니다.
+
+```json
+{ "종류": "cli", "판단": true, "파일": ["src/commands.mjs"], "패턴": "command: \"([a-z-]+)\"", "처리 코드": "항목" }
+```
+
+그러면 `cli:save`의 처리 코드는 `saveFile`, `cli:export`의 처리 코드는 `runExport`가 됩니다. 패턴은 다른 곳의 언급이 아니라 항목 자신의 키에 맞게 씁니다. 여러 항목에서 나온 기능은 목록에 나오므로 패턴을 좁힐 수 있습니다.

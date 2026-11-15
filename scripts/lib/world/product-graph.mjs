@@ -659,6 +659,7 @@ function compute({ extraction, loaded, includeEstimates }) {
       },
       notLookedAt: extraction.notLookedAt,
       unresolvedHandlers: extraction.unresolvedHandlers,
+      multiRowFunctions: extraction.multiRowFunctions,
       notTakenBindings: extraction.notTakenBindings,
       uiWithoutRule: extraction.uiWithoutRule,
       outOfScope: extraction.outOfScope,
@@ -928,6 +929,10 @@ export function renderProductGraphText(result) {
   if (looked.skipped.length) lines.push(`  건너뛴 것: ${looked.skipped.map((item) => `${item.reason} ${item.count}`).join(", ")}`);
   lines.push(`사라진 기능의 뜻: ${lists.vanishedMeanings.length}개`);
   lines.push(...listLines(lists.vanishedMeanings, (item) => `${item.id} — "${item.text}" (${where(item.at)})`));
+  if (lists.multiRowFunctions.length) {
+    lines.push(`여러 표 항목에서 나온 기능: ${lists.multiRowFunctions.length}개 (모든 항목의 처리 코드를 함께 쓴다. 언급까지 맞는 패턴이면 규칙을 고친다)`);
+    lines.push(...listLines(lists.multiRowFunctions, (item) => `${item.id} — ${item.positions.map(where).join(", ")}`));
+  }
   lines.push(`처리 코드를 찾지 못한 기능: ${lists.unresolvedHandlers.length}개`);
   lines.push(...listLines(lists.unresolvedHandlers, (item) => `${item.id} (${where(item.position)}) — ${item.reason}`));
   lines.push(`기능으로 삼지 않은 연결: ${lists.notTakenBindings.length}개`);
@@ -987,6 +992,9 @@ const UI_SCAN_LIMITS = Object.freeze([
   "템플릿의 같은 태그 id는 가장 가까운 < 와 > 사이에서 찾는다. 이벤트 메서드는 이름으로만 찾고 상속은 확인하지 않는다.",
 ]);
 
+const TABLE_ROW_LIMITS =
+  "처리 코드를 표 항목에서 찾는 규칙은 맞은 곳을 감싼 리스트·객체·딕셔너리의 원소(그런 것이 없으면 그 문장, Python 데코레이터면 꾸미는 정의)를 함수 본문처럼 읽는다: 값으로 쓴 함수 이름, 항목 안 함수의 호출, 경로를 글자로 쓴 동적 import에서 같은 식으로 꺼낸 이름. 한 항목에서 나온 기능 둘은 그 항목의 처리 코드를 함께 쓴다. Python의 동적 import(importlib)는 읽지 않는다.";
+
 // One object for the structured result and generated files; the text renders
 // it first. Facts here are not repeated elsewhere in the text.
 function limitsOf({ extraction, computed, includeEstimates, loaded, callbacks }) {
@@ -1006,6 +1014,8 @@ function limitsOf({ extraction, computed, includeEstimates, loaded, callbacks })
     // Files whose lexer mask could not be trusted: 코드만 fell back to the
     // line-local check there.
     lineLocalFallback: { count: extraction.untrustedMaskFiles.length, files: extraction.untrustedMaskFiles },
+    // How rows are read when a rule takes its 처리 코드 from the table row.
+    tableRows: extraction.tableRowRules ? TABLE_ROW_LIMITS : null,
     execution: "아무것도 실행하지 않았다. 문서와 코드를 비교할 뿐이고, 어느 발견도 실행 근거에 기대지 않는다.",
     documents: {
       approved: computed.documentSummary.approved,
@@ -1032,6 +1042,7 @@ function renderLimits(limits) {
     `- reference 종류는 ${limits.referenceKinds.emitted.join(", ")}만 적는다. ${limits.referenceKinds.notToldApart.join(", ")}는 구별하지 못해 적지 않는다.`,
     `- 뽑지 않은 것: ${limits.notExtracted.nodeTypes.join(", ")} 노드, ${limits.notExtracted.edges.join(", ")} 연결, ${limits.notExtracted.grouping}.`,
     ...limits.uiBindingScan.map((line) => `- ${line}`),
+    ...(limits.tableRows ? [`- ${limits.tableRows}`] : []),
     ...(limits.lineLocalFallback.count
       ? [
           `- lexer가 파일 끝에서 문자열·템플릿·주석 안에 있어 코드만 판정을 줄 단위로 되돌린 파일 ${limits.lineLocalFallback.count}개: ${limits.lineLocalFallback.files.slice(0, 10).join(", ")}${limits.lineLocalFallback.count > 10 ? ` 외 ${limits.lineLocalFallback.count - 10}개` : ""}.`,
