@@ -242,7 +242,7 @@ export function verifyUiBindingPattern(entry, where = "UI 연결 패턴", { allo
 export function verifyProductGraphRules(document) {
   const invalid = (detail) => fail("PRODUCT_GRAPH_RULES_INVALID", `호출 방식 표가 올바르지 않다: ${detail}`);
   if (!document || typeof document !== "object" || Array.isArray(document)) invalid("JSON 객체가 아니다");
-  const allowedTop = ["schemaVersion", "kind", "rules", "source", "화면 코드 표시", "화면 파일"];
+  const allowedTop = ["schemaVersion", "kind", "rules", "source", "화면 코드 표시", "화면 파일", "내장 이름"];
   for (const key of Object.keys(document)) if (!allowedTop.includes(key)) invalid(`모르는 항목 ${key}`);
   if (document.schemaVersion !== 1 || document.kind !== "LodeProductGraphEntryRules") invalid("schemaVersion 1, kind LodeProductGraphEntryRules 이어야 한다");
   if (!Array.isArray(document.rules ?? [])) invalid("rules는 배열이어야 한다");
@@ -281,6 +281,21 @@ export function verifyProductGraphRules(document) {
         invalid(`${where}.확장자는 확장자 배열이다`);
       if (typeof marker["표시"] !== "string") invalid(`${where}.표시가 필요하다`);
       regexOrFail(marker["표시"], "m", invalid, `${where}.표시`);
+    }
+  }
+  // Global names a project adds to the built-in table (call precision 나):
+  // { "javascript": { "네임스페이스": [...], "함수": [...] }, "python": {...} }.
+  const globals = document["내장 이름"];
+  if (globals !== undefined) {
+    if (!globals || typeof globals !== "object" || Array.isArray(globals)) invalid("내장 이름은 객체다");
+    for (const [language, table] of Object.entries(globals)) {
+      if (!["javascript", "python"].includes(language)) invalid(`내장 이름에 모르는 언어 ${language} (javascript, python)`);
+      if (!table || typeof table !== "object" || Array.isArray(table)) invalid(`내장 이름.${language}는 객체다`);
+      for (const [key, names] of Object.entries(table)) {
+        if (!["네임스페이스", "함수"].includes(key)) invalid(`내장 이름.${language}에 모르는 항목 ${key} (네임스페이스, 함수)`);
+        if (!Array.isArray(names) || names.some((name) => typeof name !== "string" || !/^[A-Za-z_$][\w$]*$/.test(name)))
+          invalid(`내장 이름.${language}.${key}는 이름 배열이다`);
+      }
     }
   }
   const named = document["화면 파일"];

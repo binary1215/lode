@@ -4,11 +4,13 @@
 // clock, and no absolute path enters the result.
 import fs from "node:fs";
 import path from "node:path";
-import { analyzeSourceFile, classifySourcePath } from "./source-analysis.mjs";
+import { analyzeSourceFile, classifySourcePath, methodDefinitionSites, signatureSites } from "./source-analysis.mjs";
 import { REPOSITORY_SCAN_EXCLUDED_DIRECTORIES } from "./repository-scan.mjs";
 import { BUILT_IN_UI_MARKERS, BUILT_IN_UI_PATTERNS } from "./product-graph-ui-patterns.mjs";
 import { codeMask, codeMaskKind } from "./source-code-mask.mjs";
-import { bracketPairs, dynamicImports, findRow, lineStarts, rowNames } from "./product-graph-table-rows.mjs";
+import { bracketPairs, dynamicImports, findRow, lineStarts, rowNames, statementCallChain } from "./product-graph-table-rows.mjs";
+import { effectiveGlobals } from "./product-graph-builtins.mjs";
+import { bindingAt, definedMemberNames, javascriptFacts, pythonFacts } from "./product-graph-scopes.mjs";
 import { failCode as fail } from "../core/errors.mjs";
 
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
@@ -120,6 +122,10 @@ function readText(sourceRoot, relative) {
 // does not move when lines change elsewhere; it changes only when a
 // same-named declaration is added, removed or moved before it, or when a
 // second one appears (the first then gains ~1).
+// A module-level value binding that is called (다): a 코드 node of its own kind.
+const VALUE_KIND = "값";
+const MAX_EXPORT_STEPS = 32;
+
 const symbolId = (file, symbol) => symbol.id ?? `${file}#${symbol.qualifiedName}`;
 
 function assignSymbolIds(relative, symbols) {
@@ -133,47 +139,90 @@ function assignSymbolIds(relative, symbols) {
   }
 }
 
-const LANGUAGE_KEYWORDS = new Set(["async", "await", "elif", "except", "import", "in", "is", "not", "or", "and", "super", "yield", "print"]);
+const LANGUAGE_KEYWORDS = new Set(["async", "await", "elif", "except", "import", "in", "is", "not", "or", "and", "super", "yield"]);
 
-// Why an unresolved call stayed unresolved. Only what the scan determined.
+// Why an unresolved call stayed unresolved. Only what the scan determined;
+// every unresolved call is counted under exactly one reason. The "group" says
+// which of the limits block's numbers it falls in: calls that cannot be
+// product code (built-in, a keyword) or go to a module outside the product,
+// and calls that can be product code.
 export const UNRESOLVED_REASONS = Object.freeze([
   Object.freeze({
     key: "ambiguous",
+    group: "product",
     label: "같은 이름의 선언이 여럿이라 하나로 정하지 못함",
     settle: "어느 선언인지 정해 줄 import 경로나 타입 정보",
   }),
   Object.freeze({
     key: "keyword",
+    group: "keyword",
     label: "호출처럼 보이지만 언어 키워드임 (import(, async (, super( 같은 것)",
     settle: "정할 것이 없다. 호출이 아니다",
   }),
   Object.freeze({
-    key: "no-declaration",
-    label: "스캔한 코드 어디에도 그 이름의 선언이 없음",
-    settle: "언어 내장·런타임 이름이면 정할 것이 없다. 제품 코드라면 그 파일이 스캔 범위(확장자, source.제외)에 드는지 확인",
+    key: "builtin-namespace",
+    group: "built-in",
+    label: "언어·런타임 내장 네임스페이스의 멤버 (JSON.parse, Math.max 같은 것). 파일이 그 이름을 선언·들여오거나 묶지 않음",
+    settle: "정할 것이 없다. 제품 코드가 아니다. 내장 이름 표에 없는 전역이면 프로젝트 규칙의 내장 이름에 더한다",
+  }),
+  Object.freeze({
+    key: "builtin-global",
+    group: "built-in",
+    label: "언어·런타임 내장 함수나 생성자 (String(, setTimeout(, len( 같은 것). 파일이 그 이름을 선언·들여오거나 묶지 않음",
+    settle: "정할 것이 없다. 제품 코드가 아니다. 내장 이름 표에 없는 전역이면 프로젝트 규칙의 내장 이름에 더한다",
+  }),
+  Object.freeze({
+    key: "member-nowhere",
+    group: "built-in",
+    label: "제품 어디에도 그 이름의 함수·멤버가 없는 메서드 호출. 내장 메서드이거나 제품 밖 객체의 메서드라 제품 코드일 수 없음",
+    settle: "정할 것이 없다. 제품 코드라면 그 함수가 있는 파일이 스캔 범위(확장자, source.제외)에 드는지 확인",
   }),
   Object.freeze({
     key: "external-import",
+    group: "external",
     label: "제품 밖 모듈(상대 경로가 아닌 import)에서 들여온 이름",
     settle: "그 패키지 코드를 스캔 범위에 넣거나, 제품 밖 경계로 둔다는 판단",
   }),
   Object.freeze({
-    key: "unknown-receiver",
-    label: "받는 쪽(객체)의 타입을 모르는 호출",
-    settle: "타입 정보(구문 트리와 타입 검사기)",
+    key: "no-declaration",
+    group: "product",
+    label: "스캔한 코드 어디에도 그 이름의 선언이 없음",
+    settle: "제품 코드라면 그 파일이 스캔 범위(확장자, source.제외)에 드는지 확인. 표에 없는 전역 이름이면 프로젝트 규칙의 내장 이름에 더한다",
   }),
   Object.freeze({
     key: "declared-elsewhere",
+    group: "product",
     label: "이 파일에는 그 이름의 함수·클래스 선언이 없고 다른 파일에만 있으며, 잇는 import도 없음",
-    settle: "지역 변수에 담긴 함수, 전역 이름, star import까지 읽는 해석기 (타입 정보)",
+    settle: "전역 이름이나 star import까지 읽는 해석기 (타입 정보)",
+  }),
+  Object.freeze({
+    key: "unknown-receiver",
+    group: "product",
+    label: "받는 쪽(객체)의 타입을 모르는 호출. 그 메서드 이름은 제품에 있음",
+    settle: "타입 정보(구문 트리와 타입 검사기)",
+  }),
+  Object.freeze({
+    key: "inherited",
+    group: "product",
+    label:
+      "상속받은 멤버일 수 있음: 클래스에 그 이름의 메서드가 없고, 클래스가 다른 클래스를 상속하거나 그 이름을 본문 없는 선언(abstract, 시그니처)으로만 가짐 (super.x( 포함)",
+    settle: "상속을 따라가는 해석기",
+  }),
+  Object.freeze({
+    key: "local-function",
+    group: "product",
+    label: "매개변수나 지역 변수에 담긴 함수",
+    settle: "데이터 흐름 분석 (어떤 함수가 그 변수에 들어오는지)",
   }),
   Object.freeze({
     key: "dynamic-import",
+    group: "product",
     label: "동적 import: 경로가 글자 그대로가 아니거나, 같은 식에서 꺼내는 이름이 없음",
     settle: "경로를 글자로 쓰고 같은 식에서 이름을 꺼내기(.then((m) => m.이름) 또는 const { 이름 } = await import(...)), 또는 프로젝트 규칙",
   }),
   Object.freeze({
     key: "rest",
+    group: "product",
     label: "그 밖: 스캔이 이유를 정하지 못함 (들여온 모듈을 찾지 못함, 모듈에 그 이름이 없음, 한 줄에 같은 이름이 메서드와 함수로 함께 쓰임)",
     settle: "구문 트리 기반의 더 정밀한 해석기",
   }),
@@ -209,9 +258,11 @@ function isExternalSpecifier(relative, specifier, language, fileSet) {
   return !specifier.startsWith(".");
 }
 
-// Builds the 코드 layer: one node per file and per declaration, and call
-// references that resolve to exactly one declaration.
-function buildCodeLayer(sourceRoot, files, excludes) {
+// Builds the 코드 layer: one node per file and per declaration, a 값 node per
+// module-level value binding that is called, and call references that resolve
+// to exactly one of them.
+function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
+  const globals = effectiveGlobals(projectGlobals);
   const codeFiles = files.filter((relative) => {
     const extension = path.posix.extname(relative).toLowerCase();
     return CODE_LANGUAGES[extension] && classifySourcePath(relative, extension) !== "test";
@@ -222,13 +273,80 @@ function buildCodeLayer(sourceRoot, files, excludes) {
     const text = readText(sourceRoot, relative);
     if (text === null) continue;
     const language = CODE_LANGUAGES[path.posix.extname(relative).toLowerCase()];
-    const analysis = analyzeSourceFile(text, language, path.posix.basename(relative), { maxSymbols: 10_000 });
+    const { maskedText, classBodies, ...analysis } = analyzeSourceFile(text, language, path.posix.basename(relative), {
+      maxSymbols: 10_000,
+      withCallIndexes: true,
+      withMaskedText: true,
+    });
     assignSymbolIds(relative, analysis.symbols);
-    analyses.set(relative, { text, language, lineCount: text.split("\n").length, ...analysis });
+    const starts = lineStarts(text);
+    const sites = language === "python" ? [] : methodDefinitionSites(maskedText, text);
+    const signatures =
+      language === "python"
+        ? []
+        : signatureSites(
+            maskedText,
+            classBodies.map((body) => body.open),
+          );
+    const facts = language === "python" ? pythonFacts(text, maskedText, analysis.symbols, starts) : javascriptFacts(text, maskedText, sites);
+    // Names a class has only as a signature without a body (abstract, overloads).
+    const bodyOwner = new Map(classBodies.map((body) => [body.open, body.qualifiedName]));
+    const abstractMembers = new Map();
+    for (const site of signatures) {
+      const owner = bodyOwner.get(site.owner);
+      if (!owner) continue;
+      if (!abstractMembers.has(owner)) abstractMembers.set(owner, new Set());
+      abstractMembers.get(owner).add(site.name);
+    }
+    // "new C(...)" is a reference to C (and so to its constructor): read here
+    // as a call of the product graph, not a call fact of the shared scan.
+    const lineAtIndex = (index) => {
+      let low = 0,
+        high = starts.length - 1;
+      while (low < high) {
+        const middle = (low + high + 1) >>> 1;
+        if (starts[middle] <= index) low = middle;
+        else high = middle - 1;
+      }
+      return low + 1;
+    };
+    const constructions = facts.constructions.map((item) => ({
+      callee: item.callee,
+      line: lineAtIndex(item.index),
+      index: item.index,
+      callerQualifiedName: null,
+      callerIdentityAmbiguous: false,
+      construction: true,
+    }));
+    const calls = [...analysis.semanticFacts.calls, ...constructions].sort((left, right) => left.line - right.line);
+    analyses.set(relative, {
+      text,
+      language,
+      lineCount: text.split("\n").length,
+      starts,
+      facts,
+      abstractMembers,
+      definedNames: definedMemberNames(text, maskedText, language, sites, signatures),
+      ...analysis,
+      semanticFacts: { ...analysis.semanticFacts, calls },
+    });
   }
   const nodes = [];
   const declarations = new Map();
   const names = new Set();
+  const lineOfIndex = (starts, index) => {
+    let low = 0,
+      high = starts.length - 1;
+    while (low < high) {
+      const middle = (low + high + 1) >>> 1;
+      if (starts[middle] <= index) low = middle;
+      else high = middle - 1;
+    }
+    return low + 1;
+  };
+  // Value candidates (다): a module-level binding that is not a declaration,
+  // unique by name in its file. Only those that are called become nodes.
+  const valuesOf = new Map();
   for (const [relative, analysis] of analyses) {
     nodes.push({ id: relative, type: "코드", kind: "file", file: relative, lines: [1, analysis.lineCount] });
     const byName = new Map();
@@ -239,12 +357,94 @@ function buildCodeLayer(sourceRoot, files, excludes) {
       names.add(symbol.name);
     }
     declarations.set(relative, byName);
+    const counts = new Map();
+    for (const value of analysis.facts.values) counts.set(value.name, (counts.get(value.name) || 0) + 1);
+    const values = new Map();
+    for (const value of analysis.facts.values)
+      if (counts.get(value.name) === 1 && !byName.has(value.name))
+        values.set(value.name, {
+          id: `${relative}#${value.name}`,
+          name: value.name,
+          qualifiedName: value.name,
+          kind: VALUE_KIND,
+          line: lineOfIndex(analysis.starts, value.startIndex),
+          endLine: lineOfIndex(analysis.starts, Math.max(value.startIndex, value.endIndex - 1)),
+          file: relative,
+        });
+    valuesOf.set(relative, values);
   }
+  // A method name that exists in the product: a declaration's name or a value
+  // binding's name. A method call whose name is neither cannot be product code.
+  // Every spelling that can define a callable member name counts too (class
+  // fields, class expressions, object literals anywhere, signatures, quoted
+  // names, assignments of functions), whether or not it became a declaration.
+  const memberNames = new Set(names);
+  for (const values of valuesOf.values()) for (const name of values.keys()) memberNames.add(name);
+  for (const analysis of analyses.values()) for (const name of analysis.definedNames) memberNames.add(name);
   const found = (relative, qualifiedName) => declarations.get(relative)?.get(qualifiedName) || [];
   const unique = (relative, qualifiedName) => {
     const list = found(relative, qualifiedName);
     return list.length === 1 ? list[0] : null;
   };
+  const bindingsOf = new Map(
+    [...analyses].map(([relative, analysis]) => [relative, new Map(analysis.semanticFacts.bindings.map((binding) => [binding.local, binding]))]),
+  );
+  // Names a file declares, imports or binds anywhere: a global of the same
+  // name there is not taken as the built-in.
+  for (const [relative, analysis] of analyses) {
+    const bound = new Set([...declarations.get(relative).keys()].map((name) => name.split(".")[0]));
+    for (const symbol of analysis.symbols) bound.add(symbol.name);
+    for (const local of bindingsOf.get(relative).keys()) bound.add(local);
+    for (const value of analysis.facts.values) bound.add(value.name);
+    for (const scope of [...analysis.facts.scopes, analysis.facts.moduleScope]) {
+      for (const name of scope.params) bound.add(name);
+      for (const name of scope.locals.keys()) bound.add(name);
+    }
+    analysis.boundNames = bound;
+  }
+  // Does a module have this name: a declaration, a value binding, or an object
+  // literal binding whose members are declarations (<name>.<member>)?
+  const declaresName = (module, name) =>
+    declarations.get(module)?.has(name) ||
+    valuesOf.get(module)?.has(name) ||
+    analyses.get(module)?.symbols.some((symbol) => symbol.scopePath === name && !declarations.get(module).has(name));
+  // Follows re-exports (라) to the module that has the name: export { a as b }
+  // from, export * from, a local export list naming an import, and (Python) an
+  // imported name of a package module. Bounded and cycle-safe.
+  const follow = (module, name, seen = new Set()) => {
+    const key = `${module}\0${name}`;
+    if (seen.has(key) || seen.size >= MAX_EXPORT_STEPS) return null;
+    seen.add(key);
+    if (declaresName(module, name)) return { module, name };
+    const analysis = analyses.get(module);
+    if (!analysis) return null;
+    const viaBinding = (local) => {
+      const binding = bindingsOf.get(module)?.get(local);
+      if (!binding || binding.namespace || isExternalSpecifier(module, binding.specifier, analysis.language, fileSet)) return null;
+      const next = resolveModule(module, binding.specifier, analysis.language, fileSet);
+      return next ? follow(next, binding.imported === "default" ? local : binding.imported, seen) : null;
+    };
+    if (analysis.language === "python") return viaBinding(name);
+    for (const item of analysis.facts.exports) {
+      if (item.kind === "re-export" && item.exported === name) {
+        const next = item.specifier.startsWith(".") ? resolveModule(module, item.specifier, analysis.language, fileSet) : null;
+        if (!next) return null;
+        // "default" is the module's default export; a module that does not say
+        // which name that is may still declare the requested name.
+        return item.imported === "default" ? follow(next, "default", new Set(seen)) || follow(next, name, seen) : follow(next, item.imported, seen);
+      }
+      if (item.kind === "local" && item.exported === name) return declaresName(module, item.local) ? { module, name: item.local } : viaBinding(item.local);
+    }
+    const hits = new Map();
+    for (const item of analysis.facts.exports)
+      if (item.kind === "star" && item.specifier.startsWith(".")) {
+        const next = resolveModule(module, item.specifier, analysis.language, fileSet);
+        const hit = next && follow(next, name, new Set(seen));
+        if (hit) hits.set(`${hit.module}\0${hit.name}`, hit);
+      }
+    return hits.size === 1 ? [...hits.values()][0] : null;
+  };
+  const context = { analyses, found, unique, fileSet, names, memberNames, globals, follow, bindingsOf, valuesOf };
   const references = new Map();
   const unresolvedByReason = new Map(UNRESOLVED_REASONS.map((reason) => [reason.key, new Map()]));
   let resolvedCount = 0,
@@ -254,108 +454,142 @@ function buildCodeLayer(sourceRoot, files, excludes) {
     if (!references.has(key)) references.set(key, { type: kind, from, to, source: { path: file, line }, count: 0 });
     references.get(key).count += 1;
   };
-  const context = { found, unique, fileSet, names };
-  for (const [relative, analysis] of analyses) {
-    const bindings = new Map(analysis.semanticFacts.bindings.map((binding) => [binding.local, binding]));
-    const callers = analysis.symbols.filter((symbol) => symbol.kind === "function" || symbol.kind === "binding");
-    const lineMask = codeMask(analysis.text, analysis.language === "python" ? "python" : "javascript");
-    let view = "";
-    for (let index = 0; index < analysis.text.length; index += 1)
-      view += !lineMask.trusted || lineMask[index] || analysis.text[index] === "\n" ? analysis.text[index] : " ";
-    const maskedLines = view.split("\n");
-    // Dynamic imports on each line, in order, for the "import" pseudo-calls.
-    const dynamicByLine = new Map();
-    if (analysis.language !== "python")
-      for (const item of dynamicImports(analysis.text, lineMask)) {
+  // Two passes: the first finds which value bindings are called (they become
+  // nodes and callers); the second records references and reasons.
+  const calledValues = new Set();
+  for (const pass of ["values", "references"]) {
+    for (const [relative, analysis] of analyses) {
+      const bindings = bindingsOf.get(relative);
+      const callers = analysis.symbols.filter((symbol) => symbol.kind === "function" || symbol.kind === "binding");
+      if (pass === "references") for (const value of valuesOf.get(relative).values()) if (calledValues.has(value.id)) callers.push(value);
+      // Once per file: the line view and dynamic imports, kept for both passes.
+      if (!analysis.prepared) {
+        const lineMask = codeMask(analysis.text, analysis.language === "python" ? "python" : "javascript");
+        let view = "";
+        for (let index = 0; index < analysis.text.length; index += 1)
+          view += !lineMask.trusted || lineMask[index] || analysis.text[index] === "\n" ? analysis.text[index] : " ";
+        analysis.prepared = {
+          maskedLines: view.split("\n"),
+          dynamic: analysis.language !== "python" ? dynamicImports(analysis.text, lineMask) : [],
+          receivers: new Map(),
+        };
+      }
+      const { maskedLines, receivers } = analysis.prepared;
+      // Dynamic imports on each line, in order, for the "import" pseudo-calls.
+      const dynamicByLine = new Map();
+      for (const item of analysis.prepared.dynamic) {
         if (!dynamicByLine.has(item.line)) dynamicByLine.set(item.line, []);
         dynamicByLine.get(item.line).push(item);
       }
-    // The call scan keeps only a name for "expr).map(": look at the call's own
-    // line to see whether every use of that name there follows a ".".
-    const receiverOf = (line, callee) => {
-      const text = maskedLines[line - 1] || "";
-      const name = callee.replace(/[$]/g, "\\$");
-      const methods = [...text.matchAll(new RegExp(`\\.\\s*${name}\\s*\\(`, "g"))].length;
-      const plain = [...text.matchAll(new RegExp(`(?<![\\w$.]\\s*)(?<![\\w$.])${name}\\s*\\(`, "g"))].length;
-      if (!methods && !plain) return "unknown";
-      return methods && !plain ? "method" : methods ? "mixed" : "plain";
-    };
-    for (const call of analysis.semanticFacts.calls) {
-      allCount += 1;
-      // The innermost function or binding whose lines hold the call: exact even
-      // when its name repeats in the file.
-      let caller = null;
-      for (const symbol of callers)
-        if (
-          symbol.line <= call.line &&
-          call.line <= (symbol.endLine ?? symbol.line) &&
-          (!caller || (symbol.endLine ?? symbol.line) - symbol.line < (caller.endLine ?? caller.line) - caller.line)
-        )
-          caller = symbol;
-      if (call.callee === "import" && analysis.language !== "python") {
-        const item = dynamicByLine.get(call.line)?.shift();
-        if (item) {
-          const outcome = resolveDynamicImport(relative, item, context);
-          if (outcome.targets) {
-            resolvedCount += 1;
-            for (const target of outcome.targets) addReference(caller?.id || relative, target.id, "call", relative, call.line);
-          } else {
-            const bucket = unresolvedByReason.get(outcome.reason);
-            bucket.set("import", (bucket.get("import") || 0) + 1);
+      // The call scan keeps only a name for "expr).map(": look at the call's own
+      // line to see whether every use of that name there follows a ".".
+      const receiverOf = (line, callee) => {
+        const key = `${line}\0${callee}`;
+        if (receivers.has(key)) return receivers.get(key);
+        const text = maskedLines[line - 1] || "";
+        const name = callee.replace(/[$]/g, "\\$");
+        const methods = [...text.matchAll(new RegExp(`\\.\\s*${name}\\s*\\(`, "g"))].length;
+        const plain = [...text.matchAll(new RegExp(`(?<![\\w$.]\\s*)(?<![\\w$.])${name}\\s*\\(`, "g"))].length;
+        const receiver = !methods && !plain ? "unknown" : methods && !plain ? "method" : methods ? "mixed" : "plain";
+        receivers.set(key, receiver);
+        return receiver;
+      };
+      for (const call of analysis.semanticFacts.calls) {
+        // Only a plain name can be a value binding: the first pass skips the rest.
+        if (pass === "values" && (call.callee.includes(".") || call.callee === "import")) continue;
+        if (pass === "references") allCount += 1;
+        // The innermost function, binding or called value whose lines hold the
+        // call: exact even when its name repeats in the file.
+        let caller = null;
+        for (const symbol of callers)
+          if (
+            symbol.line <= call.line &&
+            call.line <= (symbol.endLine ?? symbol.line) &&
+            (!caller || (symbol.endLine ?? symbol.line) - symbol.line < (caller.endLine ?? caller.line) - caller.line)
+          )
+            caller = symbol;
+        if (call.callee === "import" && analysis.language !== "python") {
+          const item = dynamicByLine.get(call.line)?.shift();
+          if (item) {
+            if (pass === "values") continue;
+            const outcome = resolveDynamicImport(relative, item, context);
+            if (outcome.targets) {
+              resolvedCount += 1;
+              for (const target of outcome.targets) addReference(caller?.id || relative, target.id, "call", relative, call.line);
+            } else {
+              const bucket = unresolvedByReason.get(outcome.reason);
+              bucket.set("import", (bucket.get("import") || 0) + 1);
+            }
+            continue;
           }
+        }
+        const outcome = resolveCall(
+          relative,
+          analysis,
+          {
+            ...call,
+            callerQualifiedName: caller?.qualifiedName ?? call.callerQualifiedName,
+            receiver: call.callee.includes(".") ? null : receiverOf(call.line, call.callee),
+          },
+          bindings,
+          context,
+        );
+        if (pass === "values") {
+          if (outcome.target?.kind === VALUE_KIND) calledValues.add(outcome.target.id);
           continue;
         }
-      }
-      const outcome = resolveCall(
-        relative,
-        analysis,
-        {
-          ...call,
-          callerQualifiedName: caller?.qualifiedName ?? call.callerQualifiedName,
-          receiver: call.callee.includes(".") ? null : receiverOf(call.line, call.callee),
-        },
-        bindings,
-        context,
-      );
-      if (outcome.target) {
-        resolvedCount += 1;
-        addReference(caller?.id || relative, outcome.target.id, "call", relative, call.line);
-      } else {
-        const bucket = unresolvedByReason.get(outcome.reason);
-        bucket.set(call.callee, (bucket.get(call.callee) || 0) + 1);
+        if (outcome.target) {
+          resolvedCount += 1;
+          if (outcome.target.kind === VALUE_KIND) calledValues.add(outcome.target.id);
+          addReference(caller?.id || relative, outcome.target.id, "call", relative, call.line);
+        } else {
+          const bucket = unresolvedByReason.get(outcome.reason);
+          bucket.set(call.callee, (bucket.get(call.callee) || 0) + 1);
+        }
       }
     }
   }
+  for (const values of valuesOf.values())
+    for (const value of values.values())
+      if (calledValues.has(value.id)) nodes.push({ id: value.id, type: "코드", kind: VALUE_KIND, file: value.file, lines: [value.line, value.endLine] });
   const byReason = UNRESOLVED_REASONS.map((reason) => {
     const bucket = unresolvedByReason.get(reason.key);
     return {
       reason: reason.key,
+      group: reason.group,
       label: reason.label,
       settle: reason.settle,
       count: [...bucket.values()].reduce((sum, count) => sum + count, 0),
       callees: [...bucket.entries()].map(([callee, count]) => ({ callee, count })).sort((a, b) => b.count - a.count || compare(a.callee, b.callee)),
     };
   });
-  // Resolution helpers for table rows (T1): the same rules as for calls.
-  const bindingsOf = new Map(
-    [...analyses].map(([relative, analysis]) => [relative, new Map(analysis.semanticFacts.bindings.map((binding) => [binding.local, binding]))]),
-  );
+  // Resolution helpers for table rows (T1): the same rules as for calls; a
+  // value binding counts only when it is a node.
+  const nodeValue = (module, name) => {
+    const value = valuesOf.get(module)?.get(name);
+    return value && calledValues.has(value.id) ? value : null;
+  };
   const resolveName = (relative, name) => {
-    const local = unique(relative, name);
+    const local = unique(relative, name) || nodeValue(relative, name);
     if (local) return local;
     const binding = bindingsOf.get(relative)?.get(name);
     if (!binding || binding.namespace) return null;
     const language = analyses.get(relative)?.language;
     if (isExternalSpecifier(relative, binding.specifier, language, fileSet)) return null;
     const module = resolveModule(relative, binding.specifier, language, fileSet);
-    return module ? unique(module, binding.imported === "default" ? name : binding.imported) : null;
+    const place = module && (binding.imported === "default" ? follow(module, name) || follow(module, "default") : follow(module, binding.imported));
+    return place ? unique(place.module, place.name) || nodeValue(place.module, place.name) : null;
   };
   const resolveMember = (relative, head, member) => {
     const binding = bindingsOf.get(relative)?.get(head);
-    if (!binding?.namespace) return null;
+    if (!binding) return unique(relative, `${head}.${member}`);
     const language = analyses.get(relative)?.language;
+    if (isExternalSpecifier(relative, binding.specifier, language, fileSet)) return null;
     const module = resolveModule(relative, binding.specifier, language, fileSet);
-    return module ? unique(module, member) : null;
+    if (!module) return null;
+    const place = binding.namespace ? follow(module, member) : follow(module, binding.imported === "default" ? head : binding.imported);
+    if (!place) return null;
+    return binding.namespace ? unique(place.module, place.name) || nodeValue(place.module, place.name) : unique(place.module, `${place.name}.${member}`);
   };
   return {
     analyses,
@@ -377,12 +611,15 @@ function buildCodeLayer(sourceRoot, files, excludes) {
 
 // A dynamic import with a literal relative path and a member named in the
 // same expression resolves to that export; anything else says why not.
-function resolveDynamicImport(relative, item, { unique, fileSet }) {
+function resolveDynamicImport(relative, item, { unique, fileSet, follow }) {
   if (item.specifier === null || !item.members.length) return { reason: "dynamic-import" };
   if (!item.specifier.startsWith(".")) return { reason: "external-import" };
   const module = resolveModule(relative, item.specifier, "javascript", fileSet);
   if (!module) return { reason: "rest" };
-  const targets = item.members.map((member) => unique(module, member));
+  const targets = item.members.map((member) => {
+    const place = follow(module, member);
+    return place ? unique(place.module, place.name) : null;
+  });
   return targets.every(Boolean) ? { targets } : { reason: "rest" };
 }
 
@@ -396,48 +633,150 @@ function enclosingClass(analysis, qualifiedName) {
   return null;
 }
 
-// Resolves one call to exactly one declaration, or says why it did not.
-function resolveCall(relative, analysis, call, bindings, { found, unique, fileSet, names }) {
+// Whether a class declares a base class: "class C extends B", "class C(Base):".
+function classExtends(analysis, qualifiedName) {
+  const symbol = analysis.symbols.find((item) => item.kind === "class" && item.qualifiedName === qualifiedName);
+  if (!symbol) return false;
+  if (analysis.language === "python") return /^class\s+\w+\s*\(\s*(?!object\s*\))[^)\s]/.test(symbol.signature || "");
+  return /\bextends\b/.test(symbol.signature || "");
+}
+
+// Resolves one call to exactly one declaration or called value, or says why it did not.
+function resolveCall(relative, analysis, call, bindings, context) {
+  const { found, unique, fileSet, names, memberNames, globals, follow, analyses, valuesOf } = context;
   const callee = call.callee;
-  const pick = (file, qualifiedName) => {
-    const list = found(file, qualifiedName);
+  const language = analysis.language;
+  const table = globals[language === "python" ? "python" : "javascript"];
+  const pick = (file, qualifiedName, filter = null) => {
+    const list = found(file, qualifiedName).filter((symbol) => !filter || filter(symbol));
     return list.length === 1 ? { target: list[0] } : list.length > 1 ? { reason: "ambiguous" } : null;
   };
-  const self = analysis.language === "python" ? "self." : "this.";
+  const valueAt = (file, name) => {
+    const value = valuesOf.get(file)?.get(name);
+    return value ? { target: value } : null;
+  };
+  // A method name that exists nowhere in the product cannot be product code.
+  const unknownMember = (member) => ({ reason: memberNames.has(member.replace(/^#/, "")) || memberNames.has(member) ? "unknown-receiver" : "member-nowhere" });
+  // A member of a class (JavaScript: C.x needs a static method; v.x where v = new C() any method).
+  const classMember = (module, className, member, needsStatic) => {
+    const outcome = pick(
+      module,
+      `${className}.${member}`,
+      needsStatic && language !== "python" ? (symbol) => /(^|\s)static\s/.test(symbol.signature || "") : null,
+    );
+    if (outcome) return outcome;
+    if (classExtends(analyses.get(module), className) || analyses.get(module)?.abstractMembers?.get(className)?.has(member)) return { reason: "inherited" };
+    return unknownMember(member);
+  };
+  // The scope chain of the caller, innermost first, for a plain name.
+  const scope = call.callerQualifiedName ? call.callerQualifiedName.split(".") : [];
+  const nested = (name) => {
+    for (let length = scope.length; length >= 1; length -= 1) {
+      const outcome = pick(relative, [...scope.slice(0, length), name].join("."));
+      if (outcome) return outcome;
+    }
+    return null;
+  };
+  // Where an imported name lives (through re-exports), or a reason.
+  const imported = (binding, local) => {
+    if (isExternalSpecifier(relative, binding.specifier, language, fileSet)) return { reason: "external-import" };
+    const module = resolveModule(relative, binding.specifier, language, fileSet);
+    // A default import: the declaration of the local's name (as before), else
+    // the module's default export.
+    const place = module && (binding.imported === "default" ? follow(module, local) || follow(module, "default") : follow(module, binding.imported));
+    return place ? { place } : { reason: "rest" };
+  };
+  const self = language === "python" ? "self." : "this.";
   if (callee.startsWith(self)) {
+    const member = callee.slice(self.length);
     const owner = enclosingClass(analysis, call.callerQualifiedName);
-    return (owner && pick(relative, `${owner}.${callee.slice(self.length)}`)) || { reason: "unknown-receiver" };
+    if (owner) return classMember(relative, owner, member, false);
+    return unknownMember(member);
   }
   if (!callee.includes(".")) {
     if (LANGUAGE_KEYWORDS.has(callee)) return { reason: "keyword" };
     // A method called on an expression the scan dropped ("a().map(").
-    if (call.receiver === "method") return { reason: "unknown-receiver" };
-    // The caller's own scope first (a nested declaration), then outwards.
-    const scope = call.callerQualifiedName ? call.callerQualifiedName.split(".") : [];
-    for (let length = scope.length; length >= 0; length -= 1) {
-      const outcome = pick(relative, [...scope.slice(0, length), callee].join("."));
-      if (outcome) return outcome;
+    if (call.receiver === "method") return unknownMember(callee);
+    const inner = nested(callee);
+    if (inner) return inner;
+    // Python "cls(...)" in a classmethod constructs the enclosing class.
+    if (language === "python" && callee === "cls") {
+      const owner = enclosingClass(analysis, call.callerQualifiedName);
+      const method = analysis.symbols.find((symbol) => symbol.qualifiedName === call.callerQualifiedName && symbol.kind === "function");
+      if (owner && /\(\s*cls\b/.test(method?.signature || "")) {
+        const outcome = pick(relative, owner);
+        if (outcome) return outcome;
+      }
     }
+    // A parameter or local of an enclosing function holds the function (바).
+    if (call.index !== undefined && bindingAt(analysis.facts, call.index, callee)) return { reason: "local-function" };
+    const top = pick(relative, callee) || valueAt(relative, callee);
+    if (top) return top;
     const binding = bindings.get(callee);
     if (binding && !binding.namespace) {
-      if (isExternalSpecifier(relative, binding.specifier, analysis.language, fileSet)) return { reason: "external-import" };
-      const module = resolveModule(relative, binding.specifier, analysis.language, fileSet);
-      return (module && pick(module, binding.imported === "default" ? callee : binding.imported)) || { reason: "rest" };
+      const outcome = imported(binding, callee);
+      if (!outcome.place) return outcome;
+      return pick(outcome.place.module, outcome.place.name) || valueAt(outcome.place.module, outcome.place.name) || { reason: "rest" };
     }
-    if (binding?.namespace) return { reason: isExternalSpecifier(relative, binding.specifier, analysis.language, fileSet) ? "external-import" : "rest" };
+    if (binding?.namespace) return { reason: isExternalSpecifier(relative, binding.specifier, language, fileSet) ? "external-import" : "rest" };
+    if (table.functions.has(callee) && !analysis.boundNames.has(callee)) return { reason: "builtin-global" };
     if (call.receiver !== "plain") return { reason: "rest" };
     return { reason: names.has(callee) ? "declared-elsewhere" : "no-declaration" };
   }
   const [head, member] = callee.split(".");
-  const binding = bindings.get(head);
-  if (binding) {
-    if (isExternalSpecifier(relative, binding.specifier, analysis.language, fileSet)) return { reason: "external-import" };
-    if (binding.namespace) {
-      const module = resolveModule(relative, binding.specifier, analysis.language, fileSet);
-      return (module && pick(module, member)) || { reason: "rest" };
+  if (head === "super") return { reason: "inherited" };
+  // A parameter or local of an enclosing function: only "const v = new C(...)"
+  // (Python: v = C(...) assigned once in that function) says what v is.
+  const local = call.index !== undefined ? bindingAt(analysis.facts, call.index, head) : null;
+  const created = (entries) => {
+    if (!entries || entries.length !== 1) return null;
+    const entry = entries[0];
+    return entry.kind === "const-new" || entry.kind === "call-assign" ? entry.className : null;
+  };
+  const classNamed = (name) => {
+    // A class this file can name: nested or module level here, or imported.
+    const here = nested(name) || pick(relative, name);
+    if (here?.target?.kind === "class") return { module: relative, name: here.target.qualifiedName };
+    const binding = bindings.get(name);
+    if (binding && !binding.namespace) {
+      const outcome = imported(binding, name);
+      if (outcome.place && unique(outcome.place.module, outcome.place.name)?.kind === "class") return outcome.place;
     }
+    return null;
+  };
+  if (local) {
+    const className = created(local.entries);
+    const owner = className && classNamed(className);
+    return owner ? classMember(owner.module, owner.name, member, false) : unknownMember(member);
   }
-  return { reason: "unknown-receiver" };
+  const binding = bindings.get(head);
+  if (binding?.namespace) {
+    // A namespace import: the member is a name of that module (through re-exports).
+    if (isExternalSpecifier(relative, binding.specifier, language, fileSet)) return { reason: "external-import" };
+    const module = resolveModule(relative, binding.specifier, language, fileSet);
+    const place = module && follow(module, member);
+    return (place && (pick(place.module, place.name) || valueAt(place.module, place.name))) || { reason: "rest" };
+  }
+  if (binding) {
+    const outcome = imported(binding, head);
+    if (!outcome.place) return outcome;
+    const { module, name } = outcome.place;
+    if (unique(module, name)?.kind === "class") return classMember(module, name, member, true);
+    return pick(module, `${name}.${member}`) || unknownMember(member);
+  }
+  // Module level of this file: a class, an object literal binding, or a const
+  // created once by new C(...).
+  const headClass = pick(relative, head);
+  if (headClass?.target?.kind === "class") return classMember(relative, head, member, true);
+  const literal = pick(relative, `${head}.${member}`);
+  if (literal) return literal;
+  const moduleCreated = created(analysis.facts.moduleScope.locals.get(head));
+  if (moduleCreated) {
+    const owner = classNamed(moduleCreated);
+    if (owner) return classMember(owner.module, owner.name, member, false);
+  }
+  if (table.namespaces.has(head) && !analysis.boundNames.has(head)) return { reason: "builtin-namespace" };
+  return unknownMember(member);
 }
 
 // Innermost declaration whose line range holds one line, else the file.
@@ -631,7 +970,13 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
     const analysis = code.analyses.get(relative);
     const stem = path.posix.basename(relative).replace(/\.[^.]+$/, "");
     if (!analysis) return { name: stem, qualified: null };
-    const holding = analysis.symbols.filter((symbol) => symbol.line <= line && line <= (symbol.endLine ?? symbol.line));
+    // A member of an object literal (<binding>.<member>, no declaration of that
+    // binding) is not a component: the 프론트 ID stays what it was before members
+    // were declarations. A class method never is either (its class comes first).
+    const declared = new Set(analysis.symbols.map((symbol) => symbol.qualifiedName));
+    const holding = analysis.symbols.filter(
+      (symbol) => symbol.line <= line && line <= (symbol.endLine ?? symbol.line) && !(symbol.scopePath && !declared.has(symbol.scopePath)),
+    );
     const innermost = (kinds) =>
       holding.filter((symbol) => kinds.includes(symbol.kind)).sort((a, b) => (a.endLine ?? a.line) - a.line - ((b.endLine ?? b.line) - b.line))[0] || null;
     const owner = innermost(["class"]) || innermost(["function", "binding"]);
@@ -756,7 +1101,7 @@ export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
   const excludes = (projectRules?.source?.["제외"] || []).map((item) => item.replace(/\/$/, ""));
   const skipped = new Map();
   const files = walkSource(root, excludes, skipped);
-  const code = buildCodeLayer(root, files, excludes);
+  const code = buildCodeLayer(root, files, excludes, projectRules?.["내장 이름"] ?? null);
   const { rules, patterns, uiPatterns, uiMarkers, uiFiles } = effectiveEntryRules(projectRules);
   const handling = Object.fromEntries(rules.map((rule) => [rule.종류, rule.처리]));
   const functions = new Map();
@@ -1148,11 +1493,14 @@ function readTableRow(code, relative, text, index) {
     return {
       ...row,
       targets: [...targets.keys()].sort(),
-      reason: decorated ? null : "데코레이터가 꾸미는 정의를 스캔이 선언으로 갖고 있지 않음 (JS·TS 클래스 메서드는 선언이 아니다)",
+      reason: decorated ? null : "데코레이터가 꾸미는 정의를 스캔이 선언으로 갖고 있지 않음",
       partial: null,
     };
   }
-  const { names, members } = rowNames(text, mask, row.start, row.end);
+  // In a statement row the registering call itself is not a handler; its
+  // arguments are read as before. Element rows are read whole.
+  const skip = row.kind === "statement" ? statementCallChain(text, mask, pairs, row.start, row.end, index) : [];
+  const { names, members } = rowNames(text, mask, row.start, row.end, skip);
   for (const name of names) {
     const target = code.resolveName(relative, name);
     if (target && target.kind !== "file") targets.set(target.id, target);

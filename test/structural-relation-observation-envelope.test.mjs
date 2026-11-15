@@ -225,7 +225,7 @@ test("SEO11 envelope is isolated and rejects legacy kind", async () => {
   // This historical fixture used analyzer 0.3.0. The accepted 0.3.1 scanner
   // produces the same facts here, but DECLARES provenance is hash input. Build
   // the old payload without changing Core or relabeling a stored original.
-  assert.equal(analysis.SOURCE_ANALYSIS_VERSION, "0.3.2");
+  assert.equal(analysis.SOURCE_ANALYSIS_VERSION, "0.3.3");
   const currentBefore = JSON.stringify(graph), historical = structuredClone(graph);
   for (const edge of historical.edges) if (edge.type === "DECLARES") {
     assert.equal(edge.evidenceSource.sourceAnalysisVersion, analysis.SOURCE_ANALYSIS_VERSION);

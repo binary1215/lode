@@ -651,7 +651,7 @@ export function validateRepositoryScanResult(result) {
     !format ||
     (!currentProtocol && !legacyProtocol) ||
     (currentProtocol
-      ? !["0.3.0", "0.3.1", SOURCE_ANALYSIS_VERSION].includes(result.sourceAnalysisVersion)
+      ? !["0.3.0", "0.3.1", "0.3.2", SOURCE_ANALYSIS_VERSION].includes(result.sourceAnalysisVersion)
       : !["0.1.0", "0.2.0"].includes(result.sourceAnalysisVersion)) ||
     result.authority !== "derived-evidence-only" ||
     result.instructionAuthority !== false ||

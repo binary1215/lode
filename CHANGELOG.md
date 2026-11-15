@@ -11,6 +11,70 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.126 — publication tracked separately
+
+- Changed: the product graph says what a call is, and resolves the calls a
+  scan can resolve without type information. The source scan it shares
+  with the World model and the project graph reads imports and members it
+  missed before.
+  - Imports are read whatever their layout. A JavaScript `import { … }`
+    list spread over several lines was not read as bindings at all, and
+    neither was a Python `from x import ( … )` list or a backslash
+    continuation. On Lode itself that was about 1,500 import names.
+  - Members are declarations: methods of a JavaScript or TypeScript class
+    (including static, async, generator, getter, setter and `#private`),
+    class fields that hold a function, classes written as expressions, an
+    anonymous default class, and the function members of an object
+    literal bound to a module-level name. A method definition is no longer
+    counted as a call, and neither is a TypeScript signature without a
+    body.
+  - Calls resolved from the text alone: `this.x()` and `self.x()` inside
+    the class, a static method on the class, a member of a module-level
+    object, and `v.x()` where `v` is a constant created once by `new C()`.
+    `new C()` reaches the class and its constructor. A name hidden by a
+    parameter or a local variable is not resolved, inheritance is not
+    followed, and nothing is resolved because a method name happens to be
+    unique.
+  - A module-level value that is called, such as
+    `const fail = failWith("X")`, is a 코드 node of kind 값, and it refers
+    to the calls in its initialiser.
+  - Re-exports are followed to the declaration: `export { a, b as c }
+    from`, `export * from`, `export { default } from`, and an export list
+    that names an import.
+  - Calls that cannot be product code are counted apart: members of
+    built-in namespaces (`JSON.x`), built-in functions and constructors
+    (`String`, `new Map`), and method names that nothing in the product
+    defines. The names are a table per language that a project rule can
+    extend. A call is counted as built-in only when no spelling in the
+    product could define that member; otherwise it stays under "받는 쪽
+    타입을 모름".
+  - A call to a function held in a parameter or a local variable has a
+    reason of its own, and so does a member that may be inherited.
+  - The limits block gives three numbers: all calls; calls that cannot be
+    product code and calls into modules outside the product; and how many
+    of the calls that can be product code resolved. On Lode itself: 65,108
+    calls, 20,196 that cannot be product code, 5,753 into outside modules,
+    and 27,689 of the remaining 39,159 resolved. Before, the text said
+    21,963 of 62,294.
+  - With `"처리 코드": "항목"`, the call that performs a registration
+    (`registry.register("x", run)`) is not read as the handler; its
+    arguments are.
+  - The Go worker's copy of the scan has the same import and member rules.
+    Source analysis version 0.3.3: stored scans of earlier versions stay
+    readable and are analysed again, so the next World build scans every
+    file once. No stored format changes.
+- Limits: there is still no type information, so 10,413 calls on Lode stay
+  under "받는 쪽 타입을 모름" because their method name also exists in the
+  product. Not read: members of nested or unbound object literals,
+  computed and quoted member names, names created at run time, and a
+  TypeScript call with explicit type arguments. Three rare inputs give
+  different results in the Go and JavaScript scans and are listed in the
+  pull request: a file with more than 10,000 declarations, two same-named
+  members on one line, and nested declarations on one line. The shared
+  scan takes about 1.5 times as long as before on Lode's repository and
+  the product graph build about 1.4 times. Measured on Lode and on
+  synthetic class-based code only, not on a real class-based product.
+
 ## 0.3.0-beta.125 — publication tracked separately
 
 - Fix: the source scan no longer loses declarations and calls after text it

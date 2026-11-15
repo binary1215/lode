@@ -998,21 +998,45 @@ const UI_SCAN_LIMITS = Object.freeze([
 ]);
 
 const TABLE_ROW_LIMITS =
-  "처리 코드를 표 항목에서 찾는 규칙은 맞은 곳을 감싼 리스트·객체·딕셔너리의 원소(그런 것이 없으면 그 문장, 데코레이터 줄이면 꾸미는 정의(스캔이 그 정의를 선언으로 가질 때만: JS·TS 클래스 메서드는 선언이 아니라 읽지 못한다))를 함수 본문처럼 읽는다: 값으로 쓴 함수 이름, 항목 안 함수의 호출, 경로를 글자로 쓴 동적 import에서 같은 식으로 꺼낸 이름. 한 항목에서 나온 기능 둘은 그 항목의 처리 코드를 함께 쓴다. Python의 동적 import(importlib)는 읽지 않는다.";
+  "처리 코드를 표 항목에서 찾는 규칙은 맞은 곳을 감싼 리스트·객체·딕셔너리의 원소(그런 것이 없으면 그 문장, 데코레이터 줄이면 꾸미는 정의(스캔이 그 정의를 선언으로 가질 때만))를 함수 본문처럼 읽는다: 값으로 쓴 함수 이름, 항목 안 함수의 호출, 경로를 글자로 쓴 동적 import에서 같은 식으로 꺼낸 이름. 한 항목에서 나온 기능 둘은 그 항목의 처리 코드를 함께 쓴다. Python의 동적 import(importlib)는 읽지 않는다.";
+
+// How calls are resolved beyond plain names (call precision, approved
+// 2026-11-15). Each is a stated limit of the lexical reading.
+const CALL_READING_LIMITS = Object.freeze([
+  '멤버 선언: JS·TS 클래스 본문의 메서드와 함수를 담은 클래스 필드(<클래스>.<멤버>), 이름에 묶은 클래스 식(const A = class {)과 이름 없는 default 클래스(default)의 멤버, 모듈 수준 이름에 묶인 객체 리터럴의 함수 멤버(<이름>.<멤버>)가 선언이다. 중첩된 객체 리터럴, 이름에 묶이지 않은 리터럴, 따옴표나 계산한 이름([Symbol.iterator]() {, "이름"() {)은 선언이 아니다. 메서드를 정의하는 자리(name(…) {)와 본문 없는 TypeScript 시그니처(abstract run(): void;, 오버로드, interface 멤버)는 호출로 세지 않는다.',
+  "받는 쪽은 글자로만 정한다: 클래스 안(필드 포함)의 this.x(·self.x(, 클래스 이름의 C.x((JS는 static 메서드), 객체 리터럴 이름의 name.x(, 같은 함수나 모듈 수준에서 한 번 new C(…)(Python은 C(…))로 만든 const의 v.x(, Python classmethod 안의 cls(…)(그 클래스). 다시 대입하는 변수는 추론하지 않고, 상속은 따라가지 않으며(상속받았거나 본문 없는 선언만 있는 멤버일 수 있음), 이름이 제품에 하나뿐이라는 이유로 정하지 않는다.",
+  "new C(…)는 C를 부르는 참조로 센다(클래스에 닿으면 생성자에 닿는다). 내장 클래스나 제품 밖 모듈의 클래스면 그 이유로 센다. 타입 인자를 적은 TypeScript 호출(this.format<number>(x), make<T>(x))은 호출로 보지 못한다.",
+  '값 바인딩: 함수식이 아닌 값으로 정한 모듈 수준 이름(const fail = failWith("X"))은 어디선가 함수로 불릴 때만 값 노드가 되고, 그 참조는 초기값 안의 호출이다. 불리지 않는 값 바인딩은 노드가 아니다.',
+  "다시 내보내기: export { a as b } from, export * from, import한 이름을 적은 export 목록, default(export { default } from, export { x as default }, export default 이름)를 선언까지 따라간다(Python은 패키지 모듈이 들여온 이름). 단계 수에 한도가 있고, 고리는 끊고 원래 이유를 둔다. export * as 이름 from은 읽지 않는다.",
+  "내장 호출: 언어·런타임의 전역 이름 표(판단, 프로젝트 규칙의 내장 이름으로 더함)에 있고 파일이 그 이름을 선언·들여오거나 묶지 않을 때만 내장으로 본다. 메서드 이름이 제품 어디에서도 정의되지 않을 때만(선언이 아닌 것까지 넓게 본다: 클래스 필드, 클래스 식, 어느 객체 리터럴의 멤버, 시그니처, 따옴표 이름, x.y = function, prototype 대입, defineProperty) 제품 코드일 수 없다고 본다. 실행 중에 만든 이름(obj[name] = fn, Object.assign, 섞어 넣기)은 보지 못하므로, 그런 메서드는 제품 코드인데도 이 이유에 들 수 있다. 제품이 같은 이름을 정의하면 받는 쪽 타입을 모르는 호출로 둔다.",
+]);
 
 // One object for the structured result and generated files; the text renders
 // it first. Facts here are not repeated elsewhere in the text.
+// All calls in three numbers: those that cannot be product code (built-in
+// reasons and language keywords), those into modules outside the product, and
+// of the rest (calls that can be product code) how many resolved. Every call
+// is in exactly one reason, so the numbers add up to all.
+function callNumbers(summary, callbacks) {
+  const count = (group) => summary.unresolvedByReason.filter((reason) => reason.group === group).reduce((sum, reason) => sum + reason.count, 0);
+  const notProduct = { builtIn: count("built-in"), keyword: count("keyword"), external: count("external") };
+  return {
+    all: summary.allCalls,
+    notProduct,
+    canBeProduct: summary.allCalls - notProduct.builtIn - notProduct.keyword - notProduct.external,
+    resolved: summary.resolvedCalls,
+    keywordPseudoCalls: notProduct.keyword,
+    callbacks,
+  };
+}
+
 function limitsOf({ extraction, computed, includeEstimates, loaded, callbacks }) {
   const used = computed.documentSummary.list.filter((item) => item.status === "승인" || includeEstimates).map((item) => item.path);
   return {
     title: LIMITS_TITLE,
     codeReading: "코드는 정규식 기반 소스 분석으로 읽었다. 구문 트리가 아니고 타입 정보가 없다.",
-    calls: {
-      resolved: extraction.referenceSummary.resolvedCalls,
-      all: extraction.referenceSummary.allCalls,
-      keywordPseudoCalls: extraction.referenceSummary.unresolvedByReason.find((reason) => reason.reason === "keyword")?.count || 0,
-      callbacks,
-    },
+    calls: callNumbers(extraction.referenceSummary, callbacks),
+    callReading: CALL_READING_LIMITS,
     referenceKinds: { emitted: ["call", "callback"], notToldApart: NOT_TOLD_APART },
     notExtracted: { nodeTypes: NOT_EXTRACTED, edges: ["navigate"], grouping: "C4 묶음" },
     uiBindingScan: UI_SCAN_LIMITS,
@@ -1043,7 +1067,8 @@ function renderLimits(limits) {
   return [
     limits.title,
     `- ${limits.codeReading}`,
-    `- 호출 ${limits.calls.all}개 중 ${limits.calls.resolved}개를 하나의 선언으로 풀었다(전체에는 호출처럼 보인 언어 키워드 ${limits.calls.keywordPseudoCalls}개가 들어 있다). 풀린 것만 코드→코드 연결이 된다.`,
+    `- 호출 ${limits.calls.all}개. 제품 코드일 수 없는 호출 ${limits.calls.notProduct.builtIn + limits.calls.notProduct.keyword}개(언어·런타임 내장 ${limits.calls.notProduct.builtIn}, 호출처럼 보인 언어 키워드 ${limits.calls.notProduct.keyword})와 제품 밖 모듈로 가는 호출 ${limits.calls.notProduct.external}개를 빼면, 제품 코드일 수 있는 호출 ${limits.calls.canBeProduct}개 중 ${limits.calls.resolved}개를 하나의 선언으로 풀었다. 풀린 것만 코드→코드 연결이 된다.`,
+    ...limits.callReading.map((line) => `- ${line}`),
     `- reference 종류는 ${limits.referenceKinds.emitted.join(", ")}만 적는다. ${limits.referenceKinds.notToldApart.join(", ")}는 구별하지 못해 적지 않는다.`,
     `- 뽑지 않은 것: ${limits.notExtracted.nodeTypes.join(", ")} 노드, ${limits.notExtracted.edges.join(", ")} 연결, ${limits.notExtracted.grouping}.`,
     ...limits.uiBindingScan.map((line) => `- ${line}`),

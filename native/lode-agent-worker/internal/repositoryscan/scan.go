@@ -16,7 +16,6 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/binary1215/lode/native/lode-agent-worker/internal/canonicaljson"
@@ -27,8 +26,9 @@ const (
 	ProducerName          = "head-agent-core-repository-scan"
 	LodeProducerName      = "lode-agent-core-repository-scan"
 	ProducerVersion       = "0.5.1"
-	SourceAnalysisVersion = "0.3.2"
+	SourceAnalysisVersion = "0.3.3"
 	maximumSymbolsPerFile = 200
+	analysisSymbolLimit   = 10000
 )
 
 type Limits struct {
@@ -67,16 +67,15 @@ var (
 	pythonDependency     = regexp.MustCompile(`(?m)^\s*(from|import)\s+([A-Za-z_][A-Za-z0-9_.]*)`)
 
 	javascriptImport       = regexp.MustCompile(`\bimport\s+([^;\n]+?)\s+from\s+["']([^"']+)["']`)
-	javascriptNamespace    = regexp.MustCompile(`^\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)$`)
+	javascriptNamespace    = regexp.MustCompile(`(?:^|,)\s*\*\s*as\s+([A-Za-z_$][A-Za-z0-9_$]*)$`)
 	javascriptNamed        = regexp.MustCompile(`\{([^}]+)\}`)
 	javascriptAsSplit      = regexp.MustCompile(`\s+as\s+`)
 	javascriptRequireNamed = regexp.MustCompile(`\b(const|let|var)\s+\{([^}]+)\}\s*=\s*require\s*\(\s*["']([^"']+)["']\s*\)`)
 	javascriptColonSplit   = regexp.MustCompile(`\s*:\s*`)
 	javascriptRequire      = regexp.MustCompile(`\b(const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*require\s*\(\s*["']([^"']+)["']\s*\)`)
-	pythonFromImport       = regexp.MustCompile(`(?m)^[ \t]*from\s+([.A-Za-z_][A-Za-z0-9_.]*)\s+import\s+([^#\n]+)`)
 	pythonAsSplit          = regexp.MustCompile(`\s+as\s+`)
 	pythonImport           = regexp.MustCompile(`(?m)^[ \t]*import\s+([A-Za-z_][A-Za-z0-9_.]*)(\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?`)
-	callPattern            = regexp.MustCompile(`\b([A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_$]*)?)\s*\(`)
+	callPattern            = regexp.MustCompile(`\b([A-Za-z_$][A-Za-z0-9_$]*(\.#?[A-Za-z_$][A-Za-z0-9_$]*)?)\s*\(`)
 	declarationPrefix      = regexp.MustCompile(`\b(function\s*\*?|class|def|new)\s*$`)
 )
 
@@ -299,6 +298,14 @@ type symbolPattern struct {
 	Kind  string
 	Regex *regexp.Regexp
 	Group int
+
+	// Reject drops a match whose name is this word ("class extends B").
+	Reject string
+
+	// FixedName names every match ("default"); EndGroup, when set, is the
+	// group whose end is the match end (RE2 has no look-ahead).
+	FixedName string
+	EndGroup  int
 }
 
 func regexSymbols(text string, lines []int, patterns []symbolPattern, maximum int) []any {
@@ -310,20 +317,88 @@ func regexSymbols(text string, lines []int, patterns []symbolPattern, maximum in
 				continue
 			}
 			name := text[match[groupOffset]:match[groupOffset+1]]
+			// As JavaScript's (?!extends\b): "$" is not a word character for \b.
+			if pattern.Reject != "" && (name == pattern.Reject || strings.HasPrefix(name, pattern.Reject+"$")) {
+				continue
+			}
+			if pattern.FixedName != "" {
+				name = pattern.FixedName
+			}
+			matchEnd := match[1]
+			if pattern.EndGroup > 0 {
+				matchEnd = match[pattern.EndGroup*2+1]
+			}
 			line := lineAt(lines, match[0])
 			result = append(result, map[string]any{
 				"name":          name,
 				"kind":          pattern.Kind,
 				"line":          line,
 				"startIndex":    match[0],
-				"matchEndIndex": match[1],
+				"matchEndIndex": matchEnd,
 			})
 			if len(result) >= maximum {
-				return sortSymbols(result)
+				return sortSymbolsByStart(result)
 			}
 		}
 	}
-	return sortSymbols(result)
+	return sortSymbolsByStart(result)
+}
+
+// sortSymbolsByStart orders declarations as the JavaScript reference does: by
+// line, then name, then start offset (it sorts by start before the stable
+// sort by line and name).
+func sortSymbolsByStart(values []any) []any {
+	sort.SliceStable(values, func(left, right int) bool {
+		l := values[left].(map[string]any)
+		r := values[right].(map[string]any)
+		if l["line"].(int) != r["line"].(int) {
+			return l["line"].(int) < r["line"].(int)
+		}
+		if compared := canonicaljson.CompareText(l["name"].(string), r["name"].(string)); compared != 0 {
+			return compared < 0
+		}
+		return l["startIndex"].(int) < r["startIndex"].(int)
+	})
+	return values
+}
+
+// advanceUTF16 returns the byte offset reached after units UTF-16 code units
+// of text from start, so a window counted in JavaScript's units covers the
+// same characters here.
+func advanceUTF16(text string, start, units int) int {
+	index := start
+	for index < len(text) && units > 0 {
+		r, size := utf8.DecodeRuneInString(text[index:])
+		if r >= 0x10000 {
+			units -= 2
+		} else {
+			units--
+		}
+		if units < 0 {
+			break
+		}
+		index += size
+	}
+	return index
+}
+
+// utf16WindowStart returns the byte offset that lies units UTF-16 code units
+// before index in text.
+func utf16WindowStart(text string, index, units int) int {
+	start := index
+	for start > 0 && units > 0 {
+		r, size := utf8.DecodeLastRuneInString(text[:start])
+		if r >= 0x10000 {
+			units -= 2
+		} else {
+			units--
+		}
+		if units < 0 {
+			break
+		}
+		start -= size
+	}
+	return start
 }
 
 func normalizedSignature(value string) string {
@@ -419,10 +494,13 @@ func enrichSymbols(text, masked, language string, values []any, lines []int, inc
 				if bodyStart < len(masked) && masked[bodyStart] == '{' {
 					open = bodyStart
 				}
-			} else if openRelative := strings.IndexByte(masked[matchEnd:], '{'); openRelative >= 0 && matchEnd+openRelative <= lineEnd+500 {
+			} else if openRelative := strings.IndexByte(masked[matchEnd:], '{'); openRelative >= 0 && matchEnd+openRelative <= advanceUTF16(text, lineEnd, 500) {
 				open = matchEnd + openRelative
 			}
 			end := braceEnd(masked, open)
+			if end >= 0 && symbol["kind"] == "class" {
+				symbol["bodyOpen"] = open
+			}
 			if end >= 0 {
 				endLine = lineAt(lines, end)
 				signature = normalizedSignature(text[start:open])
@@ -522,6 +600,11 @@ func enrichSymbols(text, masked, language string, values []any, lines []int, inc
 			}
 		}
 	}
+	if language == "javascript" || language == "typescript" {
+		// Members get their scope from their class or binding; they are not
+		// containers for the declarations above, whose names stay as they were.
+		values = sortSymbols(append(values, javascriptMembers(text, masked, values, methodDefinitionSites(masked, text), lines)...))
+	}
 	counts := map[string]int{}
 	for _, value := range values {
 		symbol := value.(map[string]any)
@@ -537,6 +620,9 @@ func enrichSymbols(text, masked, language string, values []any, lines []int, inc
 			delete(symbol, "endIndex")
 		}
 		delete(symbol, "matchEndIndex")
+		if !includeRanges {
+			delete(symbol, "bodyOpen")
+		}
 	}
 	return values
 }
@@ -553,25 +639,37 @@ func sortSymbols(values []any) []any {
 	return values
 }
 
+// Like the JavaScript reference, every declaration is collected (up to
+// analysisSymbolLimit), sorted and given its scope; callers of calls see them
+// all, and only the stored list is cut to maximumSymbolsPerFile.
 func extractSymbolsInternal(text, language string, lines []int, includeRanges bool) []any {
 	masked := maskNonCode(text, language)
+	var values []any
 	switch language {
 	case "javascript", "typescript":
-		return enrichSymbols(text, masked, language, regexSymbols(masked, lines, []symbolPattern{
+		values = enrichSymbols(text, masked, language, regexSymbols(masked, lines, []symbolPattern{
 			{Kind: "function", Regex: javascriptFunction, Group: 4},
-			{Kind: "class", Regex: javascriptClass, Group: 2},
+			// "class extends B" is an anonymous class, not a class named "extends".
+			{Kind: "class", Regex: javascriptClass, Group: 2, Reject: "extends"},
 			{Kind: "binding", Regex: javascriptBinding, Group: 3},
-		}, maximumSymbolsPerFile), lines, includeRanges)
+			// A class expression bound to a name; an anonymous default class.
+			{Kind: "class", Regex: classExpressionRegexp, Group: 3},
+			{Kind: "class", Regex: defaultClassRegexp, Group: 1, FixedName: "default", EndGroup: 1},
+		}, analysisSymbolLimit), lines, includeRanges)
 	case "python":
-		return enrichSymbols(text, masked, language, regexSymbols(masked, lines, []symbolPattern{
+		values = enrichSymbols(text, masked, language, regexSymbols(masked, lines, []symbolPattern{
 			{Kind: "function", Regex: pythonFunction, Group: 2},
 			{Kind: "class", Regex: pythonClass, Group: 1},
-		}, maximumSymbolsPerFile), lines, includeRanges)
+		}, analysisSymbolLimit), lines, includeRanges)
 	case "markdown":
-		return enrichSymbols(text, text, language, regexSymbols(text, lines, []symbolPattern{{Kind: "heading", Regex: markdownHeading, Group: 1}}, maximumSymbolsPerFile), lines, includeRanges)
+		values = enrichSymbols(text, text, language, regexSymbols(text, lines, []symbolPattern{{Kind: "heading", Regex: markdownHeading, Group: 1}}, analysisSymbolLimit), lines, includeRanges)
 	default:
 		return []any{}
 	}
+	if !includeRanges && len(values) > maximumSymbolsPerFile {
+		values = values[:maximumSymbolsPerFile]
+	}
+	return values
 }
 
 func extractSymbols(text, language string, lines []int) []any {
@@ -642,9 +740,19 @@ func capture(text string, match []int, group int) string {
 func extractBindings(text, language string) []any {
 	result := make([]any, 0)
 	if language == "javascript" || language == "typescript" {
+		clauses := [][2]string{}
 		for _, match := range javascriptImport.FindAllStringSubmatchIndex(text, -1) {
-			clause := strings.TrimSpace(capture(text, match, 1))
-			specifier := capture(text, match, 2)
+			clauses = append(clauses, [2]string{capture(text, match, 1), capture(text, match, 2)})
+		}
+		// A clause spread over lines (the single-line form above never matches it).
+		for _, match := range javascriptImportLayout.FindAllStringSubmatchIndex(text, -1) {
+			if strings.Contains(capture(text, match, 1), "\n") {
+				clauses = append(clauses, [2]string{capture(text, match, 1), capture(text, match, 2)})
+			}
+		}
+		for _, pair := range clauses {
+			clause := normalizedImportClause(pair[0])
+			specifier := pair[1]
 			if namespace := javascriptNamespace.FindStringSubmatch(clause); namespace != nil {
 				addBinding(&result, namespace[1], "*", specifier, true)
 			}
@@ -681,8 +789,36 @@ func extractBindings(text, language string) []any {
 			addBinding(&result, capture(text, match, 2), "*", capture(text, match, 3), true)
 		}
 	} else if language == "python" {
-		for _, match := range pythonFromImport.FindAllStringSubmatchIndex(text, -1) {
-			for _, item := range strings.Split(capture(text, match, 2), ",") {
+		// "from m import a, b as c", also a parenthesised list over lines and a
+		// line continued with a backslash. Comments are dropped.
+		for _, match := range pythonFromLayout.FindAllStringSubmatchIndex(text, -1) {
+			start := match[1]
+			clause := ""
+			if byteAt(text, start) == '(' {
+				closeIndex := strings.IndexByte(text[start:], ')')
+				if closeIndex < 0 {
+					clause = text[start+1:]
+				} else {
+					clause = text[start+1 : start+closeIndex]
+				}
+			} else {
+				end := start
+				for {
+					lineEnd := len(text)
+					if relative := strings.IndexByte(text[end:], '\n'); relative >= 0 {
+						lineEnd = end + relative
+					}
+					line := pythonLineComment.ReplaceAllString(text[end:lineEnd], "")
+					if !pythonContinued.MatchString(line) || lineEnd == len(text) {
+						end = lineEnd
+						break
+					}
+					end = lineEnd + 1
+				}
+				clause = pythonContinuation.ReplaceAllString(text[start:end], " ")
+			}
+			clause = pythonLineComment.ReplaceAllString(clause, " ")
+			for _, item := range strings.Split(clause, ",") {
 				parts := pythonAsSplit.Split(strings.TrimSpace(item), -1)
 				if parts[0] != "" {
 					local := parts[0]
@@ -713,21 +849,6 @@ func extractBindings(text, language string) []any {
 		return false
 	})
 	return result
-}
-
-func prefixByUTF16(text string, byteIndex, maximumUnits int) string {
-	units := make([]uint16, 0, maximumUnits)
-	prefix := text[:byteIndex]
-	for len(prefix) > 0 && len(units) < maximumUnits {
-		r, size := utf8.DecodeLastRuneInString(prefix)
-		prefix = prefix[:len(prefix)-size]
-		encoded := utf16.Encode([]rune{r})
-		if len(units)+len(encoded) > maximumUnits {
-			encoded = encoded[len(encoded)-(maximumUnits-len(units)):]
-		}
-		units = append(encoded, units...)
-	}
-	return string(utf16.Decode(units))
 }
 
 // quoteScanMask is the plain quote scan: Python masking, and the fallback for
@@ -819,13 +940,33 @@ func extractCalls(text, language string, lines []int) []any {
 	}
 	masked := maskNonCode(text, language)
 	symbols := extractSymbolsInternal(text, language, lines, true)
+	// A method definition ("name(...) {" in a class body or object literal) is not a call.
+	// Neither is a TypeScript signature without a body in a class or interface.
+	definitions := map[int]bool{}
+	if language != "python" {
+		for _, site := range methodDefinitionSites(masked, text) {
+			definitions[site.nameIndex] = true
+		}
+		classBodyOpens := []int{}
+		for _, value := range symbols {
+			if open, ok := value.(map[string]any)["bodyOpen"].(int); ok {
+				classBodyOpens = append(classBodyOpens, open)
+			}
+		}
+		for _, site := range signatureSites(masked, uniqueSorted(classBodyOpens)) {
+			definitions[site.nameIndex] = true
+		}
+	}
 	result := make([]any, 0)
 	for _, match := range callPattern.FindAllStringSubmatchIndex(masked, -1) {
 		callee := capture(masked, match, 1)
-		if excluded[callee] || declarationPrefix.MatchString(prefixByUTF16(masked, match[0], 24)) {
+		if excluded[callee] || declarationPrefix.MatchString(masked[utf16WindowStart(text, match[0], 24):match[0]]) {
 			continue
 		}
 		callIndex := match[0]
+		if definitions[callIndex] {
+			continue
+		}
 		callLine := lineAt(lines, callIndex)
 		var caller map[string]any
 		for _, value := range symbols {

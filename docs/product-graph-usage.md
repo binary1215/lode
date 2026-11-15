@@ -54,7 +54,7 @@ If the document changed after the digest was taken, the approval is refused. Edi
 - **처음 쓸 때 — 빠진 입력** appears only when a document the checks need is missing or not yet approved: each line names the input, the checks and lists it unlocks, and the next step. The checks below it still end in 검사 못 함 with the same reason.
 - **이 그래프가 답하지 못하는 것** comes first. Read it before the findings: it says how much of the code was resolved, what is not extracted, what the UI scan cannot see, that nothing was run, and which documents this run used.
 - **어느 기능에서도 닿지 않는 코드** lists declarations no 기능 reaches through resolved references, most-affected files first. With few resolved calls, many entries are expected; an entry is a question for a reader (a missing 기능, or dead code), not a verdict.
-- **하나로 정하지 못한 호출** gives one count per reason and what would settle it. **코드로 읽지 않은 파일** counts what was not looked at, so a gap in coverage is visible.
+- **하나로 정하지 못한 호출** gives one count per reason and what would settle it; the limits block puts the calls in three numbers: all, those that cannot be product code or go to modules outside the product, and of the rest how many resolved. **코드로 읽지 않은 파일** counts what was not looked at, so a gap in coverage is visible.
 - **사라진 기능의 뜻** lists 뜻 lines whose 기능 is gone, usually after a rename: move the line to the new ID by hand. A build never edits `기능 뜻.md`.
 
 ## Comparing another directory without touching it
@@ -86,3 +86,13 @@ write the rule in `호출 방식 표.json`:
 ```
 
 `cli:save` then has `saveFile` as its 처리 코드 and `cli:export` has `runExport`. Make the pattern match the row's own key, not a mention of a command elsewhere; a 기능 found in more than one row is listed so you can tighten it.
+
+## A global name the table does not know
+
+A call to a runtime global the built-in table does not list (a host's own global, for example) is counted as having no declaration. Add the name in `호출 방식 표.json`, under `"내장 이름"`, by language:
+
+```json
+{ "schemaVersion": 1, "kind": "LodeProductGraphEntryRules", "rules": [], "내장 이름": { "javascript": { "함수": ["hostLog"], "네임스페이스": ["host"] } } }
+```
+
+`hostLog(x)` is then a built-in function and `host.run(x)` a built-in namespace member, in every file that does not declare, import or bind that name.
