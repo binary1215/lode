@@ -9,6 +9,51 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.129 — 게시 결과는 별도 확인
+
+- 추가: storage GC의 스냅샷 보존 정책. 켜지 않으면 꺼져 있습니다.
+  - 정책이 없으면 `storage-gc`는 전과 똑같이 남깁니다. refresh 이력이
+    가리키는 World는 모두 그대로입니다. 아무것도 설정하지 않은 프로젝트는
+    달라지는 것이 없습니다.
+  - 정책 파일 `<store>/refresh/snapshot-retention.json`(`schemaVersion`,
+    `keepCount`, `keepDays`)이나 한 번의 실행에 주는 `--keep-count` /
+    `--keep-days`로 켭니다. 그러면 refresh 이력이 더는 오래된 World를
+    붙잡지 않고, 쓴 시각 기준으로 가장 새로운 `keepCount`개와 `keepDays`보다
+    새로운 것을 남깁니다(둘 중 더 많이 남기는 쪽). 쓸 수 없는 숫자는 사용법
+    오류이고, 쓸 수 없는 정책 파일은 전부 남기며 출력에 그 파일을 쓸 수
+    없다고 적습니다.
+  - 정책과 상관없이 항상 남기는 것: 현재 World와 Graph, 포인터가 이전
+    World로 적은 것, 현재 refresh receipt의 World들, Capsule·ChangeSet·lineage
+    기록·checkpoint·Session 기록·knowledge decision·제품 그래프 문서가
+    가리키는 모든 스냅샷과 그 기록이 적어 둔 부모, 해시로만 가리킨 것, 쓴
+    시각을 믿을 수 없는 스냅샷(Git object store).
+  - dry run은 apply가 무엇을 어떤 규칙으로 지울지, 그리고 apply만 하는
+    확인이 무엇인지 알려 줍니다. 출력은 보존 정책이 꺼져 있는지, 프로젝트
+    파일에서 왔는지, 이번 실행의 옵션에서 왔는지 적습니다.
+  - 정책으로 지우는 apply는 지우기 전에 release 기록을 씁니다:
+    `<store>/refresh/retention-releases/retention-release-<id>.json`. 적용된
+    정책, 시각, 지운 World·Graph의 ID와 해시가 들어갑니다. 이 기록은 다시
+    쓰거나 수거하지 않으며, 기본 apply와 dry run은 쓰지 않습니다.
+  - 보존 정책이 지운 스냅샷을 가리키는 기록은 "보존 정책으로 지워짐(날짜)"로
+    보고하고 storage GC를 막지 않습니다. 오래된 refresh 이력이든 나중에
+    쓰인 기록이든 같습니다. 없어졌는데 어느 유효한 release 기록에도 없는
+    스냅샷은 여전히 없음으로 보고하고, 현재 World는 기록이 뭐라 하든
+    그렇습니다. 읽을 수 없는 release 기록은 아무것도 덮어 주지 않고 출력에
+    이름이 나옵니다.
+  - World가 지워진 옛 refresh receipt를 읽으면 "없음" 대신 날짜와 함께
+    `WORLD_MODEL_SNAPSHOT_RELEASED`로 답합니다.
+- 한계: release 기록은 `refresh/` 아래, 다시 만들 수 있는 캐시 두 개 옆에
+  있습니다. 캐시는 지워도 되지만 이 기록은 지우면 안 됩니다(지우면 옛
+  이력이 다시 손상된 것처럼 보일 뿐입니다). 옛 버전의 Lode는 이 기록을
+  몰라서 지운 이력을 없음으로 보고합니다. 프로젝트 폴더를 복사하면 정책
+  파일과 기록이 함께 가고, 쓴 시각은 복사한 시각이 되므로 새 World가 쓰일
+  때까지 그쪽의 창은 복사 시각 순서입니다. "가장 새로운"은 스냅샷 파일을
+  처음 쓴 시각 기준이고, 옮기거나 다시 배포한 World는 옛 시각을 유지합니다.
+  원래 제안에서 넣지 않은 것: 기본으로 켜진 보존 정책, 새 chunked 쓰기
+  형식, 예측한 revision parent. 앞의 둘은 아무도 고르지 않았는데 저장되는
+  것이나 지워지는 것을 바꾸고, 셋째는 결과가 같다는 증명이 되지 않았습니다.
+  macOS와 Linux 동작은 CI로만 확인했습니다.
+
 ## 0.3.0-beta.128 — 게시 결과는 별도 확인
 
 - 수정: `minimumReader`가 생기기 전에 쓰인 포인터(beta.80 모양: 이 reader가

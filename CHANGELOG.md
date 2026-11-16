@@ -11,6 +11,55 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.129 — publication tracked separately
+
+- Added: snapshot retention for storage GC, off unless you turn it on.
+  - With no policy, `storage-gc` keeps exactly what it kept before: every
+    World that refresh history names stays. Nothing changes for a project
+    that sets nothing.
+  - A policy file `<store>/refresh/snapshot-retention.json`
+    (`schemaVersion`, `keepCount`, `keepDays`) or `--keep-count` /
+    `--keep-days` for one run turns it on. Refresh history then stops
+    pinning old Worlds, and a window keeps the newest `keepCount` Worlds by
+    write time and everything newer than `keepDays`, whichever keeps more.
+    A value that is not a usable number is a usage error; a policy file that
+    cannot be used keeps everything and the output says the file is
+    unusable.
+  - Always kept, window or not: the current World and Graph, the World the
+    pointer names as previous, the Worlds of the current refresh receipt,
+    every snapshot a Capsule, ChangeSet, lineage record, checkpoint, Session
+    record, knowledge decision or product-graph document names, including
+    the parents such a record lists, anything named only by a hash, and any
+    snapshot without a trustworthy write time (the Git object store).
+  - The dry run reports what the apply would delete, under which rule, and
+    which checks only the apply makes. The output says whether retention is
+    off, from the project file or from this run's options.
+  - A windowed apply writes a release record before it deletes anything:
+    `<store>/refresh/retention-releases/retention-release-<id>.json` with
+    the policy in force, the time, and the released World and Graph ids and
+    hashes. Records are never rewritten or reclaimed, and a default apply or
+    a dry run writes none.
+  - A record that names a snapshot retention released is reported as
+    "released by retention on <date>" and does not block storage GC,
+    whether it is old refresh history or a record written later. A snapshot
+    that is gone and that no valid release record names is still reported as
+    missing, and so is the current World whatever a record says. A release
+    record that cannot be read excuses nothing and is named in the output.
+  - Reading an old refresh receipt whose World was released answers
+    `WORLD_MODEL_SNAPSHOT_RELEASED` with the date instead of "missing".
+- Limits: the release records live under `refresh/` next to the two
+  rebuildable caches; the caches may be deleted, the records may not
+  (without them old history looks damaged again, nothing else). An older
+  Lode does not know the records and reports released history as missing. A
+  copied project folder carries the policy file and the records; its write
+  times are the copy's, so the window there is ordered by copy time until
+  new Worlds are written. "Newest" is by the snapshot file's first write. A
+  moved or re-published World keeps its old time. Not included from the
+  original proposal: retention by default, a new chunked write format, and
+  predicted revision parents; the first two would change what is stored or
+  deleted without anyone choosing it, the third was not proven equal.
+  macOS and Linux behaviour is covered by CI only.
+
 ## 0.3.0-beta.128 — publication tracked separately
 
 - Fixed: a store whose pointer was written before `minimumReader` existed
