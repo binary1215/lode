@@ -248,15 +248,18 @@ test("a store written by beta.80 commit 6d9f6be stays readable and keeps its sna
   const archive = path.join(pack, "beta80.tar");
   const tree = path.join(pack, "tree");
   fs.mkdirSync(tree);
-  // Pull-request checkouts are shallow and do not contain this historical commit.
-  const present = spawnSync("git", ["cat-file", "-e", "6d9f6be^{commit}"], { cwd: pluginRoot, encoding: "utf8" });
-  if (present.status !== 0) {
-    const fetched = spawnSync("git", ["fetch", "--depth=1", "origin", "6d9f6be"], {
-      cwd: pluginRoot,
-      encoding: "utf8",
-      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-    });
-    assert.equal(fetched.status, 0, fetched.stderr || fetched.stdout);
+  // Pull-request checkouts are shallow. GitHub will not serve this historical
+  // commit as a remote ref, but it is an ancestor of this branch, so deepening
+  // the existing history is enough. Fetching main covers a detached merge checkout.
+  const commitPresent = () => spawnSync("git", ["cat-file", "-e", "6d9f6be^{commit}"], { cwd: pluginRoot, encoding: "utf8" }).status === 0;
+  if (!commitPresent()) {
+    const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
+    spawnSync("git", ["fetch", "--deepen=500", "origin"], { cwd: pluginRoot, encoding: "utf8", env: gitEnv });
+    if (!commitPresent()) {
+      const main = spawnSync("git", ["fetch", "--depth=500", "origin", "main"], { cwd: pluginRoot, encoding: "utf8", env: gitEnv });
+      assert.equal(main.status, 0, main.stderr || main.stdout);
+      assert.equal(commitPresent(), true, "beta.80 commit 6d9f6be is not in the deepened history");
+    }
   }
   const archived = spawnSync("git", ["archive", "--format=tar", "-o", archive, "6d9f6be"], { cwd: pluginRoot, encoding: "utf8" });
   assert.equal(archived.status, 0, archived.stderr);
