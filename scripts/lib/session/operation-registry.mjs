@@ -5705,13 +5705,9 @@ export const OPERATIONS = Object.freeze([
         const { root, options, onProcess, signal } = context;
         const { inspectSnapshotPreservationClosure } = await import("../world/snapshot-preservation-closure.mjs");
         const { inspectSnapshotGarbageCollection, applySnapshotGarbageCollection } = await import("../world/snapshot-gc.mjs");
-        const retention =
-          options["keep-count"] == null && options["keep-days"] == null
-            ? null
-            : {
-                ...(options["keep-count"] == null ? {} : { keepCount: Number(options["keep-count"]) }),
-                ...(options["keep-days"] == null ? {} : { keepDays: Number(options["keep-days"]) }),
-              };
+        const { parseRetentionOptions } = await import("../world/snapshot-retention-policy.mjs");
+        // A value that is not a whole number in range is a usage error, never a silent no-window run.
+        const retention = parseRetentionOptions(options);
         if (options.apply === true || options.apply === "true") return await applySnapshotGarbageCollection({ root, signal, onProcess, retention });
         const inspection = inspectSnapshotGarbageCollection({ root, retention });
         try {

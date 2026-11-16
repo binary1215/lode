@@ -124,7 +124,7 @@ test("an invalid policy file keeps all history; a valid one applies its window",
   const file = path.join(f.root, f.storage.directory, "refresh", "snapshot-retention.json");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify({ schemaVersion: 1, keepCount: 0, keepDays: 1 }));
-  assert.equal(resolveSnapshotRetentionPolicy({ root: f.root, storage: f.storage }).source, "invalid-config-preserve");
+  assert.equal(resolveSnapshotRetentionPolicy({ root: f.root, storage: f.storage }).source, "invalid-project-file");
   assert.equal(resolveSnapshotRetentionPolicy({ root: f.root, storage: f.storage }).preserveAllHistory, true);
   fs.writeFileSync(file, "{ not json");
   assert.equal(resolveSnapshotRetentionPolicy({ root: f.root, storage: f.storage }).preserveAllHistory, true);
@@ -135,6 +135,7 @@ test("an invalid policy file keeps all history; a valid one applies its window",
     source: "project-file",
     preserveAllHistory: false,
   });
+  assert.equal(resolveSnapshotRetentionPolicy({ root: f.root, storage: f.storage, override: { keepCount: 1 } }).source, "options");
   // Options for one run take precedence; an invalid option keeps everything.
   assert.equal(resolveSnapshotRetentionPolicy({ root: f.root, storage: f.storage, override: { keepCount: 1 } }).keepCount, 1);
   assert.equal(resolveSnapshotRetentionPolicy({ root: f.root, storage: f.storage, override: { keepCount: -1 } }).preserveAllHistory, true);

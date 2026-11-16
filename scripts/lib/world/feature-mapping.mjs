@@ -497,7 +497,8 @@ async function startFeatureMappingLocked({ root = ".", semanticProposal = null, 
   try {
     indexed = await inspectWorldModel({ root: projectRoot });
   } catch (error) {
-    if (semanticProposal != null || !["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING"].includes(error.code)) throw error;
+    if (semanticProposal != null || !["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING", "WORLD_MODEL_SNAPSHOT_RELEASED"].includes(error.code))
+      throw error;
     // The explicit no-proposal setup may create its first derived view. An exact
     // proposal, however, must be checked against the World HEAD actually read.
     await buildWorldModel({ root: projectRoot, persist: true });

@@ -1,56 +1,111 @@
 import fs from "node:fs";
 import path from "node:path";
 
-// A retention window is opt-in: without a policy file and without
+// A retention window is opt-in: without a usable policy file and without
 // --keep-count / --keep-days, storage GC keeps exactly what it kept before
 // (every retained reference and its ancestry). When a window is configured,
 // age and count apply only to published World history that nothing current or
 // recorded still names. Current pointers and what they name, decision/record
 // pins, snapshots named by hash, snapshots without a trustworthy time and the
-// parts those snapshots need stay. An unreadable policy keeps every historical
-// snapshot instead of guessing.
+// parts those snapshots need stay. A policy file that exists but cannot be
+// used keeps every historical snapshot instead of guessing, and says why.
+// DEFAULT_SNAPSHOT_RETENTION only fills the value a run leaves out when it
+// gives one of --keep-count / --keep-days and no policy file supplies the other.
 export const DEFAULT_SNAPSHOT_RETENTION = Object.freeze({ keepCount: 8, keepDays: 14 });
 export const SNAPSHOT_RETENTION_RELATIVE = "refresh/snapshot-retention.json";
 const SNAPSHOT_ID = /^(?:world-model|graph-snapshot|source-snapshot)-[a-f0-9]{24}$/;
 
-function parsePolicy(document) {
-  if (!document || typeof document !== "object" || Array.isArray(document) || document.schemaVersion !== 1) return null;
-  if (JSON.stringify(Object.keys(document).sort()) !== JSON.stringify(["keepCount", "keepDays", "schemaVersion"])) return null;
-  if (!Number.isSafeInteger(document.keepCount) || document.keepCount < 1 || document.keepCount > 10000) return null;
-  if (!Number.isSafeInteger(document.keepDays) || document.keepDays < 0 || document.keepDays > 3650) return null;
-  return { keepCount: document.keepCount, keepDays: document.keepDays };
+// The reason a policy document cannot be used, or null when it can.
+function policyProblem(document) {
+  if (!document || typeof document !== "object" || Array.isArray(document)) return "not a JSON object";
+  if (document.schemaVersion !== 1) return "schemaVersion must be 1";
+  const keys = Object.keys(document).sort();
+  if (JSON.stringify(keys) !== JSON.stringify(["keepCount", "keepDays", "schemaVersion"]))
+    return "fields must be exactly schemaVersion, keepCount and keepDays";
+  if (!Number.isSafeInteger(document.keepCount) || document.keepCount < 1 || document.keepCount > 10000) return "keepCount must be an integer from 1 to 10000";
+  if (!Number.isSafeInteger(document.keepDays) || document.keepDays < 0 || document.keepDays > 3650) return "keepDays must be an integer from 0 to 3650";
+  return null;
+}
+
+// Validates --keep-count / --keep-days values as given on a command line.
+// Returns the retention override or throws a usage error.
+export function parseRetentionOptions(options = {}) {
+  const read = (flag, min, max) => {
+    const raw = options[flag];
+    if (raw == null) return undefined;
+    const text = String(raw).trim();
+    if (!/^\d+$/.test(text) || Number(text) < min || Number(text) > max)
+      throw Object.assign(new Error(`--${flag} must be an integer from ${min} to ${max}; got "${raw}".`), { code: "INVALID_STORAGE_GC_RETENTION_OPTION" });
+    return Number(text);
+  };
+  const keepCount = read("keep-count", 1, 10000);
+  const keepDays = read("keep-days", 0, 3650);
+  if (keepCount === undefined && keepDays === undefined) return null;
+  return { ...(keepCount === undefined ? {} : { keepCount }), ...(keepDays === undefined ? {} : { keepDays }) };
 }
 
 export function resolveSnapshotRetentionPolicy({ root, storage, override = null } = {}) {
-  const preserve = (source) => ({ ...DEFAULT_SNAPSHOT_RETENTION, source, preserveAllHistory: true });
-  let policy = { ...DEFAULT_SNAPSHOT_RETENTION };
-  let source = "not-configured";
+  const off = (source, problem = null) => ({ keepCount: null, keepDays: null, source, preserveAllHistory: true, ...(problem ? { problem } : {}) });
+  let file = null;
+  let fileProblem = null;
   if (root && storage?.directory) {
-    const file = path.join(root, storage.directory, SNAPSHOT_RETENTION_RELATIVE);
-    if (fs.existsSync(file)) {
+    const location = path.join(root, storage.directory, SNAPSHOT_RETENTION_RELATIVE);
+    if (fs.existsSync(location)) {
       try {
-        const parsed = parsePolicy(JSON.parse(fs.readFileSync(file, "utf8")));
-        if (!parsed) return preserve("invalid-config-preserve");
-        policy = parsed;
-        source = "project-file";
-      } catch {
-        return preserve("invalid-config-preserve");
+        // A file saved by Windows PowerShell 5.1 starts with a byte order mark.
+        const document = JSON.parse(fs.readFileSync(location, "utf8").replace(/^﻿/, ""));
+        fileProblem = policyProblem(document);
+        if (!fileProblem) file = { keepCount: document.keepCount, keepDays: document.keepDays };
+      } catch (error) {
+        fileProblem = error instanceof SyntaxError ? "not valid JSON" : "unreadable (" + (error.code || error.message) + ")";
       }
     }
   }
   if (override && (override.keepCount != null || override.keepDays != null)) {
-    const parsed = parsePolicy({
+    const candidate = {
       schemaVersion: 1,
-      keepCount: override.keepCount ?? policy.keepCount,
-      keepDays: override.keepDays ?? policy.keepDays,
-    });
-    if (!parsed) return preserve("invalid-override-preserve");
-    policy = parsed;
-    source = "override";
+      keepCount: override.keepCount ?? file?.keepCount ?? DEFAULT_SNAPSHOT_RETENTION.keepCount,
+      keepDays: override.keepDays ?? file?.keepDays ?? DEFAULT_SNAPSHOT_RETENTION.keepDays,
+    };
+    const problem = policyProblem(candidate);
+    if (problem) return off("invalid-options", problem);
+    return {
+      keepCount: candidate.keepCount,
+      keepDays: candidate.keepDays,
+      source: "options",
+      preserveAllHistory: false,
+      ...(fileProblem ? { fileProblem } : {}),
+    };
   }
-  // Nothing configured: no window, the behaviour from before retention existed.
-  if (source === "not-configured") return { ...policy, source, preserveAllHistory: true };
-  return { ...policy, source, preserveAllHistory: false };
+  if (fileProblem) return off("invalid-project-file", fileProblem);
+  if (file) return { ...file, source: "project-file", preserveAllHistory: false };
+  return off("not-configured");
+}
+
+// The retention part of a storage GC result: whether a window is in force,
+// where it came from, the window itself, and what keeps a snapshot.
+export function describeSnapshotRetention(policy) {
+  const base = {
+    mode: policy.preserveAllHistory ? "off" : "window",
+    source: policy.source,
+    keepCount: policy.preserveAllHistory ? null : policy.keepCount,
+    keepDays: policy.preserveAllHistory ? null : policy.keepDays,
+    preserveAllHistory: policy.preserveAllHistory,
+    ...(policy.problem ? { problem: policy.problem } : {}),
+    ...(policy.fileProblem ? { policyFileProblem: policy.fileProblem } : {}),
+  };
+  if (policy.preserveAllHistory)
+    return {
+      ...base,
+      policy:
+        policy.source === "not-configured"
+          ? "retention is off (no policy file, no --keep-count / --keep-days): every snapshot a retained record names, and its ancestry, stays; only snapshots nothing names are eligible"
+          : `retention is off because the ${policy.source === "invalid-options" ? "--keep-count / --keep-days values" : "policy file " + SNAPSHOT_RETENTION_RELATIVE} cannot be used (${policy.problem}): every snapshot a retained record names, and its ancestry, stays`,
+    };
+  return {
+    ...base,
+    policy: `retention window from ${policy.source === "options" ? "this run's options" : "the policy file " + SNAPSHOT_RETENTION_RELATIVE}: the newest ${policy.keepCount} Worlds by first write time, or those first written in the last ${policy.keepDays} days, stay with the current pointers and what they name, snapshots that decisions and records pin, snapshots named by hash and snapshots without a trustworthy time; older World history that only refresh history names is released`,
+  };
 }
 
 export function snapshotIdsIn(value, found = new Set()) {

@@ -77,6 +77,15 @@ async function inspectGraphLineageWithReader({ root = ".", cursor = "", limit = 
     ),
   );
   const entries = snapshots.map((snapshot) => snapshotDescriptor(snapshot, current.snapshot.worldModelId, currentParents));
+  const { readRetentionReleases } = await import("./snapshot-retention-releases.mjs");
+  const releases = readRetentionReleases({ root: inspected.project.projectRoot, storage: inspected.storage, projectId: inspected.project.projectId });
+  const stored = new Set(ids);
+  const releasedWorlds = [...releases.released.entries()]
+    .filter(([id, release]) => id === release.snapshotId && id.startsWith("world-model-") && !stored.has(id))
+    .map(([worldModelId, release]) => ({ worldModelId, releasedAt: release.releasedAt, releaseId: release.releaseId }))
+    .sort((left, right) =>
+      left.releasedAt < right.releasedAt ? -1 : left.releasedAt > right.releasedAt ? 1 : left.worldModelId < right.worldModelId ? -1 : 1,
+    );
   const segmentPayload = { projectId: inspected.project.projectId, cursor: cursor || null, entries };
   const segmentHash = digest(canonicalJson(segmentPayload));
   return {
@@ -85,6 +94,16 @@ async function inspectGraphLineageWithReader({ root = ".", cursor = "", limit = 
     projectId: inspected.project.projectId,
     currentWorldModelId: current.snapshot.worldModelId,
     totalRetainedSnapshots: ids.length,
+    // Worlds no longer stored because a windowed storage GC released them.
+    ...(releasedWorlds.length || releases.problems.length
+      ? {
+          releasedByRetention: {
+            count: releasedWorlds.length,
+            entries: releasedWorlds.slice(0, 50),
+            ...(releases.problems.length ? { unusableRecords: releases.problems } : {}),
+          },
+        }
+      : {}),
     segment: { segmentId: `graph-lineage-segment-${segmentHash.slice(0, 24)}`, segmentHash, entries },
     nextCursor: start + pageIds.length < ids.length ? pageIds.at(-1) : null,
     tiers: {

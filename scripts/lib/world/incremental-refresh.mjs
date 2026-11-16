@@ -558,11 +558,29 @@ export async function readIncrementalRefreshReceipt({ root = ".", refreshReceipt
   ) {
     fail("Incremental refresh request and receipt disagree.", "REFRESH_REQUEST_RECEIPT_MISMATCH");
   }
-  const baseSnapshot = (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: receipt.base.worldModelId, storeAdapter })).snapshot;
-  const nextSnapshot =
-    receipt.next.worldModelId === receipt.base.worldModelId
-      ? baseSnapshot
-      : (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: receipt.next.worldModelId, storeAdapter })).snapshot;
+  const released = [];
+  const snapshotOf = async (worldModelId) => {
+    try {
+      return (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId, storeAdapter })).snapshot;
+    } catch (error) {
+      if (error.code !== "WORLD_MODEL_SNAPSHOT_RELEASED") throw error;
+      released.push({ worldModelId, releasedAt: error.releasedAt, releaseId: error.releaseId, message: error.message });
+      return null;
+    }
+  };
+  const baseSnapshot = await snapshotOf(receipt.base.worldModelId);
+  const nextSnapshot = receipt.next.worldModelId === receipt.base.worldModelId ? baseSnapshot : await snapshotOf(receipt.next.worldModelId);
+  if (released.length)
+    return {
+      status: "released-by-retention",
+      file,
+      receipt,
+      requestFile: requestEntry.file,
+      request: requestEntry.request,
+      released,
+      snapshotVerification: "not-made: the World this receipt names was released by retention; the receipt and its request verify by digest",
+      message: released.map((item) => item.message).join(" "),
+    };
   if (
     baseSnapshot.temporalProvenanceGraph.sourceSnapshotId !== receipt.base.sourceSnapshotId ||
     baseSnapshot.temporalProvenanceGraph.graphSnapshotId !== receipt.base.graphSnapshotId ||

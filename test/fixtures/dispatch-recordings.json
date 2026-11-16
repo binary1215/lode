@@ -18893,11 +18893,17 @@
    ],
    "calls": [
     {
+     "fn": "snapshot-retention-policy#parseRetentionOptions",
+     "args": [
+      {}
+     ]
+    },
+    {
      "fn": "snapshot-gc#inspectSnapshotGarbageCollection",
      "args": [
       {
        "root": "<root>",
-       "retention": null
+       "retention": "$undefined"
       }
      ]
     },
@@ -18929,16 +18935,23 @@
    ],
    "calls": [
     {
+     "fn": "snapshot-retention-policy#parseRetentionOptions",
+     "args": [
+      {
+       "apply": true,
+       "keep-count": "sample-keep-count",
+       "keep-days": "sample-keep-days"
+      }
+     ]
+    },
+    {
      "fn": "snapshot-gc#applySnapshotGarbageCollection",
      "args": [
       {
        "root": "<root>",
        "signal": "$undefined",
        "onProcess": "$undefined",
-       "retention": {
-        "keepCount": null,
-        "keepDays": null
-       }
+       "retention": "$undefined"
       }
      ]
     }

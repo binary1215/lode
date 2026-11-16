@@ -64,7 +64,7 @@ const fail = failWith("ONBOARDING_ERROR");
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const now = () => new Date().toISOString();
 const compareText = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
-const ABSENT_WORLD_CODES = new Set(["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING"]);
+const ABSENT_WORLD_CODES = new Set(["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING", "WORLD_MODEL_SNAPSHOT_RELEASED"]);
 
 function requiredText(value, label) {
   if (typeof value !== "string" || !value.trim()) fail(`${label} is required.`, "INVALID_ONBOARDING_INPUT");
