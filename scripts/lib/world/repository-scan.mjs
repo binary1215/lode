@@ -821,9 +821,16 @@ export function createRepositoryScanComputeAdapter({ pluginRoot = path.resolve(i
   });
 }
 
-export function sourceStatCacheCoversCurrentTree({ projectRoot, managedRootFiles = [], storage, sourceScope = buildRepositorySourceScope({ storage }) } = {}) {
-  const cache = loadFileStatCache(projectRoot, storage);
-  if (!cache.size) return false;
+export function sourceTreeMatchesPublishedFiles({
+  projectRoot,
+  managedRootFiles = [],
+  storage,
+  sourceScope = buildRepositorySourceScope({ storage }),
+  files = null,
+} = {}) {
+  if (!files || typeof files !== "object") return 0;
+  const expected = new Map(Object.entries(files));
+  if (!expected.size) return 0;
   const input = buildRepositoryScanInput({ projectRoot, managedRootFiles, sourceScope, storage });
   const managed = new Set(input.managedRootFiles);
   const seen = new Set();
@@ -834,7 +841,7 @@ export function sourceStatCacheCoversCurrentTree({ projectRoot, managedRootFiles
     try {
       entries = fs.readdirSync(directory, { withFileTypes: true });
     } catch {
-      return false;
+      return 0;
     }
     for (const entry of entries) {
       const absolute = path.join(directory, entry.name);
@@ -851,13 +858,13 @@ export function sourceStatCacheCoversCurrentTree({ projectRoot, managedRootFiles
       if (managed.has(relative)) continue;
       const extension = path.extname(entry.name).toLowerCase();
       if (!TEXT_EXTENSIONS.has(extension) && entry.name !== "Dockerfile") continue;
-      const cached = cache.get(relative);
-      const previous = cached ? { digest: cached.digest, bytes: cached.bytes } : null;
-      if (!statMatchesCached(previous, cached, absolute)) return false;
+      const published = expected.get(relative);
+      const previous = published ? { digest: published.digest, bytes: published.bytes } : null;
+      if (!statMatchesCached(previous, published, absolute)) return 0;
       seen.add(relative);
     }
   }
-  return seen.size === cache.size && seen.size > 0 ? seen.size : 0;
+  return seen.size === expected.size ? seen.size : 0;
 }
 
 export async function executeRepositoryScan({

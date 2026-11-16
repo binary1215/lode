@@ -20,8 +20,12 @@ export function darwinFilesystemName(root) {
   if (darwinNameCache.has(key)) return darwinNameCache.get(key);
   let name = "";
   try {
-    const result = spawnSync("/usr/bin/stat", ["-f", "%T", key], { encoding: "utf8", timeout: 1000, windowsHide: true, shell: false });
-    if (result.status === 0) name = String(result.stdout || "").trim().toLowerCase();
+    // BSD stat: %Sf is the filesystem type name (apfs, hfs, nfs). %T is the file type.
+    const result = spawnSync("/usr/bin/stat", ["-f", "%Sf", key], { encoding: "utf8", timeout: 1000, windowsHide: true, shell: false });
+    if (result.status === 0)
+      name = String(result.stdout || "")
+        .trim()
+        .toLowerCase();
   } catch {
     name = "";
   }

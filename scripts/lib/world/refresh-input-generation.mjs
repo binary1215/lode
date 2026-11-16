@@ -46,10 +46,7 @@ export function loadFileStatCache(root, storage) {
 
 export function saveFileStatCache(root, storage, cache) {
   const files = Object.fromEntries([...cache.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)));
-  atomicWriteText(
-    cachePath(root, storage, FILE_STAT_CACHE_RELATIVE),
-    JSON.stringify({ schemaVersion: 1, kind: "RefreshFileStatCache", files }),
-  );
+  atomicWriteText(cachePath(root, storage, FILE_STAT_CACHE_RELATIVE), JSON.stringify({ schemaVersion: 1, kind: "RefreshFileStatCache", files }));
 }
 
 function fileIdentity(absolute) {
@@ -167,9 +164,29 @@ const REVISION_KINDS = new Set([
   "PolicyRevision",
 ]);
 
+function publishedFileStat(root, file) {
+  const stat = fs.statSync(path.join(root, file.path), { bigint: true });
+  return {
+    bytes: Number(stat.size),
+    mtimeNs: stat.mtimeNs.toString(),
+    ctimeNs: stat.ctimeNs.toString(),
+    ino: stat.ino.toString(),
+    dev: stat.dev.toString(),
+    digest: file.digest,
+  };
+}
+
 export function writeRefreshInputGeneration({ root, storage, snapshot }) {
   const graph = snapshot.temporalProvenanceGraph;
   const revisions = graph.nodes.filter((node) => REVISION_KINDS.has(node.kind));
+  const files = {};
+  for (const file of snapshot.files || []) {
+    try {
+      files[file.path] = publishedFileStat(root, file);
+    } catch {
+      return null;
+    }
+  }
   const document = {
     schemaVersion: 1,
     kind: "RefreshInputGeneration",
@@ -181,6 +198,7 @@ export function writeRefreshInputGeneration({ root, storage, snapshot }) {
     revisionNodeCount: revisions.length,
     parentedRevisionCount: revisions.filter((node) => node.parentRevisionIds?.length > 0).length,
     stamp: refreshInputStamp(root, storage),
+    files,
   };
   atomicWriteText(cachePath(root, storage, INPUT_GENERATION_RELATIVE), JSON.stringify(document));
   return document;
@@ -189,6 +207,6 @@ export function writeRefreshInputGeneration({ root, storage, snapshot }) {
 export function readRefreshInputGeneration(root, storage) {
   const document = readJsonIfPresent(cachePath(root, storage, INPUT_GENERATION_RELATIVE));
   if (!document || document.kind !== "RefreshInputGeneration" || document.schemaVersion !== 1) return null;
-  if (typeof document.worldModelId !== "string" || typeof document.stamp !== "string") return null;
+  if (typeof document.worldModelId !== "string" || typeof document.stamp !== "string" || !document.files || typeof document.files !== "object") return null;
   return document;
 }

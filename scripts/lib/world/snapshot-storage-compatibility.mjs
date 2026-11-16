@@ -44,11 +44,11 @@ function compositionSupported(requirements) {
   const flat = requirements.layout === "shared-domains-v2";
   return Boolean(
     composition &&
-      typeof composition === "object" &&
-      composition.kind === "SnapshotComposition" &&
-      composition.schemaVersion === (chunked ? 3 : flat ? 2 : 1) &&
-      composition.producer?.name === "lode-domain-bundle" &&
-      composition.producer?.version === (chunked ? "0.3.0" : flat ? "0.2.0" : "0.1.0"),
+    typeof composition === "object" &&
+    composition.kind === "SnapshotComposition" &&
+    composition.schemaVersion === (chunked ? 3 : flat ? 2 : 1) &&
+    composition.producer?.name === "lode-domain-bundle" &&
+    composition.producer?.version === (chunked ? "0.3.0" : flat ? "0.2.0" : "0.1.0"),
   );
 }
 
@@ -58,11 +58,11 @@ function compositionSupported(requirements) {
 export function legacyReaderDeclaration(requirements) {
   return Boolean(
     requirements &&
-      typeof requirements === "object" &&
-      !Array.isArray(requirements) &&
-      !Object.hasOwn(requirements, "minimumReader") &&
-      !Object.hasOwn(requirements, "writer") &&
-      compositionSupported(requirements),
+    typeof requirements === "object" &&
+    !Array.isArray(requirements) &&
+    !Object.hasOwn(requirements, "minimumReader") &&
+    !Object.hasOwn(requirements, "writer") &&
+    compositionSupported(requirements),
   );
 }
 

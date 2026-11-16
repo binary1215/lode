@@ -17,7 +17,7 @@ manual request or verified RefreshTriggerBatch
   -> content-derived IncrementalRefreshRequest
   -> rediscover every eligible file
   -> re-read and byte-hash a file when its size, mtime, ctime or inode differs from the last verified scan; a stat-identical file reuses that verified digest and analysis
-  -> recompute temporal relation edges only for records whose endpoints changed
+  -> when those stats and the non-snapshot inputs are unchanged, keep the published World and Graph instead of rebuilding them
   -> reuse analysis only for digest-identical verified files
   -> validate one complete RepositoryScanResult
   -> preview a child SourceSnapshot and GraphSnapshot

@@ -302,8 +302,7 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
         requiredVersion: mismatch.requiredVersion || null,
         installedVersion: mismatch.installedVersion || null,
       };
-    if (compatibility.layers.some((layer) => layer.legacyDeclaration))
-      await upgradeLegacyReaderPointers({ root: owner.projectRoot, storage: owner.storage });
+    if (compatibility.layers.some((layer) => layer.legacyDeclaration)) await upgradeLegacyReaderPointers({ root: owner.projectRoot, storage: owner.storage });
   } catch (error) {
     if (error.code === "STORAGE_VERSION_MISMATCH") return { ...result, code: error.code, message: error.message };
   }

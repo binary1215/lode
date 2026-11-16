@@ -1786,14 +1786,8 @@ async function buildWorldModelLocked({
   });
   // New relation identity is a producer contract, independent of physical layout.
   // Historical snapshots keep their original protocol, IDs, hashes and bytes.
-  const relationAnalysisBasis = relationBasisFor({
-    analysisBasis: codeAnalysisBasis(semanticGraph),
-    rules: snapshotRules,
-    repositoryScan: { sourceScope },
-  });
   temporalProvenanceGraph = stabilizeTemporalRelationIdentities(temporalProvenanceGraph, {
-    relationAnalysisBasis,
-    reusedEdges: previousTemporalGraph,
+    relationAnalysisBasis: relationBasisFor({ analysisBasis: codeAnalysisBasis(semanticGraph), rules: snapshotRules, repositoryScan: { sourceScope } }),
   });
   verifyTemporalProvenanceGraph(temporalProvenanceGraph);
   const sourceDigest = sourceDigestFor(

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { readContextCapsule } from "../session/context-compiler.mjs";
 import { inspectProject, SCHEMA_VERSION } from "../head-core.mjs";
-import { executeIncrementalRepositoryScan, managedRootFilesForProject, sourceStatCacheCoversCurrentTree } from "./repository-scan.mjs";
+import { executeIncrementalRepositoryScan, managedRootFilesForProject, sourceTreeMatchesPublishedFiles } from "./repository-scan.mjs";
 import { readRefreshInputGeneration, refreshInputStamp } from "./refresh-input-generation.mjs";
 import { readRepositorySourceScope } from "./repository-source-scope.mjs";
 import { buildWorldModel, deriveIncrementalRevisionParents, inspectWorldModel, readWorldModel, readWorldModelSnapshot } from "./world-model.mjs";
@@ -649,8 +649,7 @@ async function refreshWorldModelLocked({
   });
   const mismatch = compatibility.layers.find((layer) => ["STORAGE_VERSION_MISMATCH", "INVALID_READER_REQUIREMENTS"].includes(layer.reasonCode));
   if (mismatch) throw Object.assign(new Error(mismatch.message || mismatch.reasonCode), { code: mismatch.reasonCode });
-  if (compatibility.layers.some((layer) => layer.legacyDeclaration))
-    await upgradeLegacyReaderPointers({ root: projectRoot, storage: inspected.storage });
+  if (compatibility.layers.some((layer) => layer.legacyDeclaration)) await upgradeLegacyReaderPointers({ root: projectRoot, storage: inspected.storage });
   const stored = await readWorldModel({ root: projectRoot, storeAdapter });
   const previousSnapshot = stored.snapshot;
   const request = buildIncrementalRefreshRequest(
@@ -740,8 +739,7 @@ async function refreshWorldModelLocked({
   );
   if (
     requiresRefresh &&
-    (world.snapshot.worldModelId !== receipt.next.worldModelId ||
-      world.snapshot.temporalProvenanceGraph.sourceSnapshotId !== receipt.next.sourceSnapshotId)
+    (world.snapshot.worldModelId !== receipt.next.worldModelId || world.snapshot.temporalProvenanceGraph.sourceSnapshotId !== receipt.next.sourceSnapshotId)
   ) {
     fail("Persisted World Model does not match the verified refresh receipt.", "REFRESH_PERSISTENCE_MISMATCH");
   }
@@ -812,11 +810,12 @@ async function fastUnchangedRefresh(options, inspected) {
     graphPointer.sourceSnapshotId !== generation.sourceSnapshotId
   )
     return null;
-  const covered = sourceStatCacheCoversCurrentTree({
+  const covered = sourceTreeMatchesPublishedFiles({
     projectRoot,
     managedRootFiles: managedRootFilesForProject(inspected.project, storage),
     storage,
     sourceScope: readRepositorySourceScope({ projectRoot, storage }).sourceScope,
+    files: generation.files,
   });
   if (!covered) return null;
   const light = {
@@ -869,7 +868,8 @@ async function fastUnchangedRefresh(options, inspected) {
   const pointer = buildPointer(receipt);
   atomicWrite(currentFile(projectRoot, storage), json(pointer));
   const storedPointer = verifyIncrementalRefreshPointer(readJson(currentFile(projectRoot, storage), "Incremental refresh pointer"), storage);
-  if (canonicalJson(storedPointer) !== canonicalJson(pointer)) fail("Incremental refresh pointer changed during persistence.", "REFRESH_POINTER_WRITE_MISMATCH");
+  if (canonicalJson(storedPointer) !== canonicalJson(pointer))
+    fail("Incremental refresh pointer changed during persistence.", "REFRESH_POINTER_WRITE_MISMATCH");
   return {
     light,
     request,
