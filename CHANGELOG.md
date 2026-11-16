@@ -11,6 +11,51 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.130 — publication tracked separately
+
+- Added: the product graph query finds by relevance, shows what changed in
+  the text, and previews a proposal.
+  - `find` ranks by matching words (BM25) and still puts exact ID and path
+    matches first; everything the old substring search found is still found.
+    New filters: `--node-types`, `--related-to <ID>`, `--edge-types`,
+    `--basis-states`. Each hit shows the words that matched and the recorded
+    edges next to it. The score is lexical: it is not approval, currency or
+    cause. The page's search runs when typing pauses.
+  - `changes --list content` shows the text before and after for the nodes
+    that changed since the baseline. The "before" text is kept at baseline
+    time in `build/baseline-content.json`: generated, local, git-ignored, at
+    most 2 MiB, whole contents only (up to 16 KiB each) so every text shown
+    is checked against the baseline's content hash. It is bound to its
+    baseline: after a baseline move the question refuses until the next
+    build, and a build writes the file again when it is missing or belongs
+    to another baseline.
+  - That text goes nowhere else. `check.json`, `check.txt`, the build and
+    check replies and the exported Graph Explorer file hold none of it; they
+    say how many nodes changed in content and how to ask.
+  - `impact` compares three existing builds, read-only: where a proposal
+    started, the current state, and the proposal applied to its start. It
+    tells equal edits from divergent ones, reports delete-versus-update
+    conflicts and references left to deleted UI or code, and says whether
+    its basis is verified or partial. No conflict is not approval, and a
+    static preview is not runtime evidence.
+  - A printed next-page hint repeats the whole question with its filters,
+    build folders and a hash of what the page was answered from; a later
+    page is refused when that changed (`PRODUCT_GRAPH_QUERY_BASIS_CHANGED`).
+    Replies carry the same as arguments in CLI names and, for a Project, in
+    MCP names. A content page holds whole items only and the next page
+    starts at the first one left out.
+- Limits: search is by words, not by meaning; nothing is executed. Builds
+  write two more generated files (`baseline-content.json`,
+  `build-context.json`) and take about a tenth longer on Lode itself (5.3 s
+  against 4.9 s). A baseline taken by an earlier version has no "before"
+  text for nodes that already changed; move the baseline to keep it from
+  then on, and a baseline read by another analysis version says so. A
+  "verified" impact preview needs the three builds made in the same Project,
+  which means building at the proposal's starting commit and with the
+  proposal applied; the docs give the steps. The persistent parse cache the
+  original proposal contained is not included: a cached build could keep a
+  call edge a full build drops.
+
 ## 0.3.0-beta.129 — publication tracked separately
 
 - Added: snapshot retention for storage GC, off unless you turn it on.
