@@ -5,7 +5,9 @@ import { spawn, spawnSync } from "node:child_process";
 // GC eligibility only. No provider, Session, executable from the Project, or
 // ordinary-work probe. Unknown/remote filesystems preserve, never infer local.
 const LINUX_LOCAL = new Set([0xef53, 0x58465342, 0x9123683e, 0x01021994]); // ext*, XFS, Btrfs, tmpfs
-const DARWIN_LOCAL = new Set(["apfs", "hfs", "msdos"]);
+// APFS and HFS are the stable local volumes collection will touch. msdos/FAT is
+// not included: Linux does not qualify FAT either, and those volumes are often removable.
+const DARWIN_LOCAL = new Set(["apfs", "hfs"]);
 const darwinNameCache = new Map();
 export function classifySnapshotFileSystem({ platform, type, driveType, fstypeName }) {
   if (platform === "win32") return driveType === 3 ? "qualified-local" : "unsupported-or-unknown";

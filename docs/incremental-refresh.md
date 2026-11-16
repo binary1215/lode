@@ -16,14 +16,13 @@ manual request or verified RefreshTriggerBatch
   -> verified current World Model
   -> content-derived IncrementalRefreshRequest
   -> rediscover every eligible file
-  -> re-read and byte-hash a file when its size, mtime, ctime or inode differs from the last verified scan; a stat-identical file reuses that verified digest and analysis
-  -> when those stats and the non-snapshot inputs are unchanged, keep the published World and Graph instead of rebuilding them
+  -> re-read and byte-hash a file unless the stat taken before the read still matches the stat taken after it and that agreed stat matches the last verified scan; only that agreed pair reuses the verified digest and analysis
+  -> when those agreed stats and the non-snapshot inputs are unchanged, keep the published World and Graph instead of rebuilding them
   -> reuse analysis only for digest-identical verified files
   -> validate one complete RepositoryScanResult
-  -> preview a child SourceSnapshot and GraphSnapshot
-  -> persist and verify graph materialization
-  -> atomically advance the World Model pointer
-  -> persist an immutable IncrementalRefreshReceipt
+  -> preview a child SourceSnapshot and GraphSnapshot and build the refresh receipt from that preview
+  -> persist the refresh request, then publish the World only when its id is the preview id
+  -> persist an immutable IncrementalRefreshReceipt after the published World matches that receipt
   -> advance the refresh receipt pointer
   -> evaluate a separate PostRefreshProjectionPolicy
   -> persist an immutable PostRefreshProjectionReceipt

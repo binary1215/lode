@@ -408,6 +408,7 @@ test("filesystem qualification rejects mapped network/unknown types without prob
   assert.equal(filesystemNameFromMountTable("/dev/disk1s1 on / (apfs, local, journaled)\n", "/tmp/lode"), "apfs");
   assert.equal(filesystemNameFromMountTable("server:/share on /Volumes/share (nfs, nodev, nosuid)\n", "/Volumes/share/proj"), "nfs");
   assert.equal(filesystemNameFromMountTable("/dev/disk3s5 on /System/Volumes/Data (apfs, local, journaled, nobrowse)\n/dev/disk1s1 on / (apfs, sealed)\n", "/System/Volumes/Data/tmp"), "apfs");
+  assert.equal(classifySnapshotFileSystem({ platform: "darwin", fstypeName: "msdos" }), "unsupported-or-unknown");
   assert.equal(classifySnapshotFileSystem({ platform: "darwin", fstypeName: "apfs" }), "qualified-local");
   assert.equal(classifySnapshotFileSystem({ platform: "darwin", fstypeName: "hfs" }), "qualified-local");
   assert.equal(classifySnapshotFileSystem({ platform: "darwin", fstypeName: "nfs" }), "unsupported-or-unknown");

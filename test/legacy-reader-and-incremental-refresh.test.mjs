@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
-import { buildWorldModel, readWorldModel } from "../scripts/lib/world/world-model.mjs";
+import { buildWorldModel, readWorldModel, readWorldModelSnapshot } from "../scripts/lib/world/world-model.mjs";
 import { refreshWorldModel } from "../scripts/lib/world/incremental-refresh.mjs";
 import { applySnapshotGarbageCollection } from "../scripts/lib/world/snapshot-gc.mjs";
 import { graphProjectionCanonicalJson } from "../scripts/lib/world/graph-projection-adapter.mjs";
@@ -166,4 +167,126 @@ test("GC reclaims an unreachable chunked snapshot and keeps the reachable world"
   assert.equal(loaded.snapshot.worldModelId, current.snapshot.worldModelId);
   assert.equal(loaded.snapshot.worldModelHash, current.snapshot.worldModelHash);
   assert.equal(fs.readFileSync(f.source).equals(source), true);
+});
+
+test("a save between the scan read and publication is refreshed on the next refresh", async (t) => {
+  const f = project(t);
+  const target = path.join(f.root, "a.py");
+  fs.writeFileSync(target, "def value():\n    return 1\n");
+  await buildWorldModel({ root: f.root });
+  fs.writeFileSync(target, "def value():\n    return 2\n");
+  const original = fs.readFileSync;
+  let writes = 0;
+  fs.readFileSync = function (file, ...args) {
+    const result = original.call(fs, file, ...args);
+    if (writes < 4 && path.resolve(String(file)) === target) {
+      writes += 1;
+      fs.writeFileSync(target, `def value():\n    return ${10 + writes}\n`);
+    }
+    return result;
+  };
+  let first;
+  try {
+    first = await refreshWorldModel({ root: f.root });
+  } finally {
+    fs.readFileSync = original;
+  }
+  assert.equal(writes > 0, true);
+  assert.equal(first.status, "refreshed");
+  const stale = await readWorldModel({ root: f.root });
+  const indexed = stale.snapshot.files.find((file) => file.path === "a.py");
+  assert.notEqual(indexed.digest, sha256Hex(fs.readFileSync(target)));
+  const second = await refreshWorldModel({ root: f.root });
+  assert.equal(second.status, "refreshed");
+  const current = await readWorldModel({ root: f.root });
+  assert.equal(current.snapshot.files.find((file) => file.path === "a.py").digest, sha256Hex(fs.readFileSync(target)));
+  const third = await refreshWorldModel({ root: f.root });
+  assert.equal(third.status, "unchanged");
+});
+
+function git(cwd, args) {
+  const result = spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: "Lode Test",
+      GIT_AUTHOR_EMAIL: "lode@example.com",
+      GIT_COMMITTER_NAME: "Lode Test",
+      GIT_COMMITTER_EMAIL: "lode@example.com",
+    },
+  });
+  assert.equal(result.status, 0, `${args.join(" ")}\n${result.stderr}`);
+}
+
+test("an empty commit in a linked worktree refreshes", async (t) => {
+  const parent = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-한글 café it's (v2)-repo-")));
+  const worktree = path.join(parent, "side it's (v2)");
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+  git(parent, ["init"]);
+  fs.writeFileSync(path.join(parent, "README.md"), "root\n");
+  git(parent, ["add", "README.md"]);
+  git(parent, ["commit", "-m", "init"]);
+  git(parent, ["worktree", "add", "-b", "side", worktree]);
+  initializeProject({ root: worktree, pluginRoot, runtimes: ["codex", "claude", "opencode"] });
+  fs.writeFileSync(path.join(worktree, "a.py"), "def value():\n    return 1\n");
+  await buildWorldModel({ root: worktree });
+  const settled = await refreshWorldModel({ root: worktree });
+  assert.equal(settled.status, "unchanged");
+  git(worktree, ["commit", "--allow-empty", "-m", "empty"]);
+  const committed = await refreshWorldModel({ root: worktree });
+  assert.equal(committed.status, "refreshed");
+});
+
+test("a store written by beta.80 commit 6d9f6be stays readable and keeps its snapshot bytes", async (t) => {
+  const pack = fs.mkdtempSync(path.join(os.tmpdir(), "beta80-src-"));
+  const projectRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "beta80-proj-")));
+  t.after(() => {
+    fs.rmSync(pack, { recursive: true, force: true });
+    fs.rmSync(projectRoot, { recursive: true, force: true });
+  });
+  const archive = path.join(pack, "beta80.tar");
+  const tree = path.join(pack, "tree");
+  fs.mkdirSync(tree);
+  const archived = spawnSync("git", ["archive", "--format=tar", "-o", archive, "6d9f6be"], { cwd: pluginRoot, encoding: "utf8" });
+  assert.equal(archived.status, 0, archived.stderr);
+  const extracted = spawnSync("tar", ["-xf", archive, "-C", tree], { encoding: "utf8" });
+  assert.equal(extracted.status, 0, extracted.stderr);
+  const script = path.join(tree, "write-beta80-store.mjs");
+  fs.writeFileSync(
+    script,
+    [
+      'import fs from "node:fs";',
+      'import path from "node:path";',
+      'import { initializeProject } from "./scripts/lib/head-core.mjs";',
+      'import { buildWorldModel } from "./scripts/lib/world-model.mjs";',
+      "const root = process.argv[2];",
+      'initializeProject({ root, pluginRoot: process.cwd(), runtimes: ["codex", "claude", "opencode"] });',
+      'fs.writeFileSync(path.join(root, "module.py"), "def compute_value():\\n    return \'beta80\'\\n");',
+      "const built = await buildWorldModel({ root });",
+      "process.stdout.write(JSON.stringify({ worldModelId: built.snapshot.worldModelId, file: built.file }));",
+      "",
+    ].join("\n"),
+  );
+  const written = spawnSync(process.execPath, [script, projectRoot], { cwd: tree, encoding: "utf8" });
+  assert.equal(written.status, 0, written.stderr);
+  const built = JSON.parse(written.stdout);
+  const source = fs.readFileSync(path.join(projectRoot, "module.py"));
+  const snapshotBytes = fs.readFileSync(built.file);
+  const pointerFile = path.join(projectRoot, ".lode", "world-model", "current.json");
+  const pointer = JSON.parse(fs.readFileSync(pointerFile, "utf8"));
+  assert.equal(pointer.readerRequirements.layout, "chunked-code-v3");
+  assert.equal(Object.hasOwn(pointer.readerRequirements, "minimumReader"), false);
+  assert.equal(Object.hasOwn(pointer.readerRequirements, "writer"), false);
+  const loaded = await readWorldModel({ root: projectRoot });
+  assert.equal(loaded.snapshot.worldModelId, built.worldModelId);
+  assert.equal(loaded.snapshot.files.find((file) => file.path === "module.py").digest, sha256Hex(source));
+  await refreshWorldModel({ root: projectRoot });
+  assert.equal(fs.readFileSync(built.file).equals(snapshotBytes), true);
+  assert.equal(fs.readFileSync(path.join(projectRoot, "module.py")).equals(source), true);
+  const upgraded = JSON.parse(fs.readFileSync(pointerFile, "utf8"));
+  assert.equal(upgraded.readerRequirements.minimumReader, "0.3.0-beta.75");
+  const original = await readWorldModelSnapshot({ root: projectRoot, worldModelId: built.worldModelId });
+  assert.equal(original.snapshot.worldModelId, built.worldModelId);
+  assert.equal(original.snapshot.files.find((file) => file.path === "module.py").digest, sha256Hex(source));
 });

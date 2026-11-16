@@ -49,17 +49,6 @@ export function saveFileStatCache(root, storage, cache) {
   atomicWriteText(cachePath(root, storage, FILE_STAT_CACHE_RELATIVE), JSON.stringify({ schemaVersion: 1, kind: "RefreshFileStatCache", files }));
 }
 
-function fileIdentity(absolute) {
-  const stat = fs.statSync(absolute, { bigint: true });
-  return {
-    bytes: Number(stat.size),
-    mtimeNs: stat.mtimeNs.toString(),
-    ctimeNs: stat.ctimeNs.toString(),
-    ino: stat.ino.toString(),
-    dev: stat.dev.toString(),
-  };
-}
-
 export function statMatchesCached(previous, cached, absolute) {
   if (!previous || !cached || previous.digest !== cached.digest || previous.bytes !== cached.bytes) return null;
   let identity;
@@ -79,13 +68,45 @@ export function statMatchesCached(previous, cached, absolute) {
   return identity;
 }
 
-export function rememberFileStat(cache, relative, absolute, digest, bytes) {
-  if (!cache) return;
+export function fileIdentity(absolute) {
+  const stat = fs.statSync(absolute, { bigint: true });
+  return {
+    bytes: Number(stat.size),
+    mtimeNs: stat.mtimeNs.toString(),
+    ctimeNs: stat.ctimeNs.toString(),
+    ino: stat.ino.toString(),
+    dev: stat.dev.toString(),
+  };
+}
+
+// `before` is the stat taken before the bytes were read. The stat taken after
+// that read is recorded only when it still describes the same bytes.
+export function identitiesAgree(before, after, byteLength) {
+  if (!before || !after || !Number.isInteger(byteLength) || byteLength < 0) return false;
+  return (
+    before.bytes === after.bytes &&
+    before.bytes === byteLength &&
+    before.mtimeNs === after.mtimeNs &&
+    before.ctimeNs === after.ctimeNs &&
+    before.ino === after.ino &&
+    before.dev === after.dev
+  );
+}
+
+export function rememberFileStat(cache, relative, absolute, digest, bytes, before) {
+  let after = null;
   try {
-    cache.set(relative, { ...fileIdentity(absolute), digest, bytes });
+    after = fileIdentity(absolute);
   } catch {
-    cache.delete(relative);
+    after = null;
   }
+  if (!identitiesAgree(before, after, bytes)) {
+    if (cache) cache.delete(relative);
+    return null;
+  }
+  const entry = { ...after, digest, bytes };
+  if (cache) cache.set(relative, entry);
+  return entry;
 }
 
 function walkStorageInputs(root, storage) {
@@ -116,32 +137,78 @@ function walkStorageInputs(root, storage) {
   return rows;
 }
 
-function gitIdentity(root) {
+function considerGit(rows, relative, absolute) {
+  let stat;
+  try {
+    stat = fs.lstatSync(absolute, { bigint: true });
+  } catch {
+    return;
+  }
+  if (stat.isSymbolicLink()) return;
+  if (stat.isDirectory()) {
+    for (const name of fs.readdirSync(absolute)) considerGit(rows, relative ? relative + "/" + name : name, path.join(absolute, name));
+    return;
+  }
+  if (!stat.isFile()) return;
+  rows.push([relative.replaceAll("\\", "/"), stat.size.toString(), stat.mtimeNs.toString()]);
+}
+
+function linkedGitDirectories(root) {
   const gitPath = path.join(root, ".git");
-  if (!fs.existsSync(gitPath)) return "absent";
+  let marker;
+  try {
+    marker = fs.lstatSync(gitPath);
+  } catch {
+    return { status: "absent", directories: [] };
+  }
+  if (marker.isSymbolicLink()) return { status: "unresolved", directories: [] };
+  if (marker.isDirectory()) return { status: "ok", directories: [["gitdir", gitPath]] };
+  if (!marker.isFile() || marker.size > 8192) return { status: "unresolved", directories: [] };
+  let text = "";
+  try {
+    text = fs
+      .readFileSync(gitPath, "utf8")
+      .replace(/^\uFEFF/, "")
+      .trim();
+  } catch {
+    return { status: "unresolved", directories: [] };
+  }
+  const match = /^gitdir:\s*(.+)$/.exec(text);
+  if (!match) return { status: "unresolved", directories: [] };
+  const gitDir = path.resolve(path.dirname(gitPath), match[1].trim());
+  let gitDirStat;
+  try {
+    gitDirStat = fs.lstatSync(gitDir);
+  } catch {
+    return { status: "unresolved", directories: [] };
+  }
+  if (!gitDirStat.isDirectory() || gitDirStat.isSymbolicLink()) return { status: "unresolved", directories: [] };
+  const directories = [["gitdir", gitDir]];
+  const commonFile = path.join(gitDir, "commondir");
+  try {
+    const commonStat = fs.lstatSync(commonFile);
+    if (commonStat.isFile() && !commonStat.isSymbolicLink() && commonStat.size <= 8192) {
+      const commonDir = path.resolve(gitDir, fs.readFileSync(commonFile, "utf8").trim());
+      const commonDirStat = fs.lstatSync(commonDir);
+      if (commonDirStat.isDirectory() && !commonDirStat.isSymbolicLink() && path.resolve(commonDir) !== path.resolve(gitDir))
+        directories.push(["commondir", commonDir]);
+    }
+  } catch {
+    /* An ordinary gitdir has no commondir. A linked worktree that loses it is unresolved below only when the file is unreadable after existing. */
+  }
+  return { status: "ok", directories };
+}
+
+function gitIdentity(root) {
+  const linked = linkedGitDirectories(root);
+  if (linked.status !== "ok") return linked.status;
   const rows = [];
-  const consider = (relative, absolute) => {
-    let stat;
-    try {
-      stat = fs.lstatSync(absolute, { bigint: true });
-    } catch {
-      return;
-    }
-    if (stat.isSymbolicLink()) return;
-    if (stat.isDirectory()) {
-      for (const name of fs.readdirSync(absolute)) consider(relative ? relative + "/" + name : name, path.join(absolute, name));
-      return;
-    }
-    if (!stat.isFile()) return;
-    rows.push([relative.replaceAll("\\", "/"), stat.size.toString(), stat.mtimeNs.toString()]);
-  };
-  const stat = fs.lstatSync(gitPath);
-  if (stat.isFile()) consider(".git", gitPath);
-  else {
-    consider("HEAD", path.join(gitPath, "HEAD"));
-    consider("packed-refs", path.join(gitPath, "packed-refs"));
-    const refs = path.join(gitPath, "refs");
-    if (fs.existsSync(refs)) consider("refs", refs);
+  considerGit(rows, ".git", path.join(root, ".git"));
+  for (const [label, directory] of linked.directories) {
+    considerGit(rows, `${label}/HEAD`, path.join(directory, "HEAD"));
+    considerGit(rows, `${label}/packed-refs`, path.join(directory, "packed-refs"));
+    const refs = path.join(directory, "refs");
+    if (fs.existsSync(refs)) considerGit(rows, `${label}/refs`, refs);
   }
   rows.sort((left, right) => (left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0));
   return sha256Hex(JSON.stringify(rows));
@@ -164,28 +231,44 @@ const REVISION_KINDS = new Set([
   "PolicyRevision",
 ]);
 
-function publishedFileStat(root, file) {
-  const stat = fs.statSync(path.join(root, file.path), { bigint: true });
+function confirmAgreedFile(root, file) {
+  const absolute = path.join(root, file.path);
+  let before = null;
+  let after = null;
+  let raw;
+  try {
+    before = fileIdentity(absolute);
+    raw = fs.readFileSync(absolute);
+    after = fileIdentity(absolute);
+  } catch {
+    return null;
+  }
+  if (!identitiesAgree(before, after, raw.length) || raw.length !== file.bytes || sha256Hex(raw) !== file.digest) return null;
+  return { ...after, digest: file.digest, bytes: file.bytes };
+}
+
+function agreedGenerationEntry(entry, file) {
+  if (!entry || entry.digest !== file.digest || entry.bytes !== file.bytes) return null;
+  if (typeof entry.mtimeNs !== "string" || typeof entry.ctimeNs !== "string" || typeof entry.ino !== "string" || typeof entry.dev !== "string") return null;
   return {
-    bytes: Number(stat.size),
-    mtimeNs: stat.mtimeNs.toString(),
-    ctimeNs: stat.ctimeNs.toString(),
-    ino: stat.ino.toString(),
-    dev: stat.dev.toString(),
-    digest: file.digest,
+    bytes: entry.bytes,
+    mtimeNs: entry.mtimeNs,
+    ctimeNs: entry.ctimeNs,
+    ino: entry.ino,
+    dev: entry.dev,
+    digest: entry.digest,
   };
 }
 
-export function writeRefreshInputGeneration({ root, storage, snapshot }) {
+export function writeRefreshInputGeneration({ root, storage, snapshot, verifiedFiles = null }) {
   const graph = snapshot.temporalProvenanceGraph;
   const revisions = graph.nodes.filter((node) => REVISION_KINDS.has(node.kind));
   const files = {};
   for (const file of snapshot.files || []) {
-    try {
-      files[file.path] = publishedFileStat(root, file);
-    } catch {
-      return null;
-    }
+    // A scan map is authoritative, including when a file is absent from it:
+    // that file changed around the read and must not be paired with a later stat.
+    const entry = verifiedFiles ? agreedGenerationEntry(verifiedFiles.get(file.path), file) : confirmAgreedFile(root, file);
+    if (entry) files[file.path] = entry;
   }
   const document = {
     schemaVersion: 1,
@@ -201,6 +284,7 @@ export function writeRefreshInputGeneration({ root, storage, snapshot }) {
     files,
   };
   atomicWriteText(cachePath(root, storage, INPUT_GENERATION_RELATIVE), JSON.stringify(document));
+  saveFileStatCache(root, storage, new Map(Object.entries(files)));
   return document;
 }
 

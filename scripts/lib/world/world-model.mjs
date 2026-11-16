@@ -2192,7 +2192,12 @@ async function buildWorldModelLocked({
     throw noteCanonBasisError(error, project.projectRoot, storage, productCanonBasis);
   }
   try {
-    writeRefreshInputGeneration({ root: project.projectRoot, storage, snapshot });
+    writeRefreshInputGeneration({
+      root: project.projectRoot,
+      storage,
+      snapshot,
+      verifiedFiles: selectedRepositoryScanExecution.verifiedFiles ?? null,
+    });
   } catch {
     /* The generation cache is an optimization. Publication already succeeded. */
   }

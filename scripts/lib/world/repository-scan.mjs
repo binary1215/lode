@@ -15,7 +15,7 @@ import { GoWorkerComputeAdapter } from "../worker/go-worker-adapter.mjs";
 import { familyFormatForOriginal, formatForVerifiedOwner } from "../storage/project-storage-format.mjs";
 import { buildRepositorySourceScope, pathWithinRepositorySourceScope, verifyRepositorySourceScope } from "./repository-source-scope.mjs";
 import { sha256Hex as digest } from "../core/digest.mjs";
-import { loadFileStatCache, rememberFileStat, statMatchesCached } from "./refresh-input-generation.mjs";
+import { fileIdentity, loadFileStatCache, rememberFileStat, statMatchesCached } from "./refresh-input-generation.mjs";
 import { canonicalJson, canonicalValue as canonical } from "../core/canonical-json.mjs";
 import { failWith } from "../core/errors.mjs";
 
@@ -265,7 +265,7 @@ function scanResultPayload(input, files, skipped, totalBytes) {
   };
 }
 
-function scanPayload(input, limits, { previousResult = null, reuseDiagnostics = null, statCache = null } = {}) {
+function scanPayload(input, limits, { previousResult = null, reuseDiagnostics = null, statCache = null, verifiedFiles = null } = {}) {
   validateRepositoryScanInput(input);
   const normalizedLimits = normalizeComputeLimits(limits);
   const root = input.projectRoot;
@@ -319,7 +319,8 @@ function scanPayload(input, limits, { previousResult = null, reuseDiagnostics = 
         continue;
       }
       const previous = previousFiles.get(relative);
-      if (previousAnalysisReusable && statCache && statMatchesCached(previous, statCache.get(relative), absolute)) {
+      const matched = previousAnalysisReusable && statCache ? statMatchesCached(previous, statCache.get(relative), absolute) : null;
+      if (matched) {
         const metadata = {
           path: relative,
           digest: previous.digest,
@@ -331,9 +332,16 @@ function scanPayload(input, limits, { previousResult = null, reuseDiagnostics = 
         if (totalBytes + previous.bytes > normalizedLimits.maxTotalBytes)
           fail(`Repository scan exceeds ${normalizedLimits.maxTotalBytes} total bytes.`, "REPOSITORY_SCAN_TOTAL_BYTES_LIMIT");
         files.push(sourceFileRecord(metadata, null, base, previous));
+        verifiedFiles?.set(relative, { ...matched, digest: previous.digest, bytes: previous.bytes });
         if (reuseDiagnostics) reuseDiagnostics.reusedPaths.push(relative);
         totalBytes += previous.bytes;
         continue;
+      }
+      let before = null;
+      try {
+        before = fileIdentity(absolute);
+      } catch {
+        before = null;
       }
       const raw = fs.readFileSync(absolute);
       if (raw.length > normalizedLimits.maxFileBytes) {
@@ -347,7 +355,9 @@ function scanPayload(input, limits, { previousResult = null, reuseDiagnostics = 
       const classification = classifySourcePath(relative, extension);
       const contentDigest = digest(raw);
       const metadata = { path: relative, digest: contentDigest, bytes: raw.length, classification, language };
-      rememberFileStat(statCache, relative, absolute, contentDigest, raw.length);
+      const agreed = rememberFileStat(statCache, relative, absolute, contentDigest, raw.length, before);
+      if (agreed) verifiedFiles?.set(relative, agreed);
+      else verifiedFiles?.delete(relative);
       const reusable = previousAnalysisReusable && sameObservedFile(previous, metadata);
       files.push(sourceFileRecord(metadata, raw, base, reusable ? previous : null));
       if (reuseDiagnostics) (reusable ? reuseDiagnostics.reusedPaths : reuseDiagnostics.analyzedPaths).push(relative);
@@ -577,6 +587,7 @@ export async function executeIncrementalRepositoryScan({
   const previousResult = repositoryScanResultFromWorldModel(previousSnapshot);
   const input = buildRepositoryScanInput({ projectRoot, managedRootFiles, sourceScope, storage });
   const statCache = storage ? loadFileStatCache(projectRoot, storage) : null;
+  const verifiedFiles = new Map();
   let request = buildComputeRequest({
     operation: REPOSITORY_SCAN_OPERATION,
     input,
@@ -590,6 +601,7 @@ export async function executeIncrementalRepositoryScan({
       previousResult,
       reuseDiagnostics: reuse,
       statCache,
+      verifiedFiles,
     }),
   );
   const completed = completeComputeResult(request, result, { limits });
@@ -620,6 +632,7 @@ export async function executeIncrementalRepositoryScan({
       removedPaths: reuse.removedPaths,
       changes,
     },
+    verifiedFiles,
   };
 }
 

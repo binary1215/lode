@@ -694,10 +694,9 @@ async function refreshWorldModelLocked({
     (parentId) => !previousSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds.includes(parentId),
   );
   const requiresRefresh = sameLineagePreview.snapshot.worldModelId !== previousSnapshot.worldModelId || additionalParentsRequested;
-  let nextSnapshot = requiresRefresh ? null : previousSnapshot;
+  let nextPreview = sameLineagePreview;
   let revisionParentIds = previousSnapshot.temporalProvenanceGraph.revisionParentIds;
   let parentSourceSnapshotIds = previousSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds;
-  let world = stored;
   if (requiresRefresh) {
     revisionParentIds = deriveIncrementalRevisionParents({
       previousGraph: previousSnapshot.temporalProvenanceGraph,
@@ -706,8 +705,25 @@ async function refreshWorldModelLocked({
     parentSourceSnapshotIds = [...new Set([previousSnapshot.temporalProvenanceGraph.sourceSnapshotId, ...request.additionalParentSourceSnapshotIds])].sort(
       compareText,
     );
-    // The same-lineage preview already built the candidate used to choose parents.
-    // Persist that choice directly instead of building the same snapshot twice.
+    nextPreview = await buildWorldModel({ ...common, parentSourceSnapshotIds, revisionParentIds });
+  }
+
+  const receipt = buildReceipt({
+    request,
+    previousSnapshot,
+    nextSnapshot: requiresRefresh ? nextPreview.snapshot : previousSnapshot,
+    status: requiresRefresh ? "refreshed" : "unchanged",
+    inspected,
+  });
+  const requestEntry = persistImmutable(
+    requestFile(projectRoot, request.refreshRequestId, inspected.storage),
+    request,
+    (record) => verifyIncrementalRefreshRequest(record, inspected.storage),
+    "Incremental refresh request",
+  );
+
+  let world = stored;
+  if (requiresRefresh) {
     world = await buildWorldModel({
       root: projectRoot,
       persist: true,
@@ -718,30 +734,16 @@ async function refreshWorldModelLocked({
       repositoryScanExecution,
       parentSourceSnapshotIds,
       revisionParentIds,
+      expectedWorldModelId: nextPreview.snapshot.worldModelId,
       expectedCurrentWorldModelId: previousSnapshot.worldModelId,
       writerLease,
     });
-    nextSnapshot = world.snapshot;
-  }
-
-  const receipt = buildReceipt({
-    request,
-    previousSnapshot,
-    nextSnapshot,
-    status: requiresRefresh ? "refreshed" : "unchanged",
-    inspected,
-  });
-  const requestEntry = persistImmutable(
-    requestFile(projectRoot, request.refreshRequestId, inspected.storage),
-    request,
-    (record) => verifyIncrementalRefreshRequest(record, inspected.storage),
-    "Incremental refresh request",
-  );
-  if (
-    requiresRefresh &&
-    (world.snapshot.worldModelId !== receipt.next.worldModelId || world.snapshot.temporalProvenanceGraph.sourceSnapshotId !== receipt.next.sourceSnapshotId)
-  ) {
-    fail("Persisted World Model does not match the verified refresh receipt.", "REFRESH_PERSISTENCE_MISMATCH");
+    if (
+      world.snapshot.worldModelId !== receipt.next.worldModelId ||
+      world.snapshot.temporalProvenanceGraph.sourceSnapshotId !== receipt.next.sourceSnapshotId
+    ) {
+      fail("Persisted World Model does not match the verified refresh receipt.", "REFRESH_PERSISTENCE_MISMATCH");
+    }
   }
   const receiptEntry = persistImmutable(
     receiptFile(projectRoot, receipt.refreshReceiptId, inspected.storage),
