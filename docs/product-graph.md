@@ -77,10 +77,11 @@ The family lives in the Project store next to `context/product-model.json`:
   build/graph.json
   build/check.json
   build/check.txt
+  build/baseline.json
 ```
 
 - Documents, the policy file, the meaning file, the entry-rule table and approval records are user-owned Canon, like `product-model.json`: Lode reads them and never rewrites them on its own, and they are not in the managed manifest digest.
-- `build/` is generated output. It is rebuilt from the files above and the source tree, and it is ignored by Git (a generated storage rule for new Projects, and its own `.gitignore` written on each build for existing ones).
+- `build/` is generated output. It is rebuilt from the files above and the source tree, and it is ignored by Git (a generated storage rule for new Projects, and its own `.gitignore` written on each build for existing ones). `build/baseline.json` is the baseline the build compares with: the first build takes it and only `product-graph-baseline` moves it (see [Using the product graph](product-graph-usage.md)). Deleting `build/` loses only the list of changes since the baseline.
 - File names are the original's document names and the node IDs. Korean names are used as is.
 - Portable export and import carry the Canon files (not `build/`); importing into an existing Project archives them like other Canon instead of replacing the target's. Folder-copy adoption verifies them and requires them unchanged. Each of the three results says, under `productGraph`, how many documents and approval records it handled, which other user files, that `build/` is not carried, and which names it left out because Lode does not recognise them; a refusal on a differing existing file names that file. None of these files is a World input: World ids do not change when they change.
 - Snapshot GC reads the Canon files as verified roots and skips `build/`. A file or folder in the family that Lode does not recognise is the user's own: never deleted, not a root, not an issue, and named as kept (`productGraphKept`). A recognised file that fails verification, or a link anywhere in the family, still stops the collection.
