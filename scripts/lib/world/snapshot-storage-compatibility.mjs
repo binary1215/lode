@@ -18,10 +18,13 @@ export function snapshotReaderRequirements(entry) {
   if (!entry?.document) return null;
   const layout = entry.snapshotStorage?.layout || "whole";
   if (!["whole", "domain-bundles-v1", "shared-domains-v2", "chunked-code-v3"].includes(layout)) return null;
+  const storedProducer =
+    entry.snapshotStorage?.compositionProducer?.version || (entry.document?.kind === "SnapshotComposition" ? entry.document.producer?.version : null);
+  const chunkedProducer = storedProducer === "0.4.0" ? "0.4.0" : "0.3.0";
   return {
     version: 1,
     snapshotId: entry.document.worldModelId || entry.document.graphSnapshotId,
-    minimumReader: STORAGE_READER_VERSION.minimumWriterUnderstood,
+    minimumReader: chunkedProducer === "0.4.0" ? installedVersion : STORAGE_READER_VERSION.minimumWriterUnderstood,
     writer: installedVersion,
     layout,
     ...(layout === "whole"
@@ -30,7 +33,10 @@ export function snapshotReaderRequirements(entry) {
           composition: {
             kind: "SnapshotComposition",
             schemaVersion: layout === "chunked-code-v3" ? 3 : layout === "shared-domains-v2" ? 2 : 1,
-            producer: { name: "lode-domain-bundle", version: layout === "chunked-code-v3" ? "0.3.0" : layout === "shared-domains-v2" ? "0.2.0" : "0.1.0" },
+            producer: {
+              name: "lode-domain-bundle",
+              version: layout === "chunked-code-v3" ? chunkedProducer : layout === "shared-domains-v2" ? "0.2.0" : "0.1.0",
+            },
           },
         }),
   };
@@ -42,13 +48,15 @@ function compositionSupported(requirements) {
   const composition = requirements.composition;
   const chunked = requirements.layout === "chunked-code-v3";
   const flat = requirements.layout === "shared-domains-v2";
+  const producerVersion = composition?.producer?.version;
+  const producerOk = chunked ? producerVersion === "0.3.0" || producerVersion === "0.4.0" : producerVersion === (flat ? "0.2.0" : "0.1.0");
   return Boolean(
     composition &&
     typeof composition === "object" &&
     composition.kind === "SnapshotComposition" &&
     composition.schemaVersion === (chunked ? 3 : flat ? 2 : 1) &&
     composition.producer?.name === "lode-domain-bundle" &&
-    composition.producer?.version === (chunked ? "0.3.0" : flat ? "0.2.0" : "0.1.0"),
+    producerOk,
   );
 }
 

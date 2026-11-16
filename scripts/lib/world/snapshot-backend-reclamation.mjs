@@ -411,15 +411,20 @@ export class SnapshotBackendReclamation {
       )
         fail("SNAPSHOT_BUNDLE_TYPE_MISMATCH");
       let chunkDescriptors = null;
-      const keys = {
-        "code-bucket-chunk": ["group", "bucket", "lists"],
-        "world-code-chunks": ["body", "lists", "chunks"],
-        "graph-code-chunks": ["lists", "chunks"],
-        "graph-code": ["nodes", "edges"],
-        "world-code": ["files", "semanticGraph", "analysisBasis", "domainBasis", "rules", "sourceScope"],
-        "graph-composition": ["body", "code", "otherNodes", "otherEdges", "nodeOrder", "edgeOrder"],
+      const keySets = {
+        "code-bucket-chunk": [
+          ["group", "bucket", "lists"],
+          ["group", "bucket", "parts", "sequence"],
+        ],
+        "code-file-part": [["group", "bucket", "family", "path", "rows"]],
+        "world-code-chunks": [["body", "lists", "chunks"]],
+        "graph-code-chunks": [["lists", "chunks"]],
+        "graph-code": [["nodes", "edges"]],
+        "world-code": [["files", "semanticGraph", "analysisBasis", "domainBasis", "rules", "sourceScope"]],
+        "graph-composition": [["body", "code", "otherNodes", "otherEdges", "nodeOrder", "edgeOrder"]],
       }[doc.domain];
-      if (!keys || JSON.stringify(Object.keys(doc.payload).sort()) !== JSON.stringify(keys.sort())) fail("UNSUPPORTED_GC_DOMAIN_SCHEMA");
+      const actualKeys = JSON.stringify(Object.keys(doc.payload).sort());
+      if (!keySets || !keySets.some((keys) => JSON.stringify([...keys].sort()) === actualKeys)) fail("UNSUPPORTED_GC_DOMAIN_SCHEMA");
       if (
         (doc.domain === "graph-code" && (!Array.isArray(doc.payload.nodes) || !Array.isArray(doc.payload.edges))) ||
         (doc.domain === "world-code" && !Array.isArray(doc.payload.files)) ||
@@ -435,7 +440,9 @@ export class SnapshotBackendReclamation {
         ? chunkDescriptors.map((descriptor) => descriptor.ref)
         : doc.domain === "graph-composition"
           ? [doc.payload.code]
-          : [];
+          : doc.domain === "code-bucket-chunk" && Array.isArray(doc.payload.parts)
+            ? doc.payload.parts.map((part) => part.ref)
+            : [];
       this.domains.set(row.path, {
         ...row,
         domain: doc.domain,

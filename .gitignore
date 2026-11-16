@@ -23,6 +23,7 @@ test/*
 !test/observation-query-consolidation.test.mjs
 !test/legacy-integration-read.test.mjs
 !test/legacy-reader-and-incremental-refresh.test.mjs
+!test/snapshot-retention-and-edit-refresh.test.mjs
 !test/authority-plane-contract.test.mjs
 !test/arcadedb-native-bridge.test.mjs
 !test/context-compiler.test.mjs

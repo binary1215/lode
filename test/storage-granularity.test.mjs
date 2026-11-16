@@ -287,7 +287,7 @@ test("managed ignore upgrade preserves a user edit made while staging",async t=>
 test("chunked code connects v3 writer to actual World Compiler Graph Explorer CLI and MCP readers",async t=>{
  const f=fixture(t,{snapshotLayout:"chunked-code-v3"});for(let i=0;i<18;i++)fs.writeFileSync(path.join(f.root,"unit"+i+".mjs"),"export function value"+i+"(x) { return x + "+i+"; }\n");
  const first=await buildWorldModel({root:f.root,storeAdapter:f.world,graphProjectionAdapter:f.graph}),rootBytes=fs.readFileSync(first.file),root=readSnapshotFile(first.file).document;
- assert.equal(root.schemaVersion,3);assert.equal(root.producer.version,"0.3.0");
+ assert.equal(root.schemaVersion,3);assert.equal(root.producer.version,"0.4.0");
  const entry=await f.world.readSnapshot(first.snapshot.worldModelId);assert.deepEqual(entry.document,first.snapshot);
  const graphEntry=await f.graph.readSnapshot(first.snapshot.temporalProvenanceGraph.graphSnapshotId);assert(graphEntry.snapshotStorage.dependencies.every(ref=>entry.snapshotStorage.dependencies.some(other=>other.address===ref.address)),"World and Graph share all exact graph bucket leaves and index");assert(entry.snapshotStorage.dependencies.length>8);const pinned=entry.snapshotStorage.dependencies.map(ref=>({ref,bytes:fs.readFileSync(path.join(f.root,ref.address))}));
  assert.deepEqual((await readWorldModelForDiscovery({root:f.root})).snapshot,first.snapshot);assert.equal((await runCommand(["world-status",f.root])).status,"current");

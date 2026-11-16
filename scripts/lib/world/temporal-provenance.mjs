@@ -485,6 +485,13 @@ function temporalLogicalEntityDescriptors({ projectId, files, productModel }) {
   };
 }
 
+export function describeTemporalEntities({ projectId, files, productModel = null } = {}) {
+  if (typeof projectId !== "string" || !projectId.trim()) fail("projectId is required.", "TEMPORAL_PROJECT_ID_REQUIRED");
+  if (!Array.isArray(files)) fail("files must be an array.", "TEMPORAL_FILES_REQUIRED");
+  const selectedProductModel = productModel || normalizeProductModelDocument(emptyProductModelDocument());
+  return temporalLogicalEntityDescriptors({ projectId, files, productModel: selectedProductModel });
+}
+
 export function currentTemporalLogicalEntityIds({ projectId, files, productModel = null } = {}) {
   if (typeof projectId !== "string" || !projectId.trim()) fail("projectId is required.", "TEMPORAL_PROJECT_ID_REQUIRED");
   if (!Array.isArray(files)) fail("files must be an array.", "TEMPORAL_FILES_REQUIRED");

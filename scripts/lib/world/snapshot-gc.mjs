@@ -12,6 +12,7 @@ import {
 import { buildSnapshotDeletionClosure, snapshotFileIdentity, sameSnapshotFileIdentity } from "./snapshot-deletion-closure.mjs";
 import { qualifySnapshotFileSystem } from "./snapshot-filesystem.mjs";
 import { sha256Hex as sha } from "../core/digest.mjs";
+import { ancestryIdsOf, resolveSnapshotRetentionPolicy, selectRetainedSnapshotIds, SNAPSHOT_RETENTION_RELATIVE } from "./snapshot-retention-policy.mjs";
 
 // Dry-run remains zero-write and observational. Explicit apply separately
 // verifies the supported typed closure under cooperative publisher lifetimes.
@@ -21,7 +22,7 @@ const MAX_FILES = 50_000,
   MAX_SCAN_BYTES = 1024 * 1024 * 1024;
 const snapshotPath = (relative) =>
   /\/(?:world-model|graph-projection)\/snapshots\/((?:world-model|graph-snapshot)-[a-f0-9]{24})\.json(?:\.gz)?$/.exec(relative);
-export function inspectSnapshotGarbageCollection({ root = ".", apply = false } = {}) {
+export function inspectSnapshotGarbageCollection({ root = ".", apply = false, retention = null } = {}) {
   if (typeof apply !== "boolean") throw new Error("apply must be a boolean.");
   const owner = readGraphProject(root),
     projectRoot = owner.projectRoot,
@@ -96,7 +97,8 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     if (
       relative === prefix + "/graph-discovery/index.json" ||
       relative === prefix + "/refresh/file-stat-cache.json" ||
-      relative === prefix + "/refresh/input-generation.json"
+      relative === prefix + "/refresh/input-generation.json" ||
+      relative === prefix + "/" + SNAPSHOT_RETENTION_RELATIVE
     )
       return; // Rebuildable membership or refresh input cache, not a historical root.
     if (relative.endsWith(".tmp")) {
@@ -129,7 +131,16 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
           document.temporalProvenanceGraph?.graphSnapshotId,
           document.temporalProvenanceGraph?.sourceSnapshotId,
         ].filter(Boolean);
-        snapshots.push({ id: match[1], path: relative, bytes: bytes.length, sha256: sha(bytes), identityIds, references: ids(text) });
+        snapshots.push({
+          id: match[1],
+          path: relative,
+          bytes: bytes.length,
+          sha256: sha(bytes),
+          identityIds,
+          references: ids(text),
+          ancestryIds: ancestryIdsOf(document),
+          mtimeMs: stat.mtimeMs,
+        });
       } else {
         bytes = fs.readFileSync(file);
         bytesRead += bytes.length;
@@ -147,7 +158,24 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
             for (const child of Object.values(value)) if (child && typeof child === "object") pending.push(child);
           }
         } else if (!/\.(?:md|txt|gitignore)$/.test(relative) && !relative.endsWith("/.gitignore")) issue(relative, "UNKNOWN_REFERENCE_FILE_TYPE");
-        roots.push({ path: relative, references: ids(text) });
+        const requiredWorldHashes = [];
+        if (document && typeof document === "object") {
+          const pendingHashes = [document];
+          while (pendingHashes.length) {
+            const value = pendingHashes.pop();
+            if (!value || typeof value !== "object") continue;
+            for (const field of ["repositoryWorldModel", "worldModelHash"])
+              if (/^[a-f0-9]{64}$/.test(value[field] || "")) requiredWorldHashes.push(value[field]);
+            for (const child of Object.values(value)) if (child && typeof child === "object") pendingHashes.push(child);
+          }
+        }
+        roots.push({
+          path: relative,
+          relative: relative.slice(prefix.length + 1),
+          references: ids(text),
+          ancestryIds: document && typeof document === "object" ? ancestryIdsOf(document) : [],
+          requiredWorldHashes,
+        });
       }
       scanned.push({ path: relative, bytes: bytes.length, sha256: sha(bytes) });
     } catch (error) {
@@ -194,19 +222,29 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
   const nextAction = typedBackendDeferred
     ? "Dry-run did not open snapshot-objects.git or snapshot-bundles, so it cannot certify deletions from those backends. Run storage-gc --apply. That reads them. gc_applied with applyPerformed false means the typed closure kept every referenced snapshot."
     : null;
-  const rows = snapshots.map((item) => ({
-    id: item.id,
-    path: item.path,
-    bytes: item.bytes,
-    sha256: item.sha256,
-    observedReference: reasons.get(item.path) || null,
-    disposition: "retain",
-    reasonCode: reasons.has(item.path)
-      ? "RETAINED_REFERENCE_CLOSURE"
-      : issues.length
-        ? "INCOMPLETE_REFERENCE_COVERAGE"
-        : "APPLY_REQUIRES_TYPED_CLOSURE_AND_LIFETIME",
-  }));
+  const retentionPolicy = resolveSnapshotRetentionPolicy({ root: owner.projectRoot, storage: owner.storage, override: retention });
+  const decision = selectRetainedSnapshotIds({ snapshots, roots, policy: retentionPolicy });
+  const kept = (item) =>
+    decision.preserveAllHistory ? reasons.has(item.path) : decision.keepIds.has(item.id) || (item.identityIds || []).some((id) => decision.keepIds.has(id));
+  const rows = snapshots.map((item) => {
+    const keep = kept(item);
+    return {
+      id: item.id,
+      path: item.path,
+      bytes: item.bytes,
+      sha256: item.sha256,
+      observedReference: reasons.get(item.path) || null,
+      disposition: keep ? "retain" : "reclaim",
+      reasonCode: keep
+        ? "RETAINED_REFERENCE_CLOSURE"
+        : reasons.has(item.path)
+          ? "RETENTION_POLICY_EXPIRED"
+          : issues.length
+            ? "INCOMPLETE_REFERENCE_COVERAGE"
+            : "APPLY_REQUIRES_TYPED_CLOSURE_AND_LIFETIME",
+    };
+  });
+  const reclaimable = rows.filter((item) => item.disposition === "reclaim");
   return {
     kind: "SnapshotStorageInspection",
     authorityPlane: "P4",
@@ -220,7 +258,17 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     applyPerformed: false,
     deletedCount: 0,
     reclaimedBytes: 0,
-    reclaimableBytes: 0,
+    reclaimableBytes: reclaimable.reduce((n, item) => n + item.bytes, 0),
+    retention: {
+      keepCount: retentionPolicy.keepCount,
+      keepDays: retentionPolicy.keepDays,
+      source: retentionPolicy.source,
+      preserveAllHistory: retentionPolicy.preserveAllHistory,
+      reclaimableSnapshots: reclaimable.length,
+      policy: retentionPolicy.preserveAllHistory
+        ? "retention config is not usable; historical snapshots stay"
+        : `keep the current world, snapshots pinned by decisions and records, and the last ${retentionPolicy.keepCount} world generations or ${retentionPolicy.keepDays} days`,
+    },
     physicalStorage: mergePhysicalStorageObservations([
       summarizeObservedStorageFiles(physicalRows, { complete: !stopped && !physicalIssues.length, issues: physicalIssues }),
       ...physicalParts,
@@ -228,11 +276,11 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     storedBytesScope: "whole-or-composition-snapshot-files-only",
     snapshotCount: rows.length,
     storedBytes: rows.reduce((n, item) => n + item.bytes, 0),
-    retainedCount: rows.length,
+    retainedCount: rows.length - reclaimable.length,
     observedUnreferencedCount: observedUnreferenced.length,
     observedUnreferencedBytes: observedUnreferenced.reduce((n, item) => n + item.bytes, 0),
     interpretation:
-      "Observed unreferenced IDs are candidates for further verification, not established safe deletions. Current/previous, parents and all observed retained references are preserved. No age or last-N deletion.",
+      "Dry-run names snapshot files explicit --apply would delete. Current worlds, decision and record pins, and the configured recent window stay. Source texts, Canon, and Session records are not snapshot files and are not deleted. This inspection does not delete.",
     basis: { digest: sha(JSON.stringify(scanned)), readConsistency: "observed-sequence-not-atomic-filesystem-snapshot", scannedFiles: count, bytesRead },
     backendInspection: { mode: "synchronous-file-observation", deferredBackends, authority: "no-deletion-certificate" },
     coverage: {
@@ -255,7 +303,7 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
 
 // Explicit asynchronous effect, separate from the unchanged zero-write
 // inspection. A diagnostic string scan is never its deletion certificate.
-export async function applySnapshotGarbageCollection({ root = ".", signal, onProcess } = {}) {
+export async function applySnapshotGarbageCollection({ root = ".", signal, onProcess, retention = null } = {}) {
   // Inventory and reclaim are not one deadline. A single clock made a large
   // store abort before any unreachable byte was deleted. Each Git command
   // keeps its own bound; admission covers one unlink, not the walk.
@@ -329,6 +377,7 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
       deadline: null,
       collectionAttempt: attempt,
       shouldContinue: () => !signal?.aborted && !snapshotCollectionCancelled(attempt),
+      retention,
     });
     result.coverage = {
       referenceValidity: closure.certified ? "typed-supported-root-closure" : "incomplete-preserved",
@@ -409,10 +458,17 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
         pinnedPaths: closure.pinnedPaths,
       });
     }
+    const retentionPolicy = closure.retentionPolicy || { keepCount: null, keepDays: null, source: "unresolved", preserveAllHistory: true };
     result.retention = {
+      keepCount: retentionPolicy.keepCount,
+      keepDays: retentionPolicy.keepDays,
+      source: retentionPolicy.source,
+      preserveAllHistory: retentionPolicy.preserveAllHistory,
       referencedSnapshots: closure.retained.size,
       eligibleOrphanSnapshots: closure.candidates.length,
-      policy: "all retained references and ancestry preserved; zero reclaimed bytes can be a complete successful result",
+      policy: retentionPolicy.preserveAllHistory
+        ? "retention config is not usable; historical snapshots stay; zero reclaimed bytes can be a complete successful result"
+        : `keep the current world, snapshots pinned by decisions and records, and the last ${retentionPolicy.keepCount} world generations or ${retentionPolicy.keepDays} days; older unpinned history is eligible; zero reclaimed bytes can be a complete successful result`,
     };
     result.status = result.code
       ? result.applyPerformed

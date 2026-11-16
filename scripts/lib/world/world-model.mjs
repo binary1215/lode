@@ -52,6 +52,7 @@ import {
   buildTemporalProvenanceGraph,
   currentTemporalLogicalEntityIds,
   deriveIncrementalLogicalLineageState,
+  describeTemporalEntities,
   filterLogicalLineageStateForCurrentTemporalEntities,
   filterRevisionParentsForCurrentTemporalEntities,
   TEMPORAL_PROVENANCE_VERSION,
@@ -664,6 +665,85 @@ export function deriveIncrementalRevisionParents({ previousGraph, candidateGraph
     parents[candidate.logicalEntityId] = unchanged ? [...previous.parentRevisionIds] : [previous.nodeId];
   }
   return Object.fromEntries(Object.entries(parents).sort(([left], [right]) => left.localeCompare(right)));
+}
+
+const PRODUCT_REVISION_KINDS = new Set([
+  "FeatureGroupRevision",
+  "CapabilityRevision",
+  "FeatureRevision",
+  "RequirementRevision",
+  "ConstraintRevision",
+  "DecisionRevision",
+  "PolicyRevision",
+]);
+
+// Same parent map as deriveIncrementalRevisionParents when the product model
+// is unchanged, without building a candidate graph. Returns null when that
+// shortcut is not exact.
+export function predictIncrementalRevisionParents({ previousGraph, files, productModel } = {}) {
+  if (!previousGraph?.nodes || !productModel?.productModelHash || previousGraph.productModelHash !== productModel.productModelHash) return null;
+  let described;
+  try {
+    described = describeTemporalEntities({ projectId: previousGraph.projectId, files, productModel });
+  } catch {
+    return null;
+  }
+  const previousNodes = new Map(previousGraph.nodes.map((node) => [node.nodeId, node]));
+  const previousRevisions = new Map(
+    previousGraph.nodes.filter((node) => REVISION_KINDS.has(node.kind) && node.logicalEntityId).map((node) => [node.logicalEntityId, node]),
+  );
+  const parents = {};
+  const assign = (logicalEntityId, candidate, candidateNodes) => {
+    const previous = previousRevisions.get(logicalEntityId);
+    if (!previous || previous.kind !== candidate.kind) return;
+    if (candidate.kind === "SymbolRevision" && (candidate.identityAmbiguous || previous.identityAmbiguous)) return;
+    const unchanged = canonicalJson(revisionSemantic(previous, previousNodes)) === canonicalJson(revisionSemantic(candidate, candidateNodes));
+    parents[logicalEntityId] = unchanged ? [...(previous.parentRevisionIds || [])] : [previous.nodeId];
+  };
+  for (const fileDesc of described.fileDescriptors) {
+    const file = fileDesc.file;
+    const fileNodes = new Map([["current-file", { digest: file.digest }]]);
+    assign(
+      fileDesc.fileId,
+      {
+        kind: "FileRevision",
+        logicalEntityId: fileDesc.fileId,
+        digest: file.digest,
+        language: file.language || "text",
+        classification: file.classification || "source",
+      },
+      fileNodes,
+    );
+    for (const symbol of fileDesc.symbolDescriptors) {
+      assign(
+        symbol.symbolId,
+        {
+          kind: "SymbolRevision",
+          logicalEntityId: symbol.symbolId,
+          fileRevisionId: "current-file",
+          path: file.path,
+          name: symbol.name,
+          symbolKind: symbol.symbolKind,
+          occurrence: symbol.occurrence,
+          line: symbol.line,
+          endLine: symbol.endLine,
+          scopePath: symbol.scopePath,
+          qualifiedName: symbol.qualifiedName,
+          signature: symbol.signature,
+          identityAmbiguous: symbol.identityAmbiguous,
+        },
+        fileNodes,
+      );
+    }
+    if (fileDesc.testId)
+      assign(fileDesc.testId, { kind: "TestRevision", logicalEntityId: fileDesc.testId, fileRevisionId: "current-file", path: file.path }, fileNodes);
+  }
+  const currentLogical = new Set(described.logicalEntityIds);
+  for (const node of previousRevisions.values()) {
+    if (!PRODUCT_REVISION_KINDS.has(node.kind) || !currentLogical.has(node.logicalEntityId) || parents[node.logicalEntityId]) continue;
+    parents[node.logicalEntityId] = [...(node.parentRevisionIds || [])];
+  }
+  return Object.fromEntries(Object.entries(parents).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)));
 }
 
 function indexerState() {

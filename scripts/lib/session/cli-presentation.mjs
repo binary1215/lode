@@ -1872,7 +1872,9 @@ function formatSnapshotStorage(value) {
       "; " +
       value.observedUnreferencedBytes +
       " bytes (not certified safe to delete).",
-    "Inspection preserved every file. Explicit --apply verifies supported references before cleanup.",
+    value.retention
+      ? `Retention keeps the current world, decision and record pins, and the last ${value.retention.keepCount} worlds or ${value.retention.keepDays} days. This inspection would reclaim ${value.reclaimableBytes} snapshot-file bytes. Explicit --apply performs that cleanup.`
+      : "Inspection preserved every file. Explicit --apply verifies supported references before cleanup.",
     "Details and preservation reasons: --json.",
     "",
   ]

@@ -5611,13 +5611,20 @@ export const OPERATIONS = Object.freeze([
     name: "cli:storage-gc",
     cli: {
       command: "storage-gc",
-      flags: ["apply"],
+      flags: ["apply", "keep-count", "keep-days"],
       handle: async (context) => {
         const { root, options, onProcess, signal } = context;
         const { inspectSnapshotPreservationClosure } = await import("../world/snapshot-preservation-closure.mjs");
         const { inspectSnapshotGarbageCollection, applySnapshotGarbageCollection } = await import("../world/snapshot-gc.mjs");
-        if (options.apply === true || options.apply === "true") return await applySnapshotGarbageCollection({ root, signal, onProcess });
-        const inspection = inspectSnapshotGarbageCollection({ root });
+        const retention =
+          options["keep-count"] == null && options["keep-days"] == null
+            ? null
+            : {
+                ...(options["keep-count"] == null ? {} : { keepCount: Number(options["keep-count"]) }),
+                ...(options["keep-days"] == null ? {} : { keepDays: Number(options["keep-days"]) }),
+              };
+        if (options.apply === true || options.apply === "true") return await applySnapshotGarbageCollection({ root, signal, onProcess, retention });
+        const inspection = inspectSnapshotGarbageCollection({ root, retention });
         try {
           inspection.typedClosure = await inspectSnapshotPreservationClosure({ root });
         } catch (error) {

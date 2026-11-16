@@ -30,6 +30,13 @@ import { verifyRetainedRunOriginal } from "../runtime/run-lineage.mjs";
 import { sha256Hex as hash } from "../core/digest.mjs";
 import { classifyProductGraphPath, verifyProductGraphCanonFile, PRODUCT_GRAPH_DIRECTORY } from "../storage/product-graph-store.mjs";
 import { failCode as failure } from "../core/errors.mjs";
+import {
+  ancestryIdsOf,
+  isHistoryRoot,
+  resolveSnapshotRetentionPolicy,
+  selectRetainedSnapshotIds,
+  SNAPSHOT_RETENTION_RELATIVE,
+} from "./snapshot-retention-policy.mjs";
 
 const ids = (encoded) => [...new Set(encoded.match(/\b(?:world-model|graph-snapshot|source-snapshot)-[a-f0-9]{24}\b/g) || [])];
 const target = /^(world-model|graph-projection)\/snapshots\/((?:world-model|graph-snapshot)-[a-f0-9]{24})\.json(?:\.gz)?$/;
@@ -195,6 +202,7 @@ function referenceSummary(document) {
   }
   return {
     references: ids(encoded),
+    ancestryIds: ancestryIdsOf(document),
     digestReferences: [...new Set(encoded.match(/[a-f0-9]{64}/g) || [])],
     requiredWorldHashes: [...requiredWorldHashes],
     pins,
@@ -209,6 +217,7 @@ export async function buildSnapshotDeletionClosure({
   onProcess,
   deadline,
   collectionAttempt,
+  retention = null,
 } = {}) {
   if (!Number.isSafeInteger(maxSummaryBytes) || maxSummaryBytes < 1 || maxSummaryBytes > SNAPSHOT_GC_SUMMARY_BYTES) failure("INVALID_GC_SUMMARY_BOUND");
   const inspected = inspectProject(root, { sessionScope: "default" }),
@@ -281,7 +290,13 @@ export async function buildSnapshotDeletionClosure({
     )
       failure("OBSERVATION_STORE_LIMIT");
     if ((storedBytes += stat.size) > 1024 ** 3) failure("GC_INVENTORY_INCOMPLETE");
-    if (relative === "graph-discovery/index.json" || relative === "refresh/file-stat-cache.json" || relative === "refresh/input-generation.json") return;
+    if (
+      relative === "graph-discovery/index.json" ||
+      relative === "refresh/file-stat-cache.json" ||
+      relative === "refresh/input-generation.json" ||
+      relative === SNAPSHOT_RETENTION_RELATIVE
+    )
+      return;
     // Product graph: generated output is rebuildable (like the discovery index);
     // Canon files are read as verified text roots, so a snapshot id written in a
     // document still retains that snapshot. A name Lode does not recognise is
@@ -438,23 +453,45 @@ export async function buildSnapshotDeletionClosure({
       queue.push(row);
     }
   };
+  const retentionPolicy = resolveSnapshotRetentionPolicy({ root, storage, override: retention });
+  const decision = selectRetainedSnapshotIds({ snapshots, roots, policy: retentionPolicy });
+  const selected = (id) =>
+    decision.preserveAllHistory ||
+    decision.keepIds.has(id) ||
+    (byId.get(id) || []).some((row) => decision.keepIds.has(row.id) || (row.identityIds || []).some((item) => decision.keepIds.has(item)));
   function follow(summary) {
-    for (const id of summary.references) {
+    const ancestry = new Set(summary.ancestryIds || []);
+    const history = isHistoryRoot(summary.relative || summary.path);
+    for (const id of summary.references || []) {
+      if (!decision.preserveAllHistory && ancestry.has(id)) continue;
       const matches = byId.get(id);
+      if (!decision.preserveAllHistory && !selected(id)) {
+        if (!matches?.length && decision.hardIds.has(id) && !history) issue(summary.path, "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE");
+        continue;
+      }
       if (!matches?.length) issue(summary.path, "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE");
       else matches.forEach(retain);
     }
-    for (const digest of summary.digestReferences) {
-      (byHash.get(digest) || []).forEach(retain);
-      if (mixed.objects.has(digest)) pinnedOids.add(digest);
-      for (const row of mixed.domains.values()) if (row.rawSha256 === digest) pinnedPaths.add(row.path);
-    }
-    for (const digest of summary.requiredWorldHashes) {
-      const matches = (byId.get("world-model-" + digest.slice(0, 24)) || []).filter((row) => row.worldModelHash === digest);
+    const pinContents =
+      decision.preserveAllHistory || !summary.id || selected(summary.id) || (summary.identityIds || []).some((id) => selected(id)) || (!history && !summary.id);
+    if (pinContents)
+      for (const digest of summary.digestReferences || []) {
+        if (decision.preserveAllHistory) (byHash.get(digest) || []).forEach(retain);
+        else for (const row of byHash.get(digest) || []) if (selected(row.id)) retain(row);
+        if (mixed.objects.has(digest)) pinnedOids.add(digest);
+        for (const row of mixed.domains.values()) if (row.rawSha256 === digest) pinnedPaths.add(row.path);
+      }
+    for (const digest of summary.requiredWorldHashes || []) {
+      const id = "world-model-" + digest.slice(0, 24);
+      const matches = (byId.get(id) || []).filter((row) => row.worldModelHash === digest);
+      if (!decision.preserveAllHistory && !selected(id)) {
+        if (!matches.length && decision.hardIds.has(id)) issue(summary.path, "RETAINED_WORLD_HASH_UNAVAILABLE");
+        continue;
+      }
       if (!matches.length) issue(summary.path, "RETAINED_WORLD_HASH_UNAVAILABLE");
       else matches.forEach(retain);
     }
-    for (const pin of summary.pins) {
+    for (const pin of summary.pins || []) {
       if (!/\/(?:(?:world-model|graph-projection)\/snapshots\/|snapshot-bundles\/|snapshot-objects\.git\/|observations\/source-bundles\/)/i.test(pin.path))
         continue;
       const row = byPath.get(physicalPathKey(pin.path));
@@ -463,11 +500,15 @@ export async function buildSnapshotDeletionClosure({
       if (row) {
         pinnedPaths.add(row.path);
         const snapshot = snapshots.find((item) => item.path === row.path);
-        if (snapshot) retain(snapshot);
+        if (snapshot && (decision.preserveAllHistory || selected(snapshot.id))) retain(snapshot);
       }
     }
   }
-  for (const summary of roots) follow(summary);
+  for (const summary of roots) {
+    if (!decision.preserveAllHistory && isHistoryRoot(summary.relative)) continue;
+    follow(summary);
+  }
+  if (!decision.preserveAllHistory) for (const row of snapshots) if (selected(row.id)) retain(row);
   for (let index = 0; index < queue.length; index += 1) follow(queue[index]);
   try {
     for (const oid of [...pinnedOids])
@@ -502,6 +543,7 @@ export async function buildSnapshotDeletionClosure({
     // recognise: the user's own, kept and named, never deleted.
     productGraphKept: productGraphKept.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
     certified: issues.length === 0,
+    retentionPolicy,
     backend: "typed-local-file-git-domain-source",
     basisDigest: hash(JSON.stringify([...entries, ...mixed.files.values()].map(({ path, sha256 }) => ({ path, sha256 })))),
   };

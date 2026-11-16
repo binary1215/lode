@@ -22,6 +22,7 @@ manual request or verified RefreshTriggerBatch
   -> when those agreed stats and the non-snapshot inputs are unchanged, keep the published World and Graph instead of rebuilding them
   -> reuse analysis only for digest-identical verified files
   -> validate one complete RepositoryScanResult
+  -> when the product model hash is unchanged, derive revision parents from the previous graph and the current file digests instead of a separate old-parent preview
   -> preview a child SourceSnapshot and GraphSnapshot and build the refresh receipt from that preview
   -> persist the refresh request, then publish the World only when its id is the preview id
   -> persist an immutable IncrementalRefreshReceipt after the published World matches that receipt

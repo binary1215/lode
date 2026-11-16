@@ -5,7 +5,16 @@ import { inspectProject, SCHEMA_VERSION } from "../head-core.mjs";
 import { executeIncrementalRepositoryScan, managedRootFilesForProject, sourceTreeMatchesPublishedFiles } from "./repository-scan.mjs";
 import { readRefreshInputGeneration, refreshInputStamp } from "./refresh-input-generation.mjs";
 import { readRepositorySourceScope } from "./repository-source-scope.mjs";
-import { buildWorldModel, deriveIncrementalRevisionParents, gitHeadState, inspectWorldModel, readWorldModel, readWorldModelSnapshot } from "./world-model.mjs";
+import {
+  buildWorldModel,
+  deriveIncrementalRevisionParents,
+  gitHeadState,
+  inspectWorldModel,
+  predictIncrementalRevisionParents,
+  readWorldModel,
+  readWorldModelSnapshot,
+} from "./world-model.mjs";
+import { readProductModelCanon } from "./product-model.mjs";
 import {
   completePostRefreshProjection,
   inspectPostRefreshProjection as inspectPostRefreshProjectionArtifact,
@@ -18,7 +27,6 @@ import { sha256Hex as digest } from "../core/digest.mjs";
 import { canonicalJson, canonicalValue as canonical } from "../core/canonical-json.mjs";
 import { failWith } from "../core/errors.mjs";
 import { atomicWriteText as atomicWrite } from "../core/fs-atomic.mjs";
-import { readProductModelCanon } from "./product-model.mjs";
 
 export const INCREMENTAL_REFRESH_VERSION = "0.2.0";
 const LEGACY_INCREMENTAL_REFRESH_VERSION = "0.1.0";
@@ -702,6 +710,17 @@ async function refreshWorldModelLocked({
     !(Array.isArray(request.expectation?.paths) && request.expectation.paths.length) &&
     recordedInputsMatch(previousSnapshot, repositoryScanExecution.result.files, projectRoot, inspected.storage);
 
+  const additionalParentsRequested = request.additionalParentSourceSnapshotIds.some(
+    (parentId) => !previousSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds.includes(parentId),
+  );
+  const fileChanges = repositoryScanExecution.diagnostics.changes;
+  const filesChanged = fileChanges.added.length + fileChanges.changed.length + fileChanges.removed.length > 0;
+  const productModel = readProductModelCanon({ projectRoot, storage: inspected.storage }).model;
+  const predicted = predictIncrementalRevisionParents({
+    previousGraph: previousSnapshot.temporalProvenanceGraph,
+    files: repositoryScanExecution.result.files,
+    productModel,
+  });
   const common = {
     root: projectRoot,
     persist: false,
@@ -710,36 +729,41 @@ async function refreshWorldModelLocked({
     runtimeStateAdapter,
     repositoryScanExecution,
   };
-  const sameLineagePreview = keepLegacySnapshot
-    ? null
-    : await buildWorldModel({
-        ...common,
-        parentSourceSnapshotIds: previousSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds,
-        revisionParentIds: previousSnapshot.temporalProvenanceGraph.revisionParentIds,
-        filterRevisionParentsToCurrentEntities: true,
-      });
-  const additionalParentsRequested = request.additionalParentSourceSnapshotIds.some(
-    (parentId) => !previousSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds.includes(parentId),
-  );
-  const requiresRefresh = !keepLegacySnapshot && (sameLineagePreview.snapshot.worldModelId !== previousSnapshot.worldModelId || additionalParentsRequested);
-  let nextPreview = sameLineagePreview;
+  const childParents = () =>
+    [...new Set([previousSnapshot.temporalProvenanceGraph.sourceSnapshotId, ...request.additionalParentSourceSnapshotIds])].sort(compareText);
   let revisionParentIds = previousSnapshot.temporalProvenanceGraph.revisionParentIds;
   let parentSourceSnapshotIds = previousSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds;
-  if (requiresRefresh) {
-    revisionParentIds = deriveIncrementalRevisionParents({
-      previousGraph: previousSnapshot.temporalProvenanceGraph,
-      candidateGraph: sameLineagePreview.snapshot.temporalProvenanceGraph,
-    });
-    parentSourceSnapshotIds = [...new Set([previousSnapshot.temporalProvenanceGraph.sourceSnapshotId, ...request.additionalParentSourceSnapshotIds])].sort(
-      compareText,
-    );
+  let requiresRefresh = !keepLegacySnapshot && (additionalParentsRequested || filesChanged);
+  let nextPreview = null;
+  if (keepLegacySnapshot) {
+    requiresRefresh = false;
+  } else if (predicted && requiresRefresh) {
+    revisionParentIds = predicted;
+    parentSourceSnapshotIds = childParents();
     nextPreview = await buildWorldModel({ ...common, parentSourceSnapshotIds, revisionParentIds });
+  } else {
+    const sameLineagePreview = await buildWorldModel({
+      ...common,
+      parentSourceSnapshotIds,
+      revisionParentIds,
+      filterRevisionParentsToCurrentEntities: true,
+    });
+    requiresRefresh = sameLineagePreview.snapshot.worldModelId !== previousSnapshot.worldModelId || additionalParentsRequested;
+    nextPreview = sameLineagePreview;
+    if (requiresRefresh) {
+      revisionParentIds = deriveIncrementalRevisionParents({
+        previousGraph: previousSnapshot.temporalProvenanceGraph,
+        candidateGraph: sameLineagePreview.snapshot.temporalProvenanceGraph,
+      });
+      parentSourceSnapshotIds = childParents();
+      nextPreview = await buildWorldModel({ ...common, parentSourceSnapshotIds, revisionParentIds });
+    }
   }
-
+  const nextSnapshot = requiresRefresh ? nextPreview.snapshot : previousSnapshot;
   const receipt = buildReceipt({
     request,
     previousSnapshot,
-    nextSnapshot: requiresRefresh ? nextPreview.snapshot : previousSnapshot,
+    nextSnapshot,
     status: requiresRefresh ? "refreshed" : "unchanged",
     inspected,
   });
@@ -749,7 +773,6 @@ async function refreshWorldModelLocked({
     (record) => verifyIncrementalRefreshRequest(record, inspected.storage),
     "Incremental refresh request",
   );
-
   let world = stored;
   if (requiresRefresh) {
     const worldPointerFile = path.join(projectRoot, inspected.storage.directory, "world-model/current.json");
@@ -778,6 +801,7 @@ async function refreshWorldModelLocked({
       fail("Persisted World Model does not match the verified refresh receipt.", "REFRESH_PERSISTENCE_MISMATCH");
     }
   }
+
   const receiptEntry = persistImmutable(
     receiptFile(projectRoot, receipt.refreshReceiptId, inspected.storage),
     receipt,
