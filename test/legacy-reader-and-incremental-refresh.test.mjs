@@ -9,7 +9,6 @@ import { buildWorldModel, readWorldModel, readWorldModelSnapshot } from "../scri
 import { refreshWorldModel } from "../scripts/lib/world/incremental-refresh.mjs";
 import {
   fileIdentity,
-  refreshGitIdentity,
   refreshInputStamp,
   rememberFileStat,
   timestampSettled,
@@ -316,6 +315,8 @@ test("a store written by beta.80 commit 6d9f6be stays readable and keeps its sna
   assert.equal(upgradedGraph.graphSnapshotId, graphPointer.graphSnapshotId);
   assert.equal(upgradedGraph.graphSnapshotHash, graphPointer.graphSnapshotHash);
   assert.equal(upgraded.readerRequirements.minimumReader, "0.3.0-beta.75");
+  // The graph pointer id covers its reader requirements; the world pointer must name the id it has now.
+  if (pointer.sourceAdapters?.graphProjection?.pointerId) assert.equal(upgraded.sourceAdapters.graphProjection.pointerId, upgradedGraph.pointerId);
   assert.deepEqual(snapshotNames("world-model/snapshots"), worldSnapshots);
   assert.deepEqual(snapshotNames("graph-projection/snapshots"), graphSnapshots);
   const original = await readWorldModelSnapshot({ root: projectRoot, worldModelId: pointer.worldModelId });
@@ -386,7 +387,67 @@ test("gc dry-run and apply agree when snapshot backends are present", async (t) 
   assert.equal(current.snapshot.worldModelHash, built.snapshot.worldModelHash);
 });
 
-test("the refresh stamp records the git state the build read, so a commit made meanwhile is not unchanged", async (t) => {
+const mode = (result) => result.diagnostics.repositoryScan.executionMode;
+
+test("the fast path answers a second unchanged refresh, and a record saved while a refresh builds is not stamped as known", async (t) => {
+  const f = project(t);
+  await buildWorldModel({ root: f.root });
+  assert.equal((await refreshWorldModel({ root: f.root })).status, "unchanged");
+  const fast = await refreshWorldModel({ root: f.root });
+  assert.equal(fast.status, "unchanged");
+  assert.equal(mode(fast), "stat-cache-unchanged");
+
+  // An edit, and while that refresh is building, something else writes into the project store.
+  fs.writeFileSync(f.source, "def kept_value():\n    return 'edited'\n");
+  const arrived = path.join(f.root, f.storage.directory, "context", "arrived-while-building.json");
+  const originalRead = fs.readFileSync;
+  let written = false;
+  fs.readFileSync = function (file, ...args) {
+    const result = originalRead.call(fs, file, ...args);
+    if (!written && path.resolve(String(file)) === f.source) {
+      written = true;
+      fs.mkdirSync(path.dirname(arrived), { recursive: true });
+      fs.writeFileSync(arrived, "{}\n");
+    }
+    return result;
+  };
+  let refreshed;
+  try {
+    refreshed = await refreshWorldModel({ root: f.root });
+  } finally {
+    fs.readFileSync = originalRead;
+  }
+  assert.equal(written, true);
+  assert.equal(refreshed.status, "refreshed");
+
+  // The stamp was taken before the build read anything, so the file that arrived is news to it.
+  const afterArrival = await refreshWorldModel({ root: f.root });
+  assert.notEqual(mode(afterArrival), "stat-cache-unchanged");
+  // That full refresh found nothing changed and renewed the generation.
+  const settled = await refreshWorldModel({ root: f.root });
+  assert.equal(settled.status, "unchanged");
+  assert.equal(mode(settled), "stat-cache-unchanged");
+});
+
+test("a generation written by another reader version is not answered from the fast path", async (t) => {
+  const f = project(t);
+  await buildWorldModel({ root: f.root });
+  await refreshWorldModel({ root: f.root });
+  assert.equal(mode(await refreshWorldModel({ root: f.root })), "stat-cache-unchanged");
+  const generationFile = path.join(f.root, f.storage.directory, "refresh", "input-generation.json");
+  const generation = JSON.parse(fs.readFileSync(generationFile, "utf8"));
+  assert.equal(typeof generation.reader, "string");
+  fs.writeFileSync(generationFile, JSON.stringify({ ...generation, reader: "0".repeat(64) }));
+  const other = await refreshWorldModel({ root: f.root });
+  assert.equal(other.status, "unchanged");
+  assert.notEqual(mode(other), "stat-cache-unchanged");
+  const without = { ...generation };
+  delete without.reader;
+  fs.writeFileSync(generationFile, JSON.stringify(without));
+  assert.notEqual(mode(await refreshWorldModel({ root: f.root })), "stat-cache-unchanged");
+});
+
+test("a commit made after the stamp was taken is not unchanged", async (t) => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-stamp (v2)-")));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   git(root, ["init"]);
@@ -396,14 +457,34 @@ test("the refresh stamp records the git state the build read, so a commit made m
   initializeProject({ root, pluginRoot, runtimes: ["codex", "claude", "opencode"] });
   const built = await buildWorldModel({ root });
   const storage = inspectProject(root).storage;
-  // What a build holds: the git state from before it read git. The commit lands while it builds.
-  const readByTheBuild = refreshGitIdentity(root);
+  // What a build holds: the stamp from before it read anything. The commit lands while it builds.
+  const takenBeforeTheBuild = refreshInputStamp(root, storage);
   git(root, ["commit", "--allow-empty", "-m", "made while the build was running"]);
-  const written = writeRefreshInputGeneration({ root, storage, snapshot: built.snapshot, gitIdentity: readByTheBuild });
-  assert.notEqual(written.stamp, refreshInputStamp(root, storage));
+  assert.notEqual(takenBeforeTheBuild, refreshInputStamp(root, storage));
+  assert.equal(writeRefreshInputGeneration({ root, storage, snapshot: built.snapshot }), null);
+  writeRefreshInputGeneration({ root, storage, snapshot: built.snapshot, stamp: takenBeforeTheBuild, reader: "x" });
   const next = await refreshWorldModel({ root });
-  assert.notEqual(next.diagnostics.repositoryScan.executionMode, "stat-cache-unchanged");
+  assert.notEqual(mode(next), "stat-cache-unchanged");
   assert.equal(next.status, "refreshed");
+});
+
+test("storage GC reads a pointer written before minimumReader without rewriting it, and a leftover watcher probe is not in its way", async (t) => {
+  const f = project(t);
+  const built = await buildWorldModel({ root: f.root });
+  const worldPointer = path.join(f.root, f.storage.directory, "world-model/current.json");
+  const graphPointer = path.join(f.root, f.storage.directory, "graph-projection/current.json");
+  beta80Pointer(worldPointer, "worldModelId");
+  beta80Pointer(graphPointer, "graphSnapshotId");
+  const before = [fs.readFileSync(worldPointer), fs.readFileSync(graphPointer)];
+  const probe = path.join(f.root, f.storage.directory, "refresh", ".watch-arm-4242-left");
+  fs.mkdirSync(path.dirname(probe), { recursive: true });
+  fs.writeFileSync(probe, "arm\n");
+  const applied = await applySnapshotGarbageCollection({ root: f.root });
+  assert.notEqual(applied.code, "STORAGE_VERSION_MISMATCH");
+  assert.equal(JSON.stringify(applied).includes("UNSUPPORTED_GC_REFERENCE_ROOT"), false);
+  assert.equal(fs.readFileSync(worldPointer).equals(before[0]), true);
+  assert.equal(fs.readFileSync(graphPointer).equals(before[1]), true);
+  assert.equal((await readWorldModel({ root: f.root })).snapshot.worldModelHash, built.snapshot.worldModelHash);
 });
 
 test("a whole-second modification time is not trusted inside its own tick", (t) => {

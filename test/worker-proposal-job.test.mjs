@@ -428,7 +428,8 @@ test("a worker job read accepts a Windows metadata timestamp change when the byt
   fs.fstatSync = function (fd, ...args) {
     const stat = original.call(fs, fd, ...args);
     fstats += 1;
-    return fstats === 2 ? statWithMovedTimestamps(stat) : stat;
+    // The timestamps moved once, during the first read, and then stayed.
+    return fstats >= 2 ? statWithMovedTimestamps(stat) : stat;
   };
   try {
     assert.equal(readStableRegularFile(file).equals(bytes), true);
@@ -450,12 +451,13 @@ test("a worker job read still rejects bytes that change during the read", (t) =>
   fs.fstatSync = function (fd, ...args) {
     const stat = originalStat.call(fs, fd, ...args);
     fstats += 1;
-    return fstats === 2 ? statWithMovedTimestamps(stat) : stat;
+    return fstats >= 2 ? statWithMovedTimestamps(stat) : stat;
   };
   fs.readSync = function (...args) {
     const n = originalRead.apply(fs, args);
     reads += 1;
-    if (reads === 1) fs.writeFileSync(file, Buffer.from('{"status":"changed"}\n'));
+    // Same length as the original, so only the second read can tell.
+    if (reads === 1) fs.writeFileSync(file, Buffer.from('{"status":"cancelled"}\n'));
     return n;
   };
   try {
@@ -463,5 +465,25 @@ test("a worker job read still rejects bytes that change during the read", (t) =>
   } finally {
     fs.fstatSync = originalStat;
     fs.readSync = originalRead;
+  }
+});
+
+test("a worker job read rejects a file whose timestamps are still moving at the second read", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "job-read-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, "result.json");
+  fs.writeFileSync(file, Buffer.from('{"status":"completed"}\n'));
+  const original = fs.fstatSync;
+  let fstats = 0;
+  fs.fstatSync = function (fd, ...args) {
+    const stat = original.call(fs, fd, ...args);
+    fstats += 1;
+    // Moved at the second stat only: the third no longer agrees with it.
+    return fstats === 2 ? statWithMovedTimestamps(stat) : stat;
+  };
+  try {
+    assert.throws(() => readStableRegularFile(file), { code: "WORKER_JOB_CONFLICT" });
+  } finally {
+    fs.fstatSync = original;
   }
 });

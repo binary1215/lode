@@ -18,6 +18,11 @@ const SKIP_STORAGE_PREFIXES = [
   ".operations/",
 ];
 
+// Written by the very build a stamp belongs to. Their ids are compared on
+// their own, so the stamp can be taken before the build without the build
+// itself moving it.
+const STAMP_EXCLUDED_FILES = new Set(["world-model/current.json", "graph-projection/current.json"]);
+
 function cachePath(root, storage, relative) {
   return path.join(root, storage.directory, relative);
 }
@@ -146,7 +151,7 @@ function walkStorageInputs(root, storage) {
     }
     if (!stat.isFile() || stat.nlink !== 1n) continue;
     const portable = relative.replaceAll("\\", "/");
-    if (SKIP_STORAGE_PREFIXES.some((prefix) => portable.startsWith(prefix))) continue;
+    if (SKIP_STORAGE_PREFIXES.some((prefix) => portable.startsWith(prefix)) || STAMP_EXCLUDED_FILES.has(portable)) continue;
     rows.push([portable, stat.size.toString(), stat.mtimeNs.toString(), stat.ctimeNs.toString(), stat.ino.toString()]);
   }
   rows.sort((left, right) => (left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0));
@@ -166,7 +171,7 @@ function considerGit(rows, relative, absolute) {
     return;
   }
   if (!stat.isFile()) return;
-  rows.push([relative.replaceAll("\\", "/"), stat.size.toString(), stat.mtimeNs.toString()]);
+  rows.push([relative.replaceAll("\\", "/"), stat.size.toString(), stat.mtimeNs.toString(), stat.ctimeNs.toString(), stat.ino.toString()]);
 }
 
 function linkedGitDirectories(root) {
@@ -230,11 +235,12 @@ export function refreshGitIdentity(root) {
   return sha256Hex(JSON.stringify(rows));
 }
 
-// `git` lets a build record the git state it read before it built, so a
-// commit made while it was building leaves the stamp behind the repository
-// and the next refresh takes the full path.
-export function refreshInputStamp(root, storage, { git = refreshGitIdentity(root) } = {}) {
-  return sha256Hex(JSON.stringify({ storage: walkStorageInputs(root, storage), git }));
+// The project store outside snapshots (without the two pointer files) and the
+// local git head and refs. A build takes it BEFORE it reads anything: a record
+// saved or a commit made while it builds then leaves the stored stamp behind
+// the project, and the next refresh takes the full path.
+export function refreshInputStamp(root, storage) {
+  return sha256Hex(JSON.stringify({ storage: walkStorageInputs(root, storage), git: refreshGitIdentity(root) }));
 }
 
 const REVISION_KINDS = new Set([
@@ -279,7 +285,11 @@ function agreedGenerationEntry(entry, file) {
   };
 }
 
-export function writeRefreshInputGeneration({ root, storage, snapshot, verifiedFiles = null, gitIdentity = undefined }) {
+// `stamp` is the stamp taken before the inputs of `snapshot` were read, and
+// `reader` says which installation read them. Without that stamp nothing is
+// written: a stamp taken now could not vouch for what was read earlier.
+export function writeRefreshInputGeneration({ root, storage, snapshot, verifiedFiles = null, stamp, reader = null }) {
+  if (typeof stamp !== "string" || !stamp) return null;
   const graph = snapshot.temporalProvenanceGraph;
   const revisions = graph.nodes.filter((node) => REVISION_KINDS.has(node.kind));
   const files = {};
@@ -299,7 +309,8 @@ export function writeRefreshInputGeneration({ root, storage, snapshot, verifiedF
     parentSourceSnapshotIds: graph.parentSourceSnapshotIds,
     revisionNodeCount: revisions.length,
     parentedRevisionCount: revisions.filter((node) => node.parentRevisionIds?.length > 0).length,
-    stamp: refreshInputStamp(root, storage, gitIdentity === undefined ? {} : { git: gitIdentity }),
+    stamp,
+    reader,
     files,
   };
   atomicWriteText(cachePath(root, storage, INPUT_GENERATION_RELATIVE), JSON.stringify(document));

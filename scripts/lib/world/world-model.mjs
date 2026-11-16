@@ -1,5 +1,5 @@
 import { snapshotReaderRequirements } from "./snapshot-storage-compatibility.mjs";
-import { refreshGitIdentity, writeRefreshInputGeneration } from "./refresh-input-generation.mjs";
+import { refreshInputStamp, writeRefreshInputGeneration } from "./refresh-input-generation.mjs";
 import { stabilizeTemporalRelationIdentities } from "./temporal-relation-identity.mjs";
 import fs from "node:fs";
 import { resolveLocalGitRepository } from "./local-git-repository.mjs";
@@ -664,6 +664,14 @@ export function deriveIncrementalRevisionParents({ previousGraph, candidateGraph
     parents[candidate.logicalEntityId] = unchanged ? [...previous.parentRevisionIds] : [previous.nodeId];
   }
   return Object.fromEntries(Object.entries(parents).sort(([left], [right]) => left.localeCompare(right)));
+}
+
+// What this installation writes into a World apart from the inputs. A new
+// analysis version or plugin version must not be answered with "unchanged".
+let installedPackageVersion = null;
+export function refreshReaderIdentity() {
+  installedPackageVersion ??= JSON.parse(fs.readFileSync(new URL("../../../package.json", import.meta.url), "utf8")).version;
+  return digest(canonicalJson({ indexer: indexerState(), package: installedPackageVersion }));
 }
 
 function indexerState() {
@@ -1549,6 +1557,9 @@ async function buildWorldModelLocked({
   expectedWorldModelId = "",
   expectedCurrentWorldModelId = "",
   writerLease = null,
+  // A string: the stamp the caller took before its own reads (a refresh scans
+  // before it builds). false: write no generation. Otherwise taken here.
+  refreshInputStampBeforeRead = null,
 } = {}) {
   if (filterRevisionParentsToCurrentEntities && persist) {
     fail("Current-entity revision-parent filtering is available only for non-persisted refresh previews.", "REVISION_PARENT_FILTER_PREVIEW_ONLY");
@@ -1556,6 +1567,16 @@ async function buildWorldModelLocked({
   const inspected = readyProject(root);
   const storage = inspected.storage;
   const project = inspected.project;
+  // Before anything below is read. Taken after the build, a record saved or a
+  // commit made while it was building would be stamped as already known.
+  let stampBeforeRead = refreshInputStampBeforeRead;
+  if (persist && stampBeforeRead !== false && typeof stampBeforeRead !== "string") {
+    try {
+      stampBeforeRead = refreshInputStamp(project.projectRoot, storage);
+    } catch {
+      stampBeforeRead = false;
+    }
+  }
   const worldStoreAdapter = createWorldModelStoreAdapter({ storage, projectRoot: project.projectRoot, adapter: storeAdapter });
   const initialPointerEntry = worldStoreAdapter.readPointer();
   const initialPointerBasis = canonicalJson(initialPointerEntry?.document || null);
@@ -1693,14 +1714,6 @@ async function buildWorldModelLocked({
     productOperatingProjectionInput || loadProductOperatingProjection({ storage, projectRoot: project.projectRoot, projectId: project.projectId });
   const releaseObservationProjection =
     releaseObservationProjectionInput || loadReleaseObservationProjection({ storage, projectRoot: project.projectRoot, projectId: project.projectId });
-  // Taken before the git state is read: the refresh stamp written after
-  // publication must describe what this build read, not what git is by then.
-  let gitIdentityBeforeRead = null;
-  try {
-    gitIdentityBeforeRead = refreshGitIdentity(project.projectRoot);
-  } catch {
-    gitIdentityBeforeRead = null;
-  }
   const git = gitHeadState(project.projectRoot);
   const runtimeState = runtimeStateFor(inspected.state);
   const indexer = indexerState();
@@ -2200,14 +2213,15 @@ async function buildWorldModelLocked({
     throw noteCanonBasisError(error, project.projectRoot, storage, productCanonBasis);
   }
   try {
-    // Without the git state from before the read there is nothing honest to stamp.
-    if (gitIdentityBeforeRead !== null)
+    // Without the stamp from before the reads there is nothing honest to record.
+    if (typeof stampBeforeRead === "string")
       writeRefreshInputGeneration({
         root: project.projectRoot,
         storage,
         snapshot,
         verifiedFiles: selectedRepositoryScanExecution.verifiedFiles ?? null,
-        gitIdentity: gitIdentityBeforeRead,
+        stamp: stampBeforeRead,
+        reader: refreshReaderIdentity(),
       });
   } catch {
     /* The generation cache is an optimization. Publication already succeeded. */

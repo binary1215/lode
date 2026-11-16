@@ -209,9 +209,12 @@ export async function upgradeLegacyReaderPointers({ root, storage }) {
   const { verifyWorldModelPointerOriginal } = await import("./world-model.mjs");
   const { replaceGraphPointerReaderRequirements, verifyGraphProjectionPointer } = await import("./graph-projection-adapter.mjs");
   const upgraded = [];
+  // Graph first: its pointer id covers readerRequirements and therefore changes,
+  // and the world pointer names that id for projection recovery.
+  let graphPointerIds = null;
   for (const [layer, directory, idField, hashField] of [
-    ["world", "world-model", "worldModelId", "worldModelHash"],
     ["graph", "graph-projection", "graphSnapshotId", "graphSnapshotHash"],
+    ["world", "world-model", "worldModelId", "worldModelHash"],
   ]) {
     const file = path.join(root, storage.directory, directory, "current.json");
     const pointer = readPointer(root, file);
@@ -227,6 +230,10 @@ export async function upgradeLegacyReaderPointers({ root, storage }) {
       layer === "graph"
         ? replaceGraphPointerReaderRequirements({ ...pointer, readerRequirements: pointer.readerRequirements }, readerRequirements, storage)
         : { ...pointer, readerRequirements };
+    if (layer === "graph" && next.pointerId !== pointer.pointerId) graphPointerIds = { from: pointer.pointerId, to: next.pointerId };
+    const linked = layer === "world" ? pointer.sourceAdapters?.graphProjection : null;
+    if (linked && graphPointerIds && linked.pointerId === graphPointerIds.from)
+      next.sourceAdapters = { ...pointer.sourceAdapters, graphProjection: { ...linked, pointerId: graphPointerIds.to } };
     if (next[idField] !== pointer[idField] || next[hashField] !== pointer[hashField]) fail("STORAGE_POINTER_CHANGED");
     atomicWriteText(file, JSON.stringify(next));
     const written = readPointer(root, file);

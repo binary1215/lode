@@ -93,7 +93,14 @@ function regularBytes(file, limit, publicationAlias = false) {
       againOffset += n;
     }
     const confirmed = fs.fstatSync(fd);
-    if (confirmed.ino !== actual.ino || confirmed.size !== actual.size || !again.equals(bytes)) fail("Worker job file changed during read.");
+    if (
+      confirmed.ino !== actual.ino ||
+      confirmed.size !== actual.size ||
+      confirmed.mtimeMs !== after.mtimeMs ||
+      confirmed.ctimeMs !== after.ctimeMs ||
+      !again.equals(bytes)
+    )
+      fail("Worker job file changed during read.");
     return bytes;
   } finally {
     fs.closeSync(fd);

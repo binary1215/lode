@@ -3,9 +3,17 @@ import path from "node:path";
 import { readContextCapsule } from "../session/context-compiler.mjs";
 import { inspectProject, SCHEMA_VERSION } from "../head-core.mjs";
 import { executeIncrementalRepositoryScan, managedRootFilesForProject, sourceTreeMatchesPublishedFiles } from "./repository-scan.mjs";
-import { readRefreshInputGeneration, refreshInputStamp } from "./refresh-input-generation.mjs";
+import { readRefreshInputGeneration, refreshInputStamp, writeRefreshInputGeneration } from "./refresh-input-generation.mjs";
 import { readRepositorySourceScope } from "./repository-source-scope.mjs";
-import { buildWorldModel, deriveIncrementalRevisionParents, gitHeadState, inspectWorldModel, readWorldModel, readWorldModelSnapshot } from "./world-model.mjs";
+import {
+  buildWorldModel,
+  deriveIncrementalRevisionParents,
+  gitHeadState,
+  inspectWorldModel,
+  readWorldModel,
+  readWorldModelSnapshot,
+  refreshReaderIdentity,
+} from "./world-model.mjs";
 import {
   completePostRefreshProjection,
   inspectPostRefreshProjection as inspectPostRefreshProjectionArtifact,
@@ -668,6 +676,13 @@ async function refreshWorldModelLocked({
   if (mismatch) throw Object.assign(new Error(mismatch.message || mismatch.reasonCode), { code: mismatch.reasonCode });
   const wasLegacy = compatibility.layers.some((layer) => layer.legacyDeclaration);
   if (wasLegacy) await upgradeLegacyReaderPointers({ root: projectRoot, storage: inspected.storage });
+  // Before the scan and the builds read anything (see buildWorldModel).
+  let stampBeforeRead = false;
+  try {
+    stampBeforeRead = refreshInputStamp(projectRoot, inspected.storage);
+  } catch {
+    stampBeforeRead = false;
+  }
   const stored = await readWorldModel({ root: projectRoot, storeAdapter });
   const previousSnapshot = stored.snapshot;
   const request = buildIncrementalRefreshRequest(
@@ -769,6 +784,7 @@ async function refreshWorldModelLocked({
       expectedWorldModelId: nextPreview.snapshot.worldModelId,
       expectedCurrentWorldModelId: previousSnapshot.worldModelId,
       writerLease,
+      refreshInputStampBeforeRead: stampBeforeRead,
     });
     if (
       world.snapshot.worldModelId !== receipt.next.worldModelId ||
@@ -791,6 +807,33 @@ async function refreshWorldModelLocked({
   );
   if (canonicalJson(storedPointer) !== canonicalJson(pointer))
     fail("Incremental refresh pointer changed during persistence.", "REFRESH_POINTER_WRITE_MISMATCH");
+
+  // A full unchanged refresh has rebuilt the preview from every input and found
+  // the published World again, so it may renew what the fast path reads. Not
+  // for a legacy store kept on the shorter comparison, and not for a caller
+  // with its own sources.
+  if (
+    !requiresRefresh &&
+    !keepLegacySnapshot &&
+    typeof stampBeforeRead === "string" &&
+    !storeAdapter &&
+    !graphProjectionAdapter &&
+    !gitHistoryAdapter &&
+    !runtimeStateAdapter
+  ) {
+    try {
+      writeRefreshInputGeneration({
+        root: projectRoot,
+        storage: inspected.storage,
+        snapshot: previousSnapshot,
+        verifiedFiles: repositoryScanExecution.verifiedFiles ?? null,
+        stamp: stampBeforeRead,
+        reader: refreshReaderIdentity(),
+      });
+    } catch {
+      /* The generation is a cache. The refresh itself is complete. */
+    }
+  }
 
   return {
     status: receipt.status,
@@ -829,7 +872,14 @@ async function fastUnchangedRefresh(options, inspected) {
   const projectRoot = inspected.project.projectRoot;
   const storage = inspected.storage;
   const generation = readRefreshInputGeneration(projectRoot, storage);
-  if (!generation || refreshInputStamp(projectRoot, storage) !== generation.stamp) return null;
+  if (!generation || typeof generation.reader !== "string" || generation.reader !== refreshReaderIdentity()) return null;
+  let stampNow;
+  try {
+    stampNow = refreshInputStamp(projectRoot, storage);
+  } catch {
+    return null;
+  }
+  if (stampNow !== generation.stamp) return null;
   const worldFile = path.join(projectRoot, storage.directory, "world-model/current.json");
   const graphFile = path.join(projectRoot, storage.directory, "graph-projection/current.json");
   if (!fs.existsSync(worldFile) || !fs.existsSync(graphFile)) return null;

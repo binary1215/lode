@@ -96,9 +96,10 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     if (
       relative === prefix + "/graph-discovery/index.json" ||
       relative === prefix + "/refresh/file-stat-cache.json" ||
-      relative === prefix + "/refresh/input-generation.json"
+      relative === prefix + "/refresh/input-generation.json" ||
+      relative.startsWith(prefix + "/refresh/.watch-arm-")
     )
-      return; // Rebuildable membership or refresh input cache, not a historical root.
+      return; // Rebuildable membership, refresh input cache or a watcher's leftover startup probe: not a historical root.
     if (relative.endsWith(".tmp")) {
       issue(relative, "UNPUBLISHED_OR_UNKNOWN_STAGE");
       return;
@@ -257,8 +258,9 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
 // inspection. A diagnostic string scan is never its deletion certificate.
 export async function applySnapshotGarbageCollection({ root = ".", signal, onProcess } = {}) {
   // Inventory and reclaim are not one deadline. A single clock made a large
-  // store abort before any unreachable byte was deleted. Each Git command
-  // keeps its own bound; admission covers one unlink, not the walk.
+  // store abort before any unreachable byte was deleted. Each plain Git
+  // command keeps its own bound; the supervised pack step has no clock of its
+  // own and stops on cancellation. Admission covers one unlink, not the walk.
   const owner = readGraphProject(root);
   const result = {
     kind: "SnapshotStorageInspection",
@@ -291,7 +293,7 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
   };
   if (signal?.aborted) return { ...result, code: "SNAPSHOT_GC_CANCELLED" };
   try {
-    const { inspectStorageReaderCompatibility, upgradeLegacyReaderPointers } = await import("./snapshot-storage-compatibility.mjs");
+    const { inspectStorageReaderCompatibility } = await import("./snapshot-storage-compatibility.mjs");
     const { verifyWorldModelPointerOriginal } = await import("./world-model.mjs");
     const { verifyGraphProjectionPointer } = await import("./graph-projection-adapter.mjs");
     const compatibility = inspectStorageReaderCompatibility({
@@ -309,7 +311,9 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
         requiredVersion: mismatch.requiredVersion || null,
         installedVersion: mismatch.installedVersion || null,
       };
-    if (compatibility.layers.some((layer) => layer.legacyDeclaration)) await upgradeLegacyReaderPointers({ root: owner.projectRoot, storage: owner.storage });
+    // A pointer written before minimumReader existed is read as it is. GC does
+    // not rewrite it: that write belongs under the writer lease, which the next
+    // refresh holds when it records the missing fields.
   } catch (error) {
     if (error.code === "STORAGE_VERSION_MISMATCH") return { ...result, code: error.code, message: error.message };
   }
