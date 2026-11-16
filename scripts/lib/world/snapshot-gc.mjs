@@ -15,6 +15,7 @@ import { sha256Hex as sha } from "../core/digest.mjs";
 import { hydrateSnapshotEntry } from "./snapshot-domain-bundles.mjs";
 import {
   ancestryIdsOf,
+  namedRecordIds,
   resolveSnapshotRetentionPolicy,
   selectRetainedSnapshotIds,
   snapshotIdsIn,
@@ -214,6 +215,8 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false, re
           relative: relative.slice(prefix.length + 1),
           references: ids(text),
           ancestryIds: document && typeof document === "object" ? ancestryIdsOf(document) : [],
+          namedRecordIds: document && typeof document === "object" ? namedRecordIds(document) : [],
+          digestReferences: [...new Set(text.match(/[a-f0-9]{64}/g) || [])],
           requiredWorldHashes,
         });
       }
@@ -270,8 +273,11 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false, re
   const decision = selectRetainedSnapshotIds({ snapshots, roots, policy: retentionPolicy });
   const kept = (item) =>
     decision.preserveAllHistory ? reasons.has(item.path) : decision.keepIds.has(item.id) || (item.identityIds || []).some((id) => decision.keepIds.has(id));
+  // D5: when the dry run already knows apply would refuse (issues other than
+  // the unopened typed backends), it names nothing as reclaimable.
+  const applyWouldRefuse = issues.length > 0 && !typedBackendDeferred;
   const rows = snapshots.map((item) => {
-    const keep = kept(item);
+    const keep = kept(item) || applyWouldRefuse;
     return {
       id: item.id,
       path: item.path,
@@ -288,6 +294,7 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false, re
             : "APPLY_REQUIRES_TYPED_CLOSURE_AND_LIFETIME",
     };
   });
+  if (applyWouldRefuse) for (const row of rows) if (!kept(snapshots.find((item) => item.path === row.path))) row.reasonCode = "INCOMPLETE_REFERENCE_COVERAGE";
   const reclaimable = rows.filter((item) => item.disposition === "reclaim");
   return {
     kind: "SnapshotStorageInspection",
@@ -310,8 +317,10 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false, re
       preserveAllHistory: retentionPolicy.preserveAllHistory,
       reclaimableSnapshots: reclaimable.length,
       policy: retentionPolicy.preserveAllHistory
-        ? "retention config is not usable; historical snapshots stay"
-        : `keep the current world, snapshots pinned by decisions and records, and the last ${retentionPolicy.keepCount} world generations or ${retentionPolicy.keepDays} days`,
+        ? retentionPolicy.source === "not-configured"
+          ? "no retention window configured; every retained reference and its ancestry stays"
+          : "retention config is not usable; historical snapshots stay"
+        : `keep the current pointers and what they name, snapshots pinned by decisions and records, snapshots without a trustworthy time, and the newest ${retentionPolicy.keepCount} Worlds by write time or those written in the last ${retentionPolicy.keepDays} days`,
     },
     physicalStorage: mergePhysicalStorageObservations([
       summarizeObservedStorageFiles(physicalRows, { complete: !stopped && !physicalIssues.length, issues: physicalIssues }),
@@ -514,8 +523,10 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
       referencedSnapshots: closure.retained.size,
       eligibleOrphanSnapshots: closure.candidates.length,
       policy: retentionPolicy.preserveAllHistory
-        ? "retention config is not usable; historical snapshots stay; zero reclaimed bytes can be a complete successful result"
-        : `keep the current world, snapshots pinned by decisions and records, and the last ${retentionPolicy.keepCount} world generations or ${retentionPolicy.keepDays} days; older unpinned history is eligible; zero reclaimed bytes can be a complete successful result`,
+        ? retentionPolicy.source === "not-configured"
+          ? "no retention window configured; every retained reference and its ancestry stays; zero reclaimed bytes can be a complete successful result"
+          : "retention config is not usable; historical snapshots stay; zero reclaimed bytes can be a complete successful result"
+        : `keep the current pointers and what they name, snapshots pinned by decisions and records, snapshots without a trustworthy time, and the newest ${retentionPolicy.keepCount} Worlds by write time or those written in the last ${retentionPolicy.keepDays} days; older unpinned history is eligible; zero reclaimed bytes can be a complete successful result`,
     };
     result.status = result.code
       ? result.applyPerformed

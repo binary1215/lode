@@ -1,9 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 
-// Age and count apply only to published World history that nothing the user
-// can diff still names. Current worlds, decision/record pins, and the chunks
-// those snapshots need stay. An unreadable policy keeps every historical
+// A retention window is opt-in: without a policy file and without
+// --keep-count / --keep-days, storage GC keeps exactly what it kept before
+// (every retained reference and its ancestry). When a window is configured,
+// age and count apply only to published World history that nothing current or
+// recorded still names. Current pointers and what they name, decision/record
+// pins, snapshots named by hash, snapshots without a trustworthy time and the
+// parts those snapshots need stay. An unreadable policy keeps every historical
 // snapshot instead of guessing.
 export const DEFAULT_SNAPSHOT_RETENTION = Object.freeze({ keepCount: 8, keepDays: 14 });
 export const SNAPSHOT_RETENTION_RELATIVE = "refresh/snapshot-retention.json";
@@ -20,7 +24,7 @@ function parsePolicy(document) {
 export function resolveSnapshotRetentionPolicy({ root, storage, override = null } = {}) {
   const preserve = (source) => ({ ...DEFAULT_SNAPSHOT_RETENTION, source, preserveAllHistory: true });
   let policy = { ...DEFAULT_SNAPSHOT_RETENTION };
-  let source = "default";
+  let source = "not-configured";
   if (root && storage?.directory) {
     const file = path.join(root, storage.directory, SNAPSHOT_RETENTION_RELATIVE);
     if (fs.existsSync(file)) {
@@ -44,6 +48,8 @@ export function resolveSnapshotRetentionPolicy({ root, storage, override = null 
     policy = parsed;
     source = "override";
   }
+  // Nothing configured: no window, the behaviour from before retention existed.
+  if (source === "not-configured") return { ...policy, source, preserveAllHistory: true };
   return { ...policy, source, preserveAllHistory: false };
 }
 
@@ -86,7 +92,42 @@ export function ancestryIdsOf(document) {
   return [...found];
 }
 
-export function isHistoryRoot(relative) {
+// The ids of records a current pointer names (its receipt and request), so
+// those records are kept with the snapshots they need.
+export function namedRecordIds(document) {
+  const found = [];
+  if (!document || typeof document !== "object" || Array.isArray(document)) return found;
+  for (const [key, value] of Object.entries(document)) if (/(?:ReceiptId|RequestId)$/.test(key) && typeof value === "string" && value) found.push(value);
+  return found;
+}
+
+const tail = (relative) => {
+  const normalized = String(relative || "").replaceAll("\\", "/");
+  for (const marker of ["world-model/current.json", "graph-projection/current.json", "refresh/current.json", "document-projection/post-refresh/current.json"])
+    if (normalized === marker || normalized.endsWith("/" + marker)) return marker;
+  return null;
+};
+export const isCurrentPointerRoot = (relative) => tail(relative) !== null;
+
+// Paths of the history records the current pointers name: they are read by
+// refresh status and by the next build, so they are not history to a window.
+export function currentRecordPaths(roots = []) {
+  const named = new Set();
+  for (const root of roots) if (isCurrentPointerRoot(root.relative || root.path)) for (const id of root.namedRecordIds || []) named.add(id);
+  const paths = new Set();
+  for (const root of roots) {
+    const name = String(root.relative || root.path || "")
+      .replaceAll("\\", "/")
+      .split("/")
+      .pop()
+      .replace(/\.json$/, "");
+    if (named.has(name)) paths.add(root.relative || root.path);
+  }
+  return paths;
+}
+
+export function isHistoryRoot(relative, protectedPaths = null) {
+  if (isCurrentPointerRoot(relative) || protectedPaths?.has(relative)) return false;
   const normalized = String(relative || "").replaceAll("\\", "/");
   const refresh = normalized.includes("/refresh/") ? normalized.slice(normalized.lastIndexOf("refresh/")) : normalized;
   const projection = normalized.includes("document-projection/post-refresh/")
@@ -101,21 +142,26 @@ export function isHistoryRoot(relative) {
   );
 }
 
+// The file's modification time, or null when the row has none it can trust
+// (a snapshot inside the git store carries no time). Such rows are kept.
 function mtimeMsOf(row) {
-  if (Number.isFinite(row.mtimeMs)) return row.mtimeMs;
+  if (Number.isFinite(row.mtimeMs) && row.mtimeMs > 0) return row.mtimeMs;
   const raw = row.identity?.mtime;
-  if (raw == null || !/^\d+$/.test(String(raw))) return 0;
+  if (raw == null || !/^\d+$/.test(String(raw))) return null;
   try {
     const value = BigInt(raw);
-    return Number(value > 100000000000000n ? value / 1000000n : value);
+    const ms = Number(value > 100000000000000n ? value / 1000000n : value);
+    return ms > 0 ? ms : null;
   } catch {
-    return 0;
+    return null;
   }
 }
 
 // keepIds are snapshot ids and identity ids that must survive. hardIds are the
 // ones a missing file must report. History receipts and parent links are not
-// hard: they only order the count/age window.
+// hard: they only order the window. Current pointers (World, Graph, refresh,
+// post-refresh) are hard with their ancestry (previousWorldModelId), and so is
+// what the refresh pointers name; a snapshot named by hash in a record is kept.
 export function selectRetainedSnapshotIds({ snapshots = [], roots = [], policy, nowMs = Date.now() } = {}) {
   if (!policy || policy.preserveAllHistory) return { preserveAllHistory: true, keepIds: null, hardIds: null, reasons: new Map() };
   const byId = new Map();
@@ -124,43 +170,46 @@ export function selectRetainedSnapshotIds({ snapshots = [], roots = [], policy, 
       if (!byId.has(id)) byId.set(id, []);
       byId.get(id).push(row);
     }
+  const protectedPaths = currentRecordPaths(roots);
   const hardIds = new Set();
-  const addHard = (id) => {
-    if (SNAPSHOT_ID.test(id || "")) hardIds.add(id);
-  };
-  for (const root of roots) {
-    if (isHistoryRoot(root.relative || root.path)) continue;
-    const ancestry = new Set(root.ancestryIds || []);
-    for (const id of root.references || []) if (!ancestry.has(id)) addHard(id);
-    for (const digest of root.requiredWorldHashes || []) if (/^[a-f0-9]{64}$/.test(digest)) addHard("world-model-" + digest.slice(0, 24));
-  }
-  const published = [];
-  const seen = new Set();
-  const stack = [];
-  for (const root of roots) {
-    if (
-      !String(root.relative || root.path || "")
-        .replaceAll("\\", "/")
-        .endsWith("world-model/current.json")
-    )
-      continue;
-    for (const id of root.references || []) if (id.startsWith("world-model-")) stack.push(id);
-  }
-  while (stack.length) {
-    const id = stack.pop();
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    for (const row of byId.get(id) || []) {
-      if (String(row.id || "").startsWith("world-model-") && !published.some((item) => item.id === row.id)) published.push(row);
-      for (const parent of row.ancestryIds || []) if (!seen.has(parent)) stack.push(parent);
-    }
-  }
-  published.sort((left, right) => mtimeMsOf(right) - mtimeMsOf(left) || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
-  const keepIds = new Set(hardIds);
   const reasons = new Map();
-  for (const id of hardIds) reasons.set(id, "retained-decision-or-current");
+  const addHard = (id, reason = "retained-decision-or-current") => {
+    if (!SNAPSHOT_ID.test(id || "")) return;
+    hardIds.add(id);
+    if (!reasons.has(id)) reasons.set(id, reason);
+  };
+  const hashes = new Map();
+  for (const row of snapshots)
+    for (const digest of [row.sha256, row.worldModelHash, row.graphSnapshotHash].filter((value) => /^[a-f0-9]{64}$/.test(value || ""))) {
+      if (!hashes.has(digest)) hashes.set(digest, []);
+      hashes.get(digest).push(row);
+    }
+  for (const root of roots) {
+    const relative = root.relative || root.path;
+    if (isHistoryRoot(relative, protectedPaths)) continue;
+    const current = isCurrentPointerRoot(relative) || protectedPaths.has(relative);
+    const ancestry = new Set(root.ancestryIds || []);
+    for (const id of root.references || []) if (current || !ancestry.has(id)) addHard(id, current ? "retained-current" : "retained-decision-or-current");
+    for (const digest of root.requiredWorldHashes || []) if (/^[a-f0-9]{64}$/.test(digest)) addHard("world-model-" + digest.slice(0, 24));
+    for (const digest of root.digestReferences || []) for (const row of hashes.get(digest) || []) addHard(row.id, "retained-by-hash");
+  }
+  // Every published World, by its own write time, whatever its lineage: a
+  // sibling published without a parent is as recent as its time says.
+  const timed = [];
+  const keepIds = new Set(hardIds);
+  for (const row of snapshots) {
+    if (!String(row.id || "").startsWith("world-model-")) continue;
+    if (mtimeMsOf(row) === null) {
+      keepIds.add(row.id);
+      for (const id of row.identityIds || []) keepIds.add(id);
+      if (!reasons.has(row.id)) reasons.set(row.id, "retained-no-trustworthy-time");
+      continue;
+    }
+    if (!timed.some((item) => item.id === row.id)) timed.push(row);
+  }
+  timed.sort((left, right) => mtimeMsOf(right) - mtimeMsOf(left) || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
   const cutoff = policy.keepDays > 0 ? nowMs - policy.keepDays * 24 * 60 * 60 * 1000 : null;
-  published.forEach((row, index) => {
+  timed.forEach((row, index) => {
     const recentCount = index < policy.keepCount;
     const recentAge = cutoff != null && mtimeMsOf(row) >= cutoff;
     if (!recentCount && !recentAge) return;
@@ -168,6 +217,7 @@ export function selectRetainedSnapshotIds({ snapshots = [], roots = [], policy, 
     for (const id of row.identityIds || []) keepIds.add(id);
     if (!reasons.has(row.id)) reasons.set(row.id, recentCount ? "retained-recent-count" : "retained-recent-age");
   });
+  for (const id of hardIds) for (const row of byId.get(id) || []) for (const identity of row.identityIds || []) keepIds.add(identity);
   const queue = [...keepIds];
   while (queue.length) {
     const id = queue.pop();
@@ -181,5 +231,5 @@ export function selectRetainedSnapshotIds({ snapshots = [], roots = [], policy, 
       }
     }
   }
-  return { preserveAllHistory: false, keepIds, hardIds, reasons };
+  return { preserveAllHistory: false, keepIds, hardIds, reasons, protectedPaths };
 }

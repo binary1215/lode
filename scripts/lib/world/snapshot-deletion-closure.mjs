@@ -33,6 +33,7 @@ import { failCode as failure } from "../core/errors.mjs";
 import {
   ancestryIdsOf,
   isHistoryRoot,
+  namedRecordIds,
   resolveSnapshotRetentionPolicy,
   selectRetainedSnapshotIds,
   SNAPSHOT_RETENTION_RELATIVE,
@@ -203,6 +204,7 @@ function referenceSummary(document) {
   return {
     references: ids(encoded),
     ancestryIds: ancestryIdsOf(document),
+    namedRecordIds: namedRecordIds(document),
     digestReferences: [...new Set(encoded.match(/[a-f0-9]{64}/g) || [])],
     requiredWorldHashes: [...requiredWorldHashes],
     pins,
@@ -462,7 +464,7 @@ export async function buildSnapshotDeletionClosure({
     (byId.get(id) || []).some((row) => decision.keepIds.has(row.id) || (row.identityIds || []).some((item) => decision.keepIds.has(item)));
   function follow(summary) {
     const ancestry = new Set(summary.ancestryIds || []);
-    const history = isHistoryRoot(summary.relative || summary.path);
+    const history = isHistoryRoot(summary.relative || summary.path, decision.protectedPaths);
     for (const id of summary.references || []) {
       if (!decision.preserveAllHistory && ancestry.has(id)) continue;
       const matches = byId.get(id);
@@ -477,7 +479,8 @@ export async function buildSnapshotDeletionClosure({
       decision.preserveAllHistory || !summary.id || selected(summary.id) || (summary.identityIds || []).some((id) => selected(id)) || (!history && !summary.id);
     if (pinContents)
       for (const digest of summary.digestReferences || []) {
-        if (decision.preserveAllHistory) (byHash.get(digest) || []).forEach(retain);
+        // A record outside history that names a snapshot by its hash keeps it.
+        if (decision.preserveAllHistory || !history) (byHash.get(digest) || []).forEach(retain);
         else for (const row of byHash.get(digest) || []) if (selected(row.id)) retain(row);
         if (mixed.objects.has(digest)) pinnedOids.add(digest);
         for (const row of mixed.domains.values()) if (row.rawSha256 === digest) pinnedPaths.add(row.path);
@@ -506,7 +509,7 @@ export async function buildSnapshotDeletionClosure({
     }
   }
   for (const summary of roots) {
-    if (!decision.preserveAllHistory && isHistoryRoot(summary.relative)) continue;
+    if (!decision.preserveAllHistory && isHistoryRoot(summary.relative || summary.path, decision.protectedPaths)) continue;
     follow(summary);
   }
   if (!decision.preserveAllHistory) for (const row of snapshots) if (selected(row.id)) retain(row);

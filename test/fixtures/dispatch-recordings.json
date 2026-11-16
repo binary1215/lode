@@ -18668,6 +18668,38 @@
   },
   {
    "surface": "cli",
+   "command": "storage-gc",
+   "argv": [
+    "storage-gc",
+    "<root>",
+    "--apply",
+    "--keep-count",
+    "sample-keep-count",
+    "--keep-days",
+    "sample-keep-days"
+   ],
+   "calls": [
+    {
+     "fn": "snapshot-gc#applySnapshotGarbageCollection",
+     "args": [
+      {
+       "root": "<root>",
+       "signal": "$undefined",
+       "onProcess": "$undefined",
+       "retention": {
+        "keepCount": null,
+        "keepDays": null
+       }
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "version",
    "argv": [
     "version",
@@ -21477,38 +21509,6 @@
        "depth": 3,
        "maxNodes": 3,
        "maxEdges": 3
-      }
-     ]
-    }
-   ],
-   "outcome": {
-    "ok": true
-   }
-  },
-  {
-   "surface": "cli",
-   "command": "storage-gc",
-   "argv": [
-    "storage-gc",
-    "<root>",
-    "--apply",
-    "--keep-count",
-    "sample-keep-count",
-    "--keep-days",
-    "sample-keep-days"
-   ],
-   "calls": [
-    {
-     "fn": "snapshot-gc#applySnapshotGarbageCollection",
-     "args": [
-      {
-       "root": "<root>",
-       "signal": "$undefined",
-       "onProcess": "$undefined",
-       "retention": {
-        "keepCount": null,
-        "keepDays": null
-       }
       }
      ]
     }

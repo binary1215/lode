@@ -26,7 +26,6 @@ manual request or verified RefreshTriggerBatch
   -> the first refresh of a store whose pointers predate minimumReader upgrades the pointers and keeps the published World when only these still match: the recorded source file paths and digests, the git head (status, commit, ref) and the Product Model canon hash. It does not compare other store records (Sessions, work records, direction, runs, observations), other git refs or history, the skipped-file counters, the source scope or runtime state; it writes no fast-path record, so the next refresh takes the full path and sees a change there
   -> reuse analysis only for digest-identical verified files
   -> validate one complete RepositoryScanResult
-  -> when the product model hash is unchanged, derive revision parents from the previous graph and the current file digests instead of a separate old-parent preview
   -> preview a child SourceSnapshot and GraphSnapshot and build the refresh receipt from that preview
   -> persist the refresh request, then publish the World only when its id is the preview id
   -> persist an immutable IncrementalRefreshReceipt after the published World matches that receipt
