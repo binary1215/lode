@@ -8,9 +8,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { sha256Hex } from "../core/digest.mjs";
+import { canonicalJson } from "../core/canonical-json.mjs";
 import { failCode as fail } from "../core/errors.mjs";
 import { atomicCreateArtifact, atomicWriteArtifact } from "../core/fs-atomic.mjs";
-import { readGraphProject } from "./discovery-index.mjs";
+import { readGraphProject, safeGraphFile } from "./discovery-index.mjs";
 import { withProjectMutation } from "../storage/project-mutation-lock.mjs";
 import {
   PRODUCT_GRAPH_APPROVAL_DIRECTORY,
@@ -50,11 +51,18 @@ import {
   sourceTextHash,
 } from "./product-graph-compare.mjs";
 import { productGraphWalk as walk } from "../../graph-explorer/product-graph-walk.js";
+import { openParseCache, PRODUCT_GRAPH_CACHE_FILE, parserIdentity } from "./product-graph-cache.mjs";
 
 export const PRODUCT_GRAPH_VERSION = 1;
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const nfc = (name) => name.normalize("NFC");
+const buildScope = (inputs) => ({
+  projectId: inputs.projectId || null,
+  sourceRootHash: sha256Hex(fs.realpathSync.native(inputs.sourceRoot).replaceAll("\\", "/")),
+  reader: productGraphReader(PRODUCT_GRAPH_VERSION),
+  parserSha256: parserIdentity(),
+});
 
 export const NODE_TYPES = Object.freeze([
   "제품코어",
@@ -262,7 +270,7 @@ function readRules(inputs) {
 
 // ---------- graph and checks ----------
 
-function loadDocuments(inputs) {
+function loadDocuments(inputs, cache = null) {
   const read = readDocumentFiles(inputs.documentsDirectory);
   // Approved digests per document path, so a document whose text changed
   // after approval can be told apart from one never approved.
@@ -293,14 +301,22 @@ function loadDocuments(inputs) {
     if (!["document", "policy", "meaning"].includes(file.role)) continue;
     const text = decodeProductGraphText(file.bytes);
     const base = { path: file.path, text };
-    let parsed;
-    if (file.role === "meaning") parsed = parseMeaningFile(base);
-    else if (file.role === "policy") parsed = parsePolicyFile(base);
-    else if (file.nodeType === "화면") parsed = parseScreenDocument({ ...base, id: file.id });
-    else if (file.nodeType === "유저 활동") parsed = parseActivityDocument({ ...base, id: file.id });
-    else if (file.nodeType === "유저저니") parsed = parseJourneyDocument(base);
-    else if (file.nodeType === "IA") parsed = parseIaDocument(base);
-    else parsed = parseCoreDocument(base);
+    const parseKey = `document:${file.path}`;
+    let parsed = cache?.getWork(parseKey, file.sha256);
+    if (parsed && typeof parsed === "object" && Array.isArray(parsed.issues)) cache.stats.documentParsesReused = (cache.stats.documentParsesReused || 0) + 1;
+    else {
+      if (file.role === "meaning") parsed = parseMeaningFile(base);
+      else if (file.role === "policy") parsed = parsePolicyFile(base);
+      else if (file.nodeType === "화면") parsed = parseScreenDocument({ ...base, id: file.id });
+      else if (file.nodeType === "유저 활동") parsed = parseActivityDocument({ ...base, id: file.id });
+      else if (file.nodeType === "유저저니") parsed = parseJourneyDocument(base);
+      else if (file.nodeType === "IA") parsed = parseIaDocument(base);
+      else parsed = parseCoreDocument(base);
+      if (cache) {
+        cache.putWork(parseKey, file.sha256, parsed);
+        cache.stats.documentParsesComputed = (cache.stats.documentParsesComputed || 0) + 1;
+      }
+    }
     const approvalDigest = file.approvable ? productGraphApprovalDigest(file.bytes) : null;
     const approved = file.approvable ? Boolean(approvals.get(file.path)?.has(approvalDigest)) : null;
     const changedAfterApproval = file.approvable && !approved && approvals.has(file.path);
@@ -699,7 +715,7 @@ function compute({ extraction, loaded, includeEstimates }) {
   };
 }
 
-function graphDocument({ extraction, loaded, computed, inputs, rules, result }) {
+function graphDocument({ extraction, loaded, computed, inputs, rules, result, cache = null }) {
   const nodes = [];
   const edges = [];
   const basisOf = (document) => (document ? { path: document.path, status: document.status, estimateKind: document.estimateKind } : null);
@@ -861,7 +877,7 @@ function graphDocument({ extraction, loaded, computed, inputs, rules, result }) 
     nodes,
     edges,
   };
-  return addContentHashes(graph, extraction.readFiles, extraction.unresolvedHandlers);
+  return addContentHashes(graph, extraction.readFiles, extraction.unresolvedHandlers, cache);
 }
 
 // ---------- readable text ----------
@@ -957,10 +973,25 @@ function limitsOf({ extraction, computed, includeEstimates, loaded, callbacks })
 function run(options, { requireOutput }) {
   const inputs = resolveInputs({ ...options, requireOutput });
   const rules = readRules(inputs);
-  const extraction = extractProductGraphCode({ sourceRoot: inputs.sourceRoot, projectRules: rules.rules });
-  const loaded = loadDocuments(inputs);
+  const cacheFile = inputs.outputDirectory ? path.join(inputs.outputDirectory, PRODUCT_GRAPH_CACHE_FILE) : null;
+  const cache = requireOutput && options.incremental !== false ? openParseCache(cacheFile, rules.rules) : null;
+  const extractionStarted = performance.now();
+  const extraction = extractProductGraphCode({ sourceRoot: inputs.sourceRoot, projectRules: rules.rules, cache });
+  if (cache) cache.stats.extractionMilliseconds = performance.now() - extractionStarted;
+  const loaded = loadDocuments(inputs, cache);
   const includeEstimates = options.includeEstimates === true;
-  const computed = compute({ extraction, loaded, includeEstimates });
+  const { readFiles, rawReadFiles, ...topology } = extraction;
+  const computationBasis = cache ? cache.signature({ topology, loaded, includeEstimates }) : null;
+  let computed = cache?.getWork("document-checks", computationBasis);
+  if (computed && Array.isArray(computed.checks) && computed.elementOwner instanceof Map)
+    cache.stats.documentChecks = "reused-same-topology-and-document-facts";
+  else {
+    computed = compute({ extraction, loaded, includeEstimates });
+    if (cache) {
+      cache.putWork("document-checks", computationBasis, computed);
+      cache.stats.documentChecks = "recomputed";
+    }
+  }
   const callbacks = extraction.references.filter((item) => item.type === "callback").reduce((sum, item) => sum + item.count, 0);
   const result = {
     kind: "ProductGraphCheck",
@@ -989,11 +1020,11 @@ function run(options, { requireOutput }) {
     documents: { ...computed.documentSummary, approvalsRead: loaded.approvalsRead },
   };
   result.limits = limitsOf({ extraction, computed, includeEstimates, loaded, callbacks });
-  const graph = graphDocument({ extraction, loaded, computed, inputs, rules, result });
-  const baseline = compareToBaseline({ inputs, graph, computed, takeIfMissing: requireOutput });
+  const graph = graphDocument({ extraction, loaded, computed, inputs, rules, result, cache });
+  const baseline = compareToBaseline({ inputs, graph, computed, readFiles: extraction.readFiles, takeIfMissing: requireOutput });
   result.changes = baseline.changes;
   result.text = renderProductGraphText(result);
-  return { inputs, rules, extraction, loaded, computed, result, graph, baseline };
+  return { inputs, rules, extraction, loaded, computed, result, graph, baseline, cache };
 }
 
 const baselineFile = (inputs) => path.join(inputs.outputDirectory, PRODUCT_GRAPH_BASELINE_FILE);
@@ -1013,7 +1044,7 @@ function outputStat(directory) {
   }
 }
 
-function compareToBaseline({ inputs, graph, computed, takeIfMissing }) {
+function compareToBaseline({ inputs, graph, computed, readFiles, takeIfMissing }) {
   if (!inputs.outputDirectory) return { changes: noBaseline("독립 검사에는 출력 폴더가 없어 기준을 읽지 않는다") };
   // Something other than a folder where the output folder belongs is refused
   // by a build with the product graph reason before anything under it is read;
@@ -1028,11 +1059,15 @@ function compareToBaseline({ inputs, graph, computed, takeIfMissing }) {
   const read = readBaseline(baselineFile(inputs));
   const meaning = computed.meaningDocument;
   const meaningLines = (meaning?.parsed.meanings || []).map((item) => ({ id: item.id, at: { path: meaning.path, line: item.line } }));
-  if (read.baseline) return { changes: compareWithBaseline(graph, read.baseline, { meaningLines }), state: { status: "kept", setAt: read.baseline.setAt } };
-  if (read.missing && takeIfMissing) {
-    const taken = baselineFromGraph(graph, { setAt: new Date().toISOString() });
+  if (read.baseline)
     return {
-      changes: compareWithBaseline(graph, taken, { meaningLines }),
+      changes: compareWithBaseline(graph, read.baseline, { meaningLines, readFiles, scope: buildScope(inputs) }),
+      state: { status: "kept", setAt: read.baseline.setAt },
+    };
+  if (read.missing && takeIfMissing) {
+    const taken = baselineFromGraph(graph, { setAt: new Date().toISOString(), readFiles, scope: buildScope(inputs) });
+    return {
+      changes: compareWithBaseline(graph, taken, { meaningLines, readFiles, scope: buildScope(inputs) }),
       taken,
       state: { status: "taken-now", setAt: taken.setAt, message: "기준 없음 — 이번 빌드를 기준으로 삼았다" },
     };
@@ -1048,7 +1083,7 @@ export function checkProductGraph(options = {}) {
 
 export function buildProductGraph(options = {}) {
   const ran = run(options, { requireOutput: true });
-  const { inputs, result, graph, baseline } = ran;
+  const { inputs, result, graph, baseline, cache } = ran;
   const output = inputs.outputDirectory;
   const { text, ...structured } = result;
   const files = [
@@ -1056,6 +1091,9 @@ export function buildProductGraph(options = {}) {
     ["check.json", json(structured)],
     ["check.txt", text],
   ];
+  const context = { kind: "ProductGraphBuildContext", graphSha256: sha256Hex(canonicalJson(graph)), scope: buildScope(inputs) };
+  const auxiliary = [],
+    auxiliaryIssues = [];
   const created = baseline.taken ? [[PRODUCT_GRAPH_BASELINE_FILE, serializeBaseline(baseline.taken)]] : [];
   const write = () => {
     if (inputs.mode === "project") assertNoLinkedComponents(inputs.projectRoot, output);
@@ -1073,6 +1111,26 @@ export function buildProductGraph(options = {}) {
         }
     }
     for (const [name, content] of files) atomicWriteArtifact(path.join(output, name), content);
+    const writeAuxiliary = (name, content) => {
+      try {
+        const target = path.join(output, name),
+          existing = fs.lstatSync(target, { throwIfNoEntry: false });
+        if (existing && (!existing.isFile() || existing.isSymbolicLink())) {
+          auxiliaryIssues.push({ name, reason: "not-regular; left unchanged" });
+          return;
+        }
+        atomicWriteArtifact(target, content);
+        auxiliary.push(name);
+      } catch (error) {
+        auxiliaryIssues.push({ name, reason: error.code || "unavailable" });
+      }
+    };
+    writeAuxiliary("build-context.json", json(context));
+    if (cache) {
+      const serialized = cache.serialize();
+      if (serialized !== null) writeAuxiliary(PRODUCT_GRAPH_CACHE_FILE, serialized);
+      else auxiliaryIssues.push({ name: PRODUCT_GRAPH_CACHE_FILE, reason: "cache byte bound; full build remains usable" });
+    }
     // The baseline is written once; only product-graph-baseline moves it.
     for (const [name, content] of created)
       try {
@@ -1091,6 +1149,11 @@ export function buildProductGraph(options = {}) {
     outputLocation: inputs.mode === "project" ? `${inputs.storage.directory}/${PRODUCT_GRAPH_DIRECTORY}/${PRODUCT_GRAPH_BUILD_DIRECTORY}` : output,
     nodes: graph.nodes.length,
     edges: graph.edges.length,
+    auxiliary,
+    auxiliaryIssues,
+    processing: cache
+      ? { ...cache.stats, scope: "file facts and dependency-bound resolution/check contributions; global dependency changes fall back to full" }
+      : { scope: "full" },
     ...result,
   };
 }
@@ -1109,7 +1172,7 @@ function buildCommandOf(inputs) {
 
 function sourceHashNow(sourceRoot, relative) {
   try {
-    const file = path.join(sourceRoot, ...relative.split("/"));
+    const file = safeGraphFile(sourceRoot, relative);
     const stat = fs.lstatSync(file);
     if (!stat.isFile() || stat.size > PRODUCT_GRAPH_SOURCE_READ_BYTES) return null;
     return sourceTextHash(new TextDecoder("utf-8", { fatal: true }).decode(fs.readFileSync(file)));
@@ -1254,6 +1317,13 @@ export function readProductGraphBuild(options = {}) {
   if (graph?.kind !== "LodeProductGraph" || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges) || check?.kind !== "ProductGraphCheck")
     return { status: "unreadable", code: "PRODUCT_GRAPH_BUILD_UNREADABLE", reason: "빌드 파일의 모양이 제품 그래프가 아니다", buildCommand, inputs, directory };
   const baseline = readBaseline(path.join(directory, PRODUCT_GRAPH_BASELINE_FILE));
+  let buildContext = null;
+  try {
+    const metadata = JSON.parse(readBounded(path.join(directory, "build-context.json")));
+    if (metadata.kind === "ProductGraphBuildContext" && metadata.graphSha256 === sha256Hex(canonicalJson(graph))) buildContext = metadata;
+  } catch {
+    /* Old or mismatched context is unknown, not a new graph gate. */
+  }
   return {
     status: "built",
     builtAt: stat.mtime.toISOString(),
@@ -1261,6 +1331,8 @@ export function readProductGraphBuild(options = {}) {
     check,
     freshness: freshnessOf(inputs, graph),
     baselineNow: baseline.baseline ? { setAt: baseline.baseline.setAt } : null,
+    baselineEvidence: baseline.baseline || null,
+    buildContext,
     buildCommand,
     inputs,
     directory,
@@ -1288,7 +1360,18 @@ export function moveProductGraphBaseline(options = {}) {
   const move = () => {
     const old = readBaseline(file);
     const previous = old.baseline ? { setAt: old.baseline.setAt, droppedChanges: dropped.changes, droppedReviewAgain: dropped.reviewAgain } : null;
-    const baseline = baselineFromGraph(graph, { setAt: new Date().toISOString(), previous });
+    const readFiles = new Map();
+    for (const source of graph.inputs.sourceFiles) {
+      try {
+        const filePath = safeGraphFile(inputs.sourceRoot, source.path);
+        const bytes = readBounded(filePath),
+          text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        if (sourceTextHash(text) === source.sha256) readFiles.set(source.path, text);
+      } catch {
+        /* Missing display never substitutes current text for a previous version. */
+      }
+    }
+    const baseline = baselineFromGraph(graph, { setAt: new Date().toISOString(), previous, readFiles, scope: buildScope(inputs) });
     if (inputs.mode === "project") assertNoLinkedComponents(inputs.projectRoot, file);
     atomicWriteArtifact(file, serializeBaseline(baseline));
     return { baseline, previous };

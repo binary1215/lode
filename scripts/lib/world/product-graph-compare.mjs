@@ -46,7 +46,7 @@ export function declarationText(fileLines, [start, end]) {
 
 // Adds contentSha256 to every node and reachSha256 to every 기능, in place.
 // Hashes are attributes; no ID changes.
-export function addContentHashes(graph, readFiles, unresolvedHandlers = []) {
+export function addContentHashes(graph, readFiles, unresolvedHandlers = [], cache = null) {
   const texts = new Map();
   for (const [file, text] of readFiles) texts.set(file, normalizeSourceText(text));
   const linesOf = new Map();
@@ -75,13 +75,37 @@ export function addContentHashes(graph, readFiles, unresolvedHandlers = []) {
       node.contentSha256 = sha256Hex(canonicalJson(stated));
     }
   }
+  const closureCache = new Map();
+  const relationBasis = cache
+    ? cache.signature({
+        codes: graph.nodes.filter((node) => node.type === "코드").map((node) => [node.id, node.kind]),
+        edges: graph.edges.filter((edge) => ["call", "callback"].includes(edge.type)).map((edge) => [edge.type, edge.from, edge.to]),
+        constructors: [...ix.constructors],
+      })
+    : null;
   for (const node of graph.nodes) {
     if (node.type !== "기능") continue;
-    const reached = [...walk.closure(ix, walk.handlersOf(ix, node.id))]
-      .filter((id) => ix.nodes.get(id)?.type === "코드")
-      .sort(compare)
-      .map((id) => [id, ix.nodes.get(id).contentSha256]);
-    node.reachSha256 = sha256Hex(canonicalJson(reached));
+    const handlers = walk.handlersOf(ix, node.id).sort(compare),
+      key = JSON.stringify(handlers);
+    const cachedKey = `reach:${key}`,
+      cached = cache?.getWork(cachedKey, relationBasis);
+    if (!closureCache.has(key))
+      closureCache.set(
+        key,
+        Array.isArray(cached?.ids) && cached.ids.every((id) => ix.nodes.get(id)?.type === "코드")
+          ? cached.ids
+          : [...walk.closure(ix, handlers)].filter((id) => ix.nodes.get(id)?.type === "코드").sort(compare),
+      );
+    const ids = closureCache.get(key),
+      reached = ids.map((id) => [id, ix.nodes.get(id).contentSha256]);
+    const contentKey = canonicalJson(reached);
+    const reused = cached?.contentKey === contentKey && typeof cached?.reachSha256 === "string";
+    node.reachSha256 = reused ? cached.reachSha256 : sha256Hex(contentKey);
+    if (cache) {
+      const stat = reused ? "reachHashesReused" : "reachHashesComputed";
+      cache.stats[stat] = (cache.stats[stat] || 0) + 1;
+      cache.putWork(cachedKey, relationBasis, { ids, contentKey, reachSha256: node.reachSha256 });
+    }
   }
   return graph;
 }
@@ -90,7 +114,87 @@ export function addContentHashes(graph, readFiles, unresolvedHandlers = []) {
 
 const edgeKey = (type, from, to) => `${type}\u0000${from}\u0000${to}`;
 
-export function baselineFromGraph(graph, { setAt, previous = null }) {
+export function displayEvidence(graph, readFiles = new Map()) {
+  let remaining = 2 * 1024 * 1024;
+  const evidence = Object.create(null);
+  // Prefer declarations to duplicate whole-file displays. This is one
+  // replaceable baseline's bounded display, not a permanent source archive.
+  const nodes = [...graph.nodes].sort((a, b) => Number(a.id === a.file) - Number(b.id === b.file) || compare(a.id, b.id));
+  const files = new Map((graph.inputs?.sourceFiles || []).map((file) => [file.path, file.sha256]));
+  const sources = new Map();
+  for (const node of nodes) {
+    let text, format;
+    if (node.type === "코드") {
+      if (!sources.has(node.file)) {
+        const source = readFiles.get(node.file);
+        const normalized = typeof source === "string" && sourceTextHash(source) === files.get(node.file) ? normalizeSourceText(source) : null;
+        sources.set(node.file, normalized === null ? null : { text: normalized, lines: normalized.split("\n") });
+      }
+      const source = sources.get(node.file);
+      if (!source) continue;
+      text = node.id === node.file || !node.lines ? source.text : declarationText(source.lines, node.lines);
+      if (textHash(text) !== node.contentSha256) continue;
+      format = "normalized-source-lines";
+    } else {
+      const { at, basis, contentSha256, reachSha256, ...stated } = node;
+      text = JSON.stringify(stated, null, 2);
+      format = "stated-fields";
+    }
+    const bytes = Buffer.from(text),
+      maximum = Math.min(16 * 1024, remaining);
+    // UTF-8 decode truncation is avoided: a display is an exact text prefix.
+    let shown = text;
+    if (bytes.length > maximum) {
+      shown = bytes.subarray(0, maximum).toString("utf8");
+      while (Buffer.byteLength(shown) > maximum || !text.startsWith(shown)) shown = shown.slice(0, -1);
+    }
+    remaining -= Buffer.byteLength(shown);
+    const meaningSource = node.type === "기능" && node.oneLine ? (graph.inputs.documents || []).find((doc) => doc.path === "기능 뜻.md") : null;
+    const sourcePath = meaningSource?.path || node.file || node.at?.path || node.basis?.path || null;
+    evidence[node.id] = {
+      status: !maximum ? "unavailable" : shown === text ? "available" : "partial",
+      ...(!maximum ? { reason: "표시 예산을 넘었다; 전체 표시값 digest만 보존" } : {}),
+      format,
+      text: shown,
+      textSha256: textHash(shown),
+      fullTextSha256: textHash(text),
+      contentSha256: node.contentSha256,
+      sourceSha256: files.get(node.file) || (graph.inputs.documents || []).find((doc) => doc.path === sourcePath)?.sha256 || null,
+      sourcePath,
+      sourceHashKind:
+        node.type === "코드"
+          ? "BOM-dropped LF-normalized UTF-8"
+          : node.type === "기능"
+            ? meaningSource
+              ? "meaning document bytes; entry/rule fields are derived"
+              : "derived entry/rule fields"
+            : "document bytes",
+      basis: node.basis || null,
+      lines: node.lines || null,
+      totalBytes: bytes.length,
+    };
+  }
+  return evidence;
+}
+
+function verifiedDisplay(entry, node) {
+  if (!entry || typeof entry.text !== "string" || entry.contentSha256 !== node?.contentSha256 || textHash(entry.text) !== entry.textSha256)
+    return { status: "unavailable", reason: "이 기준에 검증 가능한 과거 본문/표시값이 없다" };
+  if (!["available", "partial", "unavailable"].includes(entry.status) || !["normalized-source-lines", "stated-fields"].includes(entry.format))
+    return { status: "unavailable", reason: "표시 근거 형식을 확인할 수 없다" };
+  if (
+    entry.fullTextSha256 &&
+    (!/^[a-f0-9]{64}$/.test(entry.fullTextSha256) ||
+      (entry.status === "available" && entry.fullTextSha256 !== entry.textSha256) ||
+      (entry.format === "normalized-source-lines" && entry.fullTextSha256 !== node.contentSha256))
+  )
+    return { status: "unavailable", reason: "전체 표시값 digest가 보관 본문/기준과 일치하지 않는다" };
+  if (entry.format === "normalized-source-lines" && entry.status === "available" && entry.textSha256 !== node.contentSha256)
+    return { status: "unavailable", reason: "구간 내용 해시가 기준과 다르다" };
+  return entry.sourcePath && entry.sourceSha256 ? entry : { ...entry, sourceHashKind: "derived display fields; original source witness unavailable" };
+}
+
+export function baselineFromGraph(graph, { setAt, previous = null, readFiles = new Map(), scope = null }) {
   const edges = new Set();
   for (const edge of graph.edges) edges.add(edgeKey(edge.type, edge.from, edge.to));
   const positions = new Map(graph.nodes.map((node, position) => [node.id, position]));
@@ -105,6 +209,8 @@ export function baselineFromGraph(graph, { setAt, previous = null }) {
     rulesSha256: graph.inputs.rulesSha256,
     documents: graph.inputs.documents.map(({ path, sha256 }) => ({ path, sha256 })),
     sourceFiles: graph.inputs.sourceFiles,
+    displayEvidence: displayEvidence(graph, readFiles),
+    scope,
     // [id, type, kind, file, lines, contentSha256, reachSha256]
     nodes: graph.nodes.map((node) => [
       node.id,
@@ -180,7 +286,7 @@ function movableName(node) {
   return `코드\u0000${node.kind}\u0000${hash >= 0 ? node.id.slice(hash + 1).replace(/~\d+$/, "") : node.id}`;
 }
 
-function baselineGraph(baseline) {
+export function baselineGraph(baseline) {
   const endpoint = (value) => (typeof value === "number" ? baseline.nodes[value][0] : value);
   return {
     nodeTypes: [],
@@ -190,7 +296,33 @@ function baselineGraph(baseline) {
 }
 
 // meaningLines: [{ id, at }] — the lines of 기능 뜻.md.
-export function compareWithBaseline(graph, baseline, { meaningLines = [] } = {}) {
+export function compareWithBaseline(graph, baseline, { meaningLines = [], readFiles = new Map(), scope = null } = {}) {
+  const reasons = [],
+    priorScope = baseline.scope;
+  const validScope = (value) =>
+    value &&
+    /^[a-f0-9]{64}$/.test(value.sourceRootHash || "") &&
+    /^[a-f0-9]{64}$/.test(value.parserSha256 || "") &&
+    value.reader &&
+    (value.projectId === null || typeof value.projectId === "string");
+  if (!validScope(priorScope) || !validScope(scope)) reasons.push("기준/현재의 Project·소스 루트·reader 근거가 없다");
+  else {
+    if (priorScope.projectId !== scope.projectId) reasons.push("다른 Project의 기준이다");
+    if (priorScope.sourceRootHash !== scope.sourceRootHash) reasons.push("다른 소스 루트의 기준이다");
+    if (
+      priorScope.parserSha256 !== scope.parserSha256 ||
+      readerKey(priorScope.reader) !== readerKey(scope.reader) ||
+      readerKey(priorScope.reader) !== readerKey(baseline.reader) ||
+      readerKey(scope.reader) !== readerKey(graph.inputs.reader)
+    )
+      reasons.push("기준/현재 reader witness가 다르거나 일치하지 않는다");
+  }
+  const comparisonScope = {
+    status: reasons.length ? "partial" : "verified",
+    reasons,
+    oldBodyEligible: reasons.length === 0,
+    structuralComparison: "ID/content/reach/edge only; not source lineage authority",
+  };
   const sameReader = readerKey(graph.inputs.reader) === readerKey(baseline.reader);
   const sameRules = (graph.inputs.rulesSha256 ?? null) === (baseline.rulesSha256 ?? null);
   const before = baselineGraph(baseline);
@@ -354,6 +486,32 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [] } = {})
     });
   }
   const sum = (field) => byType.reduce((total, group) => total + group[field].length, 0);
+  const afterDisplay = displayEvidence(graph, readFiles);
+  const contentChanges = [];
+  const displayCoverage = { compared: 0, unknownComparison: 0, unavailableBefore: 0, unavailableAfter: 0 };
+  for (const id of [...new Set([...beforeIx.nodes.keys(), ...afterIx.nodes.keys()])].sort(compare)) {
+    const old = beforeIx.nodes.get(id),
+      now = afterIx.nodes.get(id);
+    const oldDisplay = old
+      ? comparisonScope.oldBodyEligible
+        ? verifiedDisplay(baseline.displayEvidence?.[id], old)
+        : { status: "unavailable", reason: reasons.join(" / ") }
+      : { status: "absent" };
+    const nowDisplay = now ? verifiedDisplay(afterDisplay[id], now) : { status: "absent" };
+    const fingerprint = (entry) =>
+      /^[a-f0-9]{64}$/.test(entry.fullTextSha256 || "") ? entry.fullTextSha256 : entry.status === "available" ? entry.textSha256 : null;
+    const oldFingerprint = fingerprint(oldDisplay),
+      nowFingerprint = fingerprint(nowDisplay);
+    if (old && now) {
+      if (oldFingerprint && nowFingerprint) displayCoverage.compared += 1;
+      else displayCoverage.unknownComparison += 1;
+    }
+    if (oldDisplay.status === "unavailable") displayCoverage.unavailableBefore += 1;
+    if (nowDisplay.status === "unavailable") displayCoverage.unavailableAfter += 1;
+    const displayChanged = oldFingerprint && nowFingerprint && oldFingerprint !== nowFingerprint;
+    if (!status.has(id) && !displayChanged) continue;
+    contentChanges.push({ id, type: now?.type || old?.type, change: status.get(id) || "display-changed", before: oldDisplay, after: nowDisplay });
+  }
   const changes = {
     status: "compared",
     baseline: { setAt: baseline.setAt, previous: baseline.previous ?? null },
@@ -371,6 +529,16 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [] } = {})
     maybeMoved,
     unexplained,
     reviewAgain,
+    contentChanges,
+    displayCoverage,
+    comparisonScope,
+    interpretation: {
+      kind: "net-diff",
+      intermediateEvents: "not-observed",
+      changeReasons: "not-inferred",
+      rawByteEquality: false,
+      declarationBoundary: "scanner-line-range; not an AST body",
+    },
   };
   changes.counts = {
     changed: sum("changed"),
