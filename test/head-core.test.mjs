@@ -2322,7 +2322,7 @@ test("watches filesystem changes through the bounded debounced refresh adapter",
     watcher.watcher.off("change", observeRawEvent);
     await watcher.close({ flush: false });
   });
-  await new Promise((resolve) => setImmediate(resolve)); // Let native watcher startup enter the event loop.
+  await watcher.ready; // macOS FSEvents drops a write made before the stream is listening.
   observations.appendElapsedMs = performance.now() - startedAt;
   fs.appendFileSync(path.join(root, "src", "watched.mjs"), "export const changed = 2;\n");
   const result = await delivered;

@@ -923,9 +923,52 @@ export function createFileSystemRefreshWatcher({
       onError(error);
     } catch {}
   };
+  // macOS FSEvents drops writes that happen before the stream is listening and does not replay them.
+  // A private file under .lode is rewritten until that stream reports it. Callers that must not lose
+  // the first edit await `ready`. The arm file is ignored storage, never a refresh input.
+  const armName = `.watch-arm-${process.pid}-${Date.now().toString(36)}`;
+  const armRelative = `.lode/refresh/${armName}`;
+  const armPath = path.join(queue.root, ".lode", "refresh", armName);
+  let armTimer = null;
+  let armAttempted = false;
+  let armSettled = false;
+  let resolveReady = () => {};
+  const ready = new Promise((resolve) => {
+    resolveReady = resolve;
+  });
+  const settleArm = () => {
+    if (armSettled) return;
+    armSettled = true;
+    if (armTimer) clearInterval(armTimer);
+    armTimer = null;
+    try {
+      fs.rmSync(armPath, { force: true });
+    } catch {
+      /* the arm file is a startup probe, not project state */
+    }
+    resolveReady();
+  };
+  const armSignal = (filename) => {
+    if (!armAttempted || filename == null) return false;
+    const name = String(filename).replaceAll("\\", "/").replace(/^\.\//, "");
+    return name === armRelative || name.endsWith(`/${armName}`) || name.endsWith(armName);
+  };
+  const writeArm = () => {
+    armAttempted = true;
+    try {
+      fs.mkdirSync(path.dirname(armPath), { recursive: true });
+      fs.writeFileSync(armPath, "arm\n");
+    } catch {
+      /* the next interval retries until the stream reports the file or the watcher closes */
+    }
+  };
   let watcher;
   try {
     watcher = fs.watch(fs.realpathSync.native(queue.root), { recursive: true, encoding: "utf8" }, async (eventType, filename) => {
+      if (armSignal(filename)) {
+        settleArm();
+        return;
+      }
       try {
         await queue.enqueue(
           filename == null
@@ -940,11 +983,16 @@ export function createFileSystemRefreshWatcher({
     fail(`Filesystem refresh watcher could not start: ${error.message}`, "REFRESH_WATCHER_START_FAILED");
   }
   watcher.on("error", reportError);
+  writeArm();
+  armTimer = setInterval(writeArm, 40);
+  armTimer.unref?.();
   return {
     projectRoot: queue.root,
     queue,
     watcher,
+    ready,
     async close({ flush = true } = {}) {
+      settleArm();
       watcher.close();
       return queue.close({ flush });
     },

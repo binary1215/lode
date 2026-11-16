@@ -17,6 +17,7 @@ Host/MCP reload.
 - Fixed: that mismatch no longer says "a newer reader or newer". Status, refresh and GC say it is a version mismatch, not corrupted storage, including when this installation is older than the store, and name recovery: upgrade Lode, or run `world-index` on a reader that understands the layout.
 - Fixed: snapshot GC no longer abandons reclaim when a store-wide walk exceeds 30 seconds. Inventory is not inside one shared deadline or the admission lock. Each Git command keeps its own bound. Unreachable snapshot files and domain bundles are removed when their reference closure is complete; a later run continues with whatever remains. macOS APFS, HFS and MSDOS volumes named by `/sbin/mount` can run the same GC. Other platforms and network filesystems still preserve.
 - Changed: refresh re-reads a file when its size, mtime, ctime or inode differs from the last verified scan, and otherwise reuses that verified digest and analysis. A refresh whose source stats and non-snapshot storage inputs are unchanged does not rebuild the world graph and does not write a new World or Graph snapshot. A real edit still rebuilds the snapshot.
+- Fixed: the filesystem refresh watcher reports `ready` only after the operating system has delivered a watch event. A change made before that, which macOS FSEvents drops, is no longer the first event the watcher is asked to see.
 
 ## 0.3.0-beta.126 — publication tracked separately
 
