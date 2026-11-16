@@ -39,7 +39,7 @@ import {
   selectRetainedSnapshotIds,
   SNAPSHOT_RETENTION_RELATIVE,
 } from "./snapshot-retention-policy.mjs";
-import { readRetentionReleases, RETENTION_RELEASE_DIRECTORY } from "./snapshot-retention-releases.mjs";
+import { judgeMissingReference, readRetentionReleases, RETENTION_RELEASE_DIRECTORY } from "./snapshot-retention-releases.mjs";
 import { inspectStorageReaderCompatibility } from "./snapshot-storage-compatibility.mjs";
 
 const ids = (encoded) => [...new Set(encoded.match(/\b(?:world-model|graph-snapshot|source-snapshot)-[a-f0-9]{24}\b/g) || [])];
@@ -505,12 +505,22 @@ export function selectRetainedClosure({
   const protectedPaths = decision.protectedPaths || currentRecordPaths(roots);
   const releasedReferences = [];
   const missing = (summary, id, reasonCode, digest = null) => {
-    if (deferred?.id(id)) return;
-    const release = released.get(id);
-    const fromHistory = summary.id ? (summary.ancestryIds || []).includes(id) : isHistoryRoot(summary.relative || summary.path, protectedPaths);
-    if (release && fromHistory && (digest === null || release.hash === digest))
-      releasedReferences.push({ path: summary.path, id, releasedAt: release.releasedAt, releaseId: release.releaseId });
-    else issue(summary.path, reasonCode);
+    // A release record names only snapshots the apply unlinked, so such an id
+    // is judged even where the preview cannot see a backend; any other id that
+    // may live in an unopened backend is left to the apply.
+    // A record whose snapshot is still stored (an unlink that failed after the
+    // record was written) does not count: that snapshot is present.
+    const listed = released.get(id);
+    const release = listed && !byId.has(listed.snapshotId) ? listed : null;
+    if (!release && deferred?.id(id)) return;
+    const verdict = judgeMissingReference({
+      release,
+      digest,
+      fromRoot: !summary.id,
+      history: summary.id ? (summary.ancestryIds || []).includes(id) : isHistoryRoot(summary.relative || summary.path, protectedPaths),
+    });
+    if (verdict === "missing") issue(summary.path, reasonCode);
+    else releasedReferences.push({ kind: verdict, path: summary.path, id, releasedAt: release.releasedAt, releaseId: release.releaseId, record: release.path });
   };
   const windowed = !decision.preserveAllHistory;
   const selected = (id) =>
@@ -769,6 +779,9 @@ export async function buildSnapshotDeletionClosure({
     releaseRules: releaseRules(candidates, snapshots, roots, !decision.preserveAllHistory),
     releasedReferences,
     releaseRecords: releases.records,
+    releaseStaging: releases.staging,
+    // The inventoried roots (reference summaries only), for diagnostics and tests.
+    roots,
     issues,
     omittedIssues: inventory.omittedIssues,
     // Files and folders in the product graph folder that Lode does not

@@ -1866,6 +1866,14 @@ function snapshotRetentionLines(retention, { applied, value = {} }) {
     lines.push(
       `History names ${references.snapshots} snapshot(s) that retention released on ${references.releasedOn.join(", ")}: released by retention, not missing.`,
     );
+  const records = retention.recordsNamingReleased;
+  if (records)
+    lines.push(
+      `Records that name a snapshot retention released: ${records.count} reference(s) to ${records.snapshots} snapshot(s), released on ${records.releasedOn.join(", ")}. The snapshots are gone; this does not block GC. List: --json (retention.recordsNamingReleased).`,
+    );
+  if (retention.checksNotMade?.length) lines.push("Not checked by this preview (the apply checks them): " + retention.checksNotMade.join(", ") + ".");
+  if (retention.releaseStaging?.length)
+    lines.push(`Staging file(s) an interrupted release record create left: ${retention.releaseStaging.length}; ignored, may be removed by hand.`);
   return [...lines, ...releaseProblemLines(value)];
 }
 

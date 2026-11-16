@@ -24,6 +24,10 @@ import { readIncrementalRefreshReceipt } from "../scripts/lib/world/incremental-
 import { inspectGraphLineage } from "../scripts/lib/world/graph-lineage.mjs";
 import { adoptVerifiedProjectCopy } from "../scripts/lib/storage/project-copy-adoption.mjs";
 import { buildSnapshotDeletionClosure, selectRetainedClosure } from "../scripts/lib/world/snapshot-deletion-closure.mjs";
+import { readPostRefreshProjectionReceipt } from "../scripts/lib/world/incremental-refresh.mjs";
+import { processRefreshTriggerBatch } from "../scripts/lib/world/refresh-trigger.mjs";
+import { ConformanceTriggerRegistry } from "../scripts/lib/runtime/conformance-trigger-adapter.mjs";
+import { createRecoveryCheckpoint as checkpointFor } from "../scripts/lib/session/compaction-recovery.mjs";
 import {
   buildRetentionRelease,
   planRetentionReleases,
@@ -582,26 +586,6 @@ test("H2 condition 4: an unusable release record excuses nothing and is named; w
   assert.equal((await readIncrementalRefreshReceipt({ root: f.root, refreshReceiptId: oldest, allowReleased: true })).status, "released-by-retention");
 });
 
-test("H2 condition 2: a record that names a released World by id after the release is a missing pin, not released history", async (t) => {
-  const f = project(t);
-  for (let i = 0; i < 4; i += 1) await f.next();
-  const applied = await applySnapshotGarbageCollection({ root: f.root, retention: WINDOW });
-  const released = deletedIds(applied).find((id) => id.startsWith("world-model-"));
-  const knowledgeFile = path.join(f.store, "context/knowledge.json");
-  const knowledge = JSON.parse(fs.readFileSync(knowledgeFile, "utf8"));
-  knowledge.decisions.push({ decisionId: "late-pin", summary: "Pins a World retention already released", worldModelId: released });
-  fs.writeFileSync(knowledgeFile, JSON.stringify(knowledge));
-  const dry = inspectSnapshotGarbageCollection({ root: f.root });
-  assert.equal(dry.applyAvailable, false);
-  assert.ok(referenceIssues(dry).length > 0);
-  const refused = await applySnapshotGarbageCollection({ root: f.root });
-  assert.equal(refused.code, "SNAPSHOT_GC_REFERENCE_COVERAGE_INCOMPLETE");
-  assert(
-    refused.coverage.issues.some((item) => item.path.endsWith("context/knowledge.json")),
-    JSON.stringify(refused.coverage.issues),
-  );
-});
-
 // A copy whose origin Lode has not verified, as a moved folder is; then adopted.
 function adoptedCopy(t, f) {
   const copy = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-retention-copy-")));
@@ -622,8 +606,6 @@ function adoptedCopy(t, f) {
 
 // Storage GC itself refuses on any adopted folder copy (its snapshots name the
 // original root); that refusal is older than retention and the control shows it.
-// What this test covers: the records and the policy file travel byte for byte,
-// the copy's readers say released, and the copy's GC adds no release issue.
 test("H2 condition 6: a Project copied as a folder and adopted carries its release records and its policy file, and its readers say released", async (t) => {
   // Control: storage GC on an adopted copy refuses for reasons that have nothing to do with retention.
   const control = project(t);
@@ -702,60 +684,6 @@ test("J2: a Capsule compiled on a World with a parent keeps that parent under a 
   assert.deepEqual(referenceIssues(dry), []);
   const plain = await applySnapshotGarbageCollection({ root: f.root });
   assert.equal(plain.status, "gc_applied", JSON.stringify({ code: plain.code, issues: plain.coverage?.issues }));
-});
-
-test("J3/J4 unit: only history and a snapshot's own lineage are excused; a protected receipt, a snapshot's content and a hash that does not match are not", () => {
-  const id = (kind, n) => kind + "-" + String(n).padStart(24, "0");
-  const hash = (n) => String(n).padStart(64, "0");
-  const released = new Map(
-    [id("world-model", 1), id("world-model", 2), id("world-model", 3), id("world-model", 4), id("world-model", 5)].map((item, index) => [
-      item,
-      { releaseId: "retention-release-" + "a".repeat(24), releasedAt: "2026-11-17T00:00:00.000Z", snapshotId: item, hash: hash(index + 1) },
-    ]),
-  );
-  const kept = {
-    id: id("world-model", 9),
-    path: ".lode/world-model/snapshots/" + id("world-model", 9) + ".json.gz",
-    identityIds: [id("world-model", 9)],
-    // World 1 is its parent; World 2 is named in its content.
-    references: [id("world-model", 9), id("world-model", 1), id("world-model", 2)],
-    ancestryIds: [id("world-model", 1)],
-  };
-  const roots = [
-    { path: ".lode/context/knowledge.json", relative: "context/knowledge.json", references: [id("world-model", 9)] },
-    { path: ".lode/refresh/current.json", relative: "refresh/current.json", references: [], namedRecordIds: ["incremental-refresh-receipt-current"] },
-    // The receipt the refresh pointer names is not history.
-    {
-      path: ".lode/refresh/receipts/incremental-refresh-receipt-current.json",
-      relative: "refresh/receipts/incremental-refresh-receipt-current.json",
-      references: [id("world-model", 3)],
-    },
-    // An older receipt is history; one names World 4 by id, one names World 5 by a hash that is not its own.
-    {
-      path: ".lode/refresh/receipts/incremental-refresh-receipt-old.json",
-      relative: "refresh/receipts/incremental-refresh-receipt-old.json",
-      references: [id("world-model", 4)],
-    },
-    {
-      path: ".lode/refresh/receipts/incremental-refresh-receipt-older.json",
-      relative: "refresh/receipts/incremental-refresh-receipt-older.json",
-      references: [],
-      requiredWorldHashes: ["0".repeat(24).replace(/0{24}$/, String(5).padStart(24, "0")) + "f".repeat(40)],
-    },
-  ];
-  const issues = [];
-  const { releasedReferences } = selectRetainedClosure({
-    snapshots: [kept],
-    roots,
-    decision: { preserveAllHistory: true },
-    issue: (path, reasonCode) => issues.push({ path, reasonCode }),
-    released,
-  });
-  assert.deepEqual(releasedReferences.map((item) => item.id).sort(), [id("world-model", 1), id("world-model", 4)]);
-  const issuePaths = issues.map((item) => item.path).sort();
-  assert(issuePaths.includes(kept.path), "World 2 in the kept World's content");
-  assert(issuePaths.includes(".lode/refresh/receipts/incremental-refresh-receipt-current.json"), "the receipt the pointer names");
-  assert(issuePaths.includes(".lode/refresh/receipts/incremental-refresh-receipt-older.json"), "a hash that is not the released one");
 });
 
 test("J5: an apply's releases are split so no record nears the reader's bound; all of them read back", async (t) => {
@@ -916,14 +844,312 @@ test("J11: after a windowed apply the next refresh takes the full path once and 
   assert.equal(second.diagnostics?.repositoryScan?.executionMode, "stat-cache-unchanged");
 });
 
-test("J10: without a window or a release record the reference summary carries no window bookkeeping", async (t) => {
+// ---------- review round 4 ----------
+
+const recordsNaming = (result) => result.retention?.recordsNamingReleased;
+
+test("K1: records written after a windowed apply that name a released snapshot are reported on every run and never block GC", async (t) => {
+  const f = project(t);
+  for (let i = 0; i < 4; i += 1) await f.next();
+  const applied = await applySnapshotGarbageCollection({ root: f.root, retention: WINDOW });
+  assert.equal(applied.status, "gc_applied");
+  const releasedWorld = deletedIds(applied).find((id) => id.startsWith("world-model-"));
+  const record = JSON.parse(fs.readFileSync(path.join(f.root, applied.retentionRelease.path), "utf8"));
+  const entry = record.released.find((item) => item.id === releasedWorld);
+  // A knowledge decision by id, written after the release.
+  const knowledgeFile = path.join(f.store, "context/knowledge.json");
+  const knowledge = JSON.parse(fs.readFileSync(knowledgeFile, "utf8"));
+  knowledge.decisions.push({ decisionId: "late-pin", summary: "Pins a World retention already released", worldModelId: releasedWorld });
+  // And one by its hash (the released one's own hash: reported).
+  knowledge.decisions.push({ decisionId: "late-hash", summary: "Names it by hash", worldModelHash: entry.hash });
+  fs.writeFileSync(knowledgeFile, JSON.stringify(knowledge));
+  // Session work and a checkpoint that quote the id out of storage-gc output.
+  recordSessionWorkEvidence({ root: f.root, input: { summary: "storage-gc said " + releasedWorld + " was released" } });
+  checkpointFor({ root: f.root, purpose: "Keep going", currentPosition: "Looked at " + releasedWorld, nextExpectedResult: "Continue" });
+  for (const round of [1, 2])
+    for (const retention of [null, WINDOW]) {
+      const dry = inspectSnapshotGarbageCollection({ root: f.root, retention });
+      assert.equal(dry.applyAvailable, true, `round ${round}: ${JSON.stringify(dry.coverage.issues)}`);
+      assert.deepEqual(referenceIssues(dry), []);
+      const named = recordsNaming(dry);
+      assert.ok(named?.count >= 3, JSON.stringify(dry.retention));
+      for (const item of named.entries) assert.equal(item.id, releasedWorld);
+      assert(named.entries.some((item) => item.path.endsWith("context/knowledge.json")));
+      assert(named.entries.every((item) => item.record === applied.retentionRelease.path && item.releasedAt === record.releasedAt));
+      assert.match(formatCliResult("storage-gc", dry), /Records that name a snapshot retention released: \d+ reference/);
+      const run = await applySnapshotGarbageCollection({ root: f.root, retention });
+      assert.equal(run.status, "gc_applied", `round ${round}: ${JSON.stringify({ code: run.code, issues: run.coverage?.issues })}`);
+      assert.ok(recordsNaming(run)?.count >= 3);
+      assert.match(formatCliResult("storage-gc", run), /Records that name a snapshot retention released/);
+    }
+  // A hash that is not the released one's is still an issue.
+  const wrong = { decisionId: "wrong-hash", summary: "Wrong hash", worldModelHash: releasedWorld.slice("world-model-".length) + "0".repeat(40) };
+  assert.notEqual(wrong.worldModelHash, entry.hash);
+  knowledge.decisions.push(wrong);
+  fs.writeFileSync(knowledgeFile, JSON.stringify(knowledge));
+  const refused = await applySnapshotGarbageCollection({ root: f.root });
+  assert.equal(refused.code, "SNAPSHOT_GC_REFERENCE_COVERAGE_INCOMPLETE");
+  assert(refused.coverage.issues.some((item) => item.reasonCode === "RETAINED_WORLD_HASH_UNAVAILABLE" && item.path.endsWith("context/knowledge.json")));
+});
+
+test("K1: a Capsule compiled after the apply that lists a released parent is reported and never blocks GC", async (t) => {
+  const f = project(t);
+  for (let i = 0; i < 4; i += 1) await f.next();
+  const applied = await applySnapshotGarbageCollection({ root: f.root, retention: WINDOW });
+  assert.equal(applied.status, "gc_applied");
+  const record = JSON.parse(fs.readFileSync(path.join(f.root, applied.retentionRelease.path), "utf8"));
+  const releasedWorld = record.released.find((item) => item.id.startsWith("world-model-"));
+  const releasedSource = releasedWorld.identityIds.find((id) => id.startsWith("source-snapshot-"));
+  // The current World now lists that released source snapshot as an extra parent.
+  fs.writeFileSync(f.source, "def add(a, b):\n    return a + b + 999\n");
+  const refreshed = await refreshWorldModel({ root: f.root, additionalParentSourceSnapshotIds: [releasedSource] });
+  assert.equal(refreshed.status, "refreshed");
+  const capsule = await compileContext({ root: f.root, task: "Explain add", budget: 32768, persist: true });
+  assert.equal(capsule.status, "compiled");
+  const capsuleFile = path.join(f.store, "context/capsules", capsule.capsule.capsuleId + ".json");
+  assert(fs.readFileSync(capsuleFile, "utf8").includes(releasedSource), "the Capsule lists the released parent");
+  for (const retention of [null, WINDOW]) {
+    const dry = inspectSnapshotGarbageCollection({ root: f.root, retention });
+    assert.equal(dry.applyAvailable, true, JSON.stringify(dry.coverage.issues));
+    assert(
+      recordsNaming(dry)?.entries.some((item) => item.id === releasedSource && item.path.endsWith(capsule.capsule.capsuleId + ".json")),
+      JSON.stringify(dry.retention),
+    );
+    const run = await applySnapshotGarbageCollection({ root: f.root, retention });
+    assert.equal(run.status, "gc_applied", JSON.stringify({ code: run.code, issues: run.coverage?.issues }));
+  }
+  assert.equal(readContextCapsule({ root: f.root, capsuleId: capsule.capsule.capsuleId }).capsule.capsuleId, capsule.capsule.capsuleId);
+});
+
+test("K2 unit: one rule for a reference to a snapshot that is not stored", () => {
+  const id = (n) => "world-model-" + String(n).padStart(24, "0");
+  const hash = (n) => String(n).padStart(24, "0") + "a".repeat(40);
+  const released = new Map(
+    [1, 2, 3, 4, 5, 6].map((n) => [
+      id(n),
+      {
+        releaseId: "retention-release-" + "a".repeat(24),
+        releasedAt: "2026-11-17T00:00:00.000Z",
+        snapshotId: id(n),
+        hash: hash(n),
+        path: ".lode/refresh/retention-releases/r.json",
+      },
+    ]),
+  );
+  const kept = {
+    id: id(9),
+    path: ".lode/world-model/snapshots/" + id(9) + ".json.gz",
+    identityIds: [id(9)],
+    references: [id(9), id(1), id(2)],
+    ancestryIds: [id(1)],
+  };
+  const roots = [
+    {
+      path: ".lode/context/knowledge.json",
+      relative: "context/knowledge.json",
+      references: [id(9), id(3)],
+      requiredWorldHashes: [hash(5), id(6).slice(12) + "b".repeat(40)],
+    },
+    {
+      path: ".lode/refresh/receipts/incremental-refresh-receipt-old.json",
+      relative: "refresh/receipts/incremental-refresh-receipt-old.json",
+      references: [id(4), id(7)],
+    },
+  ];
+  const issues = [];
+  const { releasedReferences } = selectRetainedClosure({
+    snapshots: [kept],
+    roots,
+    decision: { preserveAllHistory: true },
+    issue: (path, reasonCode) => issues.push({ path, reasonCode }),
+    released,
+  });
+  const by = (kind) =>
+    releasedReferences
+      .filter((item) => item.kind === kind)
+      .map((item) => item.id)
+      .sort();
+  assert.deepEqual(by("released-history"), [id(1), id(4)], "a snapshot's own lineage and an older receipt");
+  assert.deepEqual(by("released-in-record"), [id(3), id(5)], "a record by id, and by the released one's own hash");
+  // World 2 in a stored snapshot's content, World 6 by a hash that is not its own, World 7 named by no record.
+  assert.deepEqual(issues.map((item) => item.reasonCode + " " + item.path).sort(), [
+    "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE .lode/refresh/receipts/incremental-refresh-receipt-old.json",
+    "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE .lode/world-model/snapshots/" + id(9) + ".json.gz",
+    "RETAINED_WORLD_HASH_UNAVAILABLE .lode/context/knowledge.json",
+  ]);
+});
+
+test("K3: a link or a special file inside a mailbox or a folder of the user's own does not stop the preview, as it does not stop the apply", async (t) => {
+  const f = project(t);
+  for (let i = 0; i < 4; i += 1) await f.next();
+  const mailbox = path.join(f.store, "messaging", "inbox");
+  const mine = path.join(f.store, "context/product-graph", "my folder");
+  fs.mkdirSync(mailbox, { recursive: true });
+  fs.mkdirSync(mine, { recursive: true });
+  fs.writeFileSync(path.join(mailbox, "a.eml"), "x");
+  fs.writeFileSync(path.join(mine, "a.bin"), "x");
+  // A hard link pair is a "special" file to storage GC (nlink 2).
+  fs.linkSync(path.join(mailbox, "a.eml"), path.join(mailbox, "b.eml"));
+  fs.linkSync(path.join(mine, "a.bin"), path.join(mine, "b.bin"));
+  let linked = true;
+  try {
+    fs.symlinkSync(path.join(f.root, "example.py"), path.join(mailbox, "link.py"));
+  } catch {
+    linked = false;
+  }
+  t.diagnostic("symlink created: " + linked);
+  for (const retention of [null, WINDOW]) {
+    const dry = inspectSnapshotGarbageCollection({ root: f.root, retention });
+    assert.equal(dry.applyAvailable, true, JSON.stringify(dry.coverage.issues));
+    assert(!dry.coverage.issues.some((item) => /messaging|product-graph/.test(item.path)), JSON.stringify(dry.coverage.issues));
+  }
+  const dry = inspectSnapshotGarbageCollection({ root: f.root, retention: WINDOW });
+  const applied = await applySnapshotGarbageCollection({ root: f.root, retention: WINDOW });
+  assert.equal(applied.status, "gc_applied", JSON.stringify(applied.coverage?.issues));
+  assert.deepEqual(deletedIds(applied), reclaimIds(dry));
+});
+
+test("K4: the windowed preview says what it did not check", async (t) => {
+  const f = project(t);
+  for (let i = 0; i < 3; i += 1) await f.next();
+  const dry = inspectSnapshotGarbageCollection({ root: f.root, retention: WINDOW });
+  assert.deepEqual(dry.retention.checksNotMade, ["filesystem qualification", "an active storage GC elsewhere"]);
+  assert.match(
+    formatCliResult("storage-gc", dry),
+    /Not checked by this preview \(the apply checks them\): filesystem qualification, an active storage GC elsewhere\./,
+  );
+  assert.equal(inspectSnapshotGarbageCollection({ root: f.root }).retention.checksNotMade, undefined);
+});
+
+test("K5: the apply result names staging leftovers too", async (t) => {
+  const f = project(t);
+  for (let i = 0; i < 4; i += 1) await f.next();
+  const applied = await applySnapshotGarbageCollection({ root: f.root, retention: WINDOW });
+  const record = path.join(f.root, applied.retentionRelease.path);
+  fs.linkSync(record, path.join(path.dirname(record), "." + path.basename(record) + ".0f0e0d0c-0b0a-4908-8706-050403020100.tmp"));
+  const plain = await applySnapshotGarbageCollection({ root: f.root });
+  assert.equal(plain.status, "gc_applied");
+  assert.equal(plain.retention.releaseStaging.length, 1);
+  assert.match(formatCliResult("storage-gc", plain), /Staging file\(s\) an interrupted release record create left: 1/);
+});
+
+test("K6/J8: every internal reader of an old receipt refuses a released World", async (t) => {
+  const f = project(t);
+  for (let i = 0; i < 4; i += 1) await f.next();
+  const applied = await applySnapshotGarbageCollection({ root: f.root, retention: WINDOW });
+  assert.equal(applied.status, "gc_applied");
+  const oldest = receiptsOldestFirst(f)[0];
+  // Post-refresh projection receipt reader.
+  const postDirectory = path.join(f.store, "document-projection/post-refresh/receipts");
+  const post = fs
+    .readdirSync(postDirectory)
+    .map((name) => JSON.parse(fs.readFileSync(path.join(postDirectory, name), "utf8")))
+    .find((item) => item.refresh.refreshReceiptId === oldest);
+  assert.ok(post, "a post-refresh receipt names the oldest refresh receipt");
+  await assert.rejects(readPostRefreshProjectionReceipt({ root: f.root, postRefreshProjectionReceiptId: post.postRefreshProjectionReceiptId }), {
+    code: "WORLD_MODEL_SNAPSHOT_RELEASED",
+  });
+  // The Conformance trigger adapter.
+  const registry = new ConformanceTriggerRegistry();
+  const source = registry.register({ root: f.root, sourceKey: "refresh", triggerKinds: ["refresh-receipt"], mode: "opportunistic" });
+  await assert.rejects(registry.enqueue({ root: f.root, sourceId: source.sourceId, trigger: { kind: "refresh-receipt", artifactId: oldest } }), {
+    code: "WORLD_MODEL_SNAPSHOT_RELEASED",
+  });
+  // The receipt reader without allowReleased (inspectIncrementalRefresh and the
+  // refresh-trigger delivery reader call it this way).
+  await assert.rejects(readIncrementalRefreshReceipt({ root: f.root, refreshReceiptId: oldest }), { code: "WORLD_MODEL_SNAPSHOT_RELEASED" });
+});
+
+test("K6/J8: a store with refresh-trigger deliveries is refused by storage GC before any release, so a delivery never reads a released World", async (t) => {
   const f = project(t);
   for (let i = 0; i < 2; i += 1) await f.next();
-  const closure = await buildSnapshotDeletionClosure({ root: f.root });
-  assert.ok(closure.snapshots.length > 0);
-  for (const row of [...closure.snapshots, ...closure.entries]) {
-    assert.equal("ancestryIds" in row, false);
-    assert.equal("namedRecordIds" in row, false);
-    assert.equal("mtimeMs" in row, false);
+  for (let i = 0; i < 2; i += 1) {
+    fs.appendFileSync(f.source, "\n# trigger " + i + "\n");
+    const delivered = await processRefreshTriggerBatch({
+      root: f.root,
+      sourceKind: "ci",
+      events: [{ kind: "project-signal", operation: "build", path: null, evidenceId: "ci-build-000" + i }],
+    });
+    assert.equal(delivered.status, "refreshed");
   }
+  const applied = await applySnapshotGarbageCollection({ root: f.root, retention: WINDOW });
+  t.diagnostic(JSON.stringify({ status: applied.status, code: applied.code, issues: applied.coverage?.issues?.slice(0, 3) }));
+  assert.equal(applied.code, "SNAPSHOT_GC_REFERENCE_COVERAGE_INCOMPLETE");
+  assert(applied.coverage.issues.some((item) => item.reasonCode === "UNSUPPORTED_GC_STORAGE_DIRECTORY" && /refresh\/triggers/.test(item.path)));
+  assert.equal(applied.deletedCount, 0);
+  assert.deepEqual(releaseFiles(f), []);
+});
+
+test("K6/J5: an apply writes several records when it releases more than one record holds; a failed later write names the ones already written and deletes nothing", async (t) => {
+  const f = project(t);
+  for (let i = 0; i < 5; i += 1) await f.next();
+  const names = worldIds(f);
+  // The second record's create fails.
+  const originalLink = fs.linkSync;
+  let creates = 0;
+  fs.linkSync = function (from, to, ...args) {
+    if (String(to).includes("retention-release-") && ++creates === 2) throw Object.assign(new Error("disk full"), { code: "ENOSPC" });
+    return originalLink.call(fs, from, to, ...args);
+  };
+  let failed;
+  try {
+    failed = await applySnapshotGarbageCollection({ root: f.root, retention: WINDOW, maxReleaseEntries: 2 });
+  } finally {
+    fs.linkSync = originalLink;
+  }
+  assert.equal(failed.code, "ENOSPC");
+  assert.equal(failed.deletedCount, 0);
+  assert.deepEqual(worldIds(f), names);
+  assert.equal(failed.retentionRelease.writtenBeforeFailure, true);
+  assert.equal(failed.retentionRelease.records.length, 1);
+  assert.deepEqual(releaseFiles(f), [path.basename(failed.retentionRelease.records[0].path)]);
+  // Nothing it lists is missing: everything is still stored.
+  assert.deepEqual(referenceIssues(inspectSnapshotGarbageCollection({ root: f.root })), []);
+  // A real apply with small records.
+  const applied = await applySnapshotGarbageCollection({ root: f.root, retention: WINDOW, maxReleaseEntries: 2 });
+  assert.equal(applied.status, "gc_applied", JSON.stringify(applied.coverage?.issues));
+  assert.ok(applied.retentionRelease.records.length >= 2);
+  assert.equal(
+    applied.retentionRelease.count,
+    applied.retentionRelease.records.reduce((sum, item) => sum + item.count, 0),
+  );
+  assert.ok(applied.retentionRelease.records.every((item) => item.count <= 2));
+  assert.deepEqual(referenceIssues(inspectSnapshotGarbageCollection({ root: f.root })), []);
+});
+
+test("K6/J9: the windowed preview refuses a store whose pointers need a newer reader, as the apply does", async (t) => {
+  const f = project(t);
+  for (let i = 0; i < 4; i += 1) await f.next();
+  const pointerFile = path.join(f.store, "world-model/current.json");
+  const pointer = JSON.parse(fs.readFileSync(pointerFile, "utf8"));
+  pointer.readerRequirements.minimumReader = "9.9.9";
+  fs.writeFileSync(pointerFile, JSON.stringify(pointer));
+  const dry = inspectSnapshotGarbageCollection({ root: f.root, retention: WINDOW });
+  assert.equal(dry.applyAvailable, false);
+  assert.equal(dry.reclaimableBytes, 0);
+  assert(
+    dry.coverage.issues.some((item) => item.reasonCode === "STORAGE_VERSION_MISMATCH"),
+    JSON.stringify(dry.coverage.issues),
+  );
+  const applied = await applySnapshotGarbageCollection({ root: f.root, retention: WINDOW });
+  assert.equal(applied.code, "STORAGE_VERSION_MISMATCH");
+  assert.equal(applied.deletedCount, 0);
+});
+
+test("K6/J10: without a window or a release record no root or snapshot summary carries window bookkeeping; with a window they do", async (t) => {
+  const f = project(t);
+  for (let i = 0; i < 2; i += 1) await f.next();
+  const plain = await buildSnapshotDeletionClosure({ root: f.root });
+  assert.ok(
+    plain.roots.some((row) => row.relative === "refresh/current.json"),
+    "the roots are visible",
+  );
+  for (const row of [...plain.snapshots, ...plain.roots, ...plain.entries]) {
+    assert.equal("ancestryIds" in row, false, row.path);
+    assert.equal("namedRecordIds" in row, false, row.path);
+    assert.equal("mtimeMs" in row, false, row.path);
+  }
+  const windowed = await buildSnapshotDeletionClosure({ root: f.root, retention: WINDOW });
+  assert.ok(windowed.roots.find((row) => row.relative === "refresh/current.json").namedRecordIds.length > 0);
+  assert.ok(windowed.snapshots.every((row) => Array.isArray(row.ancestryIds) && Number.isFinite(row.mtimeMs)));
 });

@@ -192,4 +192,24 @@ export function retentionReleaseOf({ root, storage, projectId, id }) {
   return released.get(id) || null;
 }
 
+// The one rule for a reference to a snapshot that is not stored, used by the
+// apply and by the dry run alike:
+//   - no valid release record names the id: "missing" (an issue);
+//   - the reference names a World by hash and the record's hash differs: "missing";
+//   - history names it (an older refresh record, or a stored snapshot's own
+//     lineage ids): "released-history";
+//   - any other root names it (a Capsule, a checkpoint, Session work, a
+//     knowledge decision, ... written before or after the release): "released-in-record".
+//     A pin can keep a snapshot from being released, but it cannot bring one
+//     back: such a reference is reported on every run and never blocks GC.
+//   - anything else (a stored snapshot's own content): "missing".
+// Byte pins are judged elsewhere and never excused.
+export function judgeMissingReference({ release, digest = null, fromRoot, history }) {
+  if (!release) return "missing";
+  if (digest !== null && release.hash !== digest) return "missing";
+  if (history) return "released-history";
+  if (fromRoot) return "released-in-record";
+  return "missing";
+}
+
 export const releasedMessage = (id, release) => `${id} was released by retention on ${release.releasedAt} (${release.releaseId}).`;
