@@ -243,6 +243,46 @@ export function refreshInputStamp(root, storage) {
   return sha256Hex(JSON.stringify({ storage: walkStorageInputs(root, storage), git: refreshGitIdentity(root) }));
 }
 
+// Where snapshots live: whole files, domain bundles and the git object store.
+const SNAPSHOT_STORE_DIRECTORIES = ["world-model/snapshots", "graph-projection/snapshots", "snapshot-bundles", "snapshot-objects.git"];
+
+// Every file of the snapshot stores, by name, size, times and inode, without
+// reading any. Recorded when the generation is written, right after the current
+// snapshots were written or read and verified; if any of these files is later
+// removed, replaced or added (a GC, a lost file, another build), the fast path
+// declines and the full refresh reads the snapshot and reports what it finds,
+// including WORLD_MODEL_SNAPSHOT_MISSING.
+export function snapshotStoreStamp(root, storage) {
+  const base = path.join(root, storage.directory);
+  const rows = [];
+  for (const directory of SNAPSHOT_STORE_DIRECTORIES) {
+    const stack = [directory];
+    while (stack.length) {
+      const relative = stack.pop();
+      let stat;
+      try {
+        stat = fs.lstatSync(path.join(base, relative), { bigint: true });
+      } catch (error) {
+        if (error.code === "ENOENT" || error.code === "ENOTDIR") continue;
+        throw error;
+      }
+      if (stat.isDirectory() && !stat.isSymbolicLink()) {
+        for (const name of fs.readdirSync(path.join(base, relative))) stack.push(relative + "/" + name);
+        continue;
+      }
+      rows.push([
+        relative,
+        stat.isSymbolicLink() ? "link" : stat.isFile() ? "file" : "other",
+        stat.size.toString(),
+        stat.mtimeNs.toString(),
+        stat.ino.toString(),
+      ]);
+    }
+  }
+  rows.sort((left, right) => (left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0));
+  return sha256Hex(JSON.stringify(rows));
+}
+
 const REVISION_KINDS = new Set([
   "FileRevision",
   "SymbolRevision",
@@ -311,6 +351,9 @@ export function writeRefreshInputGeneration({ root, storage, snapshot, verifiedF
     parentedRevisionCount: revisions.filter((node) => node.parentRevisionIds?.length > 0).length,
     stamp,
     reader,
+    // The World's skipped counters, compared by the fast path's walk.
+    skipped: snapshot.skipped ?? null,
+    snapshotStore: snapshotStoreStamp(root, storage),
     files,
   };
   atomicWriteText(cachePath(root, storage, INPUT_GENERATION_RELATIVE), JSON.stringify(document));

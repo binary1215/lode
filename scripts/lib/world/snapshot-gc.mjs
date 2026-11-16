@@ -41,6 +41,30 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     stopped = false;
   const deferredBackends = [];
   const issue = (relative, reasonCode) => issues.push({ path: relative, reasonCode });
+  // Whether the git snapshot store has a ref for this id, read from its ref
+  // files without running git (a loose ref or a packed-refs line). Unreadable
+  // ref files count as "may hold it": the apply opens the store and decides.
+  let packedSnapshotRefs = null;
+  const gitStoreNamesSnapshot = (id) => {
+    if (!deferredBackends.includes(prefix + "/snapshot-objects.git") || !/^[a-z][a-z0-9-]{0,127}$/.test(id)) return false;
+    const gitDirectory = path.join(projectRoot, prefix, "snapshot-objects.git");
+    try {
+      if (fs.lstatSync(path.join(gitDirectory, "refs", "lode-snapshots", id), { throwIfNoEntry: false })?.isFile()) return true;
+      if (packedSnapshotRefs === null) {
+        const packed = path.join(gitDirectory, "packed-refs");
+        const stat = fs.lstatSync(packed, { throwIfNoEntry: false });
+        packedSnapshotRefs = new Set();
+        if (stat?.isFile())
+          for (const line of fs.readFileSync(packed, "utf8").split("\n")) {
+            const match = / refs\/lode-snapshots\/(\S+)$/.exec(line.trim());
+            if (match) packedSnapshotRefs.add(match[1]);
+          }
+      }
+      return packedSnapshotRefs.has(id);
+    } catch {
+      return true;
+    }
+  };
   function walk(relative) {
     let file, stat;
     try {
@@ -179,9 +203,13 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     const { id, reason } = queue[i],
       matches = byId.get(id) || [];
     if (!matches.length) {
-      // A dry run does not open snapshot-objects.git or snapshot-bundles.
-      // An id that is absent as a whole file may still be inside those backends.
-      if (!deferredBackends.length) issue(id, "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE");
+      // A dry run does not open snapshot-objects.git or snapshot-bundles. A
+      // whole World or Graph snapshot is either a file here or a ref of the git
+      // store (a bundle is only a part a whole snapshot names), so such an id
+      // that is neither is reported as missing. Another id (a source snapshot
+      // inside a graph) may sit inside an unopened backend's content.
+      const wholeSnapshot = /^(?:world-model|graph-snapshot)-[a-f0-9]{24}$/.test(id);
+      if (wholeSnapshot ? !gitStoreNamesSnapshot(id) : !deferredBackends.length) issue(id, "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE");
       continue;
     }
     for (const snapshot of matches) {

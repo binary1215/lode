@@ -3,7 +3,7 @@ import path from "node:path";
 import { readContextCapsule } from "../session/context-compiler.mjs";
 import { inspectProject, SCHEMA_VERSION } from "../head-core.mjs";
 import { executeIncrementalRepositoryScan, managedRootFilesForProject, sourceTreeMatchesPublishedFiles } from "./repository-scan.mjs";
-import { readRefreshInputGeneration, refreshInputStamp, writeRefreshInputGeneration } from "./refresh-input-generation.mjs";
+import { readRefreshInputGeneration, refreshInputStamp, snapshotStoreStamp, writeRefreshInputGeneration } from "./refresh-input-generation.mjs";
 import { readRepositorySourceScope } from "./repository-source-scope.mjs";
 import {
   buildWorldModel,
@@ -880,6 +880,14 @@ async function fastUnchangedRefresh(options, inspected) {
     return null;
   }
   if (stampNow !== generation.stamp) return null;
+  // The snapshot files are as they were when the current snapshots were last
+  // written or verified; otherwise the full path reads them (F1).
+  if (typeof generation.snapshotStore !== "string") return null;
+  try {
+    if (snapshotStoreStamp(projectRoot, storage) !== generation.snapshotStore) return null;
+  } catch {
+    return null;
+  }
   const worldFile = path.join(projectRoot, storage.directory, "world-model/current.json");
   const graphFile = path.join(projectRoot, storage.directory, "graph-projection/current.json");
   if (!fs.existsSync(worldFile) || !fs.existsSync(graphFile)) return null;
@@ -911,6 +919,7 @@ async function fastUnchangedRefresh(options, inspected) {
     storage,
     sourceScope: readRepositorySourceScope({ projectRoot, storage }).sourceScope,
     files: generation.files,
+    skipped: generation.skipped,
   });
   if (!covered) return null;
   const light = {

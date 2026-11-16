@@ -515,3 +515,128 @@ test("a whole-second modification time is not trusted inside its own tick", (t) 
   before = fileIdentity(file);
   assert.equal(rememberFileStat(cache, "a.txt", file, digest, 4, before)?.digest, digest);
 });
+
+// ---------- PR 81 review: F1, F2, F4, F6 ----------
+
+// An unchanged project after a build and one full unchanged refresh: the next
+// refresh is answered from the fast path.
+async function fastReady(t) {
+  const f = project(t);
+  await buildWorldModel({ root: f.root });
+  await refreshWorldModel({ root: f.root });
+  assert.equal(mode(await refreshWorldModel({ root: f.root })), "stat-cache-unchanged");
+  return f;
+}
+
+test("F6: a caller that brings its own history, runtime state or scan result is never answered from the fast path", async (t) => {
+  const f = await fastReady(t);
+  for (const name of ["gitHistoryAdapter", "runtimeStateAdapter", "repositoryScanExecution"]) {
+    let consulted = 0;
+    // Any use of the caller's source counts; the full path is the only one that uses it.
+    const source = new Proxy(
+      {},
+      {
+        get() {
+          consulted += 1;
+          throw Object.assign(new Error("caller source read"), { code: "CALLER_SOURCE_READ" });
+        },
+      },
+    );
+    let answer = null;
+    try {
+      answer = await refreshWorldModel({ root: f.root, [name]: source });
+    } catch {
+      answer = null;
+    }
+    assert(answer === null || mode(answer) !== "stat-cache-unchanged", name);
+    // A refresh takes no scan result from its caller; the fast path still declines one.
+    if (name !== "repositoryScanExecution") assert(consulted > 0, `${name} was read, so the full path ran`);
+  }
+  assert.equal(mode(await refreshWorldModel({ root: f.root })), "stat-cache-unchanged", "and without it the fast path still answers");
+});
+
+test("F6: a commit that lands while a real refresh builds is seen by the next refresh", async (t) => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-build-commit-")));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  git(root, ["init"]);
+  fs.writeFileSync(path.join(root, "a.py"), "def value():\n    return 1\n");
+  git(root, ["add", "a.py"]);
+  git(root, ["commit", "-m", "init"]);
+  initializeProject({ root, pluginRoot, runtimes: ["codex", "claude", "opencode"] });
+  await buildWorldModel({ root });
+  fs.writeFileSync(path.join(root, "a.py"), "def value():\n    return 2\n");
+  const source = path.join(root, "a.py");
+  const originalRead = fs.readFileSync;
+  let committed = false;
+  fs.readFileSync = function (file, ...args) {
+    const result = originalRead.call(fs, file, ...args);
+    if (!committed && path.resolve(String(file)) === source) {
+      committed = true;
+      git(root, ["commit", "--allow-empty", "-m", "made while the refresh was building"]);
+    }
+    return result;
+  };
+  let refreshed;
+  try {
+    refreshed = await refreshWorldModel({ root });
+  } finally {
+    fs.readFileSync = originalRead;
+  }
+  assert.equal(committed, true);
+  assert.equal(refreshed.status, "refreshed");
+  const next = await refreshWorldModel({ root });
+  assert.notEqual(mode(next), "stat-cache-unchanged", "the stamp was taken before the commit");
+  // The full path compares the git head the World holds with the head now.
+  const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim();
+  assert.equal((await readWorldModel({ root })).snapshot.git?.commit, head);
+});
+
+test("F2: a new link, unsupported file or over-size file is not answered with the old skipped counters", async (t) => {
+  const f = await fastReady(t);
+  const cases = [
+    ["unsupported", () => fs.writeFileSync(path.join(f.root, "image.bin"), Buffer.from([0, 1, 2, 3]))],
+    ["over-size", () => fs.writeFileSync(path.join(f.root, "huge.py"), "#".repeat(512 * 1024 + 1))],
+  ];
+  try {
+    fs.symlinkSync(path.join(f.root, "other.py"), path.join(f.root, "link.py"));
+    fs.rmSync(path.join(f.root, "link.py"));
+    cases.push(["link", () => fs.symlinkSync(path.join(f.root, "other.py"), path.join(f.root, "link.py"))]);
+  } catch {
+    t.diagnostic("links cannot be created here; the link case is not run");
+  }
+  for (const [name, make] of cases) {
+    make();
+    const after = await refreshWorldModel({ root: f.root });
+    assert.notEqual(mode(after), "stat-cache-unchanged", name);
+    assert.equal(after.status, "refreshed", `${name}: the skipped counters are part of the World`);
+    assert.equal(mode(await refreshWorldModel({ root: f.root })), "stat-cache-unchanged", `${name}: settled again`);
+  }
+});
+
+test("F1: a current snapshot that is gone is reported as missing, not answered unchanged", async (t) => {
+  const f = await fastReady(t);
+  const current = await readWorldModel({ root: f.root });
+  assert(current.file, "a whole-file snapshot in this store");
+  fs.rmSync(current.file);
+  await assert.rejects(refreshWorldModel({ root: f.root }), { code: "WORLD_MODEL_SNAPSHOT_MISSING" });
+});
+
+test("F4: a dry run reports a retained World that is neither a file nor a git ref, even with a typed backend present", async (t) => {
+  const f = project(t);
+  const first = await buildWorldModel({ root: f.root });
+  fs.writeFileSync(f.source, "def kept_value():\n    return 'second'\n");
+  await refreshWorldModel({ root: f.root });
+  const backends = ["snapshot-bundles", "snapshot-objects.git"].filter((name) => fs.existsSync(path.join(f.root, f.storage.directory, name)));
+  if (!backends.length) fs.mkdirSync(path.join(f.root, f.storage.directory, "snapshot-bundles"));
+  const location = (await readWorldModelSnapshot({ root: f.root, worldModelId: first.snapshot.worldModelId })).file;
+  assert(location, "the earlier World is a whole file here");
+  const healthy = inspectSnapshotGarbageCollection({ root: f.root });
+  assert(!healthy.coverage.issues.some((issue) => issue.reasonCode === "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE"));
+  fs.rmSync(location);
+  const dryRun = inspectSnapshotGarbageCollection({ root: f.root });
+  assert(
+    dryRun.coverage.issues.some((issue) => issue.reasonCode === "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE" && issue.path === first.snapshot.worldModelId),
+    JSON.stringify(dryRun.coverage.issues),
+  );
+  assert.equal(dryRun.applyAvailable, false);
+});

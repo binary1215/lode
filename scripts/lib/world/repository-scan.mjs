@@ -829,19 +829,30 @@ export function createRepositoryScanComputeAdapter({ pluginRoot = path.resolve(i
   });
 }
 
+// Walks the source tree as scanPayload does, without reading file bytes: every
+// file the World holds must still have the stat it had when its digest was
+// verified, no other text file may exist, and the files the scan would skip
+// must be the same in number per reason as the World's skipped counters
+// (`skipped`), so a new link, binary or over-size file is not answered with
+// stale counters. Returns the number of files covered, or 0 when anything
+// differs.
 export function sourceTreeMatchesPublishedFiles({
   projectRoot,
   managedRootFiles = [],
   storage,
   sourceScope = buildRepositorySourceScope({ storage }),
   files = null,
+  skipped: expectedSkipped = null,
+  limits = {},
 } = {}) {
-  if (!files || typeof files !== "object") return 0;
+  if (!files || typeof files !== "object" || !expectedSkipped || typeof expectedSkipped !== "object") return 0;
   const expected = new Map(Object.entries(files));
   if (!expected.size) return 0;
+  const maxFileBytes = normalizeComputeLimits(limits).maxFileBytes;
   const input = buildRepositoryScanInput({ projectRoot, managedRootFiles, sourceScope, storage });
   const managed = new Set(input.managedRootFiles);
   const seen = new Set();
+  const skipped = Object.fromEntries(SKIPPED_FIELDS.map((field) => [field, 0]));
   const stack = [input.projectRoot];
   while (stack.length) {
     const directory = stack.pop();
@@ -854,25 +865,53 @@ export function sourceTreeMatchesPublishedFiles({
     for (const entry of entries) {
       const absolute = path.join(directory, entry.name);
       const relative = normalizePath(input.projectRoot, absolute);
-      if (entry.isSymbolicLink()) continue;
-      if (entry.isDirectory()) {
-        if (EXCLUDED_DIRECTORIES.has(entry.name.toLowerCase()) || excludesManagedRootDirectory(relative, input)) continue;
-        if (!pathWithinRepositorySourceScope(relative, input.sourceScope, { directory: true })) continue;
-        stack.push(absolute);
+      if (entry.isSymbolicLink()) {
+        skipped.symlink += 1;
         continue;
       }
-      if (!entry.isFile()) continue;
-      if (!pathWithinRepositorySourceScope(relative, input.sourceScope)) continue;
-      if (managed.has(relative)) continue;
+      if (entry.isDirectory()) {
+        if (EXCLUDED_DIRECTORIES.has(entry.name.toLowerCase()) || excludesManagedRootDirectory(relative, input)) skipped.excludedDirectory += 1;
+        else if (!pathWithinRepositorySourceScope(relative, input.sourceScope, { directory: true })) skipped.outsideSourceScope += 1;
+        else stack.push(absolute);
+        continue;
+      }
+      if (!entry.isFile()) {
+        skipped.unsupportedType += 1;
+        continue;
+      }
+      if (!pathWithinRepositorySourceScope(relative, input.sourceScope)) {
+        skipped.outsideSourceScope += 1;
+        continue;
+      }
+      if (managed.has(relative)) {
+        skipped.managedProjection += 1;
+        continue;
+      }
       const extension = path.extname(entry.name).toLowerCase();
-      if (!TEXT_EXTENSIONS.has(extension) && entry.name !== "Dockerfile") continue;
+      if (!TEXT_EXTENSIONS.has(extension) && entry.name !== "Dockerfile") {
+        skipped.unsupportedType += 1;
+        continue;
+      }
+      let size;
+      try {
+        size = fs.statSync(absolute).size;
+      } catch {
+        return 0;
+      }
+      if (size > maxFileBytes) {
+        skipped.tooLarge += 1;
+        continue;
+      }
       const published = expected.get(relative);
       const previous = published ? { digest: published.digest, bytes: published.bytes } : null;
       if (!statMatchesCached(previous, published, absolute)) return 0;
       seen.add(relative);
     }
   }
-  return seen.size === expected.size ? seen.size : 0;
+  if (seen.size !== expected.size) return 0;
+  // A counter the World does not have (an older World) is compared as zero.
+  for (const field of SKIPPED_FIELDS) if ((expectedSkipped[field] ?? 0) !== skipped[field]) return 0;
+  return seen.size;
 }
 
 export async function executeRepositoryScan({
