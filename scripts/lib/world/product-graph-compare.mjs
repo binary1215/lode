@@ -139,7 +139,8 @@ export function readBaseline(file) {
   try {
     text = fs.readFileSync(file, "utf8");
   } catch (error) {
-    if (error.code === "ENOENT") return { missing: true, reason: "기준 파일이 없다" };
+    // A path under a regular file has no baseline either (ENOTDIR on POSIX).
+    if (error.code === "ENOENT" || error.code === "ENOTDIR") return { missing: true, reason: "기준 파일이 없다" };
     return { reason: `기준 파일을 읽지 못했다 (${error.code || "읽기 실패"})` };
   }
   let value;

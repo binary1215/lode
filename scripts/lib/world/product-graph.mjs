@@ -1002,8 +1002,28 @@ const baselineFile = (inputs) => path.join(inputs.outputDirectory, PRODUCT_GRAPH
 // this build by a build (never by a check); an unreadable one is reported and
 // left as it is. A baseline never blocks a build, except that a build which
 // does not reproduce the baseline's nodes for unchanged files stops.
+// The output folder as it is on disk: null when absent. A path under a regular
+// file is "absent" too (ENOTDIR on POSIX, ENOENT on Windows).
+function outputStat(directory) {
+  try {
+    return fs.lstatSync(directory, { throwIfNoEntry: false }) || null;
+  } catch (error) {
+    if (error.code === "ENOTDIR") return null;
+    throw error;
+  }
+}
+
 function compareToBaseline({ inputs, graph, computed, takeIfMissing }) {
   if (!inputs.outputDirectory) return { changes: noBaseline("독립 검사에는 출력 폴더가 없어 기준을 읽지 않는다") };
+  // Something other than a folder where the output folder belongs is refused
+  // by a build with the product graph reason before anything under it is read;
+  // a check reports it and reads no baseline.
+  const existing = outputStat(inputs.outputDirectory);
+  // (A link is left to the linked-path check that follows.)
+  if (existing && !existing.isDirectory() && !existing.isSymbolicLink()) {
+    if (takeIfMissing) fail("PRODUCT_GRAPH_OUTPUT_NOT_DIRECTORY", "출력 폴더 자리에 폴더가 아닌 것이 있다.");
+    return { changes: noBaseline("출력 폴더 자리에 폴더가 아닌 것이 있어 기준을 읽지 않았다") };
+  }
   if (inputs.mode === "project") assertNoLinkedComponents(inputs.projectRoot, baselineFile(inputs));
   const read = readBaseline(baselineFile(inputs));
   const meaning = computed.meaningDocument;
@@ -1201,9 +1221,20 @@ export function readProductGraphBuild(options = {}) {
     directory = inputs.outputDirectory;
   }
   const buildCommand = buildCommandOf(inputs);
+  const folder = outputStat(directory);
+  if (folder && !folder.isDirectory() && !folder.isSymbolicLink())
+    return {
+      status: "unreadable",
+      code: "PRODUCT_GRAPH_OUTPUT_NOT_DIRECTORY",
+      reason: "빌드 폴더 자리에 폴더가 아닌 것이 있다",
+      buildCommand,
+      inputs,
+      directory,
+    };
+  if (!folder) return { status: "not-built", code: "PRODUCT_GRAPH_NOT_BUILT", reason: "없음, 빌드 필요", buildCommand, inputs, directory };
   if (inputs?.mode === "project") assertNoLinkedComponents(inputs.projectRoot, path.join(directory, "graph.json"));
   const graphFile = path.join(directory, "graph.json");
-  const stat = fs.lstatSync(graphFile, { throwIfNoEntry: false });
+  const stat = outputStat(graphFile);
   if (!stat) return { status: "not-built", code: "PRODUCT_GRAPH_NOT_BUILT", reason: "없음, 빌드 필요", buildCommand, inputs, directory };
   let graph, check;
   try {
@@ -1243,7 +1274,7 @@ export function moveProductGraphBaseline(options = {}) {
     fail("PRODUCT_GRAPH_BUILD_STALE", "소스 루트 없이 빌드 폴더만으로는 기준을 옮기지 않는다. 프로젝트나 빌드와 같은 독립 실행 옵션을 준다.");
   const read = readProductGraphBuild(options);
   if (read.status === "not-built") fail("PRODUCT_GRAPH_NOT_BUILT", `제품 그래프 빌드가 없다. 먼저 빌드한다: ${read.buildCommand}`);
-  if (read.status !== "built") fail("PRODUCT_GRAPH_BUILD_UNREADABLE", read.reason);
+  if (read.status !== "built") fail(read.code || "PRODUCT_GRAPH_BUILD_UNREADABLE", read.reason);
   const { graph, check, inputs } = read;
   if (!Array.isArray(graph.inputs?.sourceFiles) || graph.nodes.some((node) => !Object.hasOwn(node, "contentSha256")))
     fail("PRODUCT_GRAPH_BUILD_STALE", `이 빌드에는 내용 해시가 없다(이전 버전의 빌드). 다시 빌드한 뒤 옮긴다: ${read.buildCommand}`);

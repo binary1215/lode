@@ -7,7 +7,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fixture, snapshot, pluginRoot } from "./helpers/session-work-linkage-fixture.mjs";
-import { buildProductGraph, checkProductGraph, approveProductGraphDocument } from "../scripts/lib/world/product-graph.mjs";
+import { buildProductGraph, checkProductGraph, approveProductGraphDocument, moveProductGraphBaseline } from "../scripts/lib/world/product-graph.mjs";
+import { queryProductGraph } from "../scripts/lib/world/product-graph-query.mjs";
+import { buildGraphExplorerSnapshot } from "../scripts/lib/world/graph-explorer.mjs";
 import { registryCatalog, OPERATIONS } from "../scripts/lib/session/operation-registry.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
@@ -1134,6 +1136,25 @@ test("G: a regular file where the build folder should be is refused with a produ
   const f = productProject(t);
   fs.writeFileSync(path.join(f.family, "build"), "not a folder\n");
   assert.throws(() => buildProductGraph({ root: f.root }), { code: "PRODUCT_GRAPH_OUTPUT_NOT_DIRECTORY" });
+});
+
+// Every new read under build/ meets a regular file in place of the folder with
+// a product graph answer, whatever error code the platform gives for a path
+// under a file (ENOTDIR on POSIX, ENOENT on Windows).
+test("G (bundle 2): check, query, export and the baseline move meet a regular file in place of build/ with a product graph answer", async (t) => {
+  const f = productProject(t);
+  const build = path.join(f.family, "build");
+  fs.writeFileSync(build, "not a folder\n");
+  const before = fs.readFileSync(build);
+  assert.match(checkProductGraph({ root: f.root }).changes.reason, /출력 폴더 자리에 폴더가 아닌 것이 있어/);
+  const answer = queryProductGraph({ root: f.root });
+  assert.equal(answer.code, "PRODUCT_GRAPH_OUTPUT_NOT_DIRECTORY");
+  assert.match(answer.text, /빌드 폴더 자리에 폴더가 아닌 것이 있다/);
+  assert.throws(() => moveProductGraphBaseline({ root: f.root }), { code: "PRODUCT_GRAPH_OUTPUT_NOT_DIRECTORY" });
+  const snapshot = await buildGraphExplorerSnapshot({ root: f.root });
+  assert.equal(snapshot.productGraph.status, "unreadable");
+  assert.match(snapshot.productGraph.reason, /빌드 폴더 자리에 폴더가 아닌 것이 있다/);
+  assert.deepEqual(fs.readFileSync(build), before, "nothing wrote over the file");
 });
 
 test("H: the preservation closure names a link in the family as a link", async (t) => {
