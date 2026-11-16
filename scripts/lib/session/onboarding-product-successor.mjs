@@ -197,7 +197,7 @@ async function recordsBeforeBase(root, state, snapshot = null) {
     try {
       world = (await readWorldModelSnapshot({ root, worldModelId: state.worldModelId })).snapshot;
     } catch (error) {
-      if (["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING"].includes(error.code)) return null;
+      if (["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING", "WORLD_MODEL_SNAPSHOT_RELEASED"].includes(error.code)) return null;
       throw error;
     }
   }

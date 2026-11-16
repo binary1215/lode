@@ -1736,6 +1736,8 @@ function formatWorldSummary(command, value) {
   fact("Evidence gap", value?.reasonCode);
   fact("Saved result", value?.receiptFile || value?.file || value?.projection?.projectionLocation || projection.projectionLocation);
   fact("Saved post-refresh result", postRefresh?.receiptFile);
+  // An old receipt whose World retention released: say so, not "missing".
+  if (value?.status === "released-by-retention") lines.push(value.message + " The receipt and its request still verify by digest.");
   lines.push("Derived evidence only; counts do not prove semantic sufficiency, approval or execution success.");
   const mutating = ["world-index", "world-refresh", "world-docs-build", "world-docs-capture"].includes(command);
   if (mutating)
@@ -1824,7 +1826,59 @@ function formatGraphLineageDiff(value) {
     .join("\n");
 }
 
+// Whether retention is off or a window is in force, where it came from, and
+// what was (or would be) deleted under which rule.
+// A release record that cannot be used excuses nothing; name it.
+const releaseProblemLines = (value) =>
+  (value.coverage?.issues || [])
+    .filter((item) => /^RETENTION_RELEASE_/.test(item.reasonCode || ""))
+    .slice(0, 3)
+    .map((problem) => `A retention release record cannot be used: ${problem.path} (${problem.reasonCode}); history it would cover counts as missing.`);
+
+function snapshotRetentionLines(retention, { applied, value = {} }) {
+  if (!retention) return releaseProblemLines(value);
+  const policyFile = "the policy file refresh/snapshot-retention.json in the Lode store";
+  const lines = [];
+  if (retention.mode === "window")
+    lines.push(
+      `Retention window in force, from ${retention.source === "options" ? "this run's --keep-count/--keep-days" : policyFile}: the newest ${retention.keepCount} Worlds by first write time or those first written in the last ${retention.keepDays} days stay, with the current pointers, record and decision pins, snapshots named by hash and snapshots without a trustworthy time.`,
+    );
+  else if (retention.source === "not-configured")
+    lines.push("Retention is off (no policy file, no --keep-count/--keep-days): every snapshot a kept record names stays, with its ancestry.");
+  else
+    lines.push(
+      `Retention is off: ${retention.source === "invalid-options" ? "the --keep-count/--keep-days values" : policyFile} cannot be used (${retention.problem}); every snapshot a kept record names stays, with its ancestry.`,
+    );
+  if (retention.policyFileProblem)
+    lines.push(`${policyFile[0].toUpperCase() + policyFile.slice(1)} cannot be used (${retention.policyFileProblem}); this run's options were used instead.`);
+  const released = retention.released || [];
+  if (released.length) {
+    const windowed = released.filter((item) => item.rule === "outside-retention-window").length;
+    const parts = [
+      windowed ? windowed + " outside the retention window" : null,
+      released.length - windowed ? released.length - windowed + " named by nothing kept" : null,
+    ].filter(Boolean);
+    lines.push((applied ? "Deleted snapshots: " : "Would delete: ") + parts.join(", ") + ". List: --json (retention.released).");
+  }
+  if (value.retentionRelease) lines.push(`Release record written before deleting: ${value.retentionRelease.path} (${value.retentionRelease.count} snapshots).`);
+  const references = retention.releasedReferences;
+  if (references)
+    lines.push(
+      `History names ${references.snapshots} snapshot(s) that retention released on ${references.releasedOn.join(", ")}: released by retention, not missing.`,
+    );
+  const records = retention.recordsNamingReleased;
+  if (records)
+    lines.push(
+      `Records that name a snapshot retention released: ${records.count} reference(s) to ${records.snapshots} snapshot(s), released on ${records.releasedOn.join(", ")}. The snapshots are gone; this does not block GC. List: --json (retention.recordsNamingReleased).`,
+    );
+  if (retention.checksNotMade?.length) lines.push("Not checked by this preview (the apply checks them): " + retention.checksNotMade.join(", ") + ".");
+  if (retention.releaseStaging?.length)
+    lines.push(`Staging file(s) an interrupted release record create left: ${retention.releaseStaging.length}; ignored, may be removed by hand.`);
+  return [...lines, ...releaseProblemLines(value)];
+}
+
 function formatSnapshotStorage(value) {
+  const releasedByWindow = (value.retention?.released || []).some((item) => item.rule === "outside-retention-window");
   if (value.requestedApply)
     return [
       "Snapshot cleanup: " +
@@ -1837,7 +1891,9 @@ function formatSnapshotStorage(value) {
       value.status === "gc_applied"
         ? value.deletedCount === 0
           ? "Cleanup completed successfully; zero files or refs were removed."
-          : "Cleanup completed; retained history and exact references were preserved."
+          : releasedByWindow
+            ? "Cleanup completed; World history outside the retention window was deleted, and everything the window, the current pointers and the records keep was preserved."
+            : "Cleanup completed; retained history and exact references were preserved."
         : value.status === "gc_yielded"
           ? "Cleanup yielded to other Project work; the remaining items were preserved. Ordinary work continues."
           : value.status === "gc_partial"
@@ -1848,6 +1904,7 @@ function formatSnapshotStorage(value) {
       value.physicalStorage
         ? `Observed inventoried file bytes before cleanup: ${value.physicalStorage.observedFileBytes}; coverage ${value.physicalStorage.coverage.complete ? "complete" : "partial"}. This is not safe reclaimable space or allocated disk usage.`
         : null,
+      ...snapshotRetentionLines(value.retention, { applied: true, value }),
       value.nativeProcessCleanup ? "Native cleanup was not verified; process details: --json." : null,
       value.retiredRefCount ? "Retired refs: " + value.retiredRefCount + "; other files unlinked: " + (value.deletedCount - value.retiredRefCount) + "." : null,
       value.writtenPackBytes || value.publishedPackBytes
@@ -1876,7 +1933,10 @@ function formatSnapshotStorage(value) {
       "; " +
       value.observedUnreferencedBytes +
       " bytes (not certified safe to delete).",
-    "Inspection preserved every file. Explicit --apply verifies supported references before cleanup.",
+    ...snapshotRetentionLines(value.retention, { applied: false, value }),
+    value.retention?.mode === "window"
+      ? `This inspection would delete ${value.reclaimableBytes} snapshot-file bytes; --apply with the same window performs that cleanup.${value.retention.unseenBackends ? " The git snapshot store and bundle store were not read; the apply reads them and may keep more." : ""}`
+      : "Inspection preserved every file. Explicit --apply verifies supported references before cleanup.",
     "Details and preservation reasons: --json.",
     "",
   ]

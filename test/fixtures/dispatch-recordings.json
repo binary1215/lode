@@ -3806,7 +3806,8 @@
      "args": [
       {
        "root": "<root>",
-       "refreshReceiptId": "sample-refresh_receipt_id"
+       "refreshReceiptId": "sample-refresh_receipt_id",
+       "allowReleased": true
       }
      ]
     }
@@ -18974,10 +18975,17 @@
    ],
    "calls": [
     {
+     "fn": "snapshot-retention-policy#parseRetentionOptions",
+     "args": [
+      {}
+     ]
+    },
+    {
      "fn": "snapshot-gc#inspectSnapshotGarbageCollection",
      "args": [
       {
-       "root": "<root>"
+       "root": "<root>",
+       "retention": "$undefined"
       }
      ]
     },
@@ -19001,16 +19009,31 @@
    "argv": [
     "storage-gc",
     "<root>",
-    "--apply"
+    "--apply",
+    "--keep-count",
+    "sample-keep-count",
+    "--keep-days",
+    "sample-keep-days"
    ],
    "calls": [
+    {
+     "fn": "snapshot-retention-policy#parseRetentionOptions",
+     "args": [
+      {
+       "apply": true,
+       "keep-count": "sample-keep-count",
+       "keep-days": "sample-keep-days"
+      }
+     ]
+    },
     {
      "fn": "snapshot-gc#applySnapshotGarbageCollection",
      "args": [
       {
        "root": "<root>",
        "signal": "$undefined",
-       "onProcess": "$undefined"
+       "onProcess": "$undefined",
+       "retention": "$undefined"
       }
      ]
     }
@@ -21496,7 +21519,8 @@
      "args": [
       {
        "root": "<root>",
-       "refreshReceiptId": "$undefined"
+       "refreshReceiptId": "$undefined",
+       "allowReleased": true
       }
      ]
     }
@@ -21520,7 +21544,8 @@
      "args": [
       {
        "root": "<root>",
-       "refreshReceiptId": "sample-receipt"
+       "refreshReceiptId": "sample-receipt",
+       "allowReleased": true
       }
      ]
     }

@@ -139,6 +139,8 @@ pending ResultPacket도 마찬가지로 Fresh Lode review를 위해 동결된 �
 
 request와 receipt는 콘텐츠에서 파생되는 불변 아티팩트입니다. current file은 다이제스트가 검증된 교체 가능 pointer입니다. 이후의 full index 또는 refresh로 최신 receipt가 stale 상태가 될 수 있지만 그 역사적 증거가 무효화되지는 않습니다.
 
+`refresh/`에는 다른 두 종류의 파일도 있습니다. `refresh/file-stat-cache.json`과 `refresh/input-generation.json`은 캐시입니다. 지우면 다음 refresh가 한 번 full path를 탈 뿐입니다. `refresh/retention-releases/retention-release-*.json`은 보존 창을 쓴 storage GC가 남긴 release 기록입니다([snapshot storage](snapshot-storage.md) 참고). 캐시가 아니며 지우면 안 됩니다. 하나를 지워도 저장된 것은 바뀌지 않지만, 그 기록이 다루던 역사가 다시 손상된 것처럼 보입니다. 예전 receipt를 `world-refresh-read`로 읽으면 World가 release된 것이 아니라 없는 것으로 나오고, 보존 창 없는 storage GC는 참조 범위가 불완전하다고 보고하며 역사가 정리될 때까지 아무것도 지우지 않습니다.
+
 ## CLI 및 MCP
 
 ```powershell
