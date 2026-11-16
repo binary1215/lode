@@ -198,6 +198,7 @@
     "python-source-collector.mjs": "world",
     "recovery-basis-memory.mjs": "session",
     "recovery-checkpoint-diagnosis.mjs": "session",
+    "refresh-input-generation.mjs": "world",
     "refresh-trigger.mjs": "world",
     "refresh-writer-lease.mjs": "world",
     "release-observation-projection.mjs": "distribution",

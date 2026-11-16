@@ -310,6 +310,17 @@ export function buildGraphProjectionPointer(graph, storage = null) {
   return pointerFor(graph, storage);
 }
 
+// Pointer metadata only. Snapshot id, hash and source snapshot id stay put.
+export function replaceGraphPointerReaderRequirements(document, readerRequirements, storage = null) {
+  verifyGraphProjectionPointer(document, null, storage);
+  const payload = { ...document, readerRequirements };
+  delete payload.pointerId;
+  delete payload.pointerHash;
+  const pointerHash = digest(graphProjectionCanonicalJson(payload));
+  const next = { ...payload, pointerId: `graph-projection-pointer-${pointerHash.slice(0, 24)}`, pointerHash };
+  return verifyGraphProjectionPointer(next, null, storage);
+}
+
 export function verifyGraphProjectionPointer(document, expectedGraph = null, storage = null) {
   if (
     !document ||
