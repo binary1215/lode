@@ -32,6 +32,7 @@ import { classifyProductGraphPath, verifyProductGraphCanonFile, PRODUCT_GRAPH_DI
 import { failCode as failure } from "../core/errors.mjs";
 import {
   ancestryIdsOf,
+  currentRecordPaths,
   isHistoryRoot,
   namedRecordIds,
   resolveSnapshotRetentionPolicy,
@@ -39,6 +40,7 @@ import {
   SNAPSHOT_RETENTION_RELATIVE,
 } from "./snapshot-retention-policy.mjs";
 import { readRetentionReleases, RETENTION_RELEASE_DIRECTORY } from "./snapshot-retention-releases.mjs";
+import { inspectStorageReaderCompatibility } from "./snapshot-storage-compatibility.mjs";
 
 const ids = (encoded) => [...new Set(encoded.match(/\b(?:world-model|graph-snapshot|source-snapshot)-[a-f0-9]{24}\b/g) || [])];
 const target = /^(world-model|graph-projection)\/snapshots\/((?:world-model|graph-snapshot)-[a-f0-9]{24})\.json(?:\.gz)?$/;
@@ -189,7 +191,10 @@ export function verifyRoot(relative, document, owner) {
   } else failure("UNSUPPORTED_GC_REFERENCE_ROOT");
 }
 
-export function referenceSummary(document) {
+// bookkeeping: the fields only a retention window or a release record needs
+// (lineage ids and the record ids a current pointer names). Left out otherwise,
+// so the reference summary costs what it cost before retention existed.
+export function referenceSummary(document, { bookkeeping = true } = {}) {
   const encoded = JSON.stringify(document),
     requiredWorldHashes = new Set(),
     pins = [];
@@ -204,8 +209,7 @@ export function referenceSummary(document) {
   }
   return {
     references: ids(encoded),
-    ancestryIds: ancestryIdsOf(document),
-    namedRecordIds: namedRecordIds(document),
+    ...(bookkeeping ? { ancestryIds: ancestryIdsOf(document), namedRecordIds: namedRecordIds(document) } : {}),
     digestReferences: [...new Set(encoded.match(/[a-f0-9]{64}/g) || [])],
     requiredWorldHashes: [...requiredWorldHashes],
     pins,
@@ -217,8 +221,51 @@ export function referenceSummary(document) {
 const SUPPORTED_GC_DIRECTORY =
   /^(?:graph-discovery|context(?:\/capsules)?|generated|world-model(?:\/snapshots)?|graph-projection(?:\/snapshots)?|sessions(?:\/(?:records|ledger|work-evidence|runs(?:\/run-[0-9]+-[a-f0-9]{6})?|by-id(?:\/session-[a-f0-9-]{36}(?:\/(?:work-evidence|ledger))?)?))?|onboarding(?:\/storage-selections)?|roles|instructions|lineage(?:\/(?:whole-plans|execution-contracts|result-packets|review-decisions))?|change-sets(?:\/(?:records|vcs-evidence|impact-candidate-sets|impact-review-decisions))?|refresh(?:\/(?:requests|receipts|retention-releases))?|document-projection(?:\/post-refresh(?:\/(?:policies|receipts))?)?|observations(?:\/(?:source-bundles|descriptors|records(?:\/by-source-key)?|derived|receipts))?|context\/product-graph(?:\/(?:유저플로우 기획서|화면설계서|승인|build))?)$/;
 
-function newInventory({ root, storage, owner, maxSummaryBytes, checkContinue }) {
+// What storage GC does with one path of the store (relative to the store
+// directory). The apply's inventory and the dry run both ask this, so a file
+// the apply keeps silently is never an issue in the preview, and the reverse.
+//   directories: "walk", "skip" (coordination and mailbox folders), "operations",
+//     "backend" (git snapshot store, bundle store), "user-kept" (a folder of the
+//     user's own in the product graph folder), "unsupported";
+//   files: "snapshot", "json-root", "text-root", "canon" (product graph Canon,
+//     a text root), "ignore" (caches, generated product graph output, release
+//     records, read on their own), "user-kept", "unsupported".
+export function classifyGcStorePath(relative, { directory }) {
+  const name = String(relative || "").replaceAll("\\", "/");
+  const nfc = name.normalize("NFC");
+  if (directory) {
+    if (!name) return "walk";
+    if (name === ".snapshot-gc" || name === "messaging") return "skip";
+    if (name === ".operations") return "operations";
+    if (name === "snapshot-objects.git" || name === "snapshot-bundles") return "backend";
+    if (SUPPORTED_GC_DIRECTORY.test(nfc)) return "walk";
+    if (nfc.startsWith(PRODUCT_GRAPH_DIRECTORY + "/")) return "user-kept";
+    return "unsupported";
+  }
+  if (
+    name === "graph-discovery/index.json" ||
+    name === "refresh/file-stat-cache.json" ||
+    name === "refresh/input-generation.json" ||
+    name === SNAPSHOT_RETENTION_RELATIVE ||
+    name.startsWith("refresh/.watch-arm-") ||
+    name.startsWith(RETENTION_RELEASE_DIRECTORY + "/")
+  )
+    return "ignore";
+  if (nfc.startsWith(PRODUCT_GRAPH_DIRECTORY + "/")) {
+    const target = classifyProductGraphPath(nfc.slice(PRODUCT_GRAPH_DIRECTORY.length + 1));
+    if (target?.role === "build") return "ignore";
+    return target?.canon ? "canon" : "user-kept";
+  }
+  if (target.test(name)) return "snapshot";
+  if (name.endsWith(".json")) return "json-root";
+  if (name === ".gitignore" || /^(?:instructions\/project|generated\/(?:head|lode)-instructions|roles\/(?:head|lode|developer|coder|reviewer))\.md$/.test(name))
+    return "text-root";
+  return "unsupported";
+}
+
+function newInventory({ root, storage, owner, maxSummaryBytes, checkContinue, bookkeeping }) {
   const inventory = {
+    bookkeeping,
     root,
     storage,
     owner,
@@ -252,23 +299,28 @@ function* inventoryWalk(inventory, relative = "") {
   if (++inventory.scannedEntries > 50_000) failure("GC_INVENTORY_INCOMPLETE");
   const file = safeSnapshotPath(root, path.join(base, relative)),
     stat = fs.lstatSync(file);
+  // Release records (and a staging leftover of one) are checked by their own
+  // reader, which knows the hard-link pair an interrupted create can leave.
+  if (!stat.isDirectory() && !stat.isSymbolicLink() && relative.startsWith(RETENTION_RELEASE_DIRECTORY + "/")) {
+    inventory.storedBytes += stat.size;
+    return;
+  }
   if (stat.isSymbolicLink() || (!stat.isDirectory() && (!stat.isFile() || stat.nlink !== 1))) failure("UNSAFE_GC_STORAGE_ENTRY");
   if (stat.isDirectory()) {
-    if (relative === ".snapshot-gc") return;
-    if (relative === ".operations") {
+    const kind = classifyGcStorePath(relative, { directory: true });
+    if (kind === "skip" || kind === "backend") return;
+    if (kind === "operations") {
       if (fs.readdirSync(file).length) issue(relative, "ACTIVE_OR_UNKNOWN_WRITER");
       return;
     }
-    if (relative === "messaging") return;
-    if (relative === "snapshot-objects.git" || relative === "snapshot-bundles") return;
-    if (relative && !SUPPORTED_GC_DIRECTORY.test(relative.normalize("NFC"))) {
-      // The product graph folder is written by hand: a folder Lode does not
-      // recognise there is the user's own. Kept, never walked or deleted,
-      // and not an issue. Links never reach here (rejected above).
-      if (relative.normalize("NFC").startsWith(PRODUCT_GRAPH_DIRECTORY + "/")) {
-        inventory.productGraphKept.push({ path: storage.directory + "/" + relative, kind: "folder" });
-        return;
-      }
+    // The product graph folder is written by hand: a folder Lode does not
+    // recognise there is the user's own. Kept, never walked or deleted, and
+    // not an issue. Links never reach here (rejected above).
+    if (kind === "user-kept") {
+      inventory.productGraphKept.push({ path: storage.directory + "/" + relative, kind: "folder" });
+      return;
+    }
+    if (kind === "unsupported") {
       issue(relative, "UNSUPPORTED_GC_STORAGE_DIRECTORY");
       return;
     }
@@ -281,28 +333,18 @@ function* inventoryWalk(inventory, relative = "") {
   )
     failure("OBSERVATION_STORE_LIMIT");
   if ((inventory.storedBytes += stat.size) > 1024 ** 3) failure("GC_INVENTORY_INCOMPLETE");
-  if (
-    relative === "graph-discovery/index.json" ||
-    relative === "refresh/file-stat-cache.json" ||
-    relative === "refresh/input-generation.json" ||
-    relative === SNAPSHOT_RETENTION_RELATIVE ||
-    relative.startsWith("refresh/.watch-arm-") ||
-    // Release records are read on their own (readRetentionReleases): they say what
-    // retention released and are never reference roots that would keep it.
-    relative.startsWith(RETENTION_RELEASE_DIRECTORY + "/")
-  )
-    return;
-  // Product graph: generated output is rebuildable (like the discovery index);
-  // Canon files are read as verified text roots, so a snapshot id written in a
-  // document still retains that snapshot. A name Lode does not recognise is
-  // the user's own: kept, not read, not a root and not an issue.
-  const productGraphPath = relative.startsWith(PRODUCT_GRAPH_DIRECTORY + "/") ? relative.slice(PRODUCT_GRAPH_DIRECTORY.length + 1).normalize("NFC") : null;
-  const productGraphTarget = productGraphPath === null ? null : classifyProductGraphPath(productGraphPath);
-  if (productGraphTarget?.role === "build") return;
-  if (productGraphPath !== null && !productGraphTarget?.canon) {
+  // Caches, generated product graph output and release records are not roots.
+  // Product graph Canon files are read as verified text roots, so a snapshot id
+  // written in a document still retains that snapshot. A name Lode does not
+  // recognise there is the user's own: kept, not read, not a root, not an issue.
+  const kind = classifyGcStorePath(relative, { directory: false });
+  if (kind === "ignore") return;
+  if (kind === "user-kept") {
     inventory.productGraphKept.push({ path: storage.directory + "/" + relative, kind: "file" });
     return;
   }
+  const productGraphPath = kind === "canon" ? relative.slice(PRODUCT_GRAPH_DIRECTORY.length + 1).normalize("NFC") : null;
+  const productGraphTarget = kind === "canon" ? { canon: true } : null;
   const exact = fs.lstatSync(file, { bigint: true }),
     before = snapshotFileIdentity(exact),
     match = target.exec(relative);
@@ -329,12 +371,8 @@ function* inventoryWalk(inventory, relative = "") {
         return;
       }
       document = new TextDecoder("utf-8", { fatal: true }).decode(read.bytes);
-    } else if (relative.endsWith(".json")) document = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(read.bytes));
-    else if (
-      relative === ".gitignore" ||
-      /^(?:instructions\/project|generated\/(?:head|lode)-instructions|roles\/(?:head|lode|developer|coder|reviewer))\.md$/.test(relative)
-    )
-      document = new TextDecoder("utf-8", { fatal: true }).decode(read.bytes);
+    } else if (kind === "json-root") document = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(read.bytes));
+    else if (kind === "text-root") document = new TextDecoder("utf-8", { fatal: true }).decode(read.bytes);
     else {
       issue(relative, "UNSUPPORTED_GC_REFERENCE_ROOT");
       return;
@@ -347,14 +385,14 @@ function* inventoryWalk(inventory, relative = "") {
     bytes: read.bytes.length,
     sha256: hash(read.bytes),
     identity: before,
-    mtimeMs: stat.mtimeMs,
+    ...(inventory.bookkeeping && match ? { mtimeMs: stat.mtimeMs } : {}),
   };
   let retainedRow = null;
   try {
     if (match) {
       const hydrated = hydrateSnapshotEntry({ root, storage, entry: { document } });
       document = hydrated.document;
-      const summary = referenceSummary(document);
+      const summary = referenceSummary(document, inventory);
       const original = match[2].startsWith("world-model-")
         ? verifyWorldModelSnapshotOriginal({ document, worldModelId: match[2], storage })
         : verifyTemporalProvenanceGraph(document);
@@ -370,7 +408,7 @@ function* inventoryWalk(inventory, relative = "") {
         graphSnapshotHash: original.graphSnapshotHash || graph?.graphSnapshotHash || null,
       };
     } else {
-      const summary = referenceSummary(document);
+      const summary = referenceSummary(document, inventory);
       if (typeof document !== "string") verifyRoot(relative, document, owner);
       retainedRow = { ...entry, ...summary };
     }
@@ -458,14 +496,19 @@ export function selectRetainedClosure({
       queue.push(row);
     }
   };
-  // A reference that history (an older refresh receipt or request, or a kept
-  // snapshot's own lineage) makes to an id a verified release record names is
-  // released, not missing. Any other missing reference stays an issue.
+  // A reference that history makes to an id a verified release record names is
+  // released, not missing. History is an older refresh receipt or request or a
+  // post-refresh receipt (not the ones the current pointers name), or a stored
+  // snapshot's own lineage ids (its parents). A World named by hash is released
+  // only when the record carries that hash. Any other missing reference, from a
+  // current pointer, a pin record or a snapshot's own content, stays an issue.
+  const protectedPaths = decision.protectedPaths || currentRecordPaths(roots);
   const releasedReferences = [];
-  const missing = (summary, id, reasonCode) => {
+  const missing = (summary, id, reasonCode, digest = null) => {
     if (deferred?.id(id)) return;
     const release = released.get(id);
-    if (release && (summary.id || isHistoryRoot(summary.relative || summary.path, decision.protectedPaths)))
+    const fromHistory = summary.id ? (summary.ancestryIds || []).includes(id) : isHistoryRoot(summary.relative || summary.path, protectedPaths);
+    if (release && fromHistory && (digest === null || release.hash === digest))
       releasedReferences.push({ path: summary.path, id, releasedAt: release.releasedAt, releaseId: release.releaseId });
     else issue(summary.path, reasonCode);
   };
@@ -503,10 +546,10 @@ export function selectRetainedClosure({
       const id = "world-model-" + digest.slice(0, 24);
       const matches = (byId.get(id) || []).filter((row) => row.worldModelHash === digest);
       if (windowed && !selected(id)) {
-        if (!matches.length && decision.hardIds.has(id)) missing(summary, id, "RETAINED_WORLD_HASH_UNAVAILABLE");
+        if (!matches.length && decision.hardIds.has(id)) missing(summary, id, "RETAINED_WORLD_HASH_UNAVAILABLE", digest);
         continue;
       }
-      if (!matches.length) missing(summary, id, "RETAINED_WORLD_HASH_UNAVAILABLE");
+      if (!matches.length) missing(summary, id, "RETAINED_WORLD_HASH_UNAVAILABLE", digest);
       else matches.forEach(retain);
     }
     for (const pin of summary.pins || []) {
@@ -542,16 +585,38 @@ export function observeSnapshotRetentionClosure({ root, retention = null, gitSto
   if (!storage?.projectFile || !inspected.project || !inspected.state) failure("GC_PROJECT_UNAVAILABLE");
   root = inspected.project.projectRoot;
   const owner = { root, projectId: inspected.project.projectId, storage, inspected };
-  const inventory = newInventory({ root, storage, owner, maxSummaryBytes: SNAPSHOT_GC_SUMMARY_BYTES, checkContinue: () => {} });
+  const releases = readRetentionReleases({ root, storage, projectId: owner.projectId });
+  const retentionPolicy = resolveSnapshotRetentionPolicy({ root, storage, override: retention });
+  const inventory = newInventory({
+    root,
+    storage,
+    owner,
+    maxSummaryBytes: SNAPSHOT_GC_SUMMARY_BYTES,
+    checkContinue: () => {},
+    bookkeeping: !retentionPolicy.preserveAllHistory || releases.records.length > 0 || releases.problems.length > 0,
+  });
   try {
     for (const step of inventoryWalk(inventory)) void step;
     checkObservationLineage(owner);
   } catch (error) {
     inventory.issue(storage.directory, error.code || "GC_INVENTORY_UNREADABLE");
   }
-  const releases = readRetentionReleases({ root, storage, projectId: owner.projectId });
   for (const problem of releases.problems) inventory.issue(problem.path, problem.reasonCode);
-  const retentionPolicy = resolveSnapshotRetentionPolicy({ root, storage, override: retention });
+  // The apply refuses a store whose pointers need a newer reader; so does the
+  // preview. (Filesystem qualification and an active collection are checked
+  // only by the apply; the preview says so.)
+  try {
+    const compatibility = inspectStorageReaderCompatibility({
+      root,
+      storage,
+      verifyWorldPointer: (pointer) => verifyWorldModelPointerOriginal(pointer, owner.projectId),
+      verifyGraphPointer: (pointer) => verifyGraphProjectionPointer(pointer, null, storage),
+    });
+    const mismatch = compatibility.layers.find((layer) => ["STORAGE_VERSION_MISMATCH", "INVALID_READER_REQUIREMENTS"].includes(layer.reasonCode));
+    if (mismatch) inventory.issue(storage.directory, mismatch.reasonCode);
+  } catch (error) {
+    if (error.code === "STORAGE_VERSION_MISMATCH") inventory.issue(storage.directory, error.code);
+  }
   const decision = selectRetainedSnapshotIds({ snapshots: inventory.snapshots, roots: inventory.roots, policy: retentionPolicy });
   const backendPrefixes = deferredBackends.map((item) => item.replaceAll("\\", "/") + "/");
   const { retained, releasedReferences } = selectRetainedClosure({
@@ -611,7 +676,16 @@ export async function buildSnapshotDeletionClosure({
       failure("SNAPSHOT_COLLECTION_INVALIDATED");
     }
   };
-  const inventory = newInventory({ root, storage, owner, maxSummaryBytes, checkContinue });
+  const releases = readRetentionReleases({ root, storage, projectId: owner.projectId });
+  const retentionPolicy = resolveSnapshotRetentionPolicy({ root, storage, override: retention });
+  const inventory = newInventory({
+    root,
+    storage,
+    owner,
+    maxSummaryBytes,
+    checkContinue,
+    bookkeeping: !retentionPolicy.preserveAllHistory || releases.records.length > 0 || releases.problems.length > 0,
+  });
   const { entries, snapshots, roots, issue } = inventory;
   try {
     await mixed.inventoryDomains();
@@ -631,7 +705,7 @@ export async function buildSnapshotDeletionClosure({
       if (original.projectId !== owner.projectId) failure("GC_SNAPSHOT_IDENTITY_MISMATCH");
       const graph = original.temporalProvenanceGraph,
         { document: unused, ...physical } = row;
-      const summary = referenceSummary(original),
+      const summary = referenceSummary(original, inventory),
         retainedRow = {
           ...physical,
           ...summary,
@@ -651,9 +725,7 @@ export async function buildSnapshotDeletionClosure({
   } catch (error) {
     issue(storage.directory, error.code || "GC_INVENTORY_UNREADABLE");
   }
-  const releases = readRetentionReleases({ root, storage, projectId: owner.projectId });
   for (const problem of releases.problems) issue(problem.path, problem.reasonCode);
-  const retentionPolicy = resolveSnapshotRetentionPolicy({ root, storage, override: retention });
   const decision = selectRetainedSnapshotIds({ snapshots, roots, policy: retentionPolicy });
   const { retained, pinnedOids, pinnedPaths, releasedReferences } = selectRetainedClosure({
     snapshots,

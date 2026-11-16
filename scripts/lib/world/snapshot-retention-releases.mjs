@@ -13,6 +13,13 @@ import { failCode as failure } from "../core/errors.mjs";
 // A record that cannot be read or verified excuses nothing.
 export const RETENTION_RELEASE_DIRECTORY = "refresh/retention-releases";
 const RELEASE_NAME = /^(retention-release-[a-f0-9]{24})\.json$/;
+// The staging name the no-clobber create uses (fs-atomic staged()). An
+// interrupted create can leave it alone, or hard-linked to the published record.
+const STAGING_NAME = /^\.(retention-release-[a-f0-9]{24}\.json)\.[0-9a-f-]{36}\.tmp$/;
+// The reader refuses a record larger than this; the writer splits an apply's
+// releases so no record comes near it (an entry is well under 1 KiB).
+export const RETENTION_RELEASE_MAX_BYTES = 4 * 1024 * 1024;
+export const RETENTION_RELEASE_MAX_ENTRIES = 2000;
 const WHOLE_ID = /^(?:world-model|graph-snapshot)-[a-f0-9]{24}$/;
 const ANY_ID = /^(?:world-model|graph-snapshot|source-snapshot)-[a-f0-9]{24}$/;
 const HASH = /^[a-f0-9]{64}$/;
@@ -82,12 +89,24 @@ export function verifyRetentionRelease(document, { projectId = null, fileName = 
   return document;
 }
 
+// The records one apply writes: its releases split so that no record exceeds
+// RETENTION_RELEASE_MAX_ENTRIES entries (and so stays far below the reader's bound).
+export function planRetentionReleases({ released, maxEntries = RETENTION_RELEASE_MAX_ENTRIES, ...rest }) {
+  if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) failure("RETENTION_RELEASE_INVALID");
+  const documents = [];
+  for (let start = 0; start < released.length; start += maxEntries)
+    documents.push(buildRetentionRelease({ ...rest, released: released.slice(start, start + maxEntries) }));
+  return documents;
+}
+
 // Writes a new record without replacing any file. Returns its store-relative path.
 export function writeRetentionRelease({ root, storage, document }) {
   const directory = path.join(root, storage.directory, RETENTION_RELEASE_DIRECTORY);
   fs.mkdirSync(directory, { recursive: true });
   const file = path.join(directory, document.releaseId + ".json");
-  atomicCreateArtifact(file, JSON.stringify(document, null, 2) + "\n");
+  const text = JSON.stringify(document, null, 2) + "\n";
+  if (Buffer.byteLength(text) > RETENTION_RELEASE_MAX_BYTES) failure("RETENTION_RELEASE_TOO_LARGE");
+  atomicCreateArtifact(file, text);
   return storage.directory + "/" + RETENTION_RELEASE_DIRECTORY + "/" + document.releaseId + ".json";
 }
 
@@ -98,7 +117,8 @@ export function writeRetentionRelease({ root, storage, document }) {
 export function readRetentionReleases({ root, storage, projectId }) {
   const released = new Map(),
     problems = [],
-    records = [];
+    records = [],
+    staging = [];
   const directory = path.join(root, storage.directory, RETENTION_RELEASE_DIRECTORY);
   let names = [];
   try {
@@ -106,14 +126,36 @@ export function readRetentionReleases({ root, storage, projectId }) {
   } catch (error) {
     if (error.code !== "ENOENT")
       problems.push({ path: storage.directory + "/" + RETENTION_RELEASE_DIRECTORY, reasonCode: error.code || "RETENTION_RELEASE_UNREADABLE" });
-    return { released, problems, records };
+    return { released, problems, records, staging };
+  }
+  // A staging file an interrupted create left: alone (the record was never
+  // published, and since a record is written before any unlink, nothing it would
+  // have listed was deleted), or hard-linked to the record it published. Either
+  // way it is the create's own leftover: named, never read, never an issue.
+  const stagingInodes = new Map();
+  for (const name of names) {
+    const match = STAGING_NAME.exec(name);
+    if (!match) continue;
+    const relative = storage.directory + "/" + RETENTION_RELEASE_DIRECTORY + "/" + name;
+    try {
+      const stat = fs.lstatSync(path.join(directory, name));
+      if (!stat.isFile() || stat.isSymbolicLink()) failure("RETENTION_RELEASE_UNSAFE");
+      stagingInodes.set(match[1], { dev: stat.dev, ino: stat.ino });
+      staging.push({ path: relative, record: match[1], note: "left by an interrupted create; ignored" });
+    } catch (error) {
+      problems.push({ path: relative, reasonCode: error.code || "RETENTION_RELEASE_UNREADABLE" });
+    }
   }
   for (const name of names) {
+    if (STAGING_NAME.test(name)) continue;
     const relative = storage.directory + "/" + RETENTION_RELEASE_DIRECTORY + "/" + name;
     try {
       const file = path.join(directory, name);
       const stat = fs.lstatSync(file);
-      if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > 4 * 1024 * 1024) failure("RETENTION_RELEASE_UNSAFE");
+      // Two links are allowed only when the other one is this record's own staging file.
+      const pair = stagingInodes.get(name);
+      const links = stat.nlink === 1 || (stat.nlink === 2 && pair && pair.dev === stat.dev && pair.ino === stat.ino);
+      if (!stat.isFile() || stat.isSymbolicLink() || !links || stat.size > RETENTION_RELEASE_MAX_BYTES) failure("RETENTION_RELEASE_UNSAFE");
       if (!RELEASE_NAME.test(name)) failure("RETENTION_RELEASE_NAME_MISMATCH");
       const document = verifyRetentionRelease(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(fs.readFileSync(file))), {
         projectId,
@@ -124,7 +166,14 @@ export function readRetentionReleases({ root, storage, projectId }) {
         for (const id of entry.identityIds) {
           const known = released.get(id);
           if (!known || known.releasedAt < document.releasedAt)
-            released.set(id, { releaseId: document.releaseId, releasedAt: document.releasedAt, snapshotId: entry.id, path: relative });
+            released.set(id, {
+              releaseId: document.releaseId,
+              releasedAt: document.releasedAt,
+              snapshotId: entry.id,
+              // The released snapshot's own hash, for its own id only.
+              hash: id === entry.id ? entry.hash : null,
+              path: relative,
+            });
         }
     } catch (error) {
       problems.push({
@@ -133,7 +182,7 @@ export function readRetentionReleases({ root, storage, projectId }) {
       });
     }
   }
-  return { released, problems, records };
+  return { released, problems, records, staging };
 }
 
 // The answer a reader gives for a snapshot id that is not stored: released by

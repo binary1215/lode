@@ -544,7 +544,12 @@ export function readIncrementalRefreshRequest({ root = ".", refreshRequestId } =
   return { status: "verified", file, request };
 }
 
-export async function readIncrementalRefreshReceipt({ root = ".", refreshReceiptId, storeAdapter = null } = {}) {
+// allowReleased: answer status "released-by-retention" (receipt and request
+// verified by digest, no snapshot comparison) when retention released the World
+// the receipt names. Only the reader of one receipt asks for this; every other
+// caller gets WORLD_MODEL_SNAPSHOT_RELEASED, so none treats a released World as
+// present or verified.
+export async function readIncrementalRefreshReceipt({ root = ".", refreshReceiptId, storeAdapter = null, allowReleased = false } = {}) {
   const inspected = readyProject(root);
   const file = receiptFile(inspected.project.projectRoot, refreshReceiptId, inspected.storage);
   if (!fs.existsSync(file)) fail(`Incremental refresh receipt is missing: ${refreshReceiptId}`, "REFRESH_RECEIPT_NOT_FOUND");
@@ -570,6 +575,11 @@ export async function readIncrementalRefreshReceipt({ root = ".", refreshReceipt
   };
   const baseSnapshot = await snapshotOf(receipt.base.worldModelId);
   const nextSnapshot = receipt.next.worldModelId === receipt.base.worldModelId ? baseSnapshot : await snapshotOf(receipt.next.worldModelId);
+  if (released.length && !allowReleased)
+    throw Object.assign(new Error(released.map((item) => item.message).join(" ")), {
+      code: "WORLD_MODEL_SNAPSHOT_RELEASED",
+      released,
+    });
   if (released.length)
     return {
       status: "released-by-retention",

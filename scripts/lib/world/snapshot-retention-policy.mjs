@@ -122,6 +122,13 @@ export function snapshotIdsIn(value, found = new Set()) {
   return found;
 }
 
+// The lineage ids of a stored snapshot: every id it lists under
+// parentSourceSnapshotIds, parentSnapshotIds, previousWorldModelId or
+// referencedSourceSnapshotId. Decided per id, not per occurrence, on purpose: a
+// World also names its parents' source snapshots inside its revisions, and
+// those are lineage too (reading, refreshing and diffing a kept World never
+// opens its parent). Only snapshot rows use this to leave a parent to its
+// window. Records do not: a record pins every id it names, parents included.
 export function ancestryIdsOf(document) {
   const found = new Set();
   const add = (value) => {
@@ -243,8 +250,10 @@ export function selectRetainedSnapshotIds({ snapshots = [], roots = [], policy, 
     const relative = root.relative || root.path;
     if (isHistoryRoot(relative, protectedPaths)) continue;
     const current = isCurrentPointerRoot(relative) || protectedPaths.has(relative);
-    const ancestry = new Set(root.ancestryIds || []);
-    for (const id of root.references || []) if (current || !ancestry.has(id)) addHard(id, current ? "retained-current" : "retained-decision-or-current");
+    // A current pointer or a record pins every snapshot it names, including the
+    // parents it lists (a Capsule's parentSourceSnapshotIds): a window never
+    // releases what a record names, so no run can find it missing later.
+    for (const id of root.references || []) addHard(id, current ? "retained-current" : "retained-decision-or-current");
     for (const digest of root.requiredWorldHashes || []) if (/^[a-f0-9]{64}$/.test(digest)) addHard("world-model-" + digest.slice(0, 24));
     for (const digest of root.digestReferences || []) for (const row of hashes.get(digest) || []) addHard(row.id, "retained-by-hash");
   }

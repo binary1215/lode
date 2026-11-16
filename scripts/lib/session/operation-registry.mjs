@@ -3429,8 +3429,9 @@ export const OPERATIONS = Object.freeze([
         additionalProperties: false,
       },
     },
-    mcp: { args: (args) => [{ root: args.project_root, refreshReceiptId: args.refresh_receipt_id }] },
-    cli: { command: "world-refresh-read", flags: ["receipt"], args: ({ root, options }) => [{ root, refreshReceiptId: options.receipt }] },
+    // The reader of one receipt may be told its World was released by retention; internal callers never are.
+    mcp: { args: (args) => [{ root: args.project_root, refreshReceiptId: args.refresh_receipt_id, allowReleased: true }] },
+    cli: { command: "world-refresh-read", flags: ["receipt"], args: ({ root, options }) => [{ root, refreshReceiptId: options.receipt, allowReleased: true }] },
     impl: () => import("../world/incremental-refresh.mjs").then((module) => module.readIncrementalRefreshReceipt),
   },
   {
