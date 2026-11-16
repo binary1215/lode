@@ -752,10 +752,10 @@ async function refreshWorldModelLocked({
 
   let world = stored;
   if (requiresRefresh) {
-    const worldPointerFile = path.join(projectRoot, inspected.storage.directory, "world-model/current.json");
-    const graphPointerFile = path.join(projectRoot, inspected.storage.directory, "graph-projection/current.json");
-    const savedWorldPointer = fs.readFileSync(worldPointerFile, "utf8");
-    const savedGraphPointer = fs.readFileSync(graphPointerFile, "utf8");
+    // The persisting build refuses before it advances any pointer when it does
+    // not produce the previewed world (REFRESH_PREVIEW_DRIFT). Nothing is rolled
+    // back afterwards: a rollback of two local files would leave an external
+    // projection and the other derived outputs on the refused world.
     world = await buildWorldModel({
       root: projectRoot,
       persist: true,
@@ -766,6 +766,7 @@ async function refreshWorldModelLocked({
       repositoryScanExecution,
       parentSourceSnapshotIds,
       revisionParentIds,
+      expectedWorldModelId: nextPreview.snapshot.worldModelId,
       expectedCurrentWorldModelId: previousSnapshot.worldModelId,
       writerLease,
     });
@@ -773,8 +774,6 @@ async function refreshWorldModelLocked({
       world.snapshot.worldModelId !== receipt.next.worldModelId ||
       world.snapshot.temporalProvenanceGraph.sourceSnapshotId !== receipt.next.sourceSnapshotId
     ) {
-      atomicWrite(worldPointerFile, savedWorldPointer);
-      atomicWrite(graphPointerFile, savedGraphPointer);
       fail("Persisted World Model does not match the verified refresh receipt.", "REFRESH_PERSISTENCE_MISMATCH");
     }
   }
@@ -814,7 +813,18 @@ async function refreshWorldModelLocked({
 }
 
 async function fastUnchangedRefresh(options, inspected) {
-  if (options.additionalParentSourceSnapshotIds?.length || options.expectedChangedPaths?.length || options.storeAdapter || options.graphProjectionAdapter)
+  // The stamp covers the project store and the local git state only. A caller
+  // that supplies its own source of world, graph, history, runtime state or
+  // scan results brings inputs the stamp cannot see, so it takes the full path.
+  if (
+    options.additionalParentSourceSnapshotIds?.length ||
+    options.expectedChangedPaths?.length ||
+    options.storeAdapter ||
+    options.graphProjectionAdapter ||
+    options.gitHistoryAdapter ||
+    options.runtimeStateAdapter ||
+    options.repositoryScanExecution
+  )
     return null;
   const projectRoot = inspected.project.projectRoot;
   const storage = inspected.storage;

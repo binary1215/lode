@@ -1,5 +1,5 @@
 import { snapshotReaderRequirements } from "./snapshot-storage-compatibility.mjs";
-import { writeRefreshInputGeneration } from "./refresh-input-generation.mjs";
+import { refreshGitIdentity, writeRefreshInputGeneration } from "./refresh-input-generation.mjs";
 import { stabilizeTemporalRelationIdentities } from "./temporal-relation-identity.mjs";
 import fs from "node:fs";
 import { resolveLocalGitRepository } from "./local-git-repository.mjs";
@@ -1693,6 +1693,14 @@ async function buildWorldModelLocked({
     productOperatingProjectionInput || loadProductOperatingProjection({ storage, projectRoot: project.projectRoot, projectId: project.projectId });
   const releaseObservationProjection =
     releaseObservationProjectionInput || loadReleaseObservationProjection({ storage, projectRoot: project.projectRoot, projectId: project.projectId });
+  // Taken before the git state is read: the refresh stamp written after
+  // publication must describe what this build read, not what git is by then.
+  let gitIdentityBeforeRead = null;
+  try {
+    gitIdentityBeforeRead = refreshGitIdentity(project.projectRoot);
+  } catch {
+    gitIdentityBeforeRead = null;
+  }
   const git = gitHeadState(project.projectRoot);
   const runtimeState = runtimeStateFor(inspected.state);
   const indexer = indexerState();
@@ -2192,12 +2200,15 @@ async function buildWorldModelLocked({
     throw noteCanonBasisError(error, project.projectRoot, storage, productCanonBasis);
   }
   try {
-    writeRefreshInputGeneration({
-      root: project.projectRoot,
-      storage,
-      snapshot,
-      verifiedFiles: selectedRepositoryScanExecution.verifiedFiles ?? null,
-    });
+    // Without the git state from before the read there is nothing honest to stamp.
+    if (gitIdentityBeforeRead !== null)
+      writeRefreshInputGeneration({
+        root: project.projectRoot,
+        storage,
+        snapshot,
+        verifiedFiles: selectedRepositoryScanExecution.verifiedFiles ?? null,
+        gitIdentity: gitIdentityBeforeRead,
+      });
   } catch {
     /* The generation cache is an optimization. Publication already succeeded. */
   }

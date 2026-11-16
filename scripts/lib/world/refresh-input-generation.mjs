@@ -79,6 +79,22 @@ export function fileIdentity(absolute) {
   };
 }
 
+// A filesystem that keeps whole seconds (FAT keeps two) can take a second
+// write inside the tick of the first, leaving size and times as they were. A
+// file whose modification time has no sub-second part is trusted only once
+// that tick is over; until then it is read again.
+const COARSE_TICK_NS = 2_000_000_000n;
+export function timestampSettled(identity, nowMs = Date.now()) {
+  let modified;
+  try {
+    modified = BigInt(identity.mtimeNs);
+  } catch {
+    return false;
+  }
+  if (modified % 1_000_000_000n !== 0n) return true;
+  return BigInt(Math.trunc(nowMs)) * 1_000_000n - modified >= COARSE_TICK_NS;
+}
+
 // `before` is the stat taken before the bytes were read. The stat taken after
 // that read is recorded only when it still describes the same bytes.
 export function identitiesAgree(before, after, byteLength) {
@@ -100,7 +116,7 @@ export function rememberFileStat(cache, relative, absolute, digest, bytes, befor
   } catch {
     after = null;
   }
-  if (!identitiesAgree(before, after, bytes)) {
+  if (!identitiesAgree(before, after, bytes) || !timestampSettled(after)) {
     if (cache) cache.delete(relative);
     return null;
   }
@@ -199,7 +215,7 @@ function linkedGitDirectories(root) {
   return { status: "ok", directories };
 }
 
-function gitIdentity(root) {
+export function refreshGitIdentity(root) {
   const linked = linkedGitDirectories(root);
   if (linked.status !== "ok") return linked.status;
   const rows = [];
@@ -214,8 +230,11 @@ function gitIdentity(root) {
   return sha256Hex(JSON.stringify(rows));
 }
 
-export function refreshInputStamp(root, storage) {
-  return sha256Hex(JSON.stringify({ storage: walkStorageInputs(root, storage), git: gitIdentity(root) }));
+// `git` lets a build record the git state it read before it built, so a
+// commit made while it was building leaves the stamp behind the repository
+// and the next refresh takes the full path.
+export function refreshInputStamp(root, storage, { git = refreshGitIdentity(root) } = {}) {
+  return sha256Hex(JSON.stringify({ storage: walkStorageInputs(root, storage), git }));
 }
 
 const REVISION_KINDS = new Set([
@@ -243,7 +262,7 @@ function confirmAgreedFile(root, file) {
   } catch {
     return null;
   }
-  if (!identitiesAgree(before, after, raw.length) || raw.length !== file.bytes || sha256Hex(raw) !== file.digest) return null;
+  if (!identitiesAgree(before, after, raw.length) || !timestampSettled(after) || raw.length !== file.bytes || sha256Hex(raw) !== file.digest) return null;
   return { ...after, digest: file.digest, bytes: file.bytes };
 }
 
@@ -260,7 +279,7 @@ function agreedGenerationEntry(entry, file) {
   };
 }
 
-export function writeRefreshInputGeneration({ root, storage, snapshot, verifiedFiles = null }) {
+export function writeRefreshInputGeneration({ root, storage, snapshot, verifiedFiles = null, gitIdentity = undefined }) {
   const graph = snapshot.temporalProvenanceGraph;
   const revisions = graph.nodes.filter((node) => REVISION_KINDS.has(node.kind));
   const files = {};
@@ -280,7 +299,7 @@ export function writeRefreshInputGeneration({ root, storage, snapshot, verifiedF
     parentSourceSnapshotIds: graph.parentSourceSnapshotIds,
     revisionNodeCount: revisions.length,
     parentedRevisionCount: revisions.filter((node) => node.parentRevisionIds?.length > 0).length,
-    stamp: refreshInputStamp(root, storage),
+    stamp: refreshInputStamp(root, storage, gitIdentity === undefined ? {} : { git: gitIdentity }),
     files,
   };
   atomicWriteText(cachePath(root, storage, INPUT_GENERATION_RELATIVE), JSON.stringify(document));

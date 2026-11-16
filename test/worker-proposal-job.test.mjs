@@ -410,9 +410,10 @@ test("proposal freeze recovery requires exact settled result and complete native
 
 function statWithMovedTimestamps(stat) {
   const moved = Object.assign(Object.create(Object.getPrototypeOf(stat)), stat);
-  const bump = (value) => (typeof value === "bigint" ? value + 1n : value + 1);
-  Object.defineProperty(moved, "mtimeNs", { value: bump(stat.mtimeNs) });
-  Object.defineProperty(moved, "ctimeNs", { value: bump(stat.ctimeNs) });
+  // The fields the reader compares on a plain (non-bigint) stat.
+  assert.equal(typeof stat.mtimeMs, "number");
+  Object.defineProperty(moved, "mtimeMs", { value: stat.mtimeMs + 1 });
+  Object.defineProperty(moved, "ctimeMs", { value: stat.ctimeMs + 1 });
   return moved;
 }
 

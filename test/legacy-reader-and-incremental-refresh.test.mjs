@@ -7,6 +7,14 @@ import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
 import { buildWorldModel, readWorldModel, readWorldModelSnapshot } from "../scripts/lib/world/world-model.mjs";
 import { refreshWorldModel } from "../scripts/lib/world/incremental-refresh.mjs";
+import {
+  fileIdentity,
+  refreshGitIdentity,
+  refreshInputStamp,
+  rememberFileStat,
+  timestampSettled,
+  writeRefreshInputGeneration,
+} from "../scripts/lib/world/refresh-input-generation.mjs";
 import { applySnapshotGarbageCollection, inspectSnapshotGarbageCollection } from "../scripts/lib/world/snapshot-gc.mjs";
 import { graphProjectionCanonicalJson } from "../scripts/lib/world/graph-projection-adapter.mjs";
 import { sha256Hex } from "../scripts/lib/core/digest.mjs";
@@ -263,7 +271,8 @@ test("a store written by beta.80 commit 6d9f6be stays readable and keeps its sna
   }
   const archived = spawnSync("git", ["archive", "--format=tar", "-o", archive, "6d9f6be"], { cwd: pluginRoot, encoding: "utf8" });
   assert.equal(archived.status, 0, archived.stderr);
-  const extracted = spawnSync("tar", ["-xf", archive, "-C", tree], { encoding: "utf8" });
+  // Relative names from inside the folder: GNU tar reads a drive letter ("C:") as a remote host.
+  const extracted = spawnSync("tar", ["-xf", path.basename(archive), "-C", path.basename(tree)], { cwd: pack, encoding: "utf8" });
   assert.equal(extracted.status, 0, extracted.stderr);
   fs.writeFileSync(path.join(projectRoot, "module.py"), "def compute_value():\n    return 'beta80'\n");
   const init = spawnSync(process.execPath, ["scripts/lode.mjs", "init", projectRoot, "--runtime", "codex", "--runtime", "claude", "--runtime", "opencode"], {
@@ -343,7 +352,8 @@ test("a persisted world that differs from the refresh preview is not left publis
     return result;
   };
   try {
-    await assert.rejects(refreshWorldModel({ root: f.root }), { code: "REFRESH_PERSISTENCE_MISMATCH" });
+    // Refused by the persisting build before any pointer moves.
+    await assert.rejects(refreshWorldModel({ root: f.root }), { code: "REFRESH_PREVIEW_DRIFT" });
   } finally {
     fs.readFileSync = originalRead;
   }
@@ -374,4 +384,53 @@ test("gc dry-run and apply agree when snapshot backends are present", async (t) 
   const current = await readWorldModel({ root: f.root });
   assert.equal(current.snapshot.worldModelId, built.snapshot.worldModelId);
   assert.equal(current.snapshot.worldModelHash, built.snapshot.worldModelHash);
+});
+
+test("the refresh stamp records the git state the build read, so a commit made meanwhile is not unchanged", async (t) => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-stamp (v2)-")));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  git(root, ["init"]);
+  fs.writeFileSync(path.join(root, "a.py"), "def value():\n    return 1\n");
+  git(root, ["add", "a.py"]);
+  git(root, ["commit", "-m", "init"]);
+  initializeProject({ root, pluginRoot, runtimes: ["codex", "claude", "opencode"] });
+  const built = await buildWorldModel({ root });
+  const storage = inspectProject(root).storage;
+  // What a build holds: the git state from before it read git. The commit lands while it builds.
+  const readByTheBuild = refreshGitIdentity(root);
+  git(root, ["commit", "--allow-empty", "-m", "made while the build was running"]);
+  const written = writeRefreshInputGeneration({ root, storage, snapshot: built.snapshot, gitIdentity: readByTheBuild });
+  assert.notEqual(written.stamp, refreshInputStamp(root, storage));
+  const next = await refreshWorldModel({ root });
+  assert.notEqual(next.diagnostics.repositoryScan.executionMode, "stat-cache-unchanged");
+  assert.equal(next.status, "refreshed");
+});
+
+test("a whole-second modification time is not trusted inside its own tick", (t) => {
+  const now = 1_800_000_000;
+  const at = (seconds, extraNs = 0n) => ({ mtimeNs: String(BigInt(seconds) * 1_000_000_000n + extraNs) });
+  assert.equal(timestampSettled(at(now), now * 1000), false);
+  assert.equal(timestampSettled(at(now - 1), now * 1000), false);
+  assert.equal(timestampSettled(at(now - 2), now * 1000), true);
+  assert.equal(timestampSettled(at(now, 5n), now * 1000), true);
+  assert.equal(timestampSettled({ mtimeNs: "not a number" }, now * 1000), false);
+
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "lode-tick-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const file = path.join(directory, "a.txt");
+  fs.writeFileSync(file, "one\n");
+  const digest = sha256Hex(fs.readFileSync(file));
+  const seconds = Math.floor(Date.now() / 1000);
+  fs.utimesSync(file, seconds, seconds);
+  let before = fileIdentity(file);
+  if (BigInt(before.mtimeNs) % 1_000_000_000n !== 0n) {
+    t.diagnostic("this filesystem did not keep the whole-second time; the file half of the test is skipped");
+    return;
+  }
+  const cache = new Map([["a.txt", { digest }]]);
+  assert.equal(rememberFileStat(cache, "a.txt", file, digest, 4, before), null);
+  assert.equal(cache.has("a.txt"), false);
+  fs.utimesSync(file, seconds - 10, seconds - 10);
+  before = fileIdentity(file);
+  assert.equal(rememberFileStat(cache, "a.txt", file, digest, 4, before)?.digest, digest);
 });

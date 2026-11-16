@@ -19,7 +19,10 @@ manual request or verified RefreshTriggerBatch
   -> content-derived IncrementalRefreshRequest
   -> rediscover every eligible file
   -> re-read and byte-hash a file unless the stat taken before the read still matches the stat taken after it and that agreed stat matches the last verified scan; only that agreed pair reuses the verified digest and analysis
+  -> re-read a file whose modification time has no sub-second part until two seconds have passed since that time (a filesystem that keeps whole seconds can hide a second write inside one tick)
   -> when those agreed stats and the non-snapshot inputs are unchanged, keep the published World and Graph instead of rebuilding them
+  -> the non-snapshot inputs are the project store outside snapshots and the local git head and refs, as they were before the build read them: a commit made while a build runs is seen by the next refresh
+  -> a caller that supplies its own store, projection, history, runtime-state or scan source always takes the full path
   -> reuse analysis only for digest-identical verified files
   -> validate one complete RepositoryScanResult
   -> preview a child SourceSnapshot and GraphSnapshot and build the refresh receipt from that preview

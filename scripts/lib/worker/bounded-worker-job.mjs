@@ -79,7 +79,8 @@ function regularBytes(file, limit, publicationAlias = false) {
     }
     const after = fs.fstatSync(fd);
     if (after.ino !== actual.ino || after.size !== actual.size) fail("Worker job file changed.");
-    const timestampMoved = after.mtimeNs !== actual.mtimeNs || after.ctimeNs !== actual.ctimeNs;
+    // Millisecond fields: these are plain stats, which carry no nanosecond fields.
+    const timestampMoved = after.mtimeMs !== actual.mtimeMs || after.ctimeMs !== actual.ctimeMs;
     if (!timestampMoved) return bytes;
     // Windows can update access or metadata timestamps while a read's bytes stay
     // identical. A second read of the same descriptor must match before those
