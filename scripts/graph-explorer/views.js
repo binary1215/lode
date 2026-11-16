@@ -757,10 +757,19 @@
 
   // ---------- start ----------
 
+  // A view that cannot read its part of the copy (for example a product graph
+  // build in a shape this page does not know) says so; the others still work.
+  const guarded = (render, id, title) => {
+    try {
+      render();
+    } catch (error) {
+      $(id).replaceChildren(block(title, el("p", { className: "mono", text: String(error?.message || error) })));
+    }
+  };
   frame();
-  renderStatus();
-  renderProduct();
-  renderGaps();
+  guarded(renderStatus, "view-status", t("decodeFailed"));
+  guarded(renderProduct, "view-product", t("pgUnreadable"));
+  guarded(renderGaps, "view-gaps", t("pgUnreadable"));
   show(active);
   document.documentElement.dataset.viewsReady = "true";
   // Time from the start of page load until the first view was drawn.

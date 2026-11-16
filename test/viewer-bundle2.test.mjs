@@ -820,6 +820,16 @@ test("acceptance 17: tabs and tree rows work from the keyboard", async (t) => {
   assert.doesNotMatch(read(path.join(assets, "views.css")), /min-width:(?:[4-9]\d\d|\d{4,})px/, "no view needs more than a phone's width");
 });
 
+test("a build in a shape the page does not know leaves the other views working", async (t) => {
+  const f = notesProject(t);
+  buildProductGraph({ root: f.root });
+  const snap = await buildGraphExplorerSnapshot({ root: f.root });
+  delete snap.productGraph.check.limits.calls;
+  const ui = explorerDom(snap);
+  assert.match(visibleText(ui.ids.get("view-status")), /Keep every note/);
+  assert.match(shown(ui, "gaps"), /The product graph build could not be read/);
+});
+
 test("acceptance 20: the new views, walk and tests name no toolkit or example project", () => {
   for (const file of ["views.js", "views.css", "product-graph-walk.js", "status-model.js", "i18n.js"])
     assert.doesNotMatch(read(path.join(assets, file)), /NeoPick|PySide|PyQt|\bQt\b|tkinter|Electron/i, file);

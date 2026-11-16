@@ -1141,7 +1141,10 @@ function freshnessOf(inputs, graph) {
         known.add(item.path);
         if (sourceHashNow(inputs.sourceRoot, item.path) !== item.sha256) changed.push(item.path);
       }
-      for (const file of productGraphCodeFiles(inputs.sourceRoot, excludes)) if (!known.has(file)) changed.push(file);
+      // A code file the build would read now but did not (a file it cannot
+      // read as text is not one the build reads either).
+      for (const file of productGraphCodeFiles(inputs.sourceRoot, excludes))
+        if (!known.has(file) && sourceHashNow(inputs.sourceRoot, file) !== null) changed.push(file);
       result.source = { known: true, changed: changed.sort(compare) };
     } catch (error) {
       result.source.reason = `소스를 읽지 못했다 (${error.code || "읽기 실패"})`;
