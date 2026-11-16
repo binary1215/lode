@@ -93,7 +93,12 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
       return;
     }
     physicalRows.push({ relative: relative.slice(prefix.length + 1), bytes: stat.size });
-    if (relative === prefix + "/graph-discovery/index.json") return; // Rebuildable membership, not a historical root.
+    if (
+      relative === prefix + "/graph-discovery/index.json" ||
+      relative === prefix + "/refresh/file-stat-cache.json" ||
+      relative === prefix + "/refresh/input-generation.json"
+    )
+      return; // Rebuildable membership or refresh input cache, not a historical root.
     if (relative.endsWith(".tmp")) {
       issue(relative, "UNPUBLISHED_OR_UNKNOWN_STAGE");
       return;
@@ -244,7 +249,9 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
 // Explicit asynchronous effect, separate from the unchanged zero-write
 // inspection. A diagnostic string scan is never its deletion certificate.
 export async function applySnapshotGarbageCollection({ root = ".", signal, onProcess } = {}) {
-  const deadline = Date.now() + 30_000;
+  // Inventory and reclaim are not one deadline. A single clock made a large
+  // store abort before any unreachable byte was deleted. Each Git command
+  // keeps its own bound; admission covers one unlink, not the walk.
   const owner = readGraphProject(root);
   const result = {
     kind: "SnapshotStorageInspection",
@@ -277,7 +284,7 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
   };
   if (signal?.aborted) return { ...result, code: "SNAPSHOT_GC_CANCELLED" };
   try {
-    const { inspectStorageReaderCompatibility } = await import("./snapshot-storage-compatibility.mjs");
+    const { inspectStorageReaderCompatibility, upgradeLegacyReaderPointers } = await import("./snapshot-storage-compatibility.mjs");
     const { verifyWorldModelPointerOriginal } = await import("./world-model.mjs");
     const { verifyGraphProjectionPointer } = await import("./graph-projection-adapter.mjs");
     const compatibility = inspectStorageReaderCompatibility({
@@ -291,10 +298,12 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
       return {
         ...result,
         code: mismatch.reasonCode,
-        message: mismatch.message,
+        message: mismatch.message || mismatch.reasonCode,
         requiredVersion: mismatch.requiredVersion || null,
         installedVersion: mismatch.installedVersion || null,
       };
+    if (compatibility.layers.some((layer) => layer.legacyDeclaration))
+      await upgradeLegacyReaderPointers({ root: owner.projectRoot, storage: owner.storage });
   } catch (error) {
     if (error.code === "STORAGE_VERSION_MISMATCH") return { ...result, code: error.code, message: error.message };
   }
@@ -302,7 +311,7 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
   if (attempt.status !== "active") return { ...result, status: attempt.status === "yielded" ? "gc_yielded" : "gc_preserved", code: attempt.reasonCode };
   let closure;
   try {
-    result.filesystem = await qualifySnapshotFileSystem({ root: owner.projectRoot, signal, onProcess, deadline });
+    result.filesystem = await qualifySnapshotFileSystem({ root: owner.projectRoot, signal, onProcess, deadline: Date.now() + 3_000 });
     if (result.filesystem.status !== "qualified-local") {
       result.code = signal?.aborted ? "SNAPSHOT_GC_CANCELLED" : result.filesystem.reasonCode;
       return result;
@@ -311,7 +320,7 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
       root,
       signal,
       onProcess,
-      deadline,
+      deadline: null,
       collectionAttempt: attempt,
       shouldContinue: () => !signal?.aborted && !snapshotCollectionCancelled(attempt),
     });
@@ -347,10 +356,6 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
     for (const candidate of closure.candidates) {
       if (signal?.aborted) {
         result.code = "SNAPSHOT_GC_CANCELLED";
-        break;
-      }
-      if (Date.now() >= deadline) {
-        result.code = "SNAPSHOT_GIT_TIMEOUT";
         break;
       }
       try {

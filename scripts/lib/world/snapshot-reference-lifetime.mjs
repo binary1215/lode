@@ -6,7 +6,7 @@ import { performance } from "node:perf_hooks";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { withLocalMutation } from "../storage/local-mutation-lock.mjs";
 import { resolveProjectStorage, assertProjectStorageUnchanged } from "../storage/project-storage-format.mjs";
-import { classifySnapshotFileSystem } from "./snapshot-filesystem.mjs";
+import { classifySnapshotFileSystem, darwinFilesystemName } from "./snapshot-filesystem.mjs";
 import { sha256Hex } from "../core/digest.mjs";
 
 // Transient cooperative local P5 only. No Session selection, direction or lease
@@ -31,11 +31,14 @@ function namespace(root, supplied) {
   const base = path.join(projectRoot, storage.directory);
   const excludedReason = /^(?:\\\\|\/\/)/.test(projectRoot)
     ? "UNSUPPORTED_SHARED_STORAGE"
-    : !["win32", "linux"].includes(process.platform)
+    : !["win32", "linux", "darwin"].includes(process.platform)
       ? "UNSUPPORTED_GC_PLATFORM"
       : process.platform === "linux" && classifySnapshotFileSystem({ platform: "linux", type: fs.statfsSync(projectRoot).type }) !== "qualified-local"
         ? "UNSUPPORTED_OR_UNKNOWN_GC_FILESYSTEM"
-        : null;
+        : process.platform === "darwin" &&
+            classifySnapshotFileSystem({ platform: "darwin", fstypeName: darwinFilesystemName(projectRoot) }) !== "qualified-local"
+          ? "UNSUPPORTED_OR_UNKNOWN_GC_FILESYSTEM"
+          : null;
   return {
     storage,
     projectRoot,

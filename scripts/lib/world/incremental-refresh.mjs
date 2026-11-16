@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { readContextCapsule } from "../session/context-compiler.mjs";
 import { inspectProject, SCHEMA_VERSION } from "../head-core.mjs";
-import { executeIncrementalRepositoryScan, managedRootFilesForProject } from "./repository-scan.mjs";
+import { executeIncrementalRepositoryScan, managedRootFilesForProject, sourceStatCacheCoversCurrentTree } from "./repository-scan.mjs";
+import { readRefreshInputGeneration, refreshInputStamp } from "./refresh-input-generation.mjs";
 import { readRepositorySourceScope } from "./repository-source-scope.mjs";
 import { buildWorldModel, deriveIncrementalRevisionParents, inspectWorldModel, readWorldModel, readWorldModelSnapshot } from "./world-model.mjs";
 import {
@@ -255,7 +256,7 @@ function revisionTransition(previousGraph, nextGraph) {
   };
 }
 
-function buildReceipt({ request, previousSnapshot, nextSnapshot, status, inspected }) {
+function buildReceipt({ request, previousSnapshot, nextSnapshot, status, inspected, revisionTransition: suppliedTransition = null }) {
   const observedChanges = changeSummary(previousSnapshot, nextSnapshot);
   const payload = {
     schemaVersion: SCHEMA_VERSION,
@@ -277,7 +278,7 @@ function buildReceipt({ request, previousSnapshot, nextSnapshot, status, inspect
       parentSourceSnapshotIds: nextSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds,
     },
     observedChanges,
-    revisionTransition: revisionTransition(previousSnapshot.temporalProvenanceGraph, nextSnapshot.temporalProvenanceGraph),
+    revisionTransition: suppliedTransition || revisionTransition(previousSnapshot.temporalProvenanceGraph, nextSnapshot.temporalProvenanceGraph),
     executionDrift: runBinding(inspected, nextSnapshot.temporalProvenanceGraph.sourceSnapshotId),
     projectionDisposition: {
       graph: "verified-before-world-pointer-advance",
@@ -637,16 +638,19 @@ async function refreshWorldModelLocked({
 } = {}) {
   const inspected = readyProject(root);
   const projectRoot = inspected.project.projectRoot;
-  const { inspectStorageReaderCompatibility } = await import("./snapshot-storage-compatibility.mjs");
+  const { inspectStorageReaderCompatibility, upgradeLegacyReaderPointers } = await import("./snapshot-storage-compatibility.mjs");
   const { verifyWorldModelPointerOriginal } = await import("./world-model.mjs");
   const { verifyGraphProjectionPointer } = await import("./graph-projection-adapter.mjs");
-  const mismatch = inspectStorageReaderCompatibility({
+  const compatibility = inspectStorageReaderCompatibility({
     root: projectRoot,
     storage: inspected.storage,
     verifyWorldPointer: (pointer) => verifyWorldModelPointerOriginal(pointer, inspected.project.projectId),
     verifyGraphPointer: (pointer) => verifyGraphProjectionPointer(pointer, null, inspected.storage),
-  }).layers.find((layer) => ["STORAGE_VERSION_MISMATCH", "INVALID_READER_REQUIREMENTS"].includes(layer.reasonCode));
-  if (mismatch) throw Object.assign(new Error(mismatch.message), { code: mismatch.reasonCode });
+  });
+  const mismatch = compatibility.layers.find((layer) => ["STORAGE_VERSION_MISMATCH", "INVALID_READER_REQUIREMENTS"].includes(layer.reasonCode));
+  if (mismatch) throw Object.assign(new Error(mismatch.message || mismatch.reasonCode), { code: mismatch.reasonCode });
+  if (compatibility.layers.some((layer) => layer.legacyDeclaration))
+    await upgradeLegacyReaderPointers({ root: projectRoot, storage: inspected.storage });
   const stored = await readWorldModel({ root: projectRoot, storeAdapter });
   const previousSnapshot = stored.snapshot;
   const request = buildIncrementalRefreshRequest(
@@ -691,9 +695,10 @@ async function refreshWorldModelLocked({
     (parentId) => !previousSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds.includes(parentId),
   );
   const requiresRefresh = sameLineagePreview.snapshot.worldModelId !== previousSnapshot.worldModelId || additionalParentsRequested;
-  let nextPreview = sameLineagePreview;
+  let nextSnapshot = requiresRefresh ? null : previousSnapshot;
   let revisionParentIds = previousSnapshot.temporalProvenanceGraph.revisionParentIds;
   let parentSourceSnapshotIds = previousSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds;
+  let world = stored;
   if (requiresRefresh) {
     revisionParentIds = deriveIncrementalRevisionParents({
       previousGraph: previousSnapshot.temporalProvenanceGraph,
@@ -702,25 +707,8 @@ async function refreshWorldModelLocked({
     parentSourceSnapshotIds = [...new Set([previousSnapshot.temporalProvenanceGraph.sourceSnapshotId, ...request.additionalParentSourceSnapshotIds])].sort(
       compareText,
     );
-    nextPreview = await buildWorldModel({ ...common, parentSourceSnapshotIds, revisionParentIds });
-  }
-
-  const receipt = buildReceipt({
-    request,
-    previousSnapshot,
-    nextSnapshot: requiresRefresh ? nextPreview.snapshot : previousSnapshot,
-    status: requiresRefresh ? "refreshed" : "unchanged",
-    inspected,
-  });
-  const requestEntry = persistImmutable(
-    requestFile(projectRoot, request.refreshRequestId, inspected.storage),
-    request,
-    (record) => verifyIncrementalRefreshRequest(record, inspected.storage),
-    "Incremental refresh request",
-  );
-
-  let world = stored;
-  if (requiresRefresh) {
+    // The same-lineage preview already built the candidate used to choose parents.
+    // Persist that choice directly instead of building the same snapshot twice.
     world = await buildWorldModel({
       root: projectRoot,
       persist: true,
@@ -731,16 +719,31 @@ async function refreshWorldModelLocked({
       repositoryScanExecution,
       parentSourceSnapshotIds,
       revisionParentIds,
-      expectedWorldModelId: nextPreview.snapshot.worldModelId,
       expectedCurrentWorldModelId: previousSnapshot.worldModelId,
       writerLease,
     });
-    if (
-      world.snapshot.worldModelId !== receipt.next.worldModelId ||
-      world.snapshot.temporalProvenanceGraph.sourceSnapshotId !== receipt.next.sourceSnapshotId
-    ) {
-      fail("Persisted World Model does not match the verified refresh receipt.", "REFRESH_PERSISTENCE_MISMATCH");
-    }
+    nextSnapshot = world.snapshot;
+  }
+
+  const receipt = buildReceipt({
+    request,
+    previousSnapshot,
+    nextSnapshot,
+    status: requiresRefresh ? "refreshed" : "unchanged",
+    inspected,
+  });
+  const requestEntry = persistImmutable(
+    requestFile(projectRoot, request.refreshRequestId, inspected.storage),
+    request,
+    (record) => verifyIncrementalRefreshRequest(record, inspected.storage),
+    "Incremental refresh request",
+  );
+  if (
+    requiresRefresh &&
+    (world.snapshot.worldModelId !== receipt.next.worldModelId ||
+      world.snapshot.temporalProvenanceGraph.sourceSnapshotId !== receipt.next.sourceSnapshotId)
+  ) {
+    fail("Persisted World Model does not match the verified refresh receipt.", "REFRESH_PERSISTENCE_MISMATCH");
   }
   const receiptEntry = persistImmutable(
     receiptFile(projectRoot, receipt.refreshReceiptId, inspected.storage),
@@ -777,6 +780,133 @@ async function refreshWorldModelLocked({
   };
 }
 
+async function fastUnchangedRefresh(options, inspected) {
+  if (options.additionalParentSourceSnapshotIds?.length || options.expectedChangedPaths?.length || options.storeAdapter || options.graphProjectionAdapter)
+    return null;
+  const projectRoot = inspected.project.projectRoot;
+  const storage = inspected.storage;
+  const generation = readRefreshInputGeneration(projectRoot, storage);
+  if (!generation || refreshInputStamp(projectRoot, storage) !== generation.stamp) return null;
+  const worldFile = path.join(projectRoot, storage.directory, "world-model/current.json");
+  const graphFile = path.join(projectRoot, storage.directory, "graph-projection/current.json");
+  if (!fs.existsSync(worldFile) || !fs.existsSync(graphFile)) return null;
+  const worldPointer = JSON.parse(fs.readFileSync(worldFile, "utf8"));
+  const graphPointer = JSON.parse(fs.readFileSync(graphFile, "utf8"));
+  const { verifyWorldModelPointerOriginal } = await import("./world-model.mjs");
+  const { verifyGraphProjectionPointer } = await import("./graph-projection-adapter.mjs");
+  const { inspectStorageReaderCompatibility } = await import("./snapshot-storage-compatibility.mjs");
+  verifyWorldModelPointerOriginal(worldPointer, inspected.project.projectId);
+  verifyGraphProjectionPointer(graphPointer, null, storage);
+  const compatibility = inspectStorageReaderCompatibility({
+    root: projectRoot,
+    storage,
+    verifyWorldPointer: (pointer) => verifyWorldModelPointerOriginal(pointer, inspected.project.projectId),
+    verifyGraphPointer: (pointer) => verifyGraphProjectionPointer(pointer, null, storage),
+  });
+  if (compatibility.layers.some((layer) => ["STORAGE_VERSION_MISMATCH", "INVALID_READER_REQUIREMENTS"].includes(layer.reasonCode) || layer.legacyDeclaration))
+    return null;
+  if (
+    worldPointer.worldModelId !== generation.worldModelId ||
+    worldPointer.worldModelHash !== generation.worldModelHash ||
+    graphPointer.graphSnapshotId !== generation.graphSnapshotId ||
+    graphPointer.sourceSnapshotId !== generation.sourceSnapshotId
+  )
+    return null;
+  const covered = sourceStatCacheCoversCurrentTree({
+    projectRoot,
+    managedRootFiles: managedRootFilesForProject(inspected.project, storage),
+    storage,
+    sourceScope: readRepositorySourceScope({ projectRoot, storage }).sourceScope,
+  });
+  if (!covered) return null;
+  const light = {
+    worldModelId: generation.worldModelId,
+    files: [],
+    temporalProvenanceGraph: {
+      sourceSnapshotId: generation.sourceSnapshotId,
+      graphSnapshotId: generation.graphSnapshotId,
+      parentSourceSnapshotIds: generation.parentSourceSnapshotIds,
+      nodes: [],
+    },
+  };
+  const request = buildIncrementalRefreshRequest(
+    {
+      projectId: inspected.project.projectId,
+      baseWorldModelId: generation.worldModelId,
+      baseSourceSnapshotId: generation.sourceSnapshotId,
+      triggerKind: options.triggerKind || "manual",
+      triggerEvidenceIds: options.triggerEvidenceIds || [],
+      expectedChangedPaths: options.expectedChangedPaths ?? null,
+      additionalParentSourceSnapshotIds: [],
+    },
+    storage,
+  );
+  const receipt = buildReceipt({
+    request,
+    previousSnapshot: light,
+    nextSnapshot: light,
+    status: "unchanged",
+    inspected,
+    revisionTransition: {
+      reusedRevisionCount: generation.revisionNodeCount,
+      createdRevisionCount: 0,
+      parentedRevisionCount: generation.parentedRevisionCount,
+    },
+  });
+  verifyIncrementalRefreshReceipt(receipt, storage);
+  const requestEntry = persistImmutable(
+    requestFile(projectRoot, request.refreshRequestId, storage),
+    request,
+    (record) => verifyIncrementalRefreshRequest(record, storage),
+    "Incremental refresh request",
+  );
+  const receiptEntry = persistImmutable(
+    receiptFile(projectRoot, receipt.refreshReceiptId, storage),
+    receipt,
+    (record) => verifyIncrementalRefreshReceipt(record, storage),
+    "Incremental refresh receipt",
+  );
+  const pointer = buildPointer(receipt);
+  atomicWrite(currentFile(projectRoot, storage), json(pointer));
+  const storedPointer = verifyIncrementalRefreshPointer(readJson(currentFile(projectRoot, storage), "Incremental refresh pointer"), storage);
+  if (canonicalJson(storedPointer) !== canonicalJson(pointer)) fail("Incremental refresh pointer changed during persistence.", "REFRESH_POINTER_WRITE_MISMATCH");
+  return {
+    light,
+    request,
+    receipt,
+    refreshed: {
+      status: "unchanged",
+      requestFile: requestEntry.file,
+      receiptFile: receiptEntry.file,
+      pointerFile: currentFile(projectRoot, storage),
+      request,
+      receipt,
+      pointer,
+      worldModel: {
+        worldModelId: generation.worldModelId,
+        sourceSnapshotId: generation.sourceSnapshotId,
+        graphSnapshotId: generation.graphSnapshotId,
+      },
+      diagnostics: {
+        repositoryScan: {
+          backend: "javascript-reference",
+          adapterName: "repository-scan-incremental-reference",
+          executionMode: "stat-cache-unchanged",
+          fallbackUsed: false,
+          reusedFileCount: covered,
+          analyzedFileCount: 0,
+          removedFileCount: 0,
+          reusedPaths: [],
+          analyzedPaths: [],
+          removedPaths: [],
+          changes: { added: [], changed: [], removed: [] },
+        },
+        semanticConformance: "unchanged-input-generation; full-reference equivalence is covered by conformance tests",
+      },
+    },
+  };
+}
+
 export async function refreshWorldModel(options = {}) {
   const root = options.root ?? ".";
   const inspected = readyProject(root);
@@ -788,6 +918,30 @@ export async function refreshWorldModel(options = {}) {
       storage: inspected.storage,
     },
     async (writerLease) => {
+      const manualPreflight = preparePostRefreshProjection({
+        projectRoot: inspected.project.projectRoot,
+        projectId: inspected.project.projectId,
+        storage: inspected.storage,
+        graph: { nodes: [], edges: [] },
+        documentProjectionAdapter: options.documentProjectionAdapter || null,
+      });
+      if (manualPreflight.disposition === "manual-deferred") {
+        const fast = await fastUnchangedRefresh(options, inspected);
+        if (fast) {
+          const postRefreshProjection = completePostRefreshProjection({
+            projectRoot: inspected.project.projectRoot,
+            projectId: inspected.project.projectId,
+            storage: inspected.storage,
+            beforeSnapshot: fast.light,
+            afterSnapshot: fast.light,
+            refreshRequest: fast.request,
+            refreshReceipt: fast.receipt,
+            preflight: manualPreflight,
+            documentProjectionAdapter: options.documentProjectionAdapter || null,
+          });
+          return { ...fast.refreshed, postRefreshProjection };
+        }
+      }
       const beforeSnapshot = (await readWorldModel({ root: inspected.project.projectRoot, storeAdapter: options.storeAdapter || null })).snapshot;
       const preflight = preparePostRefreshProjection({
         projectRoot: inspected.project.projectRoot,

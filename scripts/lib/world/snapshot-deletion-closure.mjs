@@ -234,7 +234,7 @@ export async function buildSnapshotDeletionClosure({
     else omittedIssues += 1;
   };
   const checkContinue = () => {
-    if (deadline && Date.now() >= deadline) failure("SNAPSHOT_GIT_TIMEOUT");
+    if (deadline != null && Date.now() >= deadline) failure("SNAPSHOT_GIT_TIMEOUT");
     if (!shouldContinue()) {
       interrupted = true;
       failure("SNAPSHOT_COLLECTION_INVALIDATED");
@@ -281,7 +281,7 @@ export async function buildSnapshotDeletionClosure({
     )
       failure("OBSERVATION_STORE_LIMIT");
     if ((storedBytes += stat.size) > 1024 ** 3) failure("GC_INVENTORY_INCOMPLETE");
-    if (relative === "graph-discovery/index.json") return;
+    if (relative === "graph-discovery/index.json" || relative === "refresh/file-stat-cache.json" || relative === "refresh/input-generation.json") return;
     // Product graph: generated output is rebuildable (like the discovery index);
     // Canon files are read as verified text roots, so a snapshot id written in a
     // document still retains that snapshot. A name Lode does not recognise is

@@ -45,11 +45,33 @@ export function temporalRelationIdentity(edge, { projectId, nodes, logicalLineag
   const revision = hash({ projectId, content });
   return { logicalRelationId, contentRevisionId: "relation-revision-" + revision.slice(0, 24), edgeId: "temporal-edge-" + revision.slice(0, 24) };
 }
-export function stabilizeTemporalRelationIdentities(graph, { relationAnalysisBasis = null } = {}) {
+function relationEdgeBody(edge) {
+  const body = { ...edge };
+  for (const key of ["edgeId", "sourceSnapshotId", "contentRevisionId", "logicalRelationId"]) delete body[key];
+  return body;
+}
+export function stabilizeTemporalRelationIdentities(graph, { relationAnalysisBasis = null, reusedEdges = null } = {}) {
   const nodes = new Map(graph.nodes.map((node) => [node.nodeId, node]));
+  const reusable = new Map();
+  const sameBasis =
+    reusedEdges && JSON.stringify(canonical(reusedEdges.relationAnalysisBasis ?? null)) === JSON.stringify(canonical(relationAnalysisBasis ?? null));
+  if (sameBasis) {
+    for (const edge of reusedEdges.edges || []) reusable.set(`${edge.type}\0${edge.from}\0${edge.to}`, edge);
+  }
   const edges = graph.edges
     .map((original) => {
       const edge = { ...original, producerVersion: RELATION_IDENTITY_VERSION };
+      const previous = reusable.get(`${edge.type}\0${edge.from}\0${edge.to}`);
+      // Unchanged endpoints and relation body keep their ids. Only a changed
+      // record, or an edge that touches one, is hashed again.
+      if (previous && JSON.stringify(canonical(relationEdgeBody(previous))) === JSON.stringify(canonical(relationEdgeBody(edge)))) {
+        return {
+          ...edge,
+          logicalRelationId: previous.logicalRelationId,
+          contentRevisionId: previous.contentRevisionId,
+          edgeId: previous.edgeId,
+        };
+      }
       return { ...edge, ...temporalRelationIdentity(edge, { ...graph, nodes, relationAnalysisBasis }) };
     })
     .sort((a, b) => a.edgeId.localeCompare(b.edgeId));

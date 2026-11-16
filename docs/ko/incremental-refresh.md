@@ -17,7 +17,9 @@ manual request or verified RefreshTriggerBatch
   -> exclusive project World Model writer lease
   -> verified current World Model
   -> content-derived IncrementalRefreshRequest
-  -> rediscover and byte-hash every eligible file
+  -> rediscover every eligible file
+  -> re-read and byte-hash a file when its size, mtime, ctime or inode differs from the last verified scan; a stat-identical file reuses that verified digest and analysis
+  -> recompute temporal relation edges only for records whose endpoints changed
   -> reuse analysis only for digest-identical verified files
   -> validate one complete RepositoryScanResult
   -> preview a child SourceSnapshot and GraphSnapshot

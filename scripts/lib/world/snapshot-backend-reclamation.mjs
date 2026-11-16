@@ -87,7 +87,7 @@ export class SnapshotBackendReclamation {
   check() {
     if (this.signal?.aborted) fail("SNAPSHOT_GC_CANCELLED");
     if (!this.shouldContinue()) fail("SNAPSHOT_COLLECTION_INVALIDATED");
-    if (Date.now() >= this.deadline) fail("SNAPSHOT_GIT_TIMEOUT");
+    if (this.deadline != null && Date.now() >= this.deadline) fail("SNAPSHOT_GIT_TIMEOUT");
   }
   readFile(file, capture = false) {
     this.check();
@@ -642,7 +642,7 @@ export class SnapshotBackendReclamation {
           terminationRequested = true;
           supervised.terminate(false);
         }
-        if (Date.now() >= this.deadline && !forced) {
+        if (this.deadline != null && Date.now() >= this.deadline && !forced) {
           forced = true;
           supervised.terminate(true);
         }

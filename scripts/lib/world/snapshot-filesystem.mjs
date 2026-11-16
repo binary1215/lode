@@ -1,14 +1,32 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 // GC eligibility only. No provider, Session, executable from the Project, or
 // ordinary-work probe. Unknown/remote filesystems preserve, never infer local.
 const LINUX_LOCAL = new Set([0xef53, 0x58465342, 0x9123683e, 0x01021994]); // ext*, XFS, Btrfs, tmpfs
-export function classifySnapshotFileSystem({ platform, type, driveType }) {
+const DARWIN_LOCAL = new Set(["apfs", "hfs", "msdos"]);
+const darwinNameCache = new Map();
+export function classifySnapshotFileSystem({ platform, type, driveType, fstypeName }) {
   if (platform === "win32") return driveType === 3 ? "qualified-local" : "unsupported-or-unknown";
   if (platform === "linux") return LINUX_LOCAL.has(Number(type)) ? "qualified-local" : "unsupported-or-unknown";
+  if (platform === "darwin") return DARWIN_LOCAL.has(String(fstypeName || "").toLowerCase()) ? "qualified-local" : "unsupported-or-unknown";
   return "unsupported-or-unknown";
+}
+// macOS statfs type is not a Linux magic number. `stat -f %T` is the fstypename
+// (apfs, hfs, nfs, ...). Cached per root for this process. Shell is never used.
+export function darwinFilesystemName(root) {
+  const key = String(root);
+  if (darwinNameCache.has(key)) return darwinNameCache.get(key);
+  let name = "";
+  try {
+    const result = spawnSync("/usr/bin/stat", ["-f", "%T", key], { encoding: "utf8", timeout: 1000, windowsHide: true, shell: false });
+    if (result.status === 0) name = String(result.stdout || "").trim().toLowerCase();
+  } catch {
+    name = "";
+  }
+  darwinNameCache.set(key, name);
+  return name;
 }
 async function windowsDriveType(root, { signal, onProcess, deadline = Date.now() + 3000 } = {}) {
   const drive = /^[a-z]:[\\/]/i.exec(root)?.[0];
@@ -91,12 +109,14 @@ export async function qualifySnapshotFileSystem({ root, signal, onProcess, deadl
     const platform = process.platform;
     const driveType = platform === "win32" ? await windowsDriveType(root, { signal, onProcess, deadline }) : undefined;
     const type = platform === "linux" ? fs.statfsSync(root).type : undefined;
-    const status = classifySnapshotFileSystem({ platform, driveType, type });
+    const fstypeName = platform === "darwin" ? darwinFilesystemName(root) : undefined;
+    const status = classifySnapshotFileSystem({ platform, driveType, type, fstypeName });
     return {
       status,
       platform,
       ...(driveType !== undefined ? { driveType } : {}),
       ...(type !== undefined ? { type } : {}),
+      ...(fstypeName !== undefined ? { fstypeName } : {}),
       ...(status !== "qualified-local" ? { reasonCode: "UNSUPPORTED_OR_UNKNOWN_GC_FILESYSTEM" } : {}),
       boundary: "OS filesystem classification; not proof of every hidden backing layer or noncooperating host",
     };

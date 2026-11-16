@@ -15,6 +15,7 @@ import { GoWorkerComputeAdapter } from "../worker/go-worker-adapter.mjs";
 import { familyFormatForOriginal, formatForVerifiedOwner } from "../storage/project-storage-format.mjs";
 import { buildRepositorySourceScope, pathWithinRepositorySourceScope, verifyRepositorySourceScope } from "./repository-source-scope.mjs";
 import { sha256Hex as digest } from "../core/digest.mjs";
+import { loadFileStatCache, rememberFileStat, saveFileStatCache, statMatchesCached } from "./refresh-input-generation.mjs";
 import { canonicalJson, canonicalValue as canonical } from "../core/canonical-json.mjs";
 import { failWith } from "../core/errors.mjs";
 
@@ -264,7 +265,7 @@ function scanResultPayload(input, files, skipped, totalBytes) {
   };
 }
 
-function scanPayload(input, limits, { previousResult = null, reuseDiagnostics = null } = {}) {
+function scanPayload(input, limits, { previousResult = null, reuseDiagnostics = null, statCache = null } = {}) {
   validateRepositoryScanInput(input);
   const normalizedLimits = normalizeComputeLimits(limits);
   const root = input.projectRoot;
@@ -317,6 +318,23 @@ function scanPayload(input, limits, { previousResult = null, reuseDiagnostics = 
         skipped.tooLarge += 1;
         continue;
       }
+      const previous = previousFiles.get(relative);
+      if (previousAnalysisReusable && statCache && statMatchesCached(previous, statCache.get(relative), absolute)) {
+        const metadata = {
+          path: relative,
+          digest: previous.digest,
+          bytes: previous.bytes,
+          classification: previous.classification,
+          language: previous.language,
+        };
+        if (files.length >= normalizedLimits.maxFiles) fail(`Repository scan exceeds ${normalizedLimits.maxFiles} files.`, "REPOSITORY_SCAN_FILE_LIMIT");
+        if (totalBytes + previous.bytes > normalizedLimits.maxTotalBytes)
+          fail(`Repository scan exceeds ${normalizedLimits.maxTotalBytes} total bytes.`, "REPOSITORY_SCAN_TOTAL_BYTES_LIMIT");
+        files.push(sourceFileRecord(metadata, null, base, previous));
+        if (reuseDiagnostics) reuseDiagnostics.reusedPaths.push(relative);
+        totalBytes += previous.bytes;
+        continue;
+      }
       const raw = fs.readFileSync(absolute);
       if (raw.length > normalizedLimits.maxFileBytes) {
         skipped.tooLarge += 1;
@@ -328,8 +346,8 @@ function scanPayload(input, limits, { previousResult = null, reuseDiagnostics = 
       const language = languageForSource(extension, base);
       const classification = classifySourcePath(relative, extension);
       const contentDigest = digest(raw);
-      const previous = previousFiles.get(relative);
       const metadata = { path: relative, digest: contentDigest, bytes: raw.length, classification, language };
+      rememberFileStat(statCache, relative, absolute, contentDigest, raw.length);
       const reusable = previousAnalysisReusable && sameObservedFile(previous, metadata);
       files.push(sourceFileRecord(metadata, raw, base, reusable ? previous : null));
       if (reuseDiagnostics) (reusable ? reuseDiagnostics.reusedPaths : reuseDiagnostics.analyzedPaths).push(relative);
@@ -558,6 +576,7 @@ export async function executeIncrementalRepositoryScan({
 } = {}) {
   const previousResult = repositoryScanResultFromWorldModel(previousSnapshot);
   const input = buildRepositoryScanInput({ projectRoot, managedRootFiles, sourceScope, storage });
+  const statCache = storage ? loadFileStatCache(projectRoot, storage) : null;
   let request = buildComputeRequest({
     operation: REPOSITORY_SCAN_OPERATION,
     input,
@@ -570,8 +589,14 @@ export async function executeIncrementalRepositoryScan({
     scanPayload(input, request.limits, {
       previousResult,
       reuseDiagnostics: reuse,
+      statCache,
     }),
   );
+  if (statCache && storage) {
+    const live = new Set(result.files.map((file) => file.path));
+    for (const key of [...statCache.keys()]) if (!live.has(key)) statCache.delete(key);
+    saveFileStatCache(projectRoot, storage, statCache);
+  }
   const completed = completeComputeResult(request, result, { limits });
   request = completed.request;
   const response = completed.response;
@@ -794,6 +819,45 @@ export function createRepositoryScanComputeAdapter({ pluginRoot = path.resolve(i
     storage,
     fallbackAdapter: createRepositoryScanReferenceAdapter(),
   });
+}
+
+export function sourceStatCacheCoversCurrentTree({ projectRoot, managedRootFiles = [], storage, sourceScope = buildRepositorySourceScope({ storage }) } = {}) {
+  const cache = loadFileStatCache(projectRoot, storage);
+  if (!cache.size) return false;
+  const input = buildRepositoryScanInput({ projectRoot, managedRootFiles, sourceScope, storage });
+  const managed = new Set(input.managedRootFiles);
+  const seen = new Set();
+  const stack = [input.projectRoot];
+  while (stack.length) {
+    const directory = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    for (const entry of entries) {
+      const absolute = path.join(directory, entry.name);
+      const relative = normalizePath(input.projectRoot, absolute);
+      if (entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) {
+        if (EXCLUDED_DIRECTORIES.has(entry.name.toLowerCase()) || excludesManagedRootDirectory(relative, input)) continue;
+        if (!pathWithinRepositorySourceScope(relative, input.sourceScope, { directory: true })) continue;
+        stack.push(absolute);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      if (!pathWithinRepositorySourceScope(relative, input.sourceScope)) continue;
+      if (managed.has(relative)) continue;
+      const extension = path.extname(entry.name).toLowerCase();
+      if (!TEXT_EXTENSIONS.has(extension) && entry.name !== "Dockerfile") continue;
+      const cached = cache.get(relative);
+      const previous = cached ? { digest: cached.digest, bytes: cached.bytes } : null;
+      if (!statMatchesCached(previous, cached, absolute)) return false;
+      seen.add(relative);
+    }
+  }
+  return seen.size === cache.size && seen.size > 0 ? seen.size : 0;
 }
 
 export async function executeRepositoryScan({

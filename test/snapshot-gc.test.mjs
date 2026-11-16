@@ -36,9 +36,7 @@ import { emptyProductModelDocument } from "../scripts/lib/world/product-model.mj
 // inapplicable there. Read-only closure/calculation and public refusal stay tested.
 function collectionTest(name, options, fn) {
   if (typeof options === "function") { fn = options; options = {}; }
-  return test(name, { ...options, skip: options.skip || (process.platform === "darwin"
-    ? "Physical GC/collection lease unsupported on macOS; Linux/Windows assertions remain mandatory; public refusal and read-only closure are tested separately."
-    : false) }, fn);
+  return test(name, options, fn);
 }
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 // Exercise the real verified CI fixture at the internal capability-selection
@@ -407,6 +405,10 @@ test("filesystem qualification rejects mapped network/unknown types without prob
   assert.equal(classifySnapshotFileSystem({ platform: "linux", type: 0xef53 }), "qualified-local");
   assert.equal(classifySnapshotFileSystem({ platform: "linux", type: 0x6969 }), "unsupported-or-unknown");
   assert.equal(classifySnapshotFileSystem({ platform: "unknown" }), "unsupported-or-unknown");
+  assert.equal(classifySnapshotFileSystem({ platform: "darwin", fstypeName: "apfs" }), "qualified-local");
+  assert.equal(classifySnapshotFileSystem({ platform: "darwin", fstypeName: "hfs" }), "qualified-local");
+  assert.equal(classifySnapshotFileSystem({ platform: "darwin", fstypeName: "nfs" }), "unsupported-or-unknown");
+  assert.equal(classifySnapshotFileSystem({ platform: "freebsd" }), "unsupported-or-unknown");
 });
 
 test("GC retains reference summaries rather than decoded bodies; small metadata budget preserves all files", async t => {
@@ -489,7 +491,7 @@ test("a statically unsupported platform retains ordinary work without publisher 
     return write.call(this, file, ...args);
   });
   try {
-    Object.defineProperty(process, "platform", { ...descriptor, value: "darwin" });
+    Object.defineProperty(process, "platform", { ...descriptor, value: "freebsd" });
     assert.equal(recordSessionWorkEvidence({ root: f.root, input: { summary: "Unsupported-platform ordinary work" } }).status, "session_work_evidence_recorded");
     assert.equal((await applySnapshotGarbageCollection({ root: f.root })).code, "UNSUPPORTED_GC_PLATFORM");
   } finally { Object.defineProperty(process, "platform", descriptor); }
@@ -877,17 +879,16 @@ test("malformed coalesced orphan group or domain types preserve every candidate"
 });
 
 
-test("macOS public GC reports unsupported with zero effects while typed closure and originals remain readable", { skip: process.platform !== "darwin" }, async t => {
-  const f = await fixture(t); await orphan(f);
-  const before = tree(f.root);
+test("macOS public GC reclaims unreachable snapshots and keeps the current world", { skip: process.platform !== "darwin" }, async t => {
+  const f = await fixture(t); const extra = await orphan(f);
+  const beforeBytes = extra.files.reduce((sum, file) => sum + fs.statSync(file).size, 0);
   const closure = await buildSnapshotDeletionClosure({ root: f.root });
   assert.equal(closure.certified, true, JSON.stringify(closure.issues));
-  assert(closure.candidates.length >= 2, "read-only eligibility does not grant deletion support");
+  assert(closure.candidates.length >= 2);
   const outcome = await applySnapshotGarbageCollection({ root: f.root });
-  assert.equal(outcome.code, "UNSUPPORTED_GC_PLATFORM"); assert.equal(outcome.status, "gc_preserved");
-  assert.equal(outcome.deletedCount, 0); assert.equal(outcome.reclaimedBytes, 0); assert.equal(outcome.applyPerformed, false);
-  assert.equal(outcome.ordinaryWorkBlocked, false); assert.deepEqual(tree(f.root), before);
+  assert.equal(outcome.status, "gc_applied", JSON.stringify(outcome));
+  assert(outcome.reclaimedBytes >= beforeBytes);
+  assert(extra.files.every((file) => !fs.existsSync(file)));
   assert.equal((await readWorldModel({ root: f.root })).snapshot.worldModelId, f.built.snapshot.worldModelId);
-  const cli = await runCommand(["storage-gc", f.root, "--apply"]);
-  assert.equal(cli.code, "UNSUPPORTED_GC_PLATFORM"); assert.equal(cli.applyPerformed, false); assert.deepEqual(tree(f.root), before);
+  assert.equal((await readWorldModel({ root: f.root })).snapshot.worldModelHash, f.built.snapshot.worldModelHash);
 });

@@ -1,4 +1,5 @@
 import { snapshotReaderRequirements } from "./snapshot-storage-compatibility.mjs";
+import { writeRefreshInputGeneration } from "./refresh-input-generation.mjs";
 import { stabilizeTemporalRelationIdentities } from "./temporal-relation-identity.mjs";
 import fs from "node:fs";
 import { resolveLocalGitRepository } from "./local-git-repository.mjs";
@@ -1785,8 +1786,14 @@ async function buildWorldModelLocked({
   });
   // New relation identity is a producer contract, independent of physical layout.
   // Historical snapshots keep their original protocol, IDs, hashes and bytes.
+  const relationAnalysisBasis = relationBasisFor({
+    analysisBasis: codeAnalysisBasis(semanticGraph),
+    rules: snapshotRules,
+    repositoryScan: { sourceScope },
+  });
   temporalProvenanceGraph = stabilizeTemporalRelationIdentities(temporalProvenanceGraph, {
-    relationAnalysisBasis: relationBasisFor({ analysisBasis: codeAnalysisBasis(semanticGraph), rules: snapshotRules, repositoryScan: { sourceScope } }),
+    relationAnalysisBasis,
+    reusedEdges: previousTemporalGraph,
   });
   verifyTemporalProvenanceGraph(temporalProvenanceGraph);
   const sourceDigest = sourceDigestFor(
@@ -2189,6 +2196,11 @@ async function buildWorldModelLocked({
     };
     error.message += ` Local World pointer was published (${worldModelId}); local Graph publication: ${error.worldPublication.graphLocal}; dependent projection did not complete against the same current basis. Current pointers were not rolled back.`;
     throw noteCanonBasisError(error, project.projectRoot, storage, productCanonBasis);
+  }
+  try {
+    writeRefreshInputGeneration({ root: project.projectRoot, storage, snapshot });
+  } catch {
+    /* The generation cache is an optimization. Publication already succeeded. */
   }
   return {
     status: changed ? "indexed" : "unchanged",

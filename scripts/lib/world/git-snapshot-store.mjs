@@ -33,7 +33,9 @@ export function snapshotGitProcessStatus() {
 // hooks, lazy fetch, inherited Git configuration or user repository are used.
 async function command(store, args, { input = null, maxBytes = MAX, deadline, signal, consume = null } = {}) {
   if (signal?.aborted) fail("SNAPSHOT_GIT_CANCELLED");
-  const remaining = deadline - Date.now();
+  // A missing deadline is one command budget, not a clock shared with the
+  // whole collection. An explicit deadline still expires exactly when asked.
+  const remaining = deadline == null ? 30_000 : deadline - Date.now();
   if (remaining <= 0) fail("SNAPSHOT_GIT_TIMEOUT");
   const environment = {};
   for (const name of ["PATH", "Path", "SystemRoot", "WINDIR", "TEMP", "TMP", "COMSPEC", "PATHEXT"])
@@ -167,7 +169,7 @@ export class GitSnapshotStore {
     return { deadline: Date.now() + this.timeoutMs, signal: this.signal };
   }
   checkOwner(deadline = Infinity, historicalRead = false) {
-    if (Date.now() >= deadline) fail("SNAPSHOT_GIT_TIMEOUT");
+    if (deadline != null && Date.now() >= deadline) fail("SNAPSHOT_GIT_TIMEOUT");
     assertProjectStorageUnchanged(this.storage);
     safeSnapshotPath(this.root, this.directory);
     if (!fs.existsSync(this.directory)) return false;
@@ -219,7 +221,7 @@ export class GitSnapshotStore {
     const inspect = (directory) => {
       if (!fs.existsSync(directory)) return;
       for (const entry of fs.readdirSync(directory)) {
-        if (Date.now() >= deadline) fail("SNAPSHOT_GIT_TIMEOUT");
+        if (deadline != null && Date.now() >= deadline) fail("SNAPSHOT_GIT_TIMEOUT");
         if (++visited > 200000) fail("SNAPSHOT_GIT_INVENTORY_LIMIT");
         const file = safeSnapshotPath(this.root, path.join(directory, entry));
         let stat;

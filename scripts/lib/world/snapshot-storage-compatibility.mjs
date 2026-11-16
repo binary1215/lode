@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { safeSnapshotPath } from "./snapshot-storage-codec.mjs";
 import { comparePublicationVersions } from "../core/semantic-version.mjs";
+import { atomicWriteText } from "../core/fs-atomic.mjs";
 import { failCode as fail } from "../core/errors.mjs";
 
 const installedVersion = JSON.parse(fs.readFileSync(new URL("../../../package.json", import.meta.url), "utf8")).version;
@@ -34,6 +35,52 @@ export function snapshotReaderRequirements(entry) {
         }),
   };
 }
+function compositionSupported(requirements) {
+  if (!requirements || requirements.version !== 1 || typeof requirements.layout !== "string") return false;
+  if (requirements.layout === "whole") return requirements.composition === undefined;
+  if (!["domain-bundles-v1", "shared-domains-v2", "chunked-code-v3"].includes(requirements.layout)) return false;
+  const composition = requirements.composition;
+  const chunked = requirements.layout === "chunked-code-v3";
+  const flat = requirements.layout === "shared-domains-v2";
+  return Boolean(
+    composition &&
+      typeof composition === "object" &&
+      composition.kind === "SnapshotComposition" &&
+      composition.schemaVersion === (chunked ? 3 : flat ? 2 : 1) &&
+      composition.producer?.name === "lode-domain-bundle" &&
+      composition.producer?.version === (chunked ? "0.3.0" : flat ? "0.2.0" : "0.1.0"),
+  );
+}
+
+// Beta.75 through the writer that recorded layout and composition but not yet
+// minimumReader/writer. The layout is one this reader already verifies; the
+// missing fields are pointer metadata, not a newer snapshot body.
+export function legacyReaderDeclaration(requirements) {
+  return Boolean(
+    requirements &&
+      typeof requirements === "object" &&
+      !Array.isArray(requirements) &&
+      !Object.hasOwn(requirements, "minimumReader") &&
+      !Object.hasOwn(requirements, "writer") &&
+      compositionSupported(requirements),
+  );
+}
+
+function mismatchMessage({ layout, requiredVersion }) {
+  const named = typeof requiredVersion === "string" && requiredVersion.length > 0;
+  let relation = "This is a version mismatch, not corrupted storage.";
+  if (named) {
+    try {
+      if (comparePublicationVersions(installedVersion, requiredVersion) < 0)
+        relation = "This installation is older than the store (a downgrade). This is a version mismatch, not corrupted storage.";
+    } catch {
+      relation = "The declared reader version is not usable. This is a version mismatch, not corrupted storage.";
+    }
+  } else relation = "The pointer does not name a usable minimum reader. This is a version mismatch, not corrupted storage.";
+  const need = named ? `Lode ${requiredVersion} or newer` : `a reader that understands layout ${layout}`;
+  return `Storage layout ${layout} needs ${need}. This installation is ${installedVersion}. ${relation} No files were changed. Recovery: upgrade Lode to a version that can read this layout, or run world-index with that Lode to rebuild the world index from project sources. Rebuilding does not rewrite snapshot bytes this installation cannot read.`;
+}
+
 function readPointer(root, file) {
   safeSnapshotPath(root, file);
   const before = fs.lstatSync(file, { throwIfNoEntry: false });
@@ -99,45 +146,43 @@ export function inspectStorageReaderCompatibility({ root, storage, verifyWorldPo
       }
       if (!requirements || requirements.version !== 1 || requirements.snapshotId !== pointer[field] || typeof requirements.layout !== "string")
         fail("INVALID_READER_REQUIREMENTS");
-      let supported = requirements.layout === "whole" && requirements.composition === undefined;
       if (["domain-bundles-v1", "shared-domains-v2", "chunked-code-v3"].includes(requirements.layout)) {
-        const c = requirements.composition,
-          chunked = requirements.layout === "chunked-code-v3",
-          flat = requirements.layout === "shared-domains-v2";
+        const composition = requirements.composition;
         if (
-          !c ||
-          typeof c !== "object" ||
-          !Number.isInteger(c.schemaVersion) ||
-          typeof c.producer?.name !== "string" ||
-          typeof c.producer?.version !== "string"
+          !composition ||
+          typeof composition !== "object" ||
+          !Number.isInteger(composition.schemaVersion) ||
+          typeof composition.producer?.name !== "string" ||
+          typeof composition.producer?.version !== "string"
         )
           fail("INVALID_READER_REQUIREMENTS");
-        supported =
-          c.kind === "SnapshotComposition" &&
-          c.schemaVersion === (chunked ? 3 : flat ? 2 : 1) &&
-          c.producer.name === "lode-domain-bundle" &&
-          c.producer.version === (chunked ? "0.3.0" : flat ? "0.2.0" : "0.1.0");
+      } else if (requirements.layout !== "whole") {
+        /* Unknown layouts stay unsupported below. */
       }
-      const requiredVersion = requirements.minimumReader ?? null;
+      const legacy = legacyReaderDeclaration(requirements);
+      const requiredVersion = Object.hasOwn(requirements, "minimumReader") ? requirements.minimumReader : null;
       let versionSupported = false;
-      try {
-        versionSupported = typeof requiredVersion === "string" && comparePublicationVersions(installedVersion, requiredVersion) >= 0;
-      } catch {
-        /* A malformed declaration is not permission to write this storage. */
+      if (!legacy && typeof requiredVersion === "string") {
+        try {
+          versionSupported = comparePublicationVersions(installedVersion, requiredVersion) >= 0;
+        } catch {
+          /* A malformed declaration is not permission to write this storage. */
+        }
       }
-      supported = supported && versionSupported;
+      const supported = (legacy || versionSupported) && compositionSupported(requirements);
       layers.push({
         layer,
         state: supported ? "declared-supported" : "unsupported",
         snapshotId: pointer[field],
         requirements,
         installedVersion,
+        ...(legacy ? { legacyDeclaration: true } : {}),
         ...(requiredVersion ? { requiredVersion } : {}),
         ...(supported
           ? {}
           : {
               reasonCode: "STORAGE_VERSION_MISMATCH",
-              message: `Storage layout ${requirements.layout} needs Lode ${requiredVersion || "a newer reader"} or newer. This installation is ${installedVersion}. No files were changed.`,
+              message: mismatchMessage({ layout: requirements.layout, requiredVersion: typeof requiredVersion === "string" ? requiredVersion : null }),
             }),
       });
     } catch (error) {
@@ -154,6 +199,42 @@ export function inspectStorageReaderCompatibility({ root, storage, verifyWorldPo
     layers,
     ordinaryWorkBlocked: false,
     nextAction:
-      "Read only the needed World/Graph with a reader supporting the declared layout/schema/producer. An absent hint is unknown; no setup or refresh is required for ordinary work.",
+      "Read only the needed World/Graph with a reader supporting the declared layout/schema/producer. An absent hint is unknown; no setup or refresh is required for ordinary work. A layout this reader already understands with no minimumReader is upgraded in place by refresh, storage GC or world-index; snapshot bytes stay put.",
   };
+}
+
+// Records minimumReader and writer on a beta.75-shaped pointer. Snapshot files,
+// record ids, hashes and source texts are not opened or rewritten.
+export async function upgradeLegacyReaderPointers({ root, storage }) {
+  const { verifyWorldModelPointerOriginal } = await import("./world-model.mjs");
+  const { replaceGraphPointerReaderRequirements, verifyGraphProjectionPointer } = await import("./graph-projection-adapter.mjs");
+  const upgraded = [];
+  for (const [layer, directory, idField, hashField] of [
+    ["world", "world-model", "worldModelId", "worldModelHash"],
+    ["graph", "graph-projection", "graphSnapshotId", "graphSnapshotHash"],
+  ]) {
+    const file = path.join(root, storage.directory, directory, "current.json");
+    const pointer = readPointer(root, file);
+    if (!pointer || !legacyReaderDeclaration(pointer.readerRequirements) || pointer.readerRequirements.snapshotId !== pointer[idField]) continue;
+    if (layer === "world") verifyWorldModelPointerOriginal(pointer, storage.projectId);
+    else verifyGraphProjectionPointer(pointer, null, storage);
+    const readerRequirements = {
+      ...pointer.readerRequirements,
+      minimumReader: STORAGE_READER_VERSION.minimumWriterUnderstood,
+      writer: installedVersion,
+    };
+    const next =
+      layer === "graph"
+        ? replaceGraphPointerReaderRequirements({ ...pointer, readerRequirements: pointer.readerRequirements }, readerRequirements, storage)
+        : { ...pointer, readerRequirements };
+    if (next[idField] !== pointer[idField] || next[hashField] !== pointer[hashField]) fail("STORAGE_POINTER_CHANGED");
+    atomicWriteText(file, JSON.stringify(next));
+    const written = readPointer(root, file);
+    if (layer === "world") verifyWorldModelPointerOriginal(written, storage.projectId);
+    else verifyGraphProjectionPointer(written, null, storage);
+    if (written[idField] !== pointer[idField] || written[hashField] !== pointer[hashField] || !written.readerRequirements.minimumReader)
+      fail("STORAGE_POINTER_CHANGED");
+    upgraded.push(layer);
+  }
+  return { upgraded };
 }

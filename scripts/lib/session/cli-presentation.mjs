@@ -68,7 +68,11 @@ function integrationNotices(value) {
   for (const layer of value.readiness?.storage?.layers || []) {
     if (["unsupported", "unavailable", "not-inspected"].includes(layer.state))
       lines.push(
-        `World/Graph reader (${display(layer.layer)}): ${display(layer.state)}; ${display(layer.reasonCode)}. Core work continues; inspect only needed projection data with a compatible reader. Details: --json.`,
+        `World/Graph reader (${display(layer.layer)}): ${display(layer.state)}; ${display(layer.reasonCode)}.${
+          layer.reasonCode === "STORAGE_VERSION_MISMATCH"
+            ? " Version mismatch, not corrupted storage. Recovery: upgrade Lode, or run world-index on a reader that can read this layout."
+            : ""
+        } ${layer.message ? display(layer.message) + " " : ""}Core work continues; inspect only needed projection data with a compatible reader. Details: --json.`,
       );
   }
   const opencode = value.opencodeConnection;
@@ -1845,9 +1849,14 @@ function formatSnapshotStorage(value) {
       value.writtenPackBytes || value.publishedPackBytes
         ? "Published pack/index bytes: " + value.publishedPackBytes + "; net file bytes removed: " + value.netStorageBytes + "."
         : null,
-      value.code || value.deferred?.length
-        ? "Preserved remainder: " + (value.code || [...new Set(value.deferred.map((item) => item.code))].slice(0, 3).join(", ")) + ". Details: --json."
-        : "Retained references preserved. Details: --json.",
+      value.message && value.code === "STORAGE_VERSION_MISMATCH"
+        ? value.message
+        : value.code || value.deferred?.length
+          ? "Preserved remainder: " +
+            (value.code || [...new Set(value.deferred.map((item) => item.code))].slice(0, 3).join(", ")) +
+            (value.message ? ". " + value.message : "") +
+            ". Details: --json."
+          : "Retained references preserved. Details: --json.",
       "",
     ]
       .filter((line) => line !== null)
