@@ -1050,39 +1050,56 @@ function compareToBaseline({ inputs, graph, computed, takeIfMissing, readFiles }
   const meaningLines = (meaning?.parsed.meanings || []).map((item) => ({ id: item.id, at: { path: meaning.path, line: item.line } }));
   if (read.baseline) {
     const baselineBytes = fs.readFileSync(baselineFile(inputs));
+    const baselineSha256 = sha256Hex(baselineBytes);
     if (inputs.mode === "project") assertNoLinkedComponents(inputs.projectRoot, retainedFile(inputs));
     let retained = readRetainedContent(retainedFile(inputs), { baseline: read.baseline, baselineBytes });
-    // A baseline from before retained content existed gets its "before" from
-    // this build where (and only where) a node's content is the baseline's. A
-    // build writes it once; a check computes the same in memory.
-    let retainedCreate = null;
-    if (retained.status === "missing") {
-      const hashes = new Map(read.baseline.nodes.map(([id, , , , , contentSha256]) => [id, contentSha256]));
-      retainedCreate = retainedContentFor({
-        graph,
-        baselineBytes,
-        readText: (relative) => readFiles.get(relative),
-        unresolvedHandlers: computed.lists?.unresolvedHandlers || [],
-        only: (node) => Boolean(node.contentSha256) && hashes.get(node.id) === node.contentSha256,
-      });
-      retained = retainedView(retainedCreate);
+    // The retained file is derived from the baseline: when it is missing, for
+    // another baseline (an interrupted move) or unreadable, a build writes it
+    // again from this build, only for nodes whose content is still the
+    // baseline's. Only when the baseline was read the way this build reads
+    // code; otherwise nothing is written and the reason says what to do. A
+    // check computes the same in memory.
+    let retainedCreate = null,
+      retainedReplace = false;
+    const sameReader = readerKey(read.baseline.reader) === readerKey(graph.inputs.reader);
+    if (["missing", "other-baseline", "unreadable", "other-reader"].includes(retained.status)) {
+      if (sameReader) {
+        const hashes = new Map(read.baseline.nodes.map(([id, , , , , contentSha256]) => [id, contentSha256]));
+        retainedCreate = retainedContentFor({
+          graph,
+          baselineBytes,
+          readText: (relative) => readFiles.get(relative),
+          unresolvedHandlers: computed.lists?.unresolvedHandlers || [],
+          only: (node) => Boolean(node.contentSha256) && hashes.get(node.id) === node.contentSha256,
+        });
+        retainedReplace = retained.status !== "missing";
+        retained = { ...retainedView(retainedCreate), rebuiltFrom: retained.status };
+      } else
+        retained = {
+          status: "other-reader",
+          entries: new Map(),
+          reason: "기준이 지금과 다른 방식으로 코드를 읽어 잡혔다",
+          action: "product-graph-baseline으로 기준을 다시 잡으면 이전 본문이 보관된다",
+        };
     }
     return {
-      changes: compareWithBaseline(graph, read.baseline, { meaningLines, retained }),
+      changes: compareWithBaseline(graph, read.baseline, { meaningLines, retained, baselineSha256 }),
       state: { status: "kept", setAt: read.baseline.setAt },
       retainedCreate,
+      retainedReplace,
     };
   }
   if (read.missing && takeIfMissing) {
     const taken = baselineFromGraph(graph, { setAt: new Date().toISOString() });
+    const takenBytes = Buffer.from(serializeBaseline(taken));
     const retainedCreate = retainedContentFor({
       graph,
-      baselineBytes: Buffer.from(serializeBaseline(taken)),
+      baselineBytes: takenBytes,
       readText: (relative) => readFiles.get(relative),
       unresolvedHandlers: computed.lists?.unresolvedHandlers || [],
     });
     return {
-      changes: compareWithBaseline(graph, taken, { meaningLines, retained: retainedView(retainedCreate) }),
+      changes: compareWithBaseline(graph, taken, { meaningLines, retained: retainedView(retainedCreate), baselineSha256: sha256Hex(takenBytes) }),
       taken,
       retainedCreate,
       state: { status: "taken-now", setAt: taken.setAt, message: "기준 없음 — 이번 빌드를 기준으로 삼았다" },
@@ -1113,7 +1130,9 @@ export function buildProductGraph(options = {}) {
   // baseline that has none (only nodes whose content equals the baseline's).
   const created = [];
   if (baseline.taken) created.push([PRODUCT_GRAPH_BASELINE_FILE, serializeBaseline(baseline.taken)]);
-  if (baseline.retainedCreate) created.push([PRODUCT_GRAPH_RETAINED_CONTENT_FILE, serializeRetainedContent(baseline.retainedCreate)]);
+  const replaced = [];
+  if (baseline.retainedCreate)
+    (baseline.retainedReplace ? replaced : created).push([PRODUCT_GRAPH_RETAINED_CONTENT_FILE, serializeRetainedContent(baseline.retainedCreate)]);
   const write = () => {
     if (inputs.mode === "project") assertNoLinkedComponents(inputs.projectRoot, output);
     const existing = fs.lstatSync(output, { throwIfNoEntry: false });
@@ -1129,7 +1148,7 @@ export function buildProductGraph(options = {}) {
           if (error.code !== "EEXIST") throw error;
         }
     }
-    for (const [name, content] of files) atomicWriteArtifact(path.join(output, name), content);
+    for (const [name, content] of [...files, ...replaced]) atomicWriteArtifact(path.join(output, name), content);
     // The baseline and its retained content are written once; only
     // product-graph-baseline moves them.
     for (const [name, content] of created)
@@ -1144,7 +1163,7 @@ export function buildProductGraph(options = {}) {
   return {
     status: "built",
     mode: result.mode,
-    written: [...files, ...created].map(([name, content]) => ({ name, bytes: Buffer.byteLength(content), sha256: sha256Hex(content) })),
+    written: [...files, ...replaced, ...created].map(([name, content]) => ({ name, bytes: Buffer.byteLength(content), sha256: sha256Hex(content) })),
     baseline: baseline.state || { status: "none" },
     outputLocation: inputs.mode === "project" ? `${inputs.storage.directory}/${PRODUCT_GRAPH_DIRECTORY}/${PRODUCT_GRAPH_BUILD_DIRECTORY}` : output,
     nodes: graph.nodes.length,
@@ -1365,7 +1384,10 @@ export function readProductGraphRetainedContent(read) {
   } catch {
     return { status: "unreadable", entries: new Map(), reason: "기준 파일을 읽지 못했다" };
   }
-  return readRetainedContent(path.join(read.directory, PRODUCT_GRAPH_RETAINED_CONTENT_FILE), { baseline: read.baselineEvidence, baselineBytes });
+  return {
+    ...readRetainedContent(path.join(read.directory, PRODUCT_GRAPH_RETAINED_CONTENT_FILE), { baseline: read.baselineEvidence, baselineBytes }),
+    baselineSha256: sha256Hex(baselineBytes),
+  };
 }
 
 // The build's scope record, read only by the impact preview. Unknown (null)
@@ -1413,8 +1435,11 @@ export function moveProductGraphBaseline(options = {}) {
       assertNoLinkedComponents(inputs.projectRoot, file);
       assertNoLinkedComponents(inputs.projectRoot, contentFile);
     }
-    atomicWriteArtifact(file, baselineText);
+    // The retained file first: if the move stops between the two writes, the
+    // old baseline stays with a retained file for another baseline, which the
+    // next build writes again.
     atomicWriteArtifact(contentFile, serializeRetainedContent(retained));
+    atomicWriteArtifact(file, baselineText);
     return { baseline, previous };
   };
   const { baseline, previous } =

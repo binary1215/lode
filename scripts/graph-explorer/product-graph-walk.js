@@ -280,7 +280,7 @@ export const productGraphWalk = (() => {
     if (changes.status !== "compared") return `기준 없음 — ${changes.reason}`;
     const c = changes.counts;
     const moved = ctx.baselineNow && ctx.baselineNow.setAt !== changes.baseline.setAt ? ` (기준이 그 뒤 ${ctx.baselineNow.setAt}로 옮겨졌다. 다시 빌드하면 새 기준과 비교한다)` : "";
-    return `기준 뒤 바뀐 것 (기준 ${changes.baseline.setAt}): 변경 ${c.changed} · 신규 ${c.added} · 사라짐 ${c.removed} · 닿는 코드가 바뀜 ${c.reachChanged} · 다시 볼 것 ${c.reviewAgain}${moved}${changes.comparisonScope?.status === "partial" ? " (기준 소속/reader 미확인: ID·해시 비교만, 이전 본문 unavailable)" : ""}`;
+    return `기준 뒤 바뀐 것 (기준 ${changes.baseline.setAt}): 변경 ${c.changed} · 신규 ${c.added} · 사라짐 ${c.removed} · 닿는 코드가 바뀜 ${c.reachChanged} · 다시 볼 것 ${c.reviewAgain}${moved}`;
   }
 
   const headerLines = (ctx) => [freshnessLine(ctx), limitsLine(ctx), changesLine(ctx)];

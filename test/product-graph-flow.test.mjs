@@ -144,59 +144,11 @@ test("T1/T2: no product source text in check.json, check.txt, the build and chec
   assert(fs.existsSync(path.join(f.build, "baseline-content.json")));
 });
 
-test("T2: content answers are paged and bounded, and say what the bound left out; a printed next-page hint repeats the question", (t) => {
-  const f = fixture(t);
-  const long = "x".repeat(20 * 1024);
-  put(f.sourceRoot, "notes.mjs", `export function saveNote() { return store(); }\nfunction store() { return "${long}"; }\nfunction other() { return 1; }\n`);
-  buildProductGraph(f);
-  put(f.sourceRoot, "notes.mjs", `export function saveNote() { return store(); }\nfunction store() { return "${long}y"; }\nfunction other() { return 2; }\n`);
-  buildProductGraph(f);
-  const first = queryProductGraph({ ...f, question: "changes", list: "content", limit: 1 });
-  assert.equal(first.status, "answered");
-  assert.ok(first.page.remaining > 0);
-  const more = first.rows.find((row) => row.kind === "more");
-  assert.match(more.text, /changes --list content --cursor 1 .*--limit 1 .*--expected-basis-sha256 [a-f0-9]{64}/);
-  const store = queryProductGraph({ ...f, question: "changes", list: "content", limit: 50 }).rows.find((row) => row.detail?.id === "notes.mjs#store").detail;
-  for (const side of [store.before, store.after]) {
-    assert.equal(side.status, "partial");
-    assert.ok(side.omittedBytes > 0);
-    assert.ok(Buffer.byteLength(side.text) <= 16 * 1024);
-  }
-  // Following the structured next arguments gives the next item once.
-  const second = queryProductGraph({ ...f, ...first.page.nextArguments });
-  assert.equal(second.status, "answered");
-  assert.notEqual(second.rows[0].detail?.id, first.rows[0].detail?.id);
-});
-
-test("T4: the retained budget is shared fairly; Korean-ID documents and file nodes keep their text; no entry for what is not retained", () => {
-  const big = "y".repeat(4000);
-  const text = Array.from({ length: 30 }, (_, n) => `function f${n}() { return "${big}${n}"; }`).join("\n") + "\n";
-  const graph = {
-    inputs: { reader: productGraphReader(1), sourceFiles: [{ path: "x.mjs", sha256: sourceTextHash(text) }], documents: [], rulesSha256: null },
-    nodes: [
-      { id: "x.mjs", type: "코드", kind: "file", file: "x.mjs" },
-      ...Array.from({ length: 30 }, (_, n) => ({ id: `x.mjs#f${n}`, type: "코드", kind: "function", file: "x.mjs", lines: [n + 1, n + 1] })),
-      { id: "화면-가", type: "화면", oneLine: "메모 목록", name: "목록" },
-      { id: "UA-가-01", type: "유저 활동", oneLine: "메모를 저장한다" },
-    ],
-    edges: [],
-  };
-  addContentHashes(graph, new Map([["x.mjs", text]]));
-  const budget = { totalBytes: 40 * 1024, entryBytes: 16 * 1024 };
-  const document = retainedContentFor({ graph, baselineBytes: Buffer.from("b"), readText: () => text, budget });
-  assert.equal(document.entries["화면-가"].complete, true);
-  assert.equal(document.entries["UA-가-01"].complete, true);
-  assert.ok(document.entries["x.mjs"], "the file node keeps a part of its text");
-  assert.ok(document.counts.bytes <= budget.totalBytes);
-  for (const entry of Object.values(document.entries)) assert.ok(entry.text.length > 0);
-  // Every entry has text; nodes with nothing retained have no entry.
-  assert.equal(Object.keys(document.entries).length, document.counts.complete + document.counts.partial);
-  assert.equal(document.counts.notRetained, graph.nodes.length - document.counts.complete - document.counts.partial);
-});
-
 test("T5: a line shift above an entry point does not list its 기능 as changed content", (t) => {
   const f = fixture(t);
   buildProductGraph(f);
+  // The entry point is recorded in package.json: move its line down.
+  put(f.sourceRoot, "package.json", '{\n  "name": "notes",\n  "bin": { "notes": "bin.mjs" }\n}\n');
   put(f.sourceRoot, "bin.mjs", '// a comment line above\nimport { saveNote } from "./notes.mjs";\nsaveNote();\n');
   const built = buildProductGraph(f);
   const listed = built.changes.contentChanges.map((item) => item.id);
@@ -390,20 +342,33 @@ test("impact query uses existing builds only and never claims scope compatibilit
   assert.deepEqual(Object.keys(json(path.join(f.outputDirectory, "build-context.json")).scope).sort(), ["projectId", "reader", "sourceRootHash"]);
 });
 
-test("M7/actual CLI and routed typed MCP: a Project build copied aside before the proposal compares as verified, without changing Canon, P2 or source files", async (t) => {
+test("N4/M7: three different states from the same Project (start, proposal on the start, current) compare as verified over CLI and MCP; nothing is applied", async (t) => {
   const f = coreFixture(t),
     synthetic = fixture(t);
   fs.cpSync(synthetic.sourceRoot, f.root, { recursive: true });
-  buildProductGraph({ root: f.root });
   const current = path.join(f.root, ".lode/context/product-graph/build"),
-    base = path.join(f.base, "starting"),
-    proposed = path.join(f.base, "proposed");
-  fs.cpSync(current, base, { recursive: true });
-  put(f.root, "notes.mjs", "export function saveNote() { return 9; }\n");
+    start = path.join(f.base, "start"),
+    proposal = path.join(f.base, "proposal");
+  const notes = (store) => put(f.root, "notes.mjs", `export function saveNote() { return store(); }\nfunction store() { return ${store}; }\n`);
+  // The documented steps: build the starting state and keep a copy; apply the
+  // proposal to it, build and keep a copy; go back to the current state and build.
+  notes(1);
   buildProductGraph({ root: f.root });
-  fs.cpSync(current, proposed, { recursive: true });
+  fs.cpSync(current, start, { recursive: true });
+  notes("'proposed'");
+  buildProductGraph({ root: f.root });
+  fs.cpSync(current, proposal, { recursive: true });
+  notes("'current'");
+  buildProductGraph({ root: f.root });
   const before = coreSnapshot(f.root);
-  const cli = await runCommand(["product-graph-query", f.root, "impact", "--proposal-base-build", base, "--candidate-build", proposed]);
+  const cli = await runCommand(["product-graph-query", f.root, "impact", "--proposal-base-build", start, "--candidate-build", proposal]);
+  assert.equal(cli.impact.compatibility.status, "verified", JSON.stringify(cli.impact.compatibility));
+  // Three different states: both sides changed the same declaration differently.
+  assert.ok(cli.impact.counts.currentChanges > 0);
+  assert.ok(cli.impact.counts.proposedChanges > 0);
+  assert.ok(cli.impact.counts.conflicts > 0, JSON.stringify(cli.impact));
+  assert.equal(cli.impact.structuralConflictFree, false);
+  assert.equal(cli.impact.productApproved, false);
   const mcp = await dispatch({
     jsonrpc: "2.0",
     id: "impact",
@@ -412,7 +377,7 @@ test("M7/actual CLI and routed typed MCP: a Project build copied aside before th
       name: "lode_tools_call",
       arguments: {
         name: "lode_product_graph_query",
-        arguments: { project_root: f.root, question: "impact", proposal_base_build: base, candidate_build: proposed },
+        arguments: { project_root: f.root, question: "impact", proposal_base_build: start, candidate_build: proposal },
       },
     },
   });
@@ -421,22 +386,19 @@ test("M7/actual CLI and routed typed MCP: a Project build copied aside before th
   assert(presented.startsWith(cli.text));
   const structured = mcp.result.structuredContent || JSON.parse(presented.split("구조화된 결과:\n")[1]);
   assert.deepEqual(structured.impact, cli.impact);
-  assert.deepEqual(structured.rows, cli.rows);
   assert.equal(structured.basisSha256, cli.basisSha256);
-  assert.equal(cli.impact.productApproved, false);
-  assert.equal(cli.impact.compatibility.status, "verified", JSON.stringify(cli.impact.compatibility));
+  // Read-only: nothing in the Project changed.
   assert.deepEqual(coreSnapshot(f.root), before);
-  // A stand-alone --out candidate of the same source next to a Project build is partial, and says why.
+  // A stand-alone --out candidate of the same source next to Project builds is partial, and says why.
   const standalone = path.join(f.base, "standalone");
   const rules = path.join(f.base, "rules.json");
   fs.writeFileSync(rules, '{"schemaVersion":1,"kind":"LodeProductGraphEntryRules","rules":[]}\n');
   fs.mkdirSync(path.join(f.base, "documents"));
   buildProductGraph({ sourceRoot: f.root, documentsDirectory: path.join(f.base, "documents"), rulesFile: rules, outputDirectory: standalone });
-  const mixed = await runCommand(["product-graph-query", f.root, "impact", "--proposal-base-build", base, "--candidate-build", standalone]);
+  const mixed = await runCommand(["product-graph-query", f.root, "impact", "--proposal-base-build", start, "--candidate-build", standalone]);
   assert.equal(mixed.impact.compatibility.status, "partial");
   assert(mixed.impact.compatibility.reasons.some((reason) => reason.includes("Project")));
 });
-
 test("R4: counted edge state, provenance divergence and delete/update conflict; real parallel citations retain identity or remain partial", () => {
   const graph = (count, basis = null) => ({
     kind: "LodeProductGraph",
@@ -476,7 +438,205 @@ test("R4: counted edge state, provenance divergence and delete/update conflict; 
   assert.equal(independent.ambiguousRelations.length, 0);
 });
 
-test("R5: a baseline brought from another folder never supplies a 'before' from this folder's retained content; the structural comparison continues", (t) => {
+test("T2/N2: a side is bounded and says what it left out; a page shows whole items only and the next page starts at the first one left out", (t) => {
+  const f = fixture(t);
+  const long = (n, tail) => `function big${n}() { return "${"x".repeat(15 * 1024)}${tail}"; }`;
+  const write = (tail) =>
+    put(
+      f.sourceRoot,
+      "notes.mjs",
+      ["export function saveNote() { return store(); }", "function store() { return 1; }", ...Array.from({ length: 24 }, (_, n) => long(n, tail))].join("\n") +
+        "\n",
+    );
+  write("a");
+  buildProductGraph(f);
+  write("b");
+  buildProductGraph(f);
+  const all = queryProductGraph({ ...f, question: "changes", list: "content", limit: 50 });
+  assert.equal(all.status, "answered");
+  // 24 changed declarations of ~15 KiB each side: the 256 KiB page holds only some of them.
+  const shown = all.rows.filter((row) => row.detail?.after).length;
+  assert.ok(shown > 1 && shown < 24, String(shown));
+  assert.equal(all.page.cursor + shown, all.page.nextCursor);
+  const total = all.page.total;
+  // Walking the pages by their hints shows every item exactly once.
+  const seen = [];
+  let page = all;
+  for (let i = 0; i < 20 && page; i += 1) {
+    for (const row of page.rows.filter((item) => item.detail?.after)) seen.push(row.detail.id);
+    page = page.page?.remaining ? queryProductGraph({ ...f, ...page.page.nextArguments }) : null;
+  }
+  assert.equal(seen.length, total);
+  assert.equal(new Set(seen).size, total);
+  // The structured reply holds each text once (rows[].detail); rows[].text keeps the first line.
+  const item = all.rows.find((row) => row.detail?.after?.text);
+  assert.equal(item.text.includes("\n"), false);
+  // A side over its own bound says so; a "before" over the retained bound was not kept.
+  const longer = "z".repeat(20 * 1024);
+  put(f.sourceRoot, "notes.mjs", `export function saveNote() { return store(); }\nfunction store() { return "${longer}"; }\n`);
+  const rebuilt = buildProductGraph(f);
+  const at = rebuilt.changes.contentChanges.findIndex((item) => item.id === "notes.mjs#store");
+  const store = queryProductGraph({ ...f, question: "changes", list: "content", cursor: at, limit: 1 }).rows.find(
+    (row) => row.detail?.id === "notes.mjs#store",
+  ).detail;
+  assert.equal(store.after.status, "partial");
+  assert.ok(store.after.omittedBytes > 0);
+  assert.match(store.after.omittedBecause, /한 쪽 한도/);
+});
+
+test("T4/N7: only whole contents are kept, smallest first; Korean-ID documents keep theirs; too large or over budget has no entry; every kept entry is checked", () => {
+  const big = "y".repeat(4000);
+  const text = Array.from({ length: 30 }, (_, n) => `function f${n}() { return "${big}${n}"; }`).join("\n") + "\n";
+  const graph = {
+    inputs: { reader: productGraphReader(1), sourceFiles: [{ path: "x.mjs", sha256: sourceTextHash(text) }], documents: [], rulesSha256: null },
+    nodes: [
+      { id: "x.mjs", type: "코드", kind: "file", file: "x.mjs" },
+      ...Array.from({ length: 30 }, (_, n) => ({ id: `x.mjs#f${n}`, type: "코드", kind: "function", file: "x.mjs", lines: [n + 1, n + 1] })),
+      { id: "화면-가", type: "화면", oneLine: "메모 목록", name: "목록" },
+      { id: "UA-가-01", type: "유저 활동", oneLine: "메모를 저장한다" },
+    ],
+    edges: [],
+  };
+  addContentHashes(graph, new Map([["x.mjs", text]]));
+  const budget = { totalBytes: 40 * 1024, entryBytes: 16 * 1024 };
+  const document = retainedContentFor({ graph, baselineBytes: Buffer.from("b"), readText: () => text, budget });
+  assert.ok(document.entries["화면-가"]);
+  assert.ok(document.entries["UA-가-01"]);
+  assert.equal(document.entries["x.mjs"], undefined, "the whole file is larger than the per-node bound");
+  assert.equal(document.counts.tooLarge, 1);
+  assert.ok(document.counts.overBudget > 0);
+  assert.equal(Object.keys(document.entries).length, document.counts.kept);
+  assert.ok(document.counts.bytes <= budget.totalBytes);
+  for (const entry of Object.values(document.entries)) assert.deepEqual(Object.keys(entry).sort(), ["format", "text"]);
+});
+
+test("N7: an entry edited by hand, whatever it claims about itself, is not shown", (t) => {
+  const f = fixture(t);
+  buildProductGraph(f);
+  const contentFile = path.join(f.outputDirectory, "baseline-content.json");
+  const document = json(contentFile);
+  const [id] = Object.keys(document.entries).filter((key) => key.includes("#"));
+  document.entries[id] = { format: "source-lines", complete: false, totalBytes: 999, text: "function invented() {" };
+  fs.writeFileSync(contentFile, JSON.stringify(document));
+  const read = readRetainedContent(contentFile, {
+    baseline: json(path.join(f.outputDirectory, "baseline.json")),
+    baselineBytes: fs.readFileSync(path.join(f.outputDirectory, "baseline.json")),
+  });
+  assert.equal(read.entries.has(id), false);
+});
+
+test("N1/N10: after a baseline move, or for a build without a bound comparison, the content list is refused with no text until a build", (t) => {
+  const f = fixture(t);
+  buildProductGraph(f);
+  put(f.sourceRoot, "notes.mjs", "export function saveNote() { return store(); }\nfunction store() { return 'EDITED-LINE'; }\n");
+  buildProductGraph(f);
+  assert.match(queryProductGraph({ ...f, question: "changes", list: "content" }).text, /EDITED-LINE/);
+  moveProductGraphBaseline(f);
+  const stale = queryProductGraph({ ...f, question: "changes", list: "content" });
+  assert.equal(stale.status, "refused");
+  assert.equal(stale.code, "PRODUCT_GRAPH_BUILD_STALE");
+  assert.doesNotMatch(stale.text, /EDITED-LINE/);
+  assert.match(stale.text, /다시 빌드/);
+  buildProductGraph(f);
+  assert.equal(queryProductGraph({ ...f, question: "changes", list: "content" }).status, "answered");
+  // A build whose comparison names no baseline (made before retained content existed).
+  const checkFile = path.join(f.outputDirectory, "check.json");
+  const check = json(checkFile);
+  delete check.changes.content;
+  fs.writeFileSync(checkFile, JSON.stringify(check));
+  const old = queryProductGraph({ ...f, question: "changes", list: "content" });
+  assert.equal(old.code, "PRODUCT_GRAPH_BUILD_STALE");
+  assert.match(old.text, /이전 버전이 만든 빌드/);
+});
+
+test("N6/N8: a baseline read another way gets no retained file and the same check twice; a retained file for another baseline or unreadable is written again", (t) => {
+  const f = fixture(t);
+  buildProductGraph(f);
+  const contentFile = path.join(f.outputDirectory, "baseline-content.json"),
+    baselineFile = path.join(f.outputDirectory, "baseline.json");
+  const baseline = json(baselineFile);
+  fs.rmSync(contentFile);
+  fs.writeFileSync(baselineFile, JSON.stringify({ ...baseline, reader: { ...baseline.reader, sourceAnalysis: "another" } }));
+  const first = buildProductGraph(f);
+  assert.equal(fs.existsSync(contentFile), false);
+  assert.equal(first.changes.content.retainedFile.status, "other-reader");
+  assert.match(first.changes.content.retainedFile.action, /product-graph-baseline/);
+  const checkOnce = fs.readFileSync(path.join(f.outputDirectory, "check.json"));
+  buildProductGraph(f);
+  assert.deepEqual(fs.readFileSync(path.join(f.outputDirectory, "check.json")), checkOnce);
+  // Same reader again: an unreadable retained file, and one for another baseline, are written again.
+  fs.writeFileSync(baselineFile, JSON.stringify(baseline));
+  fs.writeFileSync(contentFile, "{");
+  buildProductGraph(f);
+  assert.equal(readRetainedContent(contentFile, { baseline: json(baselineFile), baselineBytes: fs.readFileSync(baselineFile) }).status, "read");
+  const other = json(contentFile);
+  other.baselineSha256 = "0".repeat(64);
+  fs.writeFileSync(contentFile, JSON.stringify(other));
+  const healed = buildProductGraph(f);
+  assert.equal(healed.changes.content.retainedFile.status, "read");
+  assert.equal(readRetainedContent(contentFile, { baseline: json(baselineFile), baselineBytes: fs.readFileSync(baselineFile) }).status, "read");
+});
+
+test("N3: the next page over MCP, with exactly the arguments the first page returned", async (t) => {
+  const f = coreFixture(t);
+  put(f.root, "package.json", '{"bin":{"notes":"bin.mjs"}}\n');
+  put(f.root, "bin.mjs", 'import { saveNote } from "./notes.mjs";\nsaveNote();\n');
+  put(f.root, "notes.mjs", Array.from({ length: 8 }, (_, n) => `export function noteHelper${n}() { return ${n}; }`).join("\n") + "\n");
+  buildProductGraph({ root: f.root });
+  const call = async (args) => {
+    const reply = await dispatch({
+      jsonrpc: "2.0",
+      id: "q",
+      method: "tools/call",
+      params: { name: "lode_tools_call", arguments: { name: "lode_product_graph_query", arguments: args } },
+    });
+    assert.equal(reply.error, undefined, JSON.stringify(reply.error));
+    return reply.result.structuredContent || JSON.parse(reply.result.content[0].text.split("구조화된 결과:\n")[1]);
+  };
+  const first = await call({ project_root: f.root, question: "find", text: "noteHelper", node_types: ["코드"], limit: 2 });
+  assert.ok(first.page.remaining > 0);
+  assert.equal(first.page.nextMcpArguments.project_root, f.root);
+  const second = await call(first.page.nextMcpArguments);
+  assert.equal(second.status, "answered");
+  assert.equal(second.page.cursor, 2);
+  assert.notDeepEqual(
+    second.search.results.map((item) => item.id),
+    first.search.results.map((item) => item.id),
+  );
+});
+
+test("N13: the next-page hints of gaps, down and impact repeat the question", (t) => {
+  const f = fixture(t);
+  put(
+    f.sourceRoot,
+    "notes.mjs",
+    ["export function saveNote() { a0(); a1(); a2(); a3(); a4(); }", ...Array.from({ length: 5 }, (_, n) => `function a${n}() { return ${n}; }`)].join("\n") +
+      "\n",
+  );
+  buildProductGraph(f);
+  const base = path.join(f.root, "base");
+  fs.cpSync(f.outputDirectory, base, { recursive: true });
+  const down = queryProductGraph({ ...f, question: "down", id: "notes.mjs#saveNote", limit: 2 });
+  assert.match(down.rows.find((row) => row.kind === "more").text, /down notes\.mjs#saveNote --cursor 2 .*--limit 2 .*--expected-basis-sha256 [a-f0-9]{64}/);
+  const gaps = queryProductGraph({ ...f, question: "gaps", list: "unreachedCode", limit: 1 });
+  if (gaps.page?.remaining) assert.match(gaps.rows.find((row) => row.kind === "more").text, /--limit 1 .*--expected-basis-sha256/);
+  else t.diagnostic("no second page of unreachedCode in this fixture");
+  put(
+    f.sourceRoot,
+    "notes.mjs",
+    ["export function saveNote() { a0(); }", ...Array.from({ length: 5 }, (_, n) => `function a${n}() { return ${n + 10}; }`)].join("\n") + "\n",
+  );
+  const candidate = path.join(f.root, "candidate");
+  buildProductGraph({ ...f, outputDirectory: candidate });
+  const impact = queryProductGraph({ ...f, question: "impact", proposalBaseBuildDirectory: base, candidateBuildDirectory: candidate, limit: 1 });
+  const more = impact.rows.find((row) => row.kind === "more");
+  assert.ok(more, "the impact answer has a next page");
+  assert.match(more.text, /impact --cursor 1 .*--limit 1 .*--candidate-build .*--proposal-base-build .*--expected-basis-sha256 [a-f0-9]{64}/);
+  const next = queryProductGraph({ ...f, ...impact.page.nextArguments });
+  assert.equal(next.status, "answered");
+});
+
+test("R5: a baseline brought from another folder: its retained file is written again from this folder's sources, only for content equal to that baseline's", (t) => {
   const a = fixture(t),
     b = fixture(t);
   buildProductGraph(a);
@@ -485,11 +645,11 @@ test("R5: a baseline brought from another folder never supplies a 'before' from 
   buildProductGraph(b);
   fs.writeFileSync(path.join(b.outputDirectory, "baseline.json"), aBase);
   const result = buildProductGraph(b);
-  assert.equal(result.changes.status, "compared", "hash-only structural comparison remains available");
-  assert.equal(result.changes.content.retainedFile.status, "other-baseline");
-  assert(result.changes.contentChanges.every((change) => change.beforeRetained === false));
+  assert.equal(result.changes.status, "compared", "the structural comparison continues");
+  assert.equal(result.changes.content.retainedFile.status, "read");
+  // The node B changed has no "before": B never had A's text for it.
+  assert.equal(result.changes.contentChanges.find((change) => change.id === "notes.mjs#saveNote").beforeRetained, false);
   assert.deepEqual(fs.readFileSync(path.join(b.outputDirectory, "baseline.json")), aBase);
   const body = queryProductGraph({ ...b, question: "changes", list: "content" });
-  assert(body.rows.filter((row) => row.detail).every((row) => row.detail.before.status !== "available"));
-  assert.match(body.text, /다른 기준의 보관 본문/);
+  assert.equal(body.rows.find((row) => row.detail?.id === "notes.mjs#saveNote").detail.before.status, "unavailable");
 });

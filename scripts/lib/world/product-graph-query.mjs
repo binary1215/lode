@@ -96,10 +96,12 @@ export function queryProductGraph(options = {}) {
     const reasons = [];
     if (scopes.some((scope) => !scope)) reasons.push("빌드 scope 기록(build-context.json)이 없는 기준/후보가 있다");
     else {
-      // All three from the same Project, or all three stand-alone (no Project).
+      // All three from the same Project (wherever it is checked out now), or all
+      // three stand-alone from the same source root.
       if (new Set(scopes.map((scope) => scope.projectId)).size !== 1)
         reasons.push("같은 Project의 빌드가 아니다 (Project 빌드와 독립 실행 --out 빌드가 섞였거나 다른 Project다)");
-      if (new Set(scopes.map((scope) => scope.sourceRootHash)).size !== 1) reasons.push("서로 다른 소스 루트에서 만든 빌드다");
+      else if (scopes[0].projectId === null && new Set(scopes.map((scope) => scope.sourceRootHash)).size !== 1)
+        reasons.push("서로 다른 소스 루트에서 만든 독립 실행 빌드다");
       if (new Set(scopes.map((scope) => readerKey(scope.reader))).size !== 1) reasons.push("코드를 읽는 방식이 다르다");
     }
     const graphs = [read.graph, request.proposalBase, request.candidate].filter(Boolean);
@@ -139,7 +141,24 @@ export function queryProductGraph(options = {}) {
   // needs. That question answers with a stated code; other questions that the
   // build can answer still work.
   const ctx = productGraphQueryContext(read);
-  if (question === "changes" && list === "content") ctx.content = contentPage(read, request);
+  const askedLimit = request.limit;
+  if (question === "changes" && list === "content" && read.check.changes?.status === "compared") {
+    const bound = read.check.changes.content?.baselineSha256 || null;
+    const now = readProductGraphRetainedContent(read);
+    if (!bound)
+      return refuse(
+        "PRODUCT_GRAPH_BUILD_STALE",
+        `이 빌드에는 보관 본문과 묶인 비교가 없다(이전 버전이 만든 빌드). 다시 빌드한 뒤 묻는다: ${read.buildCommand}`,
+      );
+    if (now.baselineSha256 !== bound)
+      return refuse(
+        "PRODUCT_GRAPH_BUILD_STALE",
+        `이 빌드의 비교는 지금의 기준이 아니라 그 전 기준에 대한 것이다(기준이 빌드 뒤에 옮겨졌다). 본문은 보이지 않는다. 다시 빌드한 뒤 묻는다: ${read.buildCommand}`,
+      );
+    ctx.content = contentPage(read, request, now);
+    // A page shows only the items that fit in full; the next page starts at the first one left out.
+    request.limit = Math.max(1, ctx.content.shown);
+  }
   let answer;
   try {
     answer = walk.ask(ctx, request);
@@ -158,7 +177,7 @@ export function queryProductGraph(options = {}) {
   if (edgeTypes.length) flags.push(`--edge-types ${quote(edgeTypes.join(","))}`);
   if (basisStates.length) flags.push(`--basis-states ${quote(basisStates.join(","))}`);
   if (request.depth !== 1) flags.push(`--depth ${request.depth}`);
-  if (request.limit !== walk.LIMIT) flags.push(`--limit ${request.limit}`);
+  if (askedLimit !== walk.LIMIT) flags.push(`--limit ${askedLimit}`);
   if (candidateBuildDirectory) flags.push(`--candidate-build ${quote(candidateBuildDirectory)}`);
   if (proposalBaseBuildDirectory) flags.push(`--proposal-base-build ${quote(proposalBaseBuildDirectory)}`);
   flags.push(`--expected-basis-sha256 ${basisSha256}`);
@@ -171,8 +190,11 @@ export function queryProductGraph(options = {}) {
     Array.isArray(rows) && Array.isArray(structured.header)
       ? [...structured.header, structured.title, ...rows.map((row) => `${"  ".repeat(row.depth)}${row.text}`)].join("\n") + "\n"
       : answerText;
-  if (structured.page?.remaining)
+  if (structured.page?.remaining) {
+    // The next page as the caller asks it: Core/CLI option names (with where
+    // the build is), and the MCP tool's argument names (a Project only).
     structured.page.nextArguments = {
+      ...location,
       question,
       id,
       text: request.text,
@@ -182,12 +204,37 @@ export function queryProductGraph(options = {}) {
       edgeTypes,
       basisStates,
       depth: request.depth,
-      limit: request.limit,
+      limit: askedLimit,
       cursor: structured.page.nextCursor,
       candidateBuildDirectory,
       proposalBaseBuildDirectory,
       expectedBasisSha256: basisSha256,
     };
+    structured.page.nextMcpArguments = location.root
+      ? Object.fromEntries(
+          Object.entries({
+            project_root: location.root,
+            question,
+            id: id || undefined,
+            text: request.text || undefined,
+            list: list || undefined,
+            node_types: nodeTypes.length ? nodeTypes : undefined,
+            related_to: relatedTo || undefined,
+            edge_types: edgeTypes.length ? edgeTypes : undefined,
+            basis_states: basisStates.length ? basisStates : undefined,
+            depth: request.depth,
+            limit: askedLimit,
+            cursor: structured.page.nextCursor,
+            candidate_build: candidateBuildDirectory || undefined,
+            proposal_base_build: proposalBaseBuildDirectory || undefined,
+            expected_basis_sha256: basisSha256,
+          }).filter(([, value]) => value !== undefined),
+        )
+      : null;
+  }
+  // The text of a content item is in rows[].detail only; rows[].text keeps its
+  // first line, and the presentation text above shows it once more for reading.
+  if (Array.isArray(rows)) rows = rows.map((row) => (row.detail?.before || row.detail?.after ? { ...row, text: row.text.split("\n")[0] } : row));
   return {
     status: ok ? "answered" : "refused",
     ...(ok ? {} : { code, message }),
@@ -210,11 +257,10 @@ export function queryProductGraph(options = {}) {
 // page; what the bound left out is said.
 export const CONTENT_PAGE_BYTES = 256 * 1024;
 export const CONTENT_SIDE_BYTES = 16 * 1024;
-function contentPage(read, request) {
+function contentPage(read, request, retained) {
   const changes = read.check.changes;
   const items = changes?.status === "compared" ? changes.contentChanges || [] : [];
   const slice = items.slice(request.cursor, request.cursor + request.limit);
-  const retained = readProductGraphRetainedContent(read);
   const sourceRoot = read.inputs?.sourceRoot || null;
   const sourceFor = sourceRoot ? graphSourceReader(read.graph, (relative) => sourceTextNow(sourceRoot, relative)) : () => null;
   const ix = walk.index(read.graph);
@@ -224,24 +270,20 @@ function contentPage(read, request) {
     reasons.get(item.id).add(item.reason);
   }
   const nodes = new Map(read.graph.nodes.map((node) => [node.id, node]));
-  let left = CONTENT_PAGE_BYTES;
   const side = (value, absentReason) => {
     if (!value) return { status: "unavailable", reason: absentReason };
-    const allowed = Math.min(CONTENT_SIDE_BYTES, left);
-    const shown = textPrefix(value.text, Math.max(0, allowed));
-    left -= Buffer.byteLength(shown);
-    const total = value.totalBytes ?? Buffer.byteLength(value.text);
-    const cut = total - Buffer.byteLength(shown);
+    const shown = textPrefix(value.text, CONTENT_SIDE_BYTES);
+    const cut = Buffer.byteLength(value.text) - Buffer.byteLength(shown);
     return {
-      status: cut > 0 || value.complete === false ? "partial" : "available",
+      status: cut > 0 ? "partial" : "available",
       format: value.format,
       text: shown,
-      ...(cut > 0
-        ? { omittedBytes: cut, omittedBecause: value.complete === false ? "보관 한도" : allowed < CONTENT_SIDE_BYTES ? "이 페이지의 한도" : "한 쪽 한도" }
-        : {}),
+      ...(cut > 0 ? { omittedBytes: cut, omittedBecause: `한 쪽 한도 ${CONTENT_SIDE_BYTES}바이트` } : {}),
     };
   };
   const map = new Map();
+  let used = 0,
+    shown = 0;
   for (const item of slice) {
     const now = nodes.get(item.id);
     const before =
@@ -252,7 +294,18 @@ function contentPage(read, request) {
     if (!now) after = { status: "absent" };
     else if (read.freshness?.state !== "fresh" && now.type === "코드") after = side(null, "소스가 빌드 뒤 바뀌었거나 확인되지 않아 현재 본문을 보이지 않는다");
     else after = side(nodeContent(now, { sourceFor, ix, reasons }), sourceRoot ? "현재 소스가 이 빌드와 다르거나 읽을 수 없다" : "소스 루트를 모른다");
+    const bytes = Buffer.byteLength(before.text || "") + Buffer.byteLength(after.text || "");
+    // Whole items only: an item that does not fit starts the next page.
+    if (shown > 0 && used + bytes > CONTENT_PAGE_BYTES) break;
+    used += bytes;
+    shown += 1;
     map.set(item.id, { before, after });
   }
-  return { entries: map, retained: { status: retained.status, ...(retained.reason ? { reason: retained.reason } : {}) }, pageBytes: CONTENT_PAGE_BYTES };
+  return {
+    entries: map,
+    shown,
+    bytes: used,
+    retained: { status: retained.status, ...(retained.reason ? { reason: retained.reason } : {}) },
+    pageBytes: CONTENT_PAGE_BYTES,
+  };
 }

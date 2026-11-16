@@ -102,6 +102,8 @@ export function addContentHashes(graph, readFiles, unresolvedHandlers = []) {
 // reply or a Graph Explorer export; only `changes --list content` reads it.
 export const PRODUCT_GRAPH_RETAINED_CONTENT_FILE = "baseline-content.json";
 export const RETAINED_CONTENT_BUDGET = Object.freeze({ totalBytes: 2 * 1024 * 1024, entryBytes: 16 * 1024 });
+// A reader never reads a retained file larger than this.
+export const RETAINED_CONTENT_MAX_FILE_BYTES = 4 * 1024 * 1024;
 
 // One node's content as text, or null when it cannot be shown exactly: code is
 // the normalised source range (its hash is contentSha256); every other node is
@@ -146,68 +148,50 @@ export function textPrefix(text, maxBytes) {
   return shown;
 }
 
-// The retained-content document for a baseline. The budget is shared fairly:
-// smaller contents are kept whole first and the rest is split evenly, so no
-// node loses its text because of its ID's order. Nodes with nothing retained
-// get no entry. only(id) limits it to some nodes (a backfill keeps only those
-// whose content equals the baseline's).
+// The retained-content document for a baseline. Only whole contents are
+// kept, so every "before" shown can be checked against the baseline's hash.
+// The budget (file bytes: each entry's key and JSON) goes to the smallest
+// contents first, so no node loses its text because of its ID's order; a
+// content larger than the per-node bound or the rest of the budget is not
+// kept, and has no entry. only(id) limits it to some nodes (a backfill keeps
+// only those whose content equals the baseline's).
 export function retainedContentFor({ graph, baselineBytes, readText, unresolvedHandlers = [], only = null, budget = RETAINED_CONTENT_BUDGET }) {
   const ix = walk.index(graph);
   const reasons = reasonsOf(unresolvedHandlers);
   const sourceFor = graphSourceReader(graph, readText);
+  const costOf = (id, entry) => Buffer.byteLength(JSON.stringify(id)) + Buffer.byteLength(JSON.stringify(entry)) + 2;
   const contents = [];
   for (const node of graph.nodes) {
     if (only && !only(node)) continue;
     const content = nodeContent(node, { sourceFor, ix, reasons });
-    if (content) contents.push({ id: node.id, contentSha256: node.contentSha256, ...content, bytes: Buffer.byteLength(content.text) });
+    if (!content) continue;
+    const entry = { format: content.format, text: content.text };
+    contents.push({ id: node.id, entry, cost: costOf(node.id, entry) });
   }
-  // Every byte counted is a byte of the file: an entry costs its key and its
-  // JSON (escapes included), so the file stays within totalBytes plus a header.
-  const costOf = (id, entry) => Buffer.byteLength(JSON.stringify(id)) + Buffer.byteLength(JSON.stringify(entry)) + 2;
-  for (const item of contents) item.cost = costOf(item.id, { format: item.format, complete: true, text: item.text });
   contents.sort((a, b) => a.cost - b.cost || compare(a.id, b.id));
   let remaining = budget.totalBytes;
   const entries = {};
-  let complete = 0,
-    partial = 0,
-    retainedBytes = 0;
-  contents.forEach((item, index) => {
-    const allowed = Math.min(budget.entryBytes, Math.floor(remaining / (contents.length - index)));
-    let entry = null;
-    if (item.cost <= allowed) entry = { format: item.format, complete: true, text: item.text };
+  let kept = 0,
+    keptBytes = 0,
+    tooLarge = 0,
+    overBudget = 0;
+  for (const item of contents) {
+    if (item.cost > budget.entryBytes) tooLarge += 1;
+    else if (item.cost > remaining) overBudget += 1;
     else {
-      // The longest exact prefix whose entry still fits.
-      const shell = (text) => ({ format: item.format, complete: false, totalBytes: item.bytes, text });
-      let size = Math.max(0, allowed - costOf(item.id, shell("")));
-      let text = textPrefix(item.text, size);
-      while (text && costOf(item.id, shell(text)) > allowed) {
-        size = Math.max(0, size - Math.max(1, costOf(item.id, shell(text)) - allowed));
-        text = textPrefix(item.text, size);
-      }
-      if (text) entry = shell(text);
+      entries[item.id] = item.entry;
+      remaining -= item.cost;
+      keptBytes += item.cost;
+      kept += 1;
     }
-    if (!entry) return;
-    const cost = costOf(item.id, entry);
-    remaining -= cost;
-    retainedBytes += cost;
-    if (entry.complete) complete += 1;
-    else partial += 1;
-    entries[item.id] = entry;
-  });
+  }
   return {
     schemaVersion: 1,
     kind: "LodeProductGraphRetainedContent",
     baselineSha256: sha256Hex(baselineBytes),
     reader: JSON.parse(readerKey(graph.inputs.reader)),
     budget: { totalBytes: budget.totalBytes, entryBytes: budget.entryBytes, counted: "file bytes of each entry (key and JSON)" },
-    counts: {
-      nodes: graph.nodes.length,
-      shown: contents.length,
-      complete,
-      partial,
-      notRetained: graph.nodes.length - complete - partial,
-      bytes: retainedBytes,
-    },
+    counts: { nodes: graph.nodes.length, shown: contents.length, kept, tooLarge, overBudget, notShown: graph.nodes.length - contents.length, bytes: keptBytes },
     entries,
   };
 }
@@ -228,6 +212,7 @@ export function readRetainedContent(file, { baseline, baselineBytes }) {
     const stat = fs.lstatSync(file, { throwIfNoEntry: false });
     if (!stat) return { status: "missing", entries: new Map(), reason: "보관 본문 파일이 없다" };
     if (!stat.isFile() || stat.isSymbolicLink()) return { status: "unreadable", entries: new Map(), reason: "보관 본문 파일이 보통 파일이 아니다" };
+    if (stat.size > RETAINED_CONTENT_MAX_FILE_BYTES) return { status: "unreadable", entries: new Map(), reason: "보관 본문 파일이 너무 크다" };
     document = JSON.parse(fs.readFileSync(file, "utf8"));
   } catch {
     return { status: "unreadable", entries: new Map(), reason: "보관 본문 파일을 읽지 못했다" };
@@ -242,28 +227,22 @@ export function readRetainedContent(file, { baseline, baselineBytes }) {
   let rejected = 0;
   for (const [id, entry] of Object.entries(document.entries)) {
     const expected = hashes.get(id);
+    // Whole entries only: the text must hash to the baseline's content hash.
     const ok =
       entry &&
       typeof entry.text === "string" &&
       ["source-lines", "stated-fields"].includes(entry.format) &&
       expected &&
-      (!entry.complete ||
-        (entry.format === "source-lines"
-          ? textHash(entry.text) === expected
-          : (() => {
-              try {
-                return sha256Hex(canonicalJson(JSON.parse(entry.text))) === expected;
-              } catch {
-                return false;
-              }
-            })()));
-    if (ok)
-      entries.set(id, {
-        format: entry.format,
-        text: entry.text,
-        complete: Boolean(entry.complete),
-        totalBytes: entry.totalBytes ?? Buffer.byteLength(entry.text),
-      });
+      (entry.format === "source-lines"
+        ? textHash(entry.text) === expected
+        : (() => {
+            try {
+              return sha256Hex(canonicalJson(JSON.parse(entry.text))) === expected;
+            } catch {
+              return false;
+            }
+          })());
+    if (ok) entries.set(id, { format: entry.format, text: entry.text, complete: true, totalBytes: Buffer.byteLength(entry.text) });
     else rejected += 1;
   }
   return { status: "read", entries, rejected, counts: document.counts || null, budget: document.budget || null };
@@ -375,7 +354,9 @@ export function baselineGraph(baseline) {
 // meaningLines: [{ id, at }] — the lines of 기능 뜻.md.
 // retained: what readRetainedContent found for this baseline (only its counts
 // and which nodes have a "before" are used here; no text leaves this file).
-export function compareWithBaseline(graph, baseline, { meaningLines = [], retained = null } = {}) {
+// baselineSha256: the hash of the baseline file's bytes, so a later reader of
+// these changes knows which baseline they belong to.
+export function compareWithBaseline(graph, baseline, { meaningLines = [], retained = null, baselineSha256 = null } = {}) {
   const sameReader = readerKey(graph.inputs.reader) === readerKey(baseline.reader);
   const sameRules = (graph.inputs.rulesSha256 ?? null) === (baseline.rulesSha256 ?? null);
   const before = baselineGraph(baseline);
@@ -566,9 +547,12 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
     contentChanges,
     content: {
       question: "changes --list content",
+      baselineSha256,
       changed: contentChanges.length,
       beforeRetained: contentChanges.filter((item) => item.beforeRetained).length,
-      retainedFile: retained ? { status: retained.status, ...(retained.reason ? { reason: retained.reason } : {}) } : { status: "not-read" },
+      retainedFile: retained
+        ? { status: retained.status, ...(retained.reason ? { reason: retained.reason } : {}), ...(retained.action ? { action: retained.action } : {}) }
+        : { status: "not-read" },
       note: "본문은 이 결과에 넣지 않는다. 전후 본문은 changes --list content 질문으로만 보인다.",
     },
     interpretation: {
