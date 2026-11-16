@@ -1564,19 +1564,42 @@ async function buildWorldModelLocked({
   if (filterRevisionParentsToCurrentEntities && persist) {
     fail("Current-entity revision-parent filtering is available only for non-persisted refresh previews.", "REVISION_PARENT_FILTER_PREVIEW_ONLY");
   }
-  const inspected = readyProject(root);
-  const storage = inspected.storage;
-  const project = inspected.project;
+  let inspected = readyProject(root);
+  // A generation vouches only for inputs the stamp sees: the project store and
+  // the local git state. A build given any other source (an adapter, an
+  // in-memory projection, a scan result of its own) writes none; the next full
+  // unchanged refresh renews it. A refresh passes its own scan and stamp.
+  const callerSources =
+    storeAdapter ||
+    graphProjectionAdapter ||
+    gitHistoryAdapter ||
+    runtimeStateAdapter ||
+    sourceRelationEvidenceAdapter ||
+    computeAdapter ||
+    onboardingProjectionInput ||
+    productPolicyProjectionInput ||
+    featureMappingProjectionInput ||
+    changeSetProjectionInput ||
+    documentChangeProjectionInput ||
+    observationProjectionInput ||
+    productOperatingProjectionInput ||
+    releaseObservationProjectionInput ||
+    (repositoryScanExecution && typeof refreshInputStampBeforeRead !== "string");
   // Before anything below is read. Taken after the build, a record saved or a
   // commit made while it was building would be stamped as already known.
-  let stampBeforeRead = refreshInputStampBeforeRead;
+  let stampBeforeRead = callerSources ? false : refreshInputStampBeforeRead;
   if (persist && stampBeforeRead !== false && typeof stampBeforeRead !== "string") {
     try {
-      stampBeforeRead = refreshInputStamp(project.projectRoot, storage);
+      stampBeforeRead = refreshInputStamp(inspected.project.projectRoot, inspected.storage);
+      // The project read above (state, Session, managed files) came before the
+      // stamp; read it again so the World holds what the stamp saw or newer.
+      inspected = readyProject(root);
     } catch {
       stampBeforeRead = false;
     }
   }
+  const storage = inspected.storage;
+  const project = inspected.project;
   const worldStoreAdapter = createWorldModelStoreAdapter({ storage, projectRoot: project.projectRoot, adapter: storeAdapter });
   const initialPointerEntry = worldStoreAdapter.readPointer();
   const initialPointerBasis = canonicalJson(initialPointerEntry?.document || null);

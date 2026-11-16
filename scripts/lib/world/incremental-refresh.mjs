@@ -675,7 +675,9 @@ async function refreshWorldModelLocked({
   const mismatch = compatibility.layers.find((layer) => ["STORAGE_VERSION_MISMATCH", "INVALID_READER_REQUIREMENTS"].includes(layer.reasonCode));
   if (mismatch) throw Object.assign(new Error(mismatch.message || mismatch.reasonCode), { code: mismatch.reasonCode });
   const wasLegacy = compatibility.layers.some((layer) => layer.legacyDeclaration);
-  if (wasLegacy) await upgradeLegacyReaderPointers({ root: projectRoot, storage: inspected.storage });
+  // Upgrades a legacy pointer and repairs a World→Graph pointer link that names
+  // an older Graph pointer id; writes nothing when neither is needed.
+  await upgradeLegacyReaderPointers({ root: projectRoot, storage: inspected.storage });
   // Before the scan and the builds read anything (see buildWorldModel).
   let stampBeforeRead = false;
   try {
@@ -873,6 +875,9 @@ async function fastUnchangedRefresh(options, inspected) {
   const storage = inspected.storage;
   const generation = readRefreshInputGeneration(projectRoot, storage);
   if (!generation || typeof generation.reader !== "string" || generation.reader !== refreshReaderIdentity()) return null;
+  // The selected Session is a World input: answer only for the Session the
+  // generation was written under (G7).
+  if (!Object.hasOwn(generation, "sessionId") || (inspected.state?.sessionId ?? null) !== generation.sessionId) return null;
   let stampNow;
   try {
     stampNow = refreshInputStamp(projectRoot, storage);
@@ -913,6 +918,10 @@ async function fastUnchangedRefresh(options, inspected) {
     graphPointer.sourceSnapshotId !== generation.sourceSnapshotId
   )
     return null;
+  // A World pointer whose Graph link names another pointer id is repaired by
+  // the full path (G6).
+  const linkedGraphPointer = worldPointer.sourceAdapters?.graphProjection?.pointerId;
+  if (linkedGraphPointer && linkedGraphPointer !== graphPointer.pointerId) return null;
   const covered = sourceTreeMatchesPublishedFiles({
     projectRoot,
     managedRootFiles: managedRootFilesForProject(inspected.project, storage),

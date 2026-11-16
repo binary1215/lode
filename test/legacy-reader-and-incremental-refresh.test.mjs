@@ -5,7 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
-import { buildWorldModel, readWorldModel, readWorldModelSnapshot } from "../scripts/lib/world/world-model.mjs";
+import { buildWorldModel, readWorldModel, readWorldModelSnapshot, refreshReaderIdentity } from "../scripts/lib/world/world-model.mjs";
+import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
+import { NoExternalRuntimeStateAdapter } from "../scripts/lib/runtime/runtime-state.mjs";
 import { refreshWorldModel } from "../scripts/lib/world/incremental-refresh.mjs";
 import {
   fileIdentity,
@@ -88,6 +90,8 @@ test("beta.80 reader declarations upgrade in place and keep snapshot bytes", asy
   assert.equal(world.readerRequirements.minimumReader, "0.3.0-beta.75");
   assert.equal(world.readerRequirements.writer, JSON.parse(fs.readFileSync(path.join(pluginRoot, "package.json"), "utf8")).version);
   assert.equal(graph.readerRequirements.minimumReader, "0.3.0-beta.75");
+  // The World pointer names the Graph pointer id it has now (G6).
+  assert.equal(world.sourceAdapters.graphProjection.pointerId, graph.pointerId);
   assert.equal(world.worldModelId, built.snapshot.worldModelId);
   assert.equal(world.worldModelHash, built.snapshot.worldModelHash);
   assert.equal(graph.graphSnapshotId, built.snapshot.temporalProvenanceGraph.graphSnapshotId);
@@ -316,7 +320,11 @@ test("a store written by beta.80 commit 6d9f6be stays readable and keeps its sna
   assert.equal(upgradedGraph.graphSnapshotHash, graphPointer.graphSnapshotHash);
   assert.equal(upgraded.readerRequirements.minimumReader, "0.3.0-beta.75");
   // The graph pointer id covers its reader requirements; the world pointer must name the id it has now.
-  if (pointer.sourceAdapters?.graphProjection?.pointerId) assert.equal(upgraded.sourceAdapters.graphProjection.pointerId, upgradedGraph.pointerId);
+  // Where the store's World pointer names a Graph pointer, it names the current one; where it names none, it still names none.
+  assert.equal(
+    upgraded.sourceAdapters?.graphProjection?.pointerId ?? null,
+    pointer.sourceAdapters?.graphProjection?.pointerId ? upgradedGraph.pointerId : null,
+  );
   assert.deepEqual(snapshotNames("world-model/snapshots"), worldSnapshots);
   assert.deepEqual(snapshotNames("graph-projection/snapshots"), graphSnapshots);
   const original = await readWorldModelSnapshot({ root: projectRoot, worldModelId: pointer.worldModelId });
@@ -392,10 +400,19 @@ const mode = (result) => result.diagnostics.repositoryScan.executionMode;
 test("the fast path answers a second unchanged refresh, and a record saved while a refresh builds is not stamped as known", async (t) => {
   const f = project(t);
   await buildWorldModel({ root: f.root });
-  assert.equal((await refreshWorldModel({ root: f.root })).status, "unchanged");
+  // Directly after a build, the next refresh is answered from the fast path.
+  const afterBuild = await refreshWorldModel({ root: f.root });
+  assert.equal(afterBuild.status, "unchanged");
+  assert.equal(mode(afterBuild), "stat-cache-unchanged");
   const fast = await refreshWorldModel({ root: f.root });
   assert.equal(fast.status, "unchanged");
   assert.equal(mode(fast), "stat-cache-unchanged");
+  // Directly after a refresh that published a new World, too.
+  fs.writeFileSync(f.source, "def kept_value():\n    return 'first edit'\n");
+  assert.equal((await refreshWorldModel({ root: f.root })).status, "refreshed");
+  const afterRefreshed = await refreshWorldModel({ root: f.root });
+  assert.equal(afterRefreshed.status, "unchanged");
+  assert.equal(mode(afterRefreshed), "stat-cache-unchanged");
 
   // An edit, and while that refresh is building, something else writes into the project store.
   fs.writeFileSync(f.source, "def kept_value():\n    return 'edited'\n");
@@ -423,6 +440,7 @@ test("the fast path answers a second unchanged refresh, and a record saved while
   // The stamp was taken before the build read anything, so the file that arrived is news to it.
   const afterArrival = await refreshWorldModel({ root: f.root });
   assert.notEqual(mode(afterArrival), "stat-cache-unchanged");
+  assert.equal(afterArrival.status, "unchanged", "the arrived file is not a World input; only the stamp made this refresh full");
   // That full refresh found nothing changed and renewed the generation.
   const settled = await refreshWorldModel({ root: f.root });
   assert.equal(settled.status, "unchanged");
@@ -462,7 +480,14 @@ test("a commit made after the stamp was taken is not unchanged", async (t) => {
   git(root, ["commit", "--allow-empty", "-m", "made while the build was running"]);
   assert.notEqual(takenBeforeTheBuild, refreshInputStamp(root, storage));
   assert.equal(writeRefreshInputGeneration({ root, storage, snapshot: built.snapshot }), null);
-  writeRefreshInputGeneration({ root, storage, snapshot: built.snapshot, stamp: takenBeforeTheBuild, reader: "x" });
+  // Control: the same generation with a stamp taken after the commit is answered from the fast path.
+  writeRefreshInputGeneration({ root, storage, snapshot: built.snapshot, stamp: refreshInputStamp(root, storage), reader: refreshReaderIdentity() });
+  const generationFile = path.join(root, storage.directory, "refresh", "input-generation.json");
+  const control = JSON.parse(fs.readFileSync(generationFile, "utf8"));
+  writeRefreshInputGeneration({ root, storage, snapshot: built.snapshot, stamp: takenBeforeTheBuild, reader: refreshReaderIdentity() });
+  const real = JSON.parse(fs.readFileSync(generationFile, "utf8"));
+  assert.deepEqual({ ...real, stamp: null, snapshotStore: null }, { ...control, stamp: null, snapshotStore: null }, "only the stamp differs");
+  assert.notEqual(real.stamp, control.stamp);
   const next = await refreshWorldModel({ root });
   assert.notEqual(mode(next), "stat-cache-unchanged");
   assert.equal(next.status, "refreshed");
@@ -481,6 +506,9 @@ test("storage GC reads a pointer written before minimumReader without rewriting 
   fs.writeFileSync(probe, "arm\n");
   const applied = await applySnapshotGarbageCollection({ root: f.root });
   assert.notEqual(applied.code, "STORAGE_VERSION_MISMATCH");
+  // It reached the inventory, not an early return.
+  assert.equal(applied.code, undefined, JSON.stringify({ code: applied.code, status: applied.status }));
+  assert.equal(typeof applied.coverage?.referenceValidity, "string");
   assert.equal(JSON.stringify(applied).includes("UNSUPPORTED_GC_REFERENCE_ROOT"), false);
   assert.equal(fs.readFileSync(worldPointer).equals(before[0]), true);
   assert.equal(fs.readFileSync(graphPointer).equals(before[1]), true);
@@ -639,4 +667,86 @@ test("F4: a dry run reports a retained World that is neither a file nor a git re
     JSON.stringify(dryRun.coverage.issues),
   );
   assert.equal(dryRun.applyAvailable, false);
+});
+
+// ---------- PR 81 second review: G1, G2, G6, G7 ----------
+
+test("G1: a direct build holds the Session state as it was when the stamp was taken, not from before it", async (t) => {
+  const f = project(t);
+  const stateFile = path.join(f.root, f.storage.directory, "sessions", "current.json");
+  const before = fs.readFileSync(stateFile);
+  const other = createHeadSession({ root: f.root, purpose: "The Session selected while the build starts" });
+  // The same state with the other Session selected.
+  const after = Buffer.from(JSON.stringify({ ...JSON.parse(before), sessionId: other.sessionId }));
+  assert.notEqual(other.sessionId, JSON.parse(before).sessionId);
+  fs.writeFileSync(stateFile, before);
+  // The selection changes after the build first read the project and before it
+  // walks the store for its stamp.
+  const store = path.resolve(f.root, f.storage.directory);
+  const originalDir = fs.readdirSync;
+  let switched = false;
+  fs.readdirSync = function (directory, ...args) {
+    if (!switched && path.resolve(String(directory)) === store) {
+      switched = true;
+      fs.writeFileSync(stateFile, after);
+    }
+    return originalDir.call(fs, directory, ...args);
+  };
+  let built;
+  try {
+    built = await buildWorldModel({ root: f.root });
+  } finally {
+    fs.readdirSync = originalDir;
+  }
+  assert.equal(switched, true);
+  // The stamp saw the new selection, so the World must hold it too.
+  assert.equal(built.snapshot.runtimeState.sessionId, JSON.parse(after).sessionId);
+});
+
+test("G2: a build given a source the stamp cannot see writes no generation; the next full unchanged refresh renews it", async (t) => {
+  const f = project(t);
+  const generationFile = path.join(f.root, f.storage.directory, "refresh", "input-generation.json");
+  // A caller-supplied runtime-state source (what world-index --runtime-state passes).
+  await buildWorldModel({ root: f.root, runtimeStateAdapter: new NoExternalRuntimeStateAdapter() });
+  assert.equal(fs.existsSync(generationFile), false, "no generation after a build with a caller adapter");
+  assert.notEqual(mode(await refreshWorldModel({ root: f.root })), "stat-cache-unchanged");
+  await buildWorldModel({ root: f.root });
+  assert.equal(fs.existsSync(generationFile), true, "a plain build writes one");
+});
+
+test("G7: a refresh routed to another Session is not answered from the generation of the first", async (t) => {
+  const f = project(t);
+  await buildWorldModel({ root: f.root });
+  assert.equal(mode(await refreshWorldModel({ root: f.root })), "stat-cache-unchanged");
+  const other = createHeadSession({ root: f.root, purpose: "Another Session" });
+  // Creating a Session writes into the store; settle the default route first.
+  await refreshWorldModel({ root: f.root });
+  assert.equal(mode(await refreshWorldModel({ root: f.root })), "stat-cache-unchanged");
+  const routed = await withSessionRoute(f.root, other.sessionId, () => refreshWorldModel({ root: f.root }));
+  assert.notEqual(mode(routed), "stat-cache-unchanged");
+});
+
+test("G6: a World pointer whose Graph link names an older Graph pointer id is repaired by the next refresh", async (t) => {
+  const f = project(t);
+  await buildWorldModel({ root: f.root });
+  const worldFile = path.join(f.root, f.storage.directory, "world-model/current.json");
+  const graphFile = path.join(f.root, f.storage.directory, "graph-projection/current.json");
+  const graph = JSON.parse(fs.readFileSync(graphFile, "utf8"));
+  const world = JSON.parse(fs.readFileSync(worldFile, "utf8"));
+  assert.equal(world.sourceAdapters.graphProjection.pointerId, graph.pointerId);
+  // A Graph pointer upgraded in an earlier run; the World pointer still names its old id.
+  const stale = {
+    ...world,
+    sourceAdapters: {
+      ...world.sourceAdapters,
+      graphProjection: { ...world.sourceAdapters.graphProjection, pointerId: "graph-projection-pointer-" + "0".repeat(24) },
+    },
+  };
+  fs.writeFileSync(worldFile, JSON.stringify(stale));
+  const refreshed = await refreshWorldModel({ root: f.root });
+  assert.notEqual(mode(refreshed), "stat-cache-unchanged", "the fast path leaves a stale link to the full path");
+  const repaired = JSON.parse(fs.readFileSync(worldFile, "utf8"));
+  assert.equal(repaired.sourceAdapters.graphProjection.pointerId, graph.pointerId);
+  assert.equal(repaired.worldModelId, world.worldModelId);
+  assert.equal(repaired.worldModelHash, world.worldModelHash);
 });
