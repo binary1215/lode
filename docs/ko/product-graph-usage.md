@@ -151,16 +151,33 @@ lode-agent product-graph-query <project> impact --proposal-base-build <starting-
 
 **영향**은 이미 있는 빌드 셋을 읽기만 하고 아무것도 바꾸지 않습니다. 제안이 출발한 상태, 지금 상태, 출발 상태에 제안을 적용한 상태입니다. 같은 최종값 변경과 서로 다른 변경, 동시 정책 변경, 지운 화면요소나 코드를 가리키는 남은 참조를 구분하고, 횟수가 있는 관계·출처·삭제 대 수정 충돌을 알립니다. 충돌이 없다는 것은 제품 승인이 아니고 정적 미리보기는 실행 증거가 아닙니다. 세 빌드가 같은 Project에서 나왔거나(빌드마다 `build/build-context.json`에 Project, 소스 루트 해시, 코드를 읽는 방식을 적습니다) 독립 실행이면 같은 소스 루트에서 나왔고, 코드를 같게 읽고 같은 호출 방식 표를 쓸 때만 "verified"입니다. Project 빌드와 독립 실행 `--out` 빌드가 섞였거나 서로 다른 독립 실행 루트(다른 worktree)면 "partial"이며 이유를 적습니다. 출발 빌드를 빼면(그때는 기록된 기준 해시를 씁니다) 역시 partial입니다. 읽을 수 없는 빌드 폴더를 주면 이유와 함께 거절합니다.
 
-서로 다른 세 상태를 verified로 비교하려면 Project 안에서 빌드하고 매번 `build/`를 복사해 둡니다. 커밋하지 않은 내 작업은 먼저 stash합니다.
+서로 다른 세 상태를 verified로 비교하려면 Project 안에서 빌드하고 매번 `build/`를 복사해 둡니다. 아래 단계는 스스로 만들지 않은 것은 아무것도 지우지 않으며, 깨끗한 작업 트리에서 시작해야 합니다. `git status --porcelain`이 아무것도 출력하지 않아야 합니다(내 작업은 먼저 커밋하거나 stash합니다. `build/`는 Git이 무시하므로 상관없습니다). 출발 커밋을 기준으로 만든 patch로 제안이 주어졌을 때:
 
 ```bash
+git status --porcelain                           # must print nothing
 git switch --detach <commit-the-proposal-started-from>
 lode-agent product-graph-build <project>
 cp -r <project>/.lode/context/product-graph/build <somewhere>/start
-git apply <proposal.patch>                       # or check out the proposal's branch
+git apply <proposal.patch>
 lode-agent product-graph-build <project>
 cp -r <project>/.lode/context/product-graph/build <somewhere>/proposal
-git checkout -- . && git switch -                 # back to where you were (git stash pop if you stashed)
+git apply -R <proposal.patch>                    # undoes exactly what git apply did
+git switch -                                     # back to the branch you were on
+lode-agent product-graph-build <project>         # build/ is the current state again
+lode-agent product-graph-query <project> impact --proposal-base-build <somewhere>/start --candidate-build <somewhere>/proposal
+```
+
+`git apply -R`은 `git apply`가 한 일만 정확히 되돌리고, 작업 트리가 그 상태가 아니면 오류로 멈춥니다. 그 밖의 것은 건드리지 않습니다. 출발 커밋에서 갈라진 브랜치로 제안이 주어졌을 때:
+
+```bash
+git status --porcelain                           # must print nothing
+git switch --detach <commit-the-proposal-started-from>
+lode-agent product-graph-build <project>
+cp -r <project>/.lode/context/product-graph/build <somewhere>/start
+git switch --detach <proposal-branch>
+lode-agent product-graph-build <project>
+cp -r <project>/.lode/context/product-graph/build <somewhere>/proposal
+git switch <the-branch-you-were-on>
 lode-agent product-graph-build <project>         # build/ is the current state again
 lode-agent product-graph-query <project> impact --proposal-base-build <somewhere>/start --candidate-build <somewhere>/proposal
 ```

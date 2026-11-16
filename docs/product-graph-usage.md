@@ -149,16 +149,33 @@ lode-agent product-graph-query <project> impact --proposal-base-build <starting-
 
 **Impact** reads three existing builds and changes nothing: the state a proposal started from, the current state, and the proposal applied to its start. It tells equal final edits from divergent edits, concurrent policy changes and references left to deleted UI or code, and reports counted relations, provenance and delete-versus-update conflicts. A conflict-free result is not product approval and a static preview is not runtime evidence. It is "verified" only when the three builds come from the same Project (each build writes `build/build-context.json`: the Project, a hash of the source root and the way code is read) or, for stand-alone builds, the same source root, read code the same way and use the same rule table. A Project build next to a stand-alone `--out` build, or builds of different stand-alone roots (another worktree), are "partial" and say why; so is omitting the starting build (then the recorded baseline hashes are used). A given build folder that cannot be read is refused with its reason.
 
-To get three different states that compare as verified, build them in the Project itself, keeping a copy of `build/` after each, with nothing of your own uncommitted (stash it first):
+To get three different states that compare as verified, build them in the Project itself and keep a copy of `build/` after each. Nothing in these steps discards anything they did not create; they need a clean tree to start from: `git status --porcelain` must print nothing (commit or stash your own work first; `build/` is git-ignored and does not count). For a proposal given as a patch made against its starting commit:
 
 ```bash
+git status --porcelain                           # must print nothing
 git switch --detach <commit-the-proposal-started-from>
 lode-agent product-graph-build <project>
 cp -r <project>/.lode/context/product-graph/build <somewhere>/start
-git apply <proposal.patch>                       # or check out the proposal's branch
+git apply <proposal.patch>
 lode-agent product-graph-build <project>
 cp -r <project>/.lode/context/product-graph/build <somewhere>/proposal
-git checkout -- . && git switch -                 # back to where you were (git stash pop if you stashed)
+git apply -R <proposal.patch>                    # undoes exactly what git apply did
+git switch -                                     # back to the branch you were on
+lode-agent product-graph-build <project>         # build/ is the current state again
+lode-agent product-graph-query <project> impact --proposal-base-build <somewhere>/start --candidate-build <somewhere>/proposal
+```
+
+`git apply -R` reverses exactly what `git apply` did and stops with an error if the tree is not in that state; nothing else is touched. For a proposal given as a branch based on its starting commit:
+
+```bash
+git status --porcelain                           # must print nothing
+git switch --detach <commit-the-proposal-started-from>
+lode-agent product-graph-build <project>
+cp -r <project>/.lode/context/product-graph/build <somewhere>/start
+git switch --detach <proposal-branch>
+lode-agent product-graph-build <project>
+cp -r <project>/.lode/context/product-graph/build <somewhere>/proposal
+git switch <the-branch-you-were-on>
 lode-agent product-graph-build <project>         # build/ is the current state again
 lode-agent product-graph-query <project> impact --proposal-base-build <somewhere>/start --candidate-build <somewhere>/proposal
 ```
