@@ -1153,3 +1153,92 @@ test("K6/J10: without a window or a release record no root or snapshot summary c
   assert.ok(windowed.roots.find((row) => row.relative === "refresh/current.json").namedRecordIds.length > 0);
   assert.ok(windowed.snapshots.every((row) => Array.isArray(row.ancestryIds) && Number.isFinite(row.mtimeMs)));
 });
+
+// ---------- review round 5 ----------
+
+test("L1: a released World published again is present; when the current World's file is then lost, that is damage, not a release", async (t) => {
+  const f = project(t);
+  for (let i = 0; i < 4; i += 1) await f.next();
+  const applied = await applySnapshotGarbageCollection({ root: f.root, retention: WINDOW });
+  assert.equal(applied.status, "gc_applied");
+  // The state reached when a released World's content comes back and it is
+  // published again as current: a valid release record names the current
+  // World, which is stored. (Reproducing the same id through commands depends
+  // on the revision history; the record here is the one an earlier apply writes.)
+  const republished = (await readWorldModel({ root: f.root })).snapshot;
+  const projectId = inspectProject(f.root).project.projectId;
+  writeRetentionRelease({
+    root: f.root,
+    storage: f.storage,
+    document: buildRetentionRelease({
+      projectId,
+      policy: { source: "options", keepCount: 1, keepDays: 0 },
+      collectionAttemptId: "snapshot-collection-earlier",
+      releasedAt: "2026-11-01T00:00:00.000Z",
+      released: [
+        {
+          id: republished.worldModelId,
+          hash: republished.worldModelHash,
+          identityIds: [republished.worldModelId, republished.temporalProvenanceGraph.sourceSnapshotId],
+          rule: "outside-retention-window",
+        },
+      ],
+    }),
+  });
+  // Present again: read as present, nothing reported for it.
+  assert.equal((await readWorldModel({ root: f.root })).snapshot.worldModelId, republished.worldModelId);
+  const presentDry = inspectSnapshotGarbageCollection({ root: f.root });
+  assert.equal(presentDry.applyAvailable, true, JSON.stringify(presentDry.coverage.issues));
+  assert(!(presentDry.retention.recordsNamingReleased?.entries || []).some((item) => item.id === republished.worldModelId));
+  // Its file is lost.
+  fs.rmSync(worldFile(f, republished.worldModelId));
+  for (const retention of [null, WINDOW]) {
+    const dry = inspectSnapshotGarbageCollection({ root: f.root, retention });
+    assert.equal(dry.applyAvailable, false);
+    assert(referenceIssues(dry).length > 0, JSON.stringify(dry.coverage.issues));
+    assert(!(dry.retention.recordsNamingReleased?.entries || []).some((item) => item.id === republished.worldModelId && /current\.json$/.test(item.path)));
+    const refused = await applySnapshotGarbageCollection({ root: f.root, retention });
+    assert.equal(refused.code, "SNAPSHOT_GC_REFERENCE_COVERAGE_INCOMPLETE");
+    assert.equal(refused.deletedCount, 0);
+  }
+  await assert.rejects(readWorldModelSnapshot({ root: f.root, worldModelId: republished.worldModelId }), { code: "WORLD_MODEL_SNAPSHOT_MISSING" });
+});
+
+test("L1 unit: a current pointer or a record it names is never excused by a release record", () => {
+  const id = (n) => "world-model-" + String(n).padStart(24, "0");
+  const released = new Map(
+    [1, 2, 3].map((n) => [
+      id(n),
+      {
+        releaseId: "retention-release-" + "a".repeat(24),
+        releasedAt: "2026-11-17T00:00:00.000Z",
+        snapshotId: id(n),
+        hash: null,
+        path: ".lode/refresh/retention-releases/r.json",
+      },
+    ]),
+  );
+  const roots = [
+    { path: ".lode/world-model/current.json", relative: "world-model/current.json", references: [id(1)] },
+    { path: ".lode/refresh/current.json", relative: "refresh/current.json", references: [], namedRecordIds: ["incremental-refresh-receipt-now"] },
+    {
+      path: ".lode/refresh/receipts/incremental-refresh-receipt-now.json",
+      relative: "refresh/receipts/incremental-refresh-receipt-now.json",
+      references: [id(2)],
+    },
+    { path: ".lode/context/knowledge.json", relative: "context/knowledge.json", references: [id(3)] },
+  ];
+  const issues = [];
+  const { releasedReferences } = selectRetainedClosure({
+    snapshots: [],
+    roots,
+    decision: { preserveAllHistory: true },
+    issue: (path, reasonCode) => issues.push({ path, reasonCode }),
+    released,
+  });
+  assert.deepEqual(issues.map((item) => item.path).sort(), [".lode/refresh/receipts/incremental-refresh-receipt-now.json", ".lode/world-model/current.json"]);
+  assert.deepEqual(
+    releasedReferences.map((item) => item.kind + " " + item.id),
+    ["released-in-record " + id(3)],
+  );
+});

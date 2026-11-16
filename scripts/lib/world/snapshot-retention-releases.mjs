@@ -187,7 +187,15 @@ export function readRetentionReleases({ root, storage, projectId }) {
 
 // The answer a reader gives for a snapshot id that is not stored: released by
 // retention (with the date and the record) or null when no record names it.
+// A World the current World pointer names (as current or as its previous) is
+// never "released": if it is missing, it is missing.
 export function retentionReleaseOf({ root, storage, projectId, id }) {
+  try {
+    const pointer = JSON.parse(fs.readFileSync(path.join(root, storage.directory, "world-model", "current.json"), "utf8"));
+    if (pointer && (pointer.worldModelId === id || pointer.previousWorldModelId === id)) return null;
+  } catch {
+    // No readable pointer: nothing is current, so nothing is excluded here.
+  }
   const { released } = readRetentionReleases({ root, storage, projectId });
   return released.get(id) || null;
 }
@@ -203,9 +211,15 @@ export function retentionReleaseOf({ root, storage, projectId, id }) {
 //     A pin can keep a snapshot from being released, but it cannot bring one
 //     back: such a reference is reported on every run and never blocks GC.
 //   - anything else (a stored snapshot's own content): "missing".
+//   - a current pointer, or a record a current pointer names: "missing" for
+//     what it names as current (a World id comes back when its content does,
+//     so a released id can be current again, and the current World being gone
+//     is damage whatever an old record says); only the lineage ids it lists
+//     (a parent list) are history.
 // Byte pins are judged elsewhere and never excused.
-export function judgeMissingReference({ release, digest = null, fromRoot, history }) {
+export function judgeMissingReference({ release, digest = null, fromRoot, history, current = false, lineage = false }) {
   if (!release) return "missing";
+  if (current) return lineage && (digest === null || release.hash === digest) ? "released-history" : "missing";
   if (digest !== null && release.hash !== digest) return "missing";
   if (history) return "released-history";
   if (fromRoot) return "released-in-record";

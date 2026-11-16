@@ -124,7 +124,7 @@ export function snapshotIdsIn(value, found = new Set()) {
 
 // The lineage ids of a stored snapshot: every id it lists under
 // parentSourceSnapshotIds, parentSnapshotIds, previousWorldModelId or
-// referencedSourceSnapshotId. Decided per id, not per occurrence, on purpose: a
+// referencedSourceSnapshotId (and a refresh request's additionalParentSourceSnapshotIds). Decided per id, not per occurrence, on purpose: a
 // World also names its parents' source snapshots inside its revisions, and
 // those are lineage too (reading, refreshing and diffing a kept World never
 // opens its parent). Only snapshot rows use this to leave a parent to its
@@ -135,7 +135,7 @@ export function ancestryIdsOf(document) {
     if (typeof value === "string" && SNAPSHOT_ID.test(value)) found.add(value);
   };
   const walk = (value, key) => {
-    if (Array.isArray(value) && (key === "parentSourceSnapshotIds" || key === "parentSnapshotIds")) {
+    if (Array.isArray(value) && (key === "parentSourceSnapshotIds" || key === "parentSnapshotIds" || key === "additionalParentSourceSnapshotIds")) {
       for (const item of value) add(item);
       return;
     }

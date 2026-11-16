@@ -247,6 +247,7 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false, re
           relative: storeRelative,
           references: ids(text),
           ...(withReleases && isCurrentPointerRoot(storeRelative) && document ? { namedRecordIds: namedRecordIds(document) } : {}),
+          ...(withReleases && document && typeof document === "object" ? { ancestryIds: ancestryIdsOf(document) } : {}),
         });
       }
       scanned.push({ path: relative, bytes: bytes.length, sha256: sha(bytes) });
@@ -272,6 +273,7 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false, re
   // The records the current pointers name are not history, in every mode.
   const protectedPaths = withReleases ? currentRecordPaths(roots) : new Set();
   const snapshotById = new Map(snapshots.map((item) => [item.id, item]));
+  const rootByRelative = new Map(roots.map((item) => [item.relative, item]));
   const reasons = new Map(),
     queue = roots.flatMap((root) => root.references.map((id) => ({ id, reason: "retained-reference:" + root.path })));
   const pinnedFiles = new Map(scanned.map((item) => [item.path, item]));
@@ -303,7 +305,14 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false, re
       const fromHistory = reason.startsWith("dependency-of:")
         ? (snapshotById.get(reason.slice("dependency-of:".length))?.ancestryIds || []).includes(id)
         : reason.startsWith("retained-reference:") && isHistoryRoot(reason.slice("retained-reference:".length + prefix.length + 1), protectedPaths);
-      const verdict = judgeMissingReference({ release, fromRoot: reason.startsWith("retained-reference:"), history: fromHistory });
+      const rootRelative = reason.startsWith("retained-reference:") ? reason.slice("retained-reference:".length + prefix.length + 1) : null;
+      const verdict = judgeMissingReference({
+        release,
+        fromRoot: rootRelative !== null,
+        history: fromHistory,
+        current: rootRelative !== null && (isCurrentPointerRoot(rootRelative) || protectedPaths.has(rootRelative)),
+        lineage: rootRelative !== null && (rootByRelative.get(rootRelative)?.ancestryIds || []).includes(id),
+      });
       if (verdict !== "missing") {
         releasedReferences.push({
           kind: verdict,

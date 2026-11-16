@@ -33,6 +33,7 @@ import { failCode as failure } from "../core/errors.mjs";
 import {
   ancestryIdsOf,
   currentRecordPaths,
+  isCurrentPointerRoot,
   isHistoryRoot,
   namedRecordIds,
   resolveSnapshotRetentionPolicy,
@@ -513,10 +514,13 @@ export function selectRetainedClosure({
     const listed = released.get(id);
     const release = listed && !byId.has(listed.snapshotId) ? listed : null;
     if (!release && deferred?.id(id)) return;
+    const rootPath = summary.relative || summary.path;
     const verdict = judgeMissingReference({
       release,
       digest,
       fromRoot: !summary.id,
+      current: !summary.id && (isCurrentPointerRoot(rootPath) || protectedPaths.has(rootPath)),
+      lineage: !summary.id && (summary.ancestryIds || []).includes(id),
       history: summary.id ? (summary.ancestryIds || []).includes(id) : isHistoryRoot(summary.relative || summary.path, protectedPaths),
     });
     if (verdict === "missing") issue(summary.path, reasonCode);
