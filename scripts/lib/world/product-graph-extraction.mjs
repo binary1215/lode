@@ -12,7 +12,6 @@ import { bracketPairs, dynamicImports, findRow, lineStarts, rowNames, statementC
 import { effectiveGlobals } from "./product-graph-builtins.mjs";
 import { bindingAt, definedMemberNames, javascriptFacts, pythonFacts } from "./product-graph-scopes.mjs";
 import { failCode as fail } from "../core/errors.mjs";
-import { sha256Hex } from "../core/digest.mjs";
 
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const MAX_FILES = 50_000;
@@ -110,18 +109,14 @@ function walkSource(sourceRoot, excludes, skipped = new Map()) {
 // hashes these (inputs.sourceFiles) so a later reader can tell whether the
 // source moved since. Set only while extractProductGraphCode runs.
 let readLog = null;
-let rawReadLog = null;
-let parseCache = null;
 
 function readText(sourceRoot, relative) {
   const file = path.join(sourceRoot, ...relative.split("/"));
   const stat = fs.lstatSync(file);
   if (!stat.isFile() || stat.size > MAX_READ_BYTES) return null;
   try {
-    const bytes = fs.readFileSync(file);
-    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/^﻿/, "");
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(fs.readFileSync(file)).replace(/^﻿/, "");
     if (readLog) readLog.set(relative, text);
-    if (rawReadLog) rawReadLog.set(relative, { sha256: sha256Hex(bytes), bytes: bytes.length });
     return text;
   } catch {
     return null;
@@ -293,20 +288,10 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
   });
   const fileSet = new Set(codeFiles);
   const analyses = new Map();
-  const parsingStarted = performance.now();
   for (const relative of codeFiles) {
     const text = readText(sourceRoot, relative);
     if (text === null) continue;
     const language = CODE_LANGUAGES[path.posix.extname(relative).toLowerCase()];
-    const raw = rawReadLog?.get(relative);
-    if (parseCache && raw) {
-      parseCache.stats.verifiedSourceBytes += raw.bytes;
-      const cached = parseCache.get(relative, raw.sha256);
-      if (cached) {
-        analyses.set(relative, { ...cached, text });
-        continue;
-      }
-    }
     const { maskedText, classBodies, ...analysis } = analyzeSourceFile(text, language, path.posix.basename(relative), {
       maxSymbols: 10_000,
       withCallIndexes: true,
@@ -364,9 +349,7 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
       ...analysis,
       semanticFacts: { ...analysis.semanticFacts, calls },
     });
-    if (parseCache && raw) parseCache.put(relative, raw.sha256, analyses.get(relative));
   }
-  if (parseCache) parseCache.stats.readAndParseMilliseconds = performance.now() - parsingStarted;
   const nodes = [];
   const declarations = new Map();
   const names = new Set();
@@ -481,60 +464,20 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
     return hits.size === 1 ? [...hits.values()][0] : null;
   };
   const context = { analyses, found, unique, fileSet, names, memberNames, globals, follow, bindingsOf, valuesOf };
-  // Global names/ambiguity and re-exports can affect an otherwise unrelated
-  // file. Reuse call contributions only under the exact resolution universe.
-  // A non-class signature's body text is not used by resolution; its current
-  // file still binds to raw bytes below (receiver lines/dynamic imports).
-  const resolutionBasis = parseCache
-    ? parseCache.signature({
-        files: [...fileSet],
-        globals,
-        analyses: [...analyses].map(([file, analysis]) => {
-          const { text, prepared, ...facts } = analysis;
-          return [file, { ...facts, symbols: facts.symbols.map((symbol) => ({ ...symbol, signature: symbol.kind === "class" ? symbol.signature : null })) }];
-        }),
-      })
-    : null;
   const references = new Map();
   const unresolvedByReason = new Map(UNRESOLVED_REASONS.map((reason) => [reason.key, new Map()]));
   let resolvedCount = 0,
     allCount = 0;
-  let contribution = null;
   const addReference = (from, to, kind, file, line) => {
     const key = `${from}\0${to}\0${kind}`;
     if (!references.has(key)) references.set(key, { type: kind, from, to, source: { path: file, line }, count: 0 });
     references.get(key).count += 1;
-    if (contribution) contribution.references.push({ from, to, kind, file, line });
-  };
-  const addUnresolved = (reason, callee) => {
-    const bucket = unresolvedByReason.get(reason);
-    bucket.set(callee, (bucket.get(callee) || 0) + 1);
-    if (contribution) contribution.unresolved.push({ reason, callee });
   };
   // Two passes: the first finds which value bindings are called (they become
   // nodes and callers); the second records references and reasons.
   const calledValues = new Set();
-  const markCalled = (id) => {
-    calledValues.add(id);
-    if (contribution) contribution.called.push(id);
-  };
   for (const pass of ["values", "references"]) {
     for (const [relative, analysis] of analyses) {
-      const workKey = `resolution:${pass}:${relative}`;
-      const workBasis = parseCache ? parseCache.signature([resolutionBasis, rawReadLog.get(relative)?.sha256, pass, [...calledValues].sort()]) : null;
-      const reused = parseCache?.getWork(workKey, workBasis);
-      if (reused && Array.isArray(reused.references) && Array.isArray(reused.unresolved) && Array.isArray(reused.called)) {
-        for (const ref of reused.references) addReference(ref.from, ref.to, ref.kind, ref.file, ref.line);
-        for (const item of reused.unresolved) addUnresolved(item.reason, item.callee);
-        for (const id of reused.called) calledValues.add(id);
-        allCount += reused.allCount;
-        resolvedCount += reused.resolvedCount;
-        parseCache.stats.resolutionPassesReused = (parseCache.stats.resolutionPassesReused || 0) + 1;
-        continue;
-      }
-      const beforeAll = allCount,
-        beforeResolved = resolvedCount;
-      contribution = parseCache ? { references: [], unresolved: [], called: [] } : null;
       const bindings = bindingsOf.get(relative);
       const callers = analysis.symbols.filter((symbol) => symbol.kind === "function" || symbol.kind === "binding");
       if (pass === "references") for (const value of valuesOf.get(relative).values()) if (calledValues.has(value.id)) callers.push(value);
@@ -593,7 +536,8 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
               resolvedCount += 1;
               for (const target of outcome.targets) addReference(caller?.id || relative, target.id, "call", relative, call.line);
             } else {
-              addUnresolved(outcome.reason, "import");
+              const bucket = unresolvedByReason.get(outcome.reason);
+              bucket.set("import", (bucket.get("import") || 0) + 1);
             }
             continue;
           }
@@ -610,22 +554,18 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
           context,
         );
         if (pass === "values") {
-          if (outcome.target?.kind === VALUE_KIND) markCalled(outcome.target.id);
+          if (outcome.target?.kind === VALUE_KIND) calledValues.add(outcome.target.id);
           continue;
         }
         if (outcome.target) {
           resolvedCount += 1;
-          if (outcome.target.kind === VALUE_KIND) markCalled(outcome.target.id);
+          if (outcome.target.kind === VALUE_KIND) calledValues.add(outcome.target.id);
           addReference(caller?.id || relative, outcome.target.id, "call", relative, call.line);
         } else {
-          addUnresolved(outcome.reason, call.callee);
+          const bucket = unresolvedByReason.get(outcome.reason);
+          bucket.set(call.callee, (bucket.get(call.callee) || 0) + 1);
         }
       }
-      if (parseCache) {
-        parseCache.putWork(workKey, workBasis, { ...contribution, allCount: allCount - beforeAll, resolvedCount: resolvedCount - beforeResolved });
-        parseCache.stats.resolutionPassesComputed = (parseCache.stats.resolutionPassesComputed || 0) + 1;
-      }
-      contribution = null;
     }
   }
   for (const values of valuesOf.values())
@@ -1174,20 +1114,14 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
 }
 
 // Finds 기능 (entry points) and links each to the code that receives it.
-export function extractProductGraphCode({ sourceRoot, projectRules = null, cache = null }) {
+export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
   const previous = readLog;
-  const previousRaw = rawReadLog,
-    previousCache = parseCache;
   readLog = new Map();
-  rawReadLog = new Map();
-  parseCache = cache;
   try {
     const result = extractWithReadLog({ sourceRoot, projectRules });
-    return { ...result, readFiles: readLog, rawReadFiles: rawReadLog };
+    return { ...result, readFiles: readLog };
   } finally {
     readLog = previous;
-    rawReadLog = previousRaw;
-    parseCache = previousCache;
   }
 }
 

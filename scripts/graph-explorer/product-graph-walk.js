@@ -294,7 +294,7 @@ export const productGraphWalk = (() => {
   }
 
   function moreRow(level, paged, hint) {
-    return { depth: level, kind: "more", text: `외 ${paged.remaining}개 — 다음: ${hint}` };
+    return { depth: level, kind: "more", hint, text: `외 ${paged.remaining}개 — 다음: ${hint}` };
   }
 
   function nearest(ctx, id) {
@@ -331,32 +331,22 @@ export const productGraphWalk = (() => {
     return tokens;
   }
 
-  let previousSearchVectors = new Map();
+  // Built once per context (one graph) and kept on it; nothing is kept between
+  // contexts, so an answer never depends on what was asked before.
   function searchIndex(ctx) {
     if (ctx.searchIndex) return ctx.searchIndex;
     const documents = [], postings = new Map();
-    const nextVectors = new Map(), stats = { tokenizedNodes: 0, reusedNodeVectors: 0 };
+    const stats = { tokenizedNodes: 0 };
     for (const node of ctx.ix.nodes.values()) {
       const fields = Object.fromEntries(Object.entries(node).filter(([key, value]) => typeof value === "string" && !/sha256|^type$|^kind$/i.test(key)));
       fields.path = [node.file, node.at?.path, ...(node.positions || []).map((p) => p.path)].filter(Boolean).join(" ");
-      const signature = stable(fields), previous = previousSearchVectors.get(node.id);
-      let vector;
-      if (previous?.signature === signature) { vector = previous; stats.reusedNodeVectors += 1; }
-      else {
-        const terms = new Map(), tokens = Object.values(fields).flatMap(searchTokens);
-        for (const token of tokens) terms.set(token, (terms.get(token) || 0) + 1);
-        vector = { signature, terms, length: tokens.length };
-        stats.tokenizedNodes += 1;
-      }
-      nextVectors.set(node.id, vector);
-      const { terms, length } = vector;
-      const doc = { node, fields, terms, length };
+      const terms = new Map(), tokens = Object.values(fields).flatMap(searchTokens);
+      for (const token of tokens) terms.set(token, (terms.get(token) || 0) + 1);
+      stats.tokenizedNodes += 1;
+      const doc = { node, fields, terms, length: tokens.length };
       documents.push(doc);
       for (const token of terms.keys()) push(postings, token, doc);
     }
-    // Only the immediately preceding graph's term vectors are retained in
-    // memory. Connections and provenance always come from the current graph.
-    previousSearchVectors = nextVectors;
     const average = documents.reduce((n, doc) => n + doc.length, 0) / Math.max(1, documents.length);
     return (ctx.searchIndex = { documents, postings, average: average || 1, stats });
   }
@@ -407,7 +397,7 @@ export const productGraphWalk = (() => {
       const exact = wanted.some((word) => [doc.node.id, doc.node.file, doc.node.at?.path, ...(doc.node.positions || []).map((p) => p.path)]
         .some((value) => typeof value === "string" && fold(value).replaceAll("\\", "/") === word));
       const matchedTerms = tokens.filter((term) => doc.terms.has(term));
-      return { node: doc.node, score, exact, matchedTerms, connections: connections(ctx, doc.node.id), basis: doc.node.basis || null };
+      return { node: doc.node, score, exact, matchedTerms, basis: doc.node.basis || null };
     }).sort((a, b) => Number(b.exact) - Number(a.exact) || b.score - a.score || compare(a.node.id, b.node.id));
   }
 
@@ -680,6 +670,7 @@ export const productGraphWalk = (() => {
     if (question === "find") {
       const matches = search(ctx, text, request);
       const paged = page(matches, { limit, cursor });
+      for (const item of paged.slice) item.connections = connections(ctx, item.node.id);
       const rows = paged.slice.flatMap((item) => [
         { depth: 1, kind: "node", id: item.node.id, text: nodeLine(ctx, item.node.id), score: item.score, exact: item.exact, matchedTerms: item.matchedTerms },
         ...item.connections.map((edge) => ({ depth: 2, kind: "text", text: `${edge.from} —${edge.type}→ ${edge.to}${edge.at ? ` (${where(edge.at)})` : ""}`, edge })),
@@ -1004,26 +995,33 @@ export const productGraphWalk = (() => {
 
   // Items of one comparison list, one line each.
   function contentSide(label, side) {
-    if (!["available", "partial"].includes(side.status)) return `${label}: ${side.status} — ${side.reason || "노드 없음"}`;
-    const lines = side.text.split("\n"), shown = lines.slice(0, 12).map((line) => line.slice(0, 240));
-    return `${label} (${side.format}, ${side.status}; ${side.sourcePath || "표시 필드"}${side.lines ? `:${side.lines.join("-")}` : ""}; ${side.sourceHashKind || ""}${side.basis?.status ? `; ${side.basis.status}` : ""}):\n${shown.join("\n")}${lines.length > 12 || side.status === "partial" ? "\n… 표시 생략. CLI --json의 rows[].detail에서 보관 한도 내 본문 확인." : ""}`;
+    if (!side || !["available", "partial"].includes(side.status)) return `${label}: ${side?.status === "absent" ? "없음" : `보이지 않음 — ${side?.reason || "이유 없음"}`}`;
+    const lines = side.text.split("\n"), shown = lines.slice(0, 40).map((line) => line.slice(0, 240));
+    const left = side.omittedBytes ? ` (${side.omittedBytes}바이트 생략: ${side.omittedBecause})` : "";
+    return `${label} (${side.format}${side.status === "partial" ? ", 앞부분만" : ""}${left}):\n${shown.join("\n")}${lines.length > 40 ? `\n… ${lines.length - 40}줄 더 — --json의 rows[].detail에 이 페이지 한도 안의 전체가 있다` : ""}`;
   }
 
   function contentHeadline(item) {
     const read = (side) => { try { return side?.status === "available" && side.format === "stated-fields" ? JSON.parse(side.text) : null; } catch { return null; } };
     const before = read(item.before), after = read(item.after);
     if (!before && !after) return "";
-    const names = item.type === "기능" ? { oneLine: "뜻", handling: "처리" } : { oneLine: "설명", name: "이름", 조건: "조건", 주체: "주체", 행위: "행위" };
-    return Object.entries(names).filter(([key]) => before?.[key] !== after?.[key]).map(([key, name]) => `${name}: ${before ? String(before[key] ?? "없음").slice(0, 240) : "이전 표시값 없음"} → ${after ? String(after[key] ?? "없음").slice(0, 240) : "현재 표시값 없음"}`).join("\n");
+    const keys = [...new Set([...Object.keys(before || {}), ...Object.keys(after || {})])].filter((key) => JSON.stringify(before?.[key]) !== JSON.stringify(after?.[key]));
+    return keys.map((key) => `${key}: ${before ? JSON.stringify(before[key] ?? null).slice(0, 240) : "이전 없음"} → ${after ? JSON.stringify(after[key] ?? null).slice(0, 240) : "현재 없음"}`).join("\n");
   }
 
-  function changeItems(changes, key) {
+  // content: the bodies come only with the `changes --list content` question
+  // (content holds that page's before/after); without them, each item says how
+  // to ask. A page opened from a build has no bodies.
+  function changeItems(changes, key, content = null) {
     if (!changes || changes.status !== "compared") return [];
-    if (key === "content") return (changes.contentChanges || []).map((item) => ({
-        text: `${item.type} ${item.id} (${CHANGE_WORDS[item.change] || item.change})\n${contentHeadline(item)}\n${contentSide("이전", item.before)}\n${contentSide("현재", item.after)}`,
-      nodeId: item.after.status === "absent" ? null : item.id,
-      detail: item,
-    }));
+    if (key === "content") return (changes.contentChanges || []).map((item) => {
+      const sides = content?.entries?.get(item.id);
+      const head = `${item.type} ${item.id} (${CHANGE_WORDS[item.change] || item.change})`;
+      if (!sides) return { text: `${head} — 이전 본문 ${item.beforeRetained ? "보관됨" : "없음"}. 본문은 product-graph-query <project> changes --list content 로만 본다.`, nodeId: item.change === "removed" ? null : item.id };
+      const detail = { ...item, before: sides.before, after: sides.after };
+      const headline = contentHeadline(detail);
+      return { text: `${head}${headline ? `\n${headline}` : ""}\n${contentSide("이전", sides.before)}\n${contentSide("현재", sides.after)}`, nodeId: sides.after.status === "absent" ? null : item.id, detail };
+    });
     const flat = (field) => (changes.byType || []).flatMap((group) => (group[field] || []).map((id) => ({ text: `${group.type} ${id}`, nodeId: field === "removed" ? null : id })));
     if (key === "changed" || key === "added" || key === "removed") return flat(key);
     if (key === "reachChanged")
@@ -1074,7 +1072,6 @@ export const productGraphWalk = (() => {
       `읽는 방식 ${moved.reader ? "바뀜" : "그대로"}`,
     ];
     lines.push(`- 기준: ${changes.baseline.setAt}에 잡음. 그 뒤 움직인 것: ${parts.join(", ")}.`);
-    if (changes.comparisonScope?.status === "partial") lines.push(`- 과거 표시 근거 partial: ${changes.comparisonScope.reasons.join(" / ")}. 이전 본문 unavailable; 구조 ID·해시 비교만 유지한다.`);
     if (moved.sourceFileList?.length)
       lines.push(`  바뀐 소스 파일: ${moved.sourceFileList.slice(0, 10).join(", ")}${moved.sourceFiles > 10 ? ` 외 ${moved.sourceFiles - 10}개` : ""}`);
     if (moved.documentList?.length) lines.push(`  바뀐 문서: ${moved.documentList.join(", ")}`);
@@ -1099,8 +1096,8 @@ export const productGraphWalk = (() => {
     if (changes.unexplained?.compared === false) lines.push(`- 소스가 그대로인 곳에서 달라진 것: 비교하지 않음 — ${changes.unexplained.reason}`);
     else section("소스가 그대로인 곳에서 달라진 것 (원인은 적지 않는다)", changeItems(changes, "unexplained"));
     section("다시 볼 것 (보고만 한다. 문서·뜻 줄·승인은 바꾸지 않는다)", changeItems(changes, "reviewAgain"));
-    if (changes.contentChanges?.length) lines.push(`- 실제 전후 내용 ${changes.contentChanges.length}개: changes --list content. 순변화만 비교하며 중간 사건·변경 이유는 추론하지 않는다.`);
-    if (changes.displayCoverage && (changes.displayCoverage.unknownComparison || changes.displayCoverage.unavailableBefore || changes.displayCoverage.unavailableAfter)) lines.push(`- 표시 근거: 전체 표시값 비교 못 함 ${changes.displayCoverage.unknownComparison}개; 보관 본문 없음 이전 ${changes.displayCoverage.unavailableBefore}개 / 현재 ${changes.displayCoverage.unavailableAfter}개. 해시상 변화 없음이 문구 동일성의 증명은 아니다.`);
+    if (changes.content?.changed)
+      lines.push(`- 내용이 바뀐 노드 ${changes.content.changed}개 (이전 본문 보관 ${changes.content.beforeRetained}개). 본문은 여기 넣지 않는다: product-graph-query <project> changes --list content`);
     lines.push("");
     return lines;
   }
@@ -1122,7 +1119,7 @@ export const productGraphWalk = (() => {
       ]);
     if (list === "unexplained" && changes.unexplained?.compared === false)
       return answer(`기준과 비교 — ${known.title}: 비교하지 않음`, [{ depth: 1, kind: "text", text: `비교하지 않음 — ${changes.unexplained.reason}` }]);
-    const items = changeItems(changes, list);
+    const items = changeItems(changes, list, ctx.content);
     const paged = page(items, { limit, cursor });
     const rows = paged.slice.map((item) => ({ depth: 1, kind: item.nodeId ? "node" : "text", id: item.nodeId || undefined, text: item.text, ...(item.detail ? { detail: item.detail } : {}) }));
     if (paged.remaining) rows.push(moreRow(1, paged, `changes --list ${list} --cursor ${paged.nextCursor}`));
@@ -1168,6 +1165,7 @@ export const productGraphWalk = (() => {
   }
 
   return Object.freeze({
+    resolveId,
     WORDS,
     QUESTION_STARTS,
     reachDirection,

@@ -169,8 +169,7 @@ test("acceptance 21: hashes are attributes; two builds are byte-identical; line 
   buildProductGraph({ root: f.root });
   const first = filesUnder(f.build);
   buildProductGraph({ root: f.root });
-  // The disposable V8 cache is not a canonical serialization.
-  for (const [name, bytes] of filesUnder(f.build)) if (name !== "parse-cache.json") assert.deepEqual(bytes, first.get(name), name);
+  for (const [name, bytes] of filesUnder(f.build)) assert.deepEqual(bytes, first.get(name), name);
   const graph = JSON.parse(first.get("graph.json"));
   assert(
     graph.nodes.every((node) => typeof node.contentSha256 === "string"),
