@@ -337,7 +337,7 @@ export class GitSnapshotStore {
       if (
         error.code !== "SNAPSHOT_GIT_COMMAND_FAILED" ||
         context.signal?.aborted ||
-        Date.now() >= context.deadline ||
+        (context.deadline != null && Date.now() >= context.deadline) ||
         /permission|access is denied|not permitted|corrupt|mismatch/i.test(text) ||
         (!error.gitMissingObject && !/could not get object info|could not read|cannot be accessed|no such file|not a valid object name/i.test(text)) ||
         before === packBasis()

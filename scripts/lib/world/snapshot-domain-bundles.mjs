@@ -21,13 +21,6 @@ const flatProducer = Object.freeze({ name: "lode-domain-bundle", version: "0.2.0
 export const SHARED_DOMAIN_LAYOUT = "shared-domains-v2";
 export const CHUNKED_CODE_LAYOUT = "chunked-code-v3";
 const chunkProducer = Object.freeze({ name: "lode-domain-bundle", version: "0.3.0" });
-const filePartProducer = Object.freeze({ name: "lode-domain-bundle", version: "0.4.0" });
-const chunkProducerMatches = (value) => equal(value, chunkProducer) || equal(value, filePartProducer);
-function chunkPut(context) {
-  const writer = (domain, payload) => put(context, domain, payload);
-  writer.fileParts = Boolean(context.chunked);
-  return writer;
-}
 const bytes = (value) => Buffer.from(JSON.stringify(value) + "\n");
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -103,7 +96,7 @@ function readBundle(context, ref, depth) {
     ref.byteLength < 1 ||
     ref.byteLength > SNAPSHOT_STORAGE_LIMITS.decodedBytes ||
     !["gzip", "zstd"].includes(ref.encoding) ||
-    depth > 4
+    depth > 3
   )
     fail("INVALID_SNAPSHOT_BUNDLE_REFERENCE");
   const suffix = ref.encoding === "zstd" ? ".json.zst" : ".json.gz";
@@ -218,7 +211,11 @@ function splitGraphParts(context, graph) {
   }
   const codePayload = { nodes: codeNodes, edges: codeEdges };
   const code = context.chunked
-    ? put(context, "graph-code-chunks", splitGraphCodeChunks(codePayload, chunkPut(context)))
+    ? put(
+        context,
+        "graph-code-chunks",
+        splitGraphCodeChunks(codePayload, (domain, payload) => put(context, domain, payload)),
+      )
     : put(context, "graph-code", codePayload);
   return { body: { ...graph, nodes: null, edges: null }, code, otherNodes, otherEdges, nodeOrder, edgeOrder };
 }
@@ -273,7 +270,7 @@ function createSnapshotCompositionUncoordinated({ root, storage, document, encod
   const context = contextFor(root, storage, encoding),
     world = document.kind !== "GraphSnapshot" && (document.kind === "RepositoryWorldModel" || Boolean(document.worldModelId));
   context.chunked = layout === CHUNKED_CODE_LAYOUT;
-  if (context.chunked) context.maxBundles = 16384;
+  if (context.chunked) context.maxBundles = 512;
   const body = { ...document };
   const graph = world ? document.temporalProvenanceGraph : document;
   if (!graph || graph.kind !== "GraphSnapshot" || graph.projectId !== storage.projectId || document.projectId !== storage.projectId)
@@ -290,7 +287,13 @@ function createSnapshotCompositionUncoordinated({ root, storage, document, encod
       rules: document.rules,
       sourceScope: document.repositoryScan?.sourceScope,
     };
-    code = context.chunked ? put(context, "world-code-chunks", splitWorldCodeChunks(codePayload, chunkPut(context))) : put(context, "world-code", codePayload);
+    code = context.chunked
+      ? put(
+          context,
+          "world-code-chunks",
+          splitWorldCodeChunks(codePayload, (domain, payload) => put(context, domain, payload)),
+        )
+      : put(context, "world-code", codePayload);
     body.files = null;
     body.semanticGraph = null;
     body.temporalProvenanceGraph = null;
@@ -305,7 +308,7 @@ function createSnapshotCompositionUncoordinated({ root, storage, document, encod
     document: {
       kind: "SnapshotComposition",
       schemaVersion: context.chunked ? 3 : layout === SHARED_DOMAIN_LAYOUT ? 2 : 1,
-      producer: context.chunked ? filePartProducer : layout === SHARED_DOMAIN_LAYOUT ? flatProducer : producer,
+      producer: context.chunked ? chunkProducer : layout === SHARED_DOMAIN_LAYOUT ? flatProducer : producer,
       projectId: storage.projectId,
       [world ? "worldModelId" : "graphSnapshotId"]: snapshotId,
       snapshotKind: world ? "world-model" : "graph-snapshot",
@@ -323,22 +326,21 @@ export function hydrateSnapshotComposition({ root, storage, document, copiedEvid
   const context = contextFor(root, storage);
   const chunked = document.schemaVersion === 3;
   const flat = document.schemaVersion === 2 || chunked;
-  const expectedProducer = chunked ? null : flat ? flatProducer : producer;
-  const producerOk = chunked ? chunkProducerMatches(document.producer) : equal(document.producer, expectedProducer);
+  const expectedProducer = chunked ? chunkProducer : flat ? flatProducer : producer;
   if (
     document.projectId === storage.projectId &&
     ((Number.isInteger(document.schemaVersion) && document.schemaVersion > 3) ||
-      ([1, 2, 3].includes(document.schemaVersion) && document.producer?.name && document.producer?.version && !producerOk))
+      ([1, 2, 3].includes(document.schemaVersion) && document.producer?.name && document.producer?.version && !equal(document.producer, expectedProducer)))
   ) {
     fail(
       "STORAGE_VERSION_MISMATCH",
-      `Snapshot schema ${document.schemaVersion} from ${document.producer?.name || "unknown"} ${document.producer?.version || "unknown"} is not read by Lode ${JSON.parse(fs.readFileSync(new URL("../../../package.json", import.meta.url), "utf8")).version}, which reads schema 1-3 and lode-domain-bundle 0.1.0, 0.2.0, 0.3.0, or 0.4.0. Use that reader version or newer. No files were changed.`,
+      `Snapshot schema ${document.schemaVersion} from ${document.producer?.name || "unknown"} ${document.producer?.version || "unknown"} is not read by Lode ${JSON.parse(fs.readFileSync(new URL("../../../package.json", import.meta.url), "utf8")).version}, which reads schema 1-3 and lode-domain-bundle 0.1.0, 0.2.0, or 0.3.0. Use that reader version or newer. No files were changed.`,
     );
   }
   if (
     ![1, 2, 3].includes(document.schemaVersion) ||
     document.projectId !== storage.projectId ||
-    !(chunked ? chunkProducerMatches(document.producer) : equal(document.producer, expectedProducer)) ||
+    !equal(document.producer, expectedProducer) ||
     !["world-model", "graph-snapshot"].includes(document.snapshotKind) ||
     !Number.isSafeInteger(document.reconstructedByteLength) ||
     document.reconstructedByteLength < 1 ||
@@ -347,7 +349,7 @@ export function hydrateSnapshotComposition({ root, storage, document, copiedEvid
   )
     fail("INVALID_SNAPSHOT_COMPOSITION");
   context.chunked = chunked;
-  if (chunked) context.maxBundles = 16384;
+  if (chunked) context.maxBundles = 512;
   if (
     flat &&
     !equal(
@@ -428,7 +430,6 @@ export function hydrateSnapshotEntry({ root, storage, entry }) {
       snapshotStorage: {
         ...(entry.snapshotStorage || { kind: "local-file" }),
         layout: entry.document.schemaVersion === 3 ? CHUNKED_CODE_LAYOUT : entry.document.schemaVersion === 2 ? SHARED_DOMAIN_LAYOUT : DOMAIN_BUNDLE_LAYOUT,
-        compositionProducer: entry.document.producer,
         reconstructedSha256: entry.document.reconstructedSha256,
         dependencies: hydrated.dependencies,
       },

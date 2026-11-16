@@ -1010,8 +1010,7 @@ test("physical composition and part damage remain strict Product errors without 
                 payloadError,
                 () =>
                   changedLeaf((part) => {
-                    if (part.payload.lists) part.payload.lists.files = null;
-                    else part.payload.sequence = null;
+                    part.payload.lists.files = null;
                   }),
               ],
             ]

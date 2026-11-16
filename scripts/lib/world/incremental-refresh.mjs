@@ -3,18 +3,17 @@ import path from "node:path";
 import { readContextCapsule } from "../session/context-compiler.mjs";
 import { inspectProject, SCHEMA_VERSION } from "../head-core.mjs";
 import { executeIncrementalRepositoryScan, managedRootFilesForProject, sourceTreeMatchesPublishedFiles } from "./repository-scan.mjs";
-import { readRefreshInputGeneration, refreshInputStamp } from "./refresh-input-generation.mjs";
+import { readRefreshInputGeneration, refreshInputStamp, snapshotStoreStamp, writeRefreshInputGeneration } from "./refresh-input-generation.mjs";
 import { readRepositorySourceScope } from "./repository-source-scope.mjs";
 import {
   buildWorldModel,
   deriveIncrementalRevisionParents,
   gitHeadState,
   inspectWorldModel,
-  predictIncrementalRevisionParents,
   readWorldModel,
   readWorldModelSnapshot,
+  refreshReaderIdentity,
 } from "./world-model.mjs";
-import { readProductModelCanon } from "./product-model.mjs";
 import {
   completePostRefreshProjection,
   inspectPostRefreshProjection as inspectPostRefreshProjectionArtifact,
@@ -27,6 +26,7 @@ import { sha256Hex as digest } from "../core/digest.mjs";
 import { canonicalJson, canonicalValue as canonical } from "../core/canonical-json.mjs";
 import { failWith } from "../core/errors.mjs";
 import { atomicWriteText as atomicWrite } from "../core/fs-atomic.mjs";
+import { readProductModelCanon } from "./product-model.mjs";
 
 export const INCREMENTAL_REFRESH_VERSION = "0.2.0";
 const LEGACY_INCREMENTAL_REFRESH_VERSION = "0.1.0";
@@ -676,6 +676,13 @@ async function refreshWorldModelLocked({
   if (mismatch) throw Object.assign(new Error(mismatch.message || mismatch.reasonCode), { code: mismatch.reasonCode });
   const wasLegacy = compatibility.layers.some((layer) => layer.legacyDeclaration);
   if (wasLegacy) await upgradeLegacyReaderPointers({ root: projectRoot, storage: inspected.storage });
+  // Before the scan and the builds read anything (see buildWorldModel).
+  let stampBeforeRead = false;
+  try {
+    stampBeforeRead = refreshInputStamp(projectRoot, inspected.storage);
+  } catch {
+    stampBeforeRead = false;
+  }
   const stored = await readWorldModel({ root: projectRoot, storeAdapter });
   const previousSnapshot = stored.snapshot;
   const request = buildIncrementalRefreshRequest(
@@ -710,17 +717,6 @@ async function refreshWorldModelLocked({
     !(Array.isArray(request.expectation?.paths) && request.expectation.paths.length) &&
     recordedInputsMatch(previousSnapshot, repositoryScanExecution.result.files, projectRoot, inspected.storage);
 
-  const additionalParentsRequested = request.additionalParentSourceSnapshotIds.some(
-    (parentId) => !previousSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds.includes(parentId),
-  );
-  const fileChanges = repositoryScanExecution.diagnostics.changes;
-  const filesChanged = fileChanges.added.length + fileChanges.changed.length + fileChanges.removed.length > 0;
-  const productModel = readProductModelCanon({ projectRoot, storage: inspected.storage }).model;
-  const predicted = predictIncrementalRevisionParents({
-    previousGraph: previousSnapshot.temporalProvenanceGraph,
-    files: repositoryScanExecution.result.files,
-    productModel,
-  });
   const common = {
     root: projectRoot,
     persist: false,
@@ -729,41 +725,36 @@ async function refreshWorldModelLocked({
     runtimeStateAdapter,
     repositoryScanExecution,
   };
-  const childParents = () =>
-    [...new Set([previousSnapshot.temporalProvenanceGraph.sourceSnapshotId, ...request.additionalParentSourceSnapshotIds])].sort(compareText);
+  const sameLineagePreview = keepLegacySnapshot
+    ? null
+    : await buildWorldModel({
+        ...common,
+        parentSourceSnapshotIds: previousSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds,
+        revisionParentIds: previousSnapshot.temporalProvenanceGraph.revisionParentIds,
+        filterRevisionParentsToCurrentEntities: true,
+      });
+  const additionalParentsRequested = request.additionalParentSourceSnapshotIds.some(
+    (parentId) => !previousSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds.includes(parentId),
+  );
+  const requiresRefresh = !keepLegacySnapshot && (sameLineagePreview.snapshot.worldModelId !== previousSnapshot.worldModelId || additionalParentsRequested);
+  let nextPreview = sameLineagePreview;
   let revisionParentIds = previousSnapshot.temporalProvenanceGraph.revisionParentIds;
   let parentSourceSnapshotIds = previousSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds;
-  let requiresRefresh = !keepLegacySnapshot && (additionalParentsRequested || filesChanged);
-  let nextPreview = null;
-  if (keepLegacySnapshot) {
-    requiresRefresh = false;
-  } else if (predicted && requiresRefresh) {
-    revisionParentIds = predicted;
-    parentSourceSnapshotIds = childParents();
-    nextPreview = await buildWorldModel({ ...common, parentSourceSnapshotIds, revisionParentIds });
-  } else {
-    const sameLineagePreview = await buildWorldModel({
-      ...common,
-      parentSourceSnapshotIds,
-      revisionParentIds,
-      filterRevisionParentsToCurrentEntities: true,
+  if (requiresRefresh) {
+    revisionParentIds = deriveIncrementalRevisionParents({
+      previousGraph: previousSnapshot.temporalProvenanceGraph,
+      candidateGraph: sameLineagePreview.snapshot.temporalProvenanceGraph,
     });
-    requiresRefresh = sameLineagePreview.snapshot.worldModelId !== previousSnapshot.worldModelId || additionalParentsRequested;
-    nextPreview = sameLineagePreview;
-    if (requiresRefresh) {
-      revisionParentIds = deriveIncrementalRevisionParents({
-        previousGraph: previousSnapshot.temporalProvenanceGraph,
-        candidateGraph: sameLineagePreview.snapshot.temporalProvenanceGraph,
-      });
-      parentSourceSnapshotIds = childParents();
-      nextPreview = await buildWorldModel({ ...common, parentSourceSnapshotIds, revisionParentIds });
-    }
+    parentSourceSnapshotIds = [...new Set([previousSnapshot.temporalProvenanceGraph.sourceSnapshotId, ...request.additionalParentSourceSnapshotIds])].sort(
+      compareText,
+    );
+    nextPreview = await buildWorldModel({ ...common, parentSourceSnapshotIds, revisionParentIds });
   }
-  const nextSnapshot = requiresRefresh ? nextPreview.snapshot : previousSnapshot;
+
   const receipt = buildReceipt({
     request,
     previousSnapshot,
-    nextSnapshot,
+    nextSnapshot: requiresRefresh ? nextPreview.snapshot : previousSnapshot,
     status: requiresRefresh ? "refreshed" : "unchanged",
     inspected,
   });
@@ -773,12 +764,13 @@ async function refreshWorldModelLocked({
     (record) => verifyIncrementalRefreshRequest(record, inspected.storage),
     "Incremental refresh request",
   );
+
   let world = stored;
   if (requiresRefresh) {
-    const worldPointerFile = path.join(projectRoot, inspected.storage.directory, "world-model/current.json");
-    const graphPointerFile = path.join(projectRoot, inspected.storage.directory, "graph-projection/current.json");
-    const savedWorldPointer = fs.readFileSync(worldPointerFile, "utf8");
-    const savedGraphPointer = fs.readFileSync(graphPointerFile, "utf8");
+    // The persisting build refuses before it advances any pointer when it does
+    // not produce the previewed world (REFRESH_PREVIEW_DRIFT). Nothing is rolled
+    // back afterwards: a rollback of two local files would leave an external
+    // projection and the other derived outputs on the refused world.
     world = await buildWorldModel({
       root: projectRoot,
       persist: true,
@@ -789,19 +781,18 @@ async function refreshWorldModelLocked({
       repositoryScanExecution,
       parentSourceSnapshotIds,
       revisionParentIds,
+      expectedWorldModelId: nextPreview.snapshot.worldModelId,
       expectedCurrentWorldModelId: previousSnapshot.worldModelId,
       writerLease,
+      refreshInputStampBeforeRead: stampBeforeRead,
     });
     if (
       world.snapshot.worldModelId !== receipt.next.worldModelId ||
       world.snapshot.temporalProvenanceGraph.sourceSnapshotId !== receipt.next.sourceSnapshotId
     ) {
-      atomicWrite(worldPointerFile, savedWorldPointer);
-      atomicWrite(graphPointerFile, savedGraphPointer);
       fail("Persisted World Model does not match the verified refresh receipt.", "REFRESH_PERSISTENCE_MISMATCH");
     }
   }
-
   const receiptEntry = persistImmutable(
     receiptFile(projectRoot, receipt.refreshReceiptId, inspected.storage),
     receipt,
@@ -816,6 +807,33 @@ async function refreshWorldModelLocked({
   );
   if (canonicalJson(storedPointer) !== canonicalJson(pointer))
     fail("Incremental refresh pointer changed during persistence.", "REFRESH_POINTER_WRITE_MISMATCH");
+
+  // A full unchanged refresh has rebuilt the preview from every input and found
+  // the published World again, so it may renew what the fast path reads. Not
+  // for a legacy store kept on the shorter comparison, and not for a caller
+  // with its own sources.
+  if (
+    !requiresRefresh &&
+    !keepLegacySnapshot &&
+    typeof stampBeforeRead === "string" &&
+    !storeAdapter &&
+    !graphProjectionAdapter &&
+    !gitHistoryAdapter &&
+    !runtimeStateAdapter
+  ) {
+    try {
+      writeRefreshInputGeneration({
+        root: projectRoot,
+        storage: inspected.storage,
+        snapshot: previousSnapshot,
+        verifiedFiles: repositoryScanExecution.verifiedFiles ?? null,
+        stamp: stampBeforeRead,
+        reader: refreshReaderIdentity(),
+      });
+    } catch {
+      /* The generation is a cache. The refresh itself is complete. */
+    }
+  }
 
   return {
     status: receipt.status,
@@ -838,12 +856,38 @@ async function refreshWorldModelLocked({
 }
 
 async function fastUnchangedRefresh(options, inspected) {
-  if (options.additionalParentSourceSnapshotIds?.length || options.expectedChangedPaths?.length || options.storeAdapter || options.graphProjectionAdapter)
+  // The stamp covers the project store and the local git state only. A caller
+  // that supplies its own source of world, graph, history, runtime state or
+  // scan results brings inputs the stamp cannot see, so it takes the full path.
+  if (
+    options.additionalParentSourceSnapshotIds?.length ||
+    options.expectedChangedPaths?.length ||
+    options.storeAdapter ||
+    options.graphProjectionAdapter ||
+    options.gitHistoryAdapter ||
+    options.runtimeStateAdapter ||
+    options.repositoryScanExecution
+  )
     return null;
   const projectRoot = inspected.project.projectRoot;
   const storage = inspected.storage;
   const generation = readRefreshInputGeneration(projectRoot, storage);
-  if (!generation || refreshInputStamp(projectRoot, storage) !== generation.stamp) return null;
+  if (!generation || typeof generation.reader !== "string" || generation.reader !== refreshReaderIdentity()) return null;
+  let stampNow;
+  try {
+    stampNow = refreshInputStamp(projectRoot, storage);
+  } catch {
+    return null;
+  }
+  if (stampNow !== generation.stamp) return null;
+  // The snapshot files are as they were when the current snapshots were last
+  // written or verified; otherwise the full path reads them (F1).
+  if (typeof generation.snapshotStore !== "string") return null;
+  try {
+    if (snapshotStoreStamp(projectRoot, storage) !== generation.snapshotStore) return null;
+  } catch {
+    return null;
+  }
   const worldFile = path.join(projectRoot, storage.directory, "world-model/current.json");
   const graphFile = path.join(projectRoot, storage.directory, "graph-projection/current.json");
   if (!fs.existsSync(worldFile) || !fs.existsSync(graphFile)) return null;
@@ -875,6 +919,7 @@ async function fastUnchangedRefresh(options, inspected) {
     storage,
     sourceScope: readRepositorySourceScope({ projectRoot, storage }).sourceScope,
     files: generation.files,
+    skipped: generation.skipped,
   });
   if (!covered) return null;
   const light = {

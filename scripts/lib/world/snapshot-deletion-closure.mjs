@@ -294,7 +294,8 @@ export async function buildSnapshotDeletionClosure({
       relative === "graph-discovery/index.json" ||
       relative === "refresh/file-stat-cache.json" ||
       relative === "refresh/input-generation.json" ||
-      relative === SNAPSHOT_RETENTION_RELATIVE
+      relative === SNAPSHOT_RETENTION_RELATIVE ||
+      relative.startsWith("refresh/.watch-arm-")
     )
       return;
     // Product graph: generated output is rebuildable (like the discovery index);

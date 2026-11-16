@@ -49,6 +49,30 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false, re
     stopped = false;
   const deferredBackends = [];
   const issue = (relative, reasonCode) => issues.push({ path: relative, reasonCode });
+  // Whether the git snapshot store has a ref for this id, read from its ref
+  // files without running git (a loose ref or a packed-refs line). Unreadable
+  // ref files count as "may hold it": the apply opens the store and decides.
+  let packedSnapshotRefs = null;
+  const gitStoreNamesSnapshot = (id) => {
+    if (!deferredBackends.includes(prefix + "/snapshot-objects.git") || !/^[a-z][a-z0-9-]{0,127}$/.test(id)) return false;
+    const gitDirectory = path.join(projectRoot, prefix, "snapshot-objects.git");
+    try {
+      if (fs.lstatSync(path.join(gitDirectory, "refs", "lode-snapshots", id), { throwIfNoEntry: false })?.isFile()) return true;
+      if (packedSnapshotRefs === null) {
+        const packed = path.join(gitDirectory, "packed-refs");
+        const stat = fs.lstatSync(packed, { throwIfNoEntry: false });
+        packedSnapshotRefs = new Set();
+        if (stat?.isFile())
+          for (const line of fs.readFileSync(packed, "utf8").split("\n")) {
+            const match = / refs\/lode-snapshots\/(\S+)$/.exec(line.trim());
+            if (match) packedSnapshotRefs.add(match[1]);
+          }
+      }
+      return packedSnapshotRefs.has(id);
+    } catch {
+      return true;
+    }
+  };
   function walk(relative) {
     let file, stat;
     try {
@@ -105,9 +129,10 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false, re
       relative === prefix + "/graph-discovery/index.json" ||
       relative === prefix + "/refresh/file-stat-cache.json" ||
       relative === prefix + "/refresh/input-generation.json" ||
-      relative === prefix + "/" + SNAPSHOT_RETENTION_RELATIVE
+      relative === prefix + "/" + SNAPSHOT_RETENTION_RELATIVE ||
+      relative.startsWith(prefix + "/refresh/.watch-arm-")
     )
-      return; // Rebuildable membership or refresh input cache, not a historical root.
+      return; // Rebuildable membership, refresh input cache or a watcher's leftover startup probe: not a historical root.
     if (relative.endsWith(".tmp")) {
       issue(relative, "UNPUBLISHED_OR_UNKNOWN_STAGE");
       return;
@@ -221,9 +246,13 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false, re
     const { id, reason } = queue[i],
       matches = byId.get(id) || [];
     if (!matches.length) {
-      // A dry run does not open snapshot-objects.git or snapshot-bundles.
-      // An id that is absent as a whole file may still be inside those backends.
-      if (!deferredBackends.length) issue(id, "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE");
+      // A dry run does not open snapshot-objects.git or snapshot-bundles. A
+      // whole World or Graph snapshot is either a file here or a ref of the git
+      // store (a bundle is only a part a whole snapshot names), so such an id
+      // that is neither is reported as missing. Another id (a source snapshot
+      // inside a graph) may sit inside an unopened backend's content.
+      const wholeSnapshot = /^(?:world-model|graph-snapshot)-[a-f0-9]{24}$/.test(id);
+      if (wholeSnapshot ? !gitStoreNamesSnapshot(id) : !deferredBackends.length) issue(id, "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE");
       continue;
     }
     for (const snapshot of matches) {
@@ -320,8 +349,9 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false, re
 // inspection. A diagnostic string scan is never its deletion certificate.
 export async function applySnapshotGarbageCollection({ root = ".", signal, onProcess, retention = null } = {}) {
   // Inventory and reclaim are not one deadline. A single clock made a large
-  // store abort before any unreachable byte was deleted. Each Git command
-  // keeps its own bound; admission covers one unlink, not the walk.
+  // store abort before any unreachable byte was deleted. Each plain Git
+  // command keeps its own bound; the supervised pack step has no clock of its
+  // own and stops on cancellation. Admission covers one unlink, not the walk.
   const owner = readGraphProject(root);
   const result = {
     kind: "SnapshotStorageInspection",
@@ -354,7 +384,7 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
   };
   if (signal?.aborted) return { ...result, code: "SNAPSHOT_GC_CANCELLED" };
   try {
-    const { inspectStorageReaderCompatibility, upgradeLegacyReaderPointers } = await import("./snapshot-storage-compatibility.mjs");
+    const { inspectStorageReaderCompatibility } = await import("./snapshot-storage-compatibility.mjs");
     const { verifyWorldModelPointerOriginal } = await import("./world-model.mjs");
     const { verifyGraphProjectionPointer } = await import("./graph-projection-adapter.mjs");
     const compatibility = inspectStorageReaderCompatibility({
@@ -372,7 +402,9 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
         requiredVersion: mismatch.requiredVersion || null,
         installedVersion: mismatch.installedVersion || null,
       };
-    if (compatibility.layers.some((layer) => layer.legacyDeclaration)) await upgradeLegacyReaderPointers({ root: owner.projectRoot, storage: owner.storage });
+    // A pointer written before minimumReader existed is read as it is. GC does
+    // not rewrite it: that write belongs under the writer lease, which the next
+    // refresh holds when it records the missing fields.
   } catch (error) {
     if (error.code === "STORAGE_VERSION_MISMATCH") return { ...result, code: error.code, message: error.message };
   }

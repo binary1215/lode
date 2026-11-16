@@ -28,76 +28,12 @@ function split(group, arrays, keyFor, body, put) {
   }
   const chunks = [...buckets]
     .sort(([a], [b]) => a - b)
-    .map(([bucket, bucketLists]) => {
-      const counts = Object.fromEntries(keys.map((key) => [key, bucketLists[key].length]));
-      if (!put.fileParts) return { bucket, counts, ref: put("code-bucket-chunk", { group, bucket, lists: bucketLists }) };
-      // One content-addressed part per path. Unchanged paths keep their bytes.
-      // `sequence` restores the original interleaved row order.
-      const parts = [];
-      const partIndex = new Map();
-      const sequence = {};
-      for (const key of keys) {
-        sequence[key] = [];
-        for (const row of bucketLists[key]) {
-          const pathKey = String(keyFor[key](row));
-          const id = key + "\0" + pathKey;
-          let index = partIndex.get(id);
-          if (index === undefined) {
-            index = parts.length;
-            partIndex.set(id, index);
-            parts.push({ family: key, path: pathKey, rows: [] });
-          }
-          parts[index].rows.push(row);
-          sequence[key].push(index);
-        }
-      }
-      const storedParts = parts.map((part) => ({
-        family: part.family,
-        path: part.path,
-        count: part.rows.length,
-        ref: put("code-file-part", { group, bucket, family: part.family, path: part.path, rows: part.rows }),
-      }));
-      return { bucket, counts, ref: put("code-bucket-chunk", { group, bucket, parts: storedParts, sequence }) };
-    });
+    .map(([bucket, lists]) => ({
+      bucket,
+      counts: Object.fromEntries(keys.map((key) => [key, lists[key].length])),
+      ref: put("code-bucket-chunk", { group, bucket, lists }),
+    }));
   return { ...(group === "world" ? { body } : {}), lists, chunks };
-}
-function materializeLeaf(leaf, read) {
-  if (!leaf || typeof leaf !== "object" || Array.isArray(leaf)) fail();
-  if (leaf.lists) return leaf;
-  if (!shape(leaf, ["group", "bucket", "parts", "sequence"]) || !Array.isArray(leaf.parts)) fail();
-  const keys = Object.keys(SPECS[leaf.group] || {});
-  if (!keys.length || !shape(leaf.sequence, keys)) fail();
-  const loaded = leaf.parts.map((part) => {
-    if (!part || part.ref?.domain !== "code-file-part" || !Number.isSafeInteger(part.count) || part.count < 1 || !keys.includes(part.family)) fail();
-    const body = read(part.ref);
-    if (
-      !shape(body, ["group", "bucket", "family", "path", "rows"]) ||
-      body.group !== leaf.group ||
-      body.bucket !== leaf.bucket ||
-      body.family !== part.family ||
-      body.path !== part.path ||
-      !Array.isArray(body.rows) ||
-      body.rows.length !== part.count
-    )
-      fail();
-    return body.rows;
-  });
-  const lists = {};
-  for (const key of keys) {
-    if (!Array.isArray(leaf.sequence[key])) fail();
-    const cursors = new Map();
-    lists[key] = leaf.sequence[key].map((index) => {
-      const part = leaf.parts[index];
-      if (!part || part.family !== key) fail();
-      const offset = cursors.get(index) || 0;
-      const row = loaded[index][offset];
-      if (row === undefined) fail();
-      cursors.set(index, offset + 1);
-      return row;
-    });
-    if ([...cursors].some(([index, offset]) => offset !== leaf.parts[index].count)) fail();
-  }
-  return { ...leaf, lists };
 }
 function validateIndex(group, payload) {
   const specs = SPECS[group],
@@ -164,7 +100,7 @@ function validateIndex(group, payload) {
 }
 export function snapshotCodeBucketSummary(payload) {
   if (
-    !payload ||
+    !shape(payload, ["group", "bucket", "lists"]) ||
     typeof payload.group !== "string" ||
     !Object.hasOwn(SPECS, payload.group) ||
     !Number.isInteger(payload.bucket) ||
@@ -173,12 +109,8 @@ export function snapshotCodeBucketSummary(payload) {
   )
     fail();
   const keys = Object.keys(SPECS[payload.group]);
-  const listed = shape(payload, ["group", "bucket", "lists"]);
-  const parted = shape(payload, ["group", "bucket", "parts", "sequence"]);
-  if (!listed && !parted) fail();
-  if (listed && (!shape(payload.lists, keys) || keys.some((key) => !Array.isArray(payload.lists[key])))) fail();
-  if (parted && (!shape(payload.sequence, keys) || !Array.isArray(payload.parts) || keys.some((key) => !Array.isArray(payload.sequence[key])))) fail();
-  const counts = Object.fromEntries(keys.map((key) => [key, (listed ? payload.lists : payload.sequence)[key].length]));
+  if (!shape(payload.lists, keys) || keys.some((key) => !Array.isArray(payload.lists[key]))) fail();
+  const counts = Object.fromEntries(keys.map((key) => [key, payload.lists[key].length]));
   if (keys.every((key) => counts[key] === 0)) fail();
   return { group: payload.group, bucket: payload.bucket, counts };
 }
@@ -187,9 +119,8 @@ function join(group, payload, read) {
     keys = Object.keys(SPECS[group]),
     leaves = new Map();
   for (const [bucket, descriptor] of descriptors) {
-    const raw = read(descriptor.ref),
-      summary = snapshotCodeBucketSummary(raw),
-      leaf = materializeLeaf(raw, read);
+    const leaf = read(descriptor.ref),
+      summary = snapshotCodeBucketSummary(leaf);
     if (summary.group !== group || summary.bucket !== bucket || keys.some((key) => summary.counts[key] !== descriptor.counts[key])) fail();
     leaves.set(bucket, leaf.lists);
   }

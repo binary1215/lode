@@ -246,7 +246,8 @@ export class SnapshotBackendReclamation {
         metadataBytes = 64 * 1024 + 4096;
       // Recovery scratches are strictly sequential and removed before the next
       // residue or producer starts. Their combined live bytes, index reserve
-      // and control/metadata share the same cap and whole-collection deadline.
+      // and control/metadata share the same cap. Apply passes no collection
+      // deadline (null): cancellation and this byte cap are what stop them.
       if (row.bytes + reserve + metadataBytes > MAX_STORED) fail("GC_STAGING_BYTE_LIMIT");
       const staging = safeSnapshotPath(this.root, path.join(attempt.ns.directory, "staging"));
       if (!fs.existsSync(staging)) fs.mkdirSync(staging);
@@ -411,20 +412,15 @@ export class SnapshotBackendReclamation {
       )
         fail("SNAPSHOT_BUNDLE_TYPE_MISMATCH");
       let chunkDescriptors = null;
-      const keySets = {
-        "code-bucket-chunk": [
-          ["group", "bucket", "lists"],
-          ["group", "bucket", "parts", "sequence"],
-        ],
-        "code-file-part": [["group", "bucket", "family", "path", "rows"]],
-        "world-code-chunks": [["body", "lists", "chunks"]],
-        "graph-code-chunks": [["lists", "chunks"]],
-        "graph-code": [["nodes", "edges"]],
-        "world-code": [["files", "semanticGraph", "analysisBasis", "domainBasis", "rules", "sourceScope"]],
-        "graph-composition": [["body", "code", "otherNodes", "otherEdges", "nodeOrder", "edgeOrder"]],
+      const keys = {
+        "code-bucket-chunk": ["group", "bucket", "lists"],
+        "world-code-chunks": ["body", "lists", "chunks"],
+        "graph-code-chunks": ["lists", "chunks"],
+        "graph-code": ["nodes", "edges"],
+        "world-code": ["files", "semanticGraph", "analysisBasis", "domainBasis", "rules", "sourceScope"],
+        "graph-composition": ["body", "code", "otherNodes", "otherEdges", "nodeOrder", "edgeOrder"],
       }[doc.domain];
-      const actualKeys = JSON.stringify(Object.keys(doc.payload).sort());
-      if (!keySets || !keySets.some((keys) => JSON.stringify([...keys].sort()) === actualKeys)) fail("UNSUPPORTED_GC_DOMAIN_SCHEMA");
+      if (!keys || JSON.stringify(Object.keys(doc.payload).sort()) !== JSON.stringify(keys.sort())) fail("UNSUPPORTED_GC_DOMAIN_SCHEMA");
       if (
         (doc.domain === "graph-code" && (!Array.isArray(doc.payload.nodes) || !Array.isArray(doc.payload.edges))) ||
         (doc.domain === "world-code" && !Array.isArray(doc.payload.files)) ||
@@ -440,9 +436,7 @@ export class SnapshotBackendReclamation {
         ? chunkDescriptors.map((descriptor) => descriptor.ref)
         : doc.domain === "graph-composition"
           ? [doc.payload.code]
-          : doc.domain === "code-bucket-chunk" && Array.isArray(doc.payload.parts)
-            ? doc.payload.parts.map((part) => part.ref)
-            : [];
+          : [];
       this.domains.set(row.path, {
         ...row,
         domain: doc.domain,
@@ -545,7 +539,10 @@ export class SnapshotBackendReclamation {
   }
 
   // Non-destructive Git producer with bounded disk streaming. Other commands
-  // use the same sanitized GitSnapshotStore runner; the total deadline is shared.
+  // use the same sanitized GitSnapshotStore runner, each with its own bound.
+  // This supervised step has a time bound only when the caller passes a
+  // deadline; storage-gc --apply passes none, so it stops on cancellation, on
+  // a changed collection attempt or on the staging byte cap, not on a clock.
   async packStream(oids, file, maxBytes) {
     return this.supervisedCommand(
       ["pack-objects", "--stdout", "--threads=1", "--window-memory=64m"],
@@ -642,7 +639,9 @@ export class SnapshotBackendReclamation {
         forced = false;
       // Native owns its bounded child termination and cleanup proof. Killing
       // the supervisor at the same grace boundary can discard that proof.
-      // The original GC deadline remains the hard stop; never extend it.
+      // When the caller gave a deadline it remains the hard stop; never extend
+      // it. Without one (storage-gc --apply) the stop is cancellation, a changed
+      // collection attempt or the byte cap.
       const stop = (code) => {
         failure ??= Object.assign(new Error(code), { code });
         if (!terminationRequested) {

@@ -18,6 +18,11 @@ const SKIP_STORAGE_PREFIXES = [
   ".operations/",
 ];
 
+// Written by the very build a stamp belongs to. Their ids are compared on
+// their own, so the stamp can be taken before the build without the build
+// itself moving it.
+const STAMP_EXCLUDED_FILES = new Set(["world-model/current.json", "graph-projection/current.json"]);
+
 function cachePath(root, storage, relative) {
   return path.join(root, storage.directory, relative);
 }
@@ -79,6 +84,22 @@ export function fileIdentity(absolute) {
   };
 }
 
+// A filesystem that keeps whole seconds (FAT keeps two) can take a second
+// write inside the tick of the first, leaving size and times as they were. A
+// file whose modification time has no sub-second part is trusted only once
+// that tick is over; until then it is read again.
+const COARSE_TICK_NS = 2_000_000_000n;
+export function timestampSettled(identity, nowMs = Date.now()) {
+  let modified;
+  try {
+    modified = BigInt(identity.mtimeNs);
+  } catch {
+    return false;
+  }
+  if (modified % 1_000_000_000n !== 0n) return true;
+  return BigInt(Math.trunc(nowMs)) * 1_000_000n - modified >= COARSE_TICK_NS;
+}
+
 // `before` is the stat taken before the bytes were read. The stat taken after
 // that read is recorded only when it still describes the same bytes.
 export function identitiesAgree(before, after, byteLength) {
@@ -100,7 +121,7 @@ export function rememberFileStat(cache, relative, absolute, digest, bytes, befor
   } catch {
     after = null;
   }
-  if (!identitiesAgree(before, after, bytes)) {
+  if (!identitiesAgree(before, after, bytes) || !timestampSettled(after)) {
     if (cache) cache.delete(relative);
     return null;
   }
@@ -130,7 +151,7 @@ function walkStorageInputs(root, storage) {
     }
     if (!stat.isFile() || stat.nlink !== 1n) continue;
     const portable = relative.replaceAll("\\", "/");
-    if (SKIP_STORAGE_PREFIXES.some((prefix) => portable.startsWith(prefix))) continue;
+    if (SKIP_STORAGE_PREFIXES.some((prefix) => portable.startsWith(prefix)) || STAMP_EXCLUDED_FILES.has(portable)) continue;
     rows.push([portable, stat.size.toString(), stat.mtimeNs.toString(), stat.ctimeNs.toString(), stat.ino.toString()]);
   }
   rows.sort((left, right) => (left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0));
@@ -150,7 +171,7 @@ function considerGit(rows, relative, absolute) {
     return;
   }
   if (!stat.isFile()) return;
-  rows.push([relative.replaceAll("\\", "/"), stat.size.toString(), stat.mtimeNs.toString()]);
+  rows.push([relative.replaceAll("\\", "/"), stat.size.toString(), stat.mtimeNs.toString(), stat.ctimeNs.toString(), stat.ino.toString()]);
 }
 
 function linkedGitDirectories(root) {
@@ -199,7 +220,7 @@ function linkedGitDirectories(root) {
   return { status: "ok", directories };
 }
 
-function gitIdentity(root) {
+export function refreshGitIdentity(root) {
   const linked = linkedGitDirectories(root);
   if (linked.status !== "ok") return linked.status;
   const rows = [];
@@ -214,8 +235,52 @@ function gitIdentity(root) {
   return sha256Hex(JSON.stringify(rows));
 }
 
+// The project store outside snapshots (without the two pointer files) and the
+// local git head and refs. A build takes it BEFORE it reads anything: a record
+// saved or a commit made while it builds then leaves the stored stamp behind
+// the project, and the next refresh takes the full path.
 export function refreshInputStamp(root, storage) {
-  return sha256Hex(JSON.stringify({ storage: walkStorageInputs(root, storage), git: gitIdentity(root) }));
+  return sha256Hex(JSON.stringify({ storage: walkStorageInputs(root, storage), git: refreshGitIdentity(root) }));
+}
+
+// Where snapshots live: whole files, domain bundles and the git object store.
+const SNAPSHOT_STORE_DIRECTORIES = ["world-model/snapshots", "graph-projection/snapshots", "snapshot-bundles", "snapshot-objects.git"];
+
+// Every file of the snapshot stores, by name, size, times and inode, without
+// reading any. Recorded when the generation is written, right after the current
+// snapshots were written or read and verified; if any of these files is later
+// removed, replaced or added (a GC, a lost file, another build), the fast path
+// declines and the full refresh reads the snapshot and reports what it finds,
+// including WORLD_MODEL_SNAPSHOT_MISSING.
+export function snapshotStoreStamp(root, storage) {
+  const base = path.join(root, storage.directory);
+  const rows = [];
+  for (const directory of SNAPSHOT_STORE_DIRECTORIES) {
+    const stack = [directory];
+    while (stack.length) {
+      const relative = stack.pop();
+      let stat;
+      try {
+        stat = fs.lstatSync(path.join(base, relative), { bigint: true });
+      } catch (error) {
+        if (error.code === "ENOENT" || error.code === "ENOTDIR") continue;
+        throw error;
+      }
+      if (stat.isDirectory() && !stat.isSymbolicLink()) {
+        for (const name of fs.readdirSync(path.join(base, relative))) stack.push(relative + "/" + name);
+        continue;
+      }
+      rows.push([
+        relative,
+        stat.isSymbolicLink() ? "link" : stat.isFile() ? "file" : "other",
+        stat.size.toString(),
+        stat.mtimeNs.toString(),
+        stat.ino.toString(),
+      ]);
+    }
+  }
+  rows.sort((left, right) => (left[0] < right[0] ? -1 : left[0] > right[0] ? 1 : 0));
+  return sha256Hex(JSON.stringify(rows));
 }
 
 const REVISION_KINDS = new Set([
@@ -243,7 +308,7 @@ function confirmAgreedFile(root, file) {
   } catch {
     return null;
   }
-  if (!identitiesAgree(before, after, raw.length) || raw.length !== file.bytes || sha256Hex(raw) !== file.digest) return null;
+  if (!identitiesAgree(before, after, raw.length) || !timestampSettled(after) || raw.length !== file.bytes || sha256Hex(raw) !== file.digest) return null;
   return { ...after, digest: file.digest, bytes: file.bytes };
 }
 
@@ -260,7 +325,11 @@ function agreedGenerationEntry(entry, file) {
   };
 }
 
-export function writeRefreshInputGeneration({ root, storage, snapshot, verifiedFiles = null }) {
+// `stamp` is the stamp taken before the inputs of `snapshot` were read, and
+// `reader` says which installation read them. Without that stamp nothing is
+// written: a stamp taken now could not vouch for what was read earlier.
+export function writeRefreshInputGeneration({ root, storage, snapshot, verifiedFiles = null, stamp, reader = null }) {
+  if (typeof stamp !== "string" || !stamp) return null;
   const graph = snapshot.temporalProvenanceGraph;
   const revisions = graph.nodes.filter((node) => REVISION_KINDS.has(node.kind));
   const files = {};
@@ -280,7 +349,11 @@ export function writeRefreshInputGeneration({ root, storage, snapshot, verifiedF
     parentSourceSnapshotIds: graph.parentSourceSnapshotIds,
     revisionNodeCount: revisions.length,
     parentedRevisionCount: revisions.filter((node) => node.parentRevisionIds?.length > 0).length,
-    stamp: refreshInputStamp(root, storage),
+    stamp,
+    reader,
+    // The World's skipped counters, compared by the fast path's walk.
+    skipped: snapshot.skipped ?? null,
+    snapshotStore: snapshotStoreStamp(root, storage),
     files,
   };
   atomicWriteText(cachePath(root, storage, INPUT_GENERATION_RELATIVE), JSON.stringify(document));

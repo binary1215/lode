@@ -1,5 +1,5 @@
 import { snapshotReaderRequirements } from "./snapshot-storage-compatibility.mjs";
-import { writeRefreshInputGeneration } from "./refresh-input-generation.mjs";
+import { refreshInputStamp, writeRefreshInputGeneration } from "./refresh-input-generation.mjs";
 import { stabilizeTemporalRelationIdentities } from "./temporal-relation-identity.mjs";
 import fs from "node:fs";
 import { resolveLocalGitRepository } from "./local-git-repository.mjs";
@@ -52,7 +52,6 @@ import {
   buildTemporalProvenanceGraph,
   currentTemporalLogicalEntityIds,
   deriveIncrementalLogicalLineageState,
-  describeTemporalEntities,
   filterLogicalLineageStateForCurrentTemporalEntities,
   filterRevisionParentsForCurrentTemporalEntities,
   TEMPORAL_PROVENANCE_VERSION,
@@ -667,83 +666,12 @@ export function deriveIncrementalRevisionParents({ previousGraph, candidateGraph
   return Object.fromEntries(Object.entries(parents).sort(([left], [right]) => left.localeCompare(right)));
 }
 
-const PRODUCT_REVISION_KINDS = new Set([
-  "FeatureGroupRevision",
-  "CapabilityRevision",
-  "FeatureRevision",
-  "RequirementRevision",
-  "ConstraintRevision",
-  "DecisionRevision",
-  "PolicyRevision",
-]);
-
-// Same parent map as deriveIncrementalRevisionParents when the product model
-// is unchanged, without building a candidate graph. Returns null when that
-// shortcut is not exact.
-export function predictIncrementalRevisionParents({ previousGraph, files, productModel } = {}) {
-  if (!previousGraph?.nodes || !productModel?.productModelHash || previousGraph.productModelHash !== productModel.productModelHash) return null;
-  let described;
-  try {
-    described = describeTemporalEntities({ projectId: previousGraph.projectId, files, productModel });
-  } catch {
-    return null;
-  }
-  const previousNodes = new Map(previousGraph.nodes.map((node) => [node.nodeId, node]));
-  const previousRevisions = new Map(
-    previousGraph.nodes.filter((node) => REVISION_KINDS.has(node.kind) && node.logicalEntityId).map((node) => [node.logicalEntityId, node]),
-  );
-  const parents = {};
-  const assign = (logicalEntityId, candidate, candidateNodes) => {
-    const previous = previousRevisions.get(logicalEntityId);
-    if (!previous || previous.kind !== candidate.kind) return;
-    if (candidate.kind === "SymbolRevision" && (candidate.identityAmbiguous || previous.identityAmbiguous)) return;
-    const unchanged = canonicalJson(revisionSemantic(previous, previousNodes)) === canonicalJson(revisionSemantic(candidate, candidateNodes));
-    parents[logicalEntityId] = unchanged ? [...(previous.parentRevisionIds || [])] : [previous.nodeId];
-  };
-  for (const fileDesc of described.fileDescriptors) {
-    const file = fileDesc.file;
-    const fileNodes = new Map([["current-file", { digest: file.digest }]]);
-    assign(
-      fileDesc.fileId,
-      {
-        kind: "FileRevision",
-        logicalEntityId: fileDesc.fileId,
-        digest: file.digest,
-        language: file.language || "text",
-        classification: file.classification || "source",
-      },
-      fileNodes,
-    );
-    for (const symbol of fileDesc.symbolDescriptors) {
-      assign(
-        symbol.symbolId,
-        {
-          kind: "SymbolRevision",
-          logicalEntityId: symbol.symbolId,
-          fileRevisionId: "current-file",
-          path: file.path,
-          name: symbol.name,
-          symbolKind: symbol.symbolKind,
-          occurrence: symbol.occurrence,
-          line: symbol.line,
-          endLine: symbol.endLine,
-          scopePath: symbol.scopePath,
-          qualifiedName: symbol.qualifiedName,
-          signature: symbol.signature,
-          identityAmbiguous: symbol.identityAmbiguous,
-        },
-        fileNodes,
-      );
-    }
-    if (fileDesc.testId)
-      assign(fileDesc.testId, { kind: "TestRevision", logicalEntityId: fileDesc.testId, fileRevisionId: "current-file", path: file.path }, fileNodes);
-  }
-  const currentLogical = new Set(described.logicalEntityIds);
-  for (const node of previousRevisions.values()) {
-    if (!PRODUCT_REVISION_KINDS.has(node.kind) || !currentLogical.has(node.logicalEntityId) || parents[node.logicalEntityId]) continue;
-    parents[node.logicalEntityId] = [...(node.parentRevisionIds || [])];
-  }
-  return Object.fromEntries(Object.entries(parents).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)));
+// What this installation writes into a World apart from the inputs. A new
+// analysis version or plugin version must not be answered with "unchanged".
+let installedPackageVersion = null;
+export function refreshReaderIdentity() {
+  installedPackageVersion ??= JSON.parse(fs.readFileSync(new URL("../../../package.json", import.meta.url), "utf8")).version;
+  return digest(canonicalJson({ indexer: indexerState(), package: installedPackageVersion }));
 }
 
 function indexerState() {
@@ -1629,6 +1557,9 @@ async function buildWorldModelLocked({
   expectedWorldModelId = "",
   expectedCurrentWorldModelId = "",
   writerLease = null,
+  // A string: the stamp the caller took before its own reads (a refresh scans
+  // before it builds). false: write no generation. Otherwise taken here.
+  refreshInputStampBeforeRead = null,
 } = {}) {
   if (filterRevisionParentsToCurrentEntities && persist) {
     fail("Current-entity revision-parent filtering is available only for non-persisted refresh previews.", "REVISION_PARENT_FILTER_PREVIEW_ONLY");
@@ -1636,6 +1567,16 @@ async function buildWorldModelLocked({
   const inspected = readyProject(root);
   const storage = inspected.storage;
   const project = inspected.project;
+  // Before anything below is read. Taken after the build, a record saved or a
+  // commit made while it was building would be stamped as already known.
+  let stampBeforeRead = refreshInputStampBeforeRead;
+  if (persist && stampBeforeRead !== false && typeof stampBeforeRead !== "string") {
+    try {
+      stampBeforeRead = refreshInputStamp(project.projectRoot, storage);
+    } catch {
+      stampBeforeRead = false;
+    }
+  }
   const worldStoreAdapter = createWorldModelStoreAdapter({ storage, projectRoot: project.projectRoot, adapter: storeAdapter });
   const initialPointerEntry = worldStoreAdapter.readPointer();
   const initialPointerBasis = canonicalJson(initialPointerEntry?.document || null);
@@ -2272,12 +2213,16 @@ async function buildWorldModelLocked({
     throw noteCanonBasisError(error, project.projectRoot, storage, productCanonBasis);
   }
   try {
-    writeRefreshInputGeneration({
-      root: project.projectRoot,
-      storage,
-      snapshot,
-      verifiedFiles: selectedRepositoryScanExecution.verifiedFiles ?? null,
-    });
+    // Without the stamp from before the reads there is nothing honest to record.
+    if (typeof stampBeforeRead === "string")
+      writeRefreshInputGeneration({
+        root: project.projectRoot,
+        storage,
+        snapshot,
+        verifiedFiles: selectedRepositoryScanExecution.verifiedFiles ?? null,
+        stamp: stampBeforeRead,
+        reader: refreshReaderIdentity(),
+      });
   } catch {
     /* The generation cache is an optimization. Publication already succeeded. */
   }
