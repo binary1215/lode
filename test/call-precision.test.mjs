@@ -233,9 +233,17 @@ test("Python: a parenthesised import list is read, print is a built-in function 
 test("Lode itself: the reasons add up, every 값 node is called, and two builds are byte-identical", (t) => {
   const base = temporary(t);
   fs.mkdirSync(path.join(base, "documents"));
+  // A copy of the plugin source, so the builds do not see what other tests
+  // create in the plugin folder while they run (their .qa-* folders are listed
+  // by name among the folders not read, which made the two builds differ).
+  const source = path.join(base, "source");
+  fs.cpSync(pluginRoot, source, {
+    recursive: true,
+    filter: (from) => !/^(\.git|node_modules|\.qa-[^/\\]*)$/.test(path.relative(pluginRoot, from).split(/[\\/]/)[0] || ""),
+  });
   const run = (name) =>
     buildProductGraph({
-      sourceRoot: pluginRoot,
+      sourceRoot: source,
       documentsDirectory: path.join(base, "documents"),
       rulesFile: path.join(import.meta.dirname, "fixtures", "product-graph", "lode-entry-rules.json"),
       outputDirectory: path.join(base, name),

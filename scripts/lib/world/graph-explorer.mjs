@@ -38,7 +38,10 @@ function initialViewOf({ view, query, anchorIds, paths, layer }) {
 function productGraphSection(owner, share) {
   if (!owner.project) return { status: "not-built", reason: "PROJECT_GRAPH_NOT_INITIALIZED", buildCommand: "product-graph-build <project>" };
   const root = owner.projectRoot;
-  const command = (value) => (share && typeof value === "string" ? value.split(root).join("<project>") : value);
+  // A shared copy names no local path: the command is written with a
+  // placeholder, not by searching for the root in a string (a root spelled in
+  // another case or given as a relative path would slip through that).
+  const command = (value) => (share ? "product-graph-build <project>" : value);
   try {
     const read = readProductGraphBuild({ root });
     if (read.status !== "built") return { status: read.status, reason: read.reason, buildCommand: command(read.buildCommand) };

@@ -46,6 +46,9 @@ export const explorerStatus = (() => {
         sessionId: node.sessionId,
         recordedAt: node.recordedAt || null,
         bodyIncluded: Boolean(content),
+        // The exported body is only part of the record (the copy's reading
+        // budget): what is missing may hold more pending work or links.
+        partial: node.workContentCoverage?.partial === true || node.contentPartial === true,
         summary: content?.summary || "",
         judgments: content?.judgments || [],
         observedWork: content?.observedWork || [],
@@ -78,12 +81,15 @@ export const explorerStatus = (() => {
           if (!successors.has(key)) successors.set(key, []);
           successors.get(key).push({ record, todo });
         }
-    const finishedBy = (key, seen = new Set()) => {
+    // The first later revision that ends the item: completed (finished) or
+    // cancelled, directly or through later open revisions.
+    const endedBy = (key, seen = new Set()) => {
       if (seen.has(key)) return null;
       seen.add(key);
       for (const next of successors.get(key) || []) {
-        if (next.todo.status === "completed") return next.record.id;
-        const deeper = finishedBy(`${next.record.id}#todo/${next.todo.todoId}`, seen);
+        if (next.todo.status === "completed") return { state: "finished", by: next.record.id };
+        if (next.todo.status === "cancelled") return { state: "cancelled", by: next.record.id };
+        const deeper = endedBy(`${next.record.id}#todo/${next.todo.todoId}`, seen);
         if (deeper) return deeper;
       }
       return null;
@@ -91,8 +97,26 @@ export const explorerStatus = (() => {
     for (const record of records.values())
       for (const item of record.pending)
         if (item.kind === "todo") {
-          const by = finishedBy(item.key);
-          if (by) Object.assign(item, { state: "finished", finishedBy: by });
+          const ended = endedBy(item.key);
+          if (ended?.state === "finished") Object.assign(item, { state: "finished", finishedBy: ended.by });
+          else if (ended?.state === "cancelled") Object.assign(item, { state: "cancelled", cancelledBy: ended.by });
+        }
+    // An open todo counts once per Session and todoId: its latest open
+    // revision. Earlier open revisions are its history.
+    const latestOpen = new Map();
+    for (const record of records.values())
+      for (const item of record.pending)
+        if (item.kind === "todo" && item.state === "open") {
+          const key = `${record.sessionId}\u0000${item.todoId}`;
+          const current = latestOpen.get(key);
+          if (!current || compare(current.record.recordedAt || "", record.recordedAt || "") < 0 || (current.record.recordedAt === record.recordedAt && compare(current.record.id, record.id) < 0))
+            latestOpen.set(key, { record, item });
+        }
+    for (const record of records.values())
+      for (const item of record.pending)
+        if (item.kind === "todo" && item.state === "open") {
+          const latest = latestOpen.get(`${record.sessionId}\u0000${item.todoId}`);
+          if (latest.item !== item) Object.assign(item, { state: "earlier", laterRevision: latest.record.id });
         }
     for (const group of sessions.values()) {
       group.records.sort((a, b) => compare(b.recordedAt || "", a.recordedAt || "") || compare(b.id, a.id));
@@ -104,8 +128,11 @@ export const explorerStatus = (() => {
       group.latest = group.records[0] || null;
       group.pending = group.records.reduce((sum, record) => sum + record.pending.filter((item) => item.state === "open").length, 0);
       group.unknowns = group.records.reduce((sum, record) => sum + record.unknowns.length, 0);
+      group.partial = group.records.filter((record) => record.partial).length;
     }
-    const rank = (group) => (group.pending ? 0 : group.unknowns ? 1 : 2);
+    // A Session with a record whose body is only partly in the copy is never
+    // folded as having nothing left.
+    const rank = (group) => (group.pending ? 0 : group.unknowns || group.partial ? 1 : 2);
     const ordered = [...sessions.values()].sort((a, b) => rank(a) - rank(b) || compare(b.latest?.recordedAt || "", a.latest?.recordedAt || "") || compare(a.sessionId, b.sessionId));
     const items = [];
     for (const group of ordered)
@@ -126,6 +153,7 @@ export const explorerStatus = (() => {
         pending: items.filter((item) => item.type === "pending" && item.state === "open").length,
         unknowns: items.filter((item) => item.type === "unknown").length,
         files: files.size,
+        partialRecords: [...records.values()].filter((record) => record.partial).length,
       },
     };
   }
@@ -147,10 +175,13 @@ export const explorerStatus = (() => {
     return [...byPath.entries()].sort((a, b) => compare(a[0], b[0])).map(([path, uses]) => ({ path, uses }));
   }
 
+  // Compared in NFC; a path typed with backslashes also matches forward slashes.
+  const fold = (value) => String(value).normalize("NFC").toLocaleLowerCase();
   function search(status, text) {
-    const needle = String(text || "").toLocaleLowerCase();
-    if (!needle) return [];
-    const hit = (value) => typeof value === "string" && value.toLocaleLowerCase().includes(needle);
+    const first = fold(text || "");
+    if (!first) return [];
+    const wanted = [...new Set([first, first.replaceAll("\\", "/")])];
+    const hit = (value) => typeof value === "string" && wanted.some((needle) => fold(value).includes(needle));
     const found = [];
     for (const record of recent(status)) {
       const texts = [

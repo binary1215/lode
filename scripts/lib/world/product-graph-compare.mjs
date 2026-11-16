@@ -25,6 +25,25 @@ export function productGraphReader(graphVersion) {
   return { generator: "lode-product-graph", graphVersion, lode: LODE_VERSION, sourceAnalysis: SOURCE_ANALYSIS_VERSION };
 }
 
+// What changes how code is read: the generator, its graph version and the
+// shared source analysis. The Lode version is kept in inputs.reader as
+// information only, so an upgrade that reads code the same way is not a
+// change of reader. (The rules hash is compared on its own.)
+export const readerKey = (reader) =>
+  canonicalJson(
+    reader ? { generator: reader.generator ?? null, graphVersion: reader.graphVersion ?? null, sourceAnalysis: reader.sourceAnalysis ?? null } : null,
+  );
+
+// The text of a declaration's line range without the blank lines at its end
+// (the scan's last range in a file can include the empty segment after the
+// final newline, and a range can end in blank lines before the next one), so
+// appending after a declaration or moving it to the file's end keeps its hash.
+export function declarationText(fileLines, [start, end]) {
+  const slice = fileLines.slice(start - 1, end);
+  while (slice.length && !slice[slice.length - 1].trim()) slice.pop();
+  return slice.join("\n");
+}
+
 // Adds contentSha256 to every node and reachSha256 to every 기능, in place.
 // Hashes are attributes; no ID changes.
 export function addContentHashes(graph, readFiles, unresolvedHandlers = []) {
@@ -45,12 +64,7 @@ export function addContentHashes(graph, readFiles, unresolvedHandlers = []) {
     if (node.type === "코드") {
       if (!texts.has(node.file)) node.contentSha256 = null;
       else if (node.id === node.file || !node.lines) node.contentSha256 = textHash(texts.get(node.file));
-      else
-        node.contentSha256 = textHash(
-          lines(node.file)
-            .slice(node.lines[0] - 1, node.lines[1])
-            .join("\n"),
-        );
+      else node.contentSha256 = textHash(declarationText(lines(node.file), node.lines));
     } else if (node.type === "기능") {
       const handlers = walk.handlersOf(ix, node.id).sort(compare);
       node.contentSha256 = sha256Hex(
@@ -176,7 +190,7 @@ function baselineGraph(baseline) {
 
 // meaningLines: [{ id, at }] — the lines of 기능 뜻.md.
 export function compareWithBaseline(graph, baseline, { meaningLines = [] } = {}) {
-  const sameReader = canonicalJson(graph.inputs.reader ?? null) === canonicalJson(baseline.reader ?? null);
+  const sameReader = readerKey(graph.inputs.reader) === readerKey(baseline.reader);
   const sameRules = (graph.inputs.rulesSha256 ?? null) === (baseline.rulesSha256 ?? null);
   const before = baselineGraph(baseline);
   const beforeIx = walk.index(before);
@@ -207,7 +221,7 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [] } = {})
     if (broken.length)
       fail(
         "PRODUCT_GRAPH_NOT_REPRODUCIBLE",
-        `같은 읽는 방식, 기준과 같은 내용의 파일에서 같은 ID의 내용 해시나 줄 범위가 다르다. 아무것도 쓰지 않았다: ${broken.slice(0, 20).join(", ")}${broken.length > 20 ? ` 외 ${broken.length - 20}개` : ""}`,
+        `같은 읽는 방식, 기준과 같은 내용의 파일에서 같은 ID의 내용 해시나 줄 범위가 다르다. 아무것도 쓰지 않았다: ${broken.slice(0, 20).join(", ")}${broken.length > 20 ? ` 외 ${broken.length - 20}개` : ""}. 이어 가려면 build/baseline.json을 지우고 다시 빌드한다(그 빌드가 새 기준이 되고, 이전 기준 뒤 바뀐 것 목록은 잃는다). 같은 입력에서 이것이 되풀이되면 코드 읽기의 결함이니 알려 달라.`,
       );
   }
 

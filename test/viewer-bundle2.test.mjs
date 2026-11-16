@@ -624,7 +624,7 @@ test("acceptance 6: the status view marks the user's direction, orders Sessions,
   const snap = await buildGraphExplorerSnapshot({ root: f.root, lang: "ko" });
   const status = explorerStatus.model(snap);
   // Four Sessions: the three that saved work and the Project's first, which saved none.
-  assert.deepEqual(status.counts, { sessions: 4, records: 5, pending: 1, unknowns: 2, files: status.counts.files });
+  assert.deepEqual(status.counts, { sessions: 4, records: 5, pending: 1, unknowns: 2, files: status.counts.files, partialRecords: 0 });
   assert.deepEqual(
     status.sessions.slice(0, 2).map((group) => group.purpose),
     ["Keep the notes tool reliable", "Look at reading on a phone"],
@@ -824,10 +824,306 @@ test("a build in a shape the page does not know leaves the other views working",
   const f = notesProject(t);
   buildProductGraph({ root: f.root });
   const snap = await buildGraphExplorerSnapshot({ root: f.root });
-  delete snap.productGraph.check.limits.calls;
+  delete snap.productGraph.check.lists;
   const ui = explorerDom(snap);
   assert.match(visibleText(ui.ids.get("view-status")), /Keep every note/);
   assert.match(shown(ui, "gaps"), /The product graph build could not be read/);
+});
+
+// ---------- review round 1 ----------
+
+const older = (version) => path.join(pluginRoot, "test", "fixtures", "product-graph", "older-builds", version);
+const QUESTIONS = [
+  { question: "overview" },
+  { question: "node", id: "cli:notes" },
+  { question: "down", id: "cli:notes", depth: 3 },
+  { question: "up", id: "cli:notes" },
+  { question: "reach", id: "cli:notes" },
+  { question: "reach", id: "MAIN-01" },
+  { question: "reach", id: "lib/notes.mjs" },
+  { question: "find", text: "notes" },
+  { question: "gaps" },
+  { question: "gaps", list: "unreachedCode" },
+  { question: "gaps", list: "missingIds" },
+  { question: "changes" },
+  { question: "changes", list: "changed" },
+  { question: "down", id: "@기능" },
+];
+
+test("A2: builds made by 0.3.0-beta.124, 125 and 126 answer every question and fill every view, saying what they do not carry", async (t) => {
+  const f = notesProject(t, { documents: false });
+  const base = await buildGraphExplorerSnapshot({ root: f.root, lang: "ko" });
+  for (const version of ["beta-124", "beta-125", "beta-126"]) {
+    for (const request of QUESTIONS) {
+      const answer = queryProductGraph({ buildDirectory: older(version), ...request });
+      assert.equal(answer.status, "answered", `${version} ${JSON.stringify(request)}: ${answer.message}`);
+      assert.match(answer.header[0], /소스가 바뀌었는지 알 수 없음/);
+    }
+    const changes = queryProductGraph({ buildDirectory: older(version), question: "changes", list: "changed" }).text;
+    assert.match(changes, /비교하지 않음 — 이 빌드에는 기준 비교가 없다/);
+    const limits = queryProductGraph({ buildDirectory: older(version) }).header[1];
+    if (version !== "beta-126") assert.match(limits, /이전 버전의 빌드/);
+    const snap = structuredClone(base);
+    snap.productGraph = {
+      status: "built",
+      builtAt: "2026-11-01T00:00:00.000Z",
+      freshness: { state: "unknown", text: "소스가 바뀌었는지 알 수 없음 — 소스 루트 없이 빌드 폴더만 받았다" },
+      baselineNow: null,
+      buildCommand: "product-graph-build <project>",
+      graph: json(path.join(older(version), "graph.json")),
+      check: json(path.join(older(version), "check.json")),
+    };
+    const ui = explorerDom(snap);
+    const gaps = shown(ui, "gaps");
+    assert.doesNotMatch(gaps, /제품 그래프 빌드를 읽지 못했습니다/, version);
+    assert.match(gaps, /제품 그래프 정합성 검사/);
+    if (version !== "beta-126") assert.match(gaps, /이 빌드는 제품 코드일 수 없는 호출과 제품 밖 모듈로 가는 호출을 따로 세지 않았다/);
+    const product = shown(ui, "product");
+    assert.doesNotMatch(product, /제품 그래프 빌드를 읽지 못했습니다/, version);
+    assert.match(product, /노드 수:/);
+    assert.match(shown(ui, "status"), /Keep the notes tool reliable|이 프로젝트가 하려는 것/);
+  }
+});
+
+test("A1: appending after the last declaration or moving one to or from the end of its file changes no declaration hash", (t) => {
+  const f = notesProject(t, { records: false });
+  writeTree(f.root, { "tools/report.py": "def first():\n    return 1\n\n\ndef second():\n    return 2\n" });
+  buildProductGraph({ root: f.root });
+  const hash = (id) => json(path.join(f.build, "graph.json")).nodes.find((node) => node.id === id).contentSha256;
+  const second = hash("tools/report.py#second"),
+    first = hash("tools/report.py#first");
+  fs.appendFileSync(path.join(f.root, "tools/report.py"), "\n\ndef third():\n    return 3\n");
+  buildProductGraph({ root: f.root });
+  const value = changes(f.build);
+  assert.deepEqual(group(value, "코드").changed, ["tools/report.py"]);
+  assert.deepEqual(group(value, "코드").added, ["tools/report.py#third"]);
+  assert.equal(hash("tools/report.py#second"), second);
+  // Move second to the top (away from the end) and first to the end.
+  fs.writeFileSync(path.join(f.root, "tools/report.py"), "def second():\n    return 2\n\n\ndef third():\n    return 3\n\n\ndef first():\n    return 1\n");
+  buildProductGraph({ root: f.root });
+  assert.equal(hash("tools/report.py#second"), second);
+  assert.equal(hash("tools/report.py#first"), first);
+  assert.deepEqual(group(changes(f.build), "코드").changed, ["tools/report.py"]);
+});
+
+test("A3 / A4: reach on a 화면 goes through its 화면요소; reach says where it does not apply; not compared never reads as zero", (t) => {
+  const f = notesProject(t, { records: false });
+  buildProductGraph({ root: f.root, includeEstimates: true });
+  const screen = queryProductGraph({ root: f.root, question: "reach", id: "MAIN-01" });
+  assert.match(screen.text, /거치는 기능 1개: cli:notes/);
+  assert(screen.reach.ids.includes("lib/notes.mjs#store"));
+  const base = temporary(t);
+  const fixtures = path.join(pluginRoot, "test", "fixtures", "product-graph");
+  buildProductGraph({
+    sourceRoot: path.join(fixtures, "ui-signal"),
+    documentsDirectory: path.join(fixtures, "ui-signal-documents"),
+    rulesFile: path.join(fixtures, "empty-rules.json"),
+    outputDirectory: path.join(base, "out"),
+    includeEstimates: true,
+  });
+  const policy = queryProductGraph({ buildDirectory: path.join(base, "out"), question: "reach", id: "P1" });
+  assert.match(policy.text, /닿음은 정책에 쓰지 않는다/);
+  assert.doesNotMatch(policy.text, /0개/);
+  const ctx = walk.context({ graph: json(path.join(base, "out", "graph.json")) });
+  assert.equal(walk.reachDirection(ctx, "P1"), null);
+  assert.equal(walk.reachDirection(ctx, "MAIN-01"), "code");
+  // A rules change: the unexplained list is not compared, and says so.
+  fs.writeFileSync(path.join(f.family, "호출 방식 표.json"), JSON.stringify({ schemaVersion: 1, kind: "LodeProductGraphEntryRules", rules: [] }));
+  buildProductGraph({ root: f.root, includeEstimates: true });
+  const unexplained = queryProductGraph({ root: f.root, question: "changes", list: "unexplained" }).text;
+  assert.match(unexplained, /비교하지 않음 — 호출 방식 표가 기준과 다르다/);
+  assert.doesNotMatch(unexplained, / 0개/);
+});
+
+test("A5 / B7: a new Lode version alone is not a new reader, so the reproducibility stop stays on, and the stop names the way out", (t) => {
+  const f = notesProject(t, { records: false });
+  buildProductGraph({ root: f.root });
+  const file = path.join(f.build, "baseline.json");
+  const baseline = json(file);
+  baseline.reader = { ...baseline.reader, lode: "0.0.0-older" };
+  fs.writeFileSync(file, JSON.stringify(baseline));
+  buildProductGraph({ root: f.root });
+  assert.match(read(path.join(f.build, "check.txt")), /읽는 방식 그대로/);
+  assert.doesNotMatch(read(path.join(f.build, "check.txt")), /코드를 읽는 방식에서 왔을 수 있다/);
+  baseline.nodes.find((node) => node[0] === "lib/notes.mjs#store")[5] = "0".repeat(64);
+  fs.writeFileSync(file, JSON.stringify(baseline));
+  assert.throws(() => buildProductGraph({ root: f.root }), { code: "PRODUCT_GRAPH_NOT_REPRODUCIBLE", message: /build\/baseline\.json을 지우고 다시 빌드한다/ });
+});
+
+test("A6 / B2 / B1: a cancelled todo leaves the open count with its own state; an open todo counts once; a partial record is never folded as empty", async (t) => {
+  const f = notesProject(t, { records: false });
+  const first = f.save({
+    summary: "Planned two checks.",
+    todos: [
+      { todoId: "todo-a", task: "Check A", status: "pending", origin: "user-directed", nextAction: "Run A" },
+      { todoId: "todo-b", task: "Check B", status: "pending", origin: "user-directed", nextAction: "Run B" },
+    ],
+  });
+  const second = f.save({
+    summary: "Dropped A, started B.",
+    todos: [
+      { todoId: "todo-a", task: "Check A", status: "cancelled", origin: "user-directed", reason: "No longer needed", prior: exact(first) },
+      { todoId: "todo-b", task: "Check B", status: "partial", origin: "user-directed", nextAction: "Finish B", prior: exact(first) },
+    ],
+  });
+  const snap = await buildGraphExplorerSnapshot({ root: f.root, lang: "ko" });
+  const status = explorerStatus.model(snap);
+  const item = (todoId, recordId) => status.items.find((entry) => entry.todoId === todoId && entry.recordId === recordId);
+  const firstId = first.evidence.evidenceId,
+    secondId = second.evidence.evidenceId;
+  assert.equal(item("todo-a", firstId).state, "cancelled");
+  assert.equal(item("todo-a", firstId).cancelledBy, secondId);
+  assert.equal(item("todo-b", firstId).state, "earlier");
+  assert.equal(item("todo-b", secondId).state, "open");
+  assert.equal(status.counts.pending, 1, "B is counted once, A not at all");
+  const ui = explorerDom(snap);
+  const record = descendants(ui.ids.get("view-status")).find(
+    (element) => element.tagName === "button" && /Keep the notes tool reliable/.test(element.textContent),
+  );
+  ui.event(record);
+  ui.event(descendants(ui.ids.get("view-status")).find((element) => element.tagName === "button" && /Planned two checks\./.test(element.textContent)));
+  const page = visibleText(ui.ids.get("view-status"));
+  assert.match(page, /Check A뒤 기록에서 취소됨/);
+  assert.match(page, /Check B뒤 기록에서 다시 적힘/);
+  assert.doesNotMatch(page, /Check A다음 기록에서 끝남/);
+  // A record whose body arrived only in part.
+  const partial = structuredClone(snap);
+  const node = partial.graph.nodes.find((entry) => entry.subtype === "SessionWorkEvidence" && entry.evidenceDigest === second.evidence.evidenceDigest);
+  node.workContent = { ...node.workContent, todos: [], pending: [] };
+  node.workContentCoverage = { ...(node.workContentCoverage || {}), partial: true };
+  const partialStatus = explorerStatus.model(partial);
+  assert.equal(partialStatus.counts.partialRecords, 1);
+  assert.equal(partialStatus.sessions.find((group) => group.records.some((entry) => entry.id === secondId)).partial, 1);
+  const shownPartial = visibleText(explorerDom(partial).ids.get("view-status"));
+  assert.match(shownPartial, /본문 일부만 들어 있음/);
+  assert.match(shownPartial, /본문 일부만 들어 있는 기록 1개/);
+});
+
+test("A7 / A8: a stand-alone query uses the roots it was given; backslash paths and NFD text are matched", async (t) => {
+  const base = temporary(t);
+  writeTree(path.join(base, "source"), SOURCE);
+  writeTree(path.join(base, "documents"), DOCUMENTS);
+  const rules = path.join(base, "rules.json");
+  fs.writeFileSync(rules, JSON.stringify({ schemaVersion: 1, kind: "LodeProductGraphEntryRules", rules: [] }));
+  const out = path.join(base, "out");
+  buildProductGraph({ sourceRoot: path.join(base, "source"), documentsDirectory: path.join(base, "documents"), rulesFile: rules, outputDirectory: out });
+  const full = await runCommand([
+    "product-graph-query",
+    path.join(base, "source"),
+    "overview",
+    "--build",
+    out,
+    "--documents",
+    path.join(base, "documents"),
+    "--rules",
+    rules,
+  ]);
+  assert.match(full.header[0], /빌드 뒤 바뀐 것 없음$/);
+  const sourceOnly = await runCommand(["product-graph-query", path.join(base, "source"), "overview", "--build", out]);
+  assert.doesNotMatch(sourceOnly.header[0], /소스 루트 없이/);
+  assert.match(sourceOnly.header[0], /문서가 바뀌었는지 알 수 없음 — 문서 폴더를 받지 않았다/);
+  assert.match(sourceOnly.header[0], /호출 방식 표가 바뀌었는지 알 수 없음 — 호출 방식 표 파일을 받지 않았다/);
+  fs.appendFileSync(path.join(base, "source", "lib/list.mjs"), "// later\n");
+  assert.match(
+    (await runCommand(["product-graph-query", path.join(base, "source"), "overview", "--build", out])).header[0],
+    /빌드가 낡음: 소스 파일 1개 \(lib\/list\.mjs\)/,
+  );
+  // A8
+  const backslash = queryProductGraph({ buildDirectory: out, question: "reach", id: "lib\\notes.mjs" });
+  assert.equal(backslash.status, "answered");
+  assert.deepEqual(backslash.reach.ids, ["cli:notes"]);
+  const nfd = queryProductGraph({ buildDirectory: out, question: "find", text: "메모를 더하고".normalize("NFD") });
+  assert(
+    nfd.rows.some((row) => row.id === "cli:notes"),
+    "NFD text finds the NFC words",
+  );
+  const near = queryProductGraph({ buildDirectory: out, question: "node", id: "lib\\note.mjs" });
+  assert.equal(near.code, "PRODUCT_GRAPH_NODE_NOT_FOUND");
+  const f = notesProject(t);
+  const status = explorerStatus.model(await buildGraphExplorerSnapshot({ root: f.root }));
+  assert(explorerStatus.search(status, "store".normalize("NFD")).length > 0);
+});
+
+test("B3 / B5 / B8: the board is Korean in both languages; down is bounded; gap items and declarations are built when opened; rows have names", async (t) => {
+  const f = notesProject(t, { records: false });
+  buildProductGraph({ root: f.root });
+  const snap = await buildGraphExplorerSnapshot({ root: f.root, lang: "en", view: "product" });
+  delete snap.productGraph.check.changes;
+  const ui = explorerDom(snap);
+  const pre = descendants(ui.ids.get("view-product"))
+    .filter((element) => element.tagName === "pre")
+    .map((element) => element.textContent)
+    .join("\n");
+  assert.match(pre, /기준 없음 — 이 빌드에는 기준 비교가 없다/);
+  assert.doesNotMatch(pre, /this build/);
+  // Rows carry their line as an accessible name.
+  const all = () => descendants(ui.ids.get("view-product"));
+  ui.event(all().find((element) => element.tagName === "button" && /^@기능 —/.test(element.textContent)));
+  const row = all().find((element) => element.getAttribute("role") === "treeitem");
+  assert.match(row.getAttribute("aria-label"), /^@기능 — /);
+  // Gap lists are empty in the DOM until opened.
+  const lists = descendants(ui.ids.get("view-gaps")).filter((element) => element.tagName === "details" && /gap-list/.test(element.className || ""));
+  assert(lists.length > 0);
+  for (const details of lists) assert(!descendants(details).some((element) => element.tagName === "ul"), "no items before opening");
+  const unreached = lists.find((details) => /^문서별 상태:/.test(details.children[0].textContent));
+  unreached.open = true;
+  ui.event(unreached, "toggle");
+  assert(descendants(unreached).some((element) => element.tagName === "ul"));
+  // A deep down stops at the row bound and says so.
+  const nodes = [{ id: "fn", type: "기능", kind: "cli", handling: "따라간다", positions: [] }];
+  const edges = [];
+  for (let a = 0; a < 60; a++) {
+    nodes.push({ id: `a${a}`, type: "코드", kind: "function", file: "x.mjs", lines: [a + 1, a + 1] });
+    edges.push({ type: a ? "call" : "기능→코드", from: a ? "a0" : "fn", to: `a${a}` });
+    for (let b = 0; b < 60; b++) edges.push({ type: "call", from: `a${a}`, to: `b${b}` });
+  }
+  for (let b = 0; b < 60; b++) {
+    nodes.push({ id: `b${b}`, type: "코드", kind: "function", file: "y.mjs", lines: [b + 1, b + 1] });
+    for (let c = 0; c < 60; c++) edges.push({ type: "call", from: `b${b}`, to: `a${c}` });
+  }
+  const answer = walk.ask(walk.context({ graph: { nodeTypes: [], nodes, edges } }), { question: "down", id: "a0", depth: 8, limit: 500 });
+  const shownNodes = answer.rows.filter((row) => row.kind === "node").length;
+  // Deeper levels stop at 2000 rows; the first level is paged by --limit (a0 has 119 children) and always shown.
+  assert(shownNodes <= 2000 + 119, String(shownNodes));
+  assert.match(answer.text, /한 답의 줄 수 한도\(2000\)에 닿았다/);
+});
+
+test("C2: the map prepares off-stage after the first view and works when opened by its tab or the link", async (t) => {
+  const f = notesProject(t);
+  const ui = explorerDom(await buildGraphExplorerSnapshot({ root: f.root }), { cardMeasure: () => 120 });
+  await ui.settle();
+  assert.equal(ui.document.documentElement.dataset.explorerReady, "true", "the map started without being shown");
+  assert.match(ui.ids.get("view-map").className, /view-offstage/);
+  const cards = () => ui.ids.get("graph").children.filter((element) => element.getAttribute("data-node"));
+  assert(cards().length > 0, "the map placed its cards while off-stage");
+  for (const card of cards()) assert(Number(card.children[0].getAttribute("height")) > 0, "measured card heights");
+  const link = descendants(ui.ids.get("view-status")).find((element) => element.tagName === "button" && element.textContent === "Open the map");
+  ui.event(link);
+  assert.doesNotMatch(ui.ids.get("view-map").className, /view-offstage/);
+  assert.equal(ui.ids.get("tab-map").getAttribute("aria-selected"), "true");
+  assert.equal(ui.stats.focused, "tab-map");
+  assert(cards().length > 0);
+  ui.event("tab-status");
+  ui.event("tab-map");
+  assert(cards().length > 0);
+});
+
+test("C3: --share names no local path in the product graph section, however the root was given", async (t) => {
+  const f = notesProject(t, { records: false });
+  buildProductGraph({ root: f.root });
+  const relative = path.relative(process.cwd(), f.root);
+  for (const root of [relative, f.root.toUpperCase(), f.root.toLowerCase()]) {
+    let snap;
+    try {
+      snap = await buildGraphExplorerSnapshot({ root, share: true });
+    } catch {
+      continue; // a case-sensitive file system does not resolve the other spelling
+    }
+    const section = JSON.stringify(snap.productGraph).toLowerCase();
+    for (const spelling of [f.root, f.root.replaceAll("\\", "/"), f.root.replaceAll("\\", "\\\\"), relative, relative.replaceAll("\\", "\\\\")])
+      assert(!section.includes(spelling.toLowerCase()), `${root}: ${spelling}`);
+    assert.equal(snap.productGraph.buildCommand, "product-graph-build <project>");
+  }
 });
 
 test("acceptance 20: the new views, walk and tests name no toolkit or example project", () => {

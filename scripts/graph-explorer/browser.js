@@ -403,6 +403,13 @@ const startExplorerMap = () => {
     cameraIntent++;
     box = [x + (width - next) / 2, y + (height - height * scale) / 2, next, height * scale]; setBox(); redrawCamera();
   }
+  // 4.3: a pick of a record itself (its map card, its row in the record list,
+  // a point on the overview) carries userPick and selects only that record;
+  // Ctrl/Cmd, Shift, Space or the checkbox add or remove one. Links inside a
+  // reading card that follow a relationship (a group member, a connection
+  // root, a related record, a Feature evidence title, Read focus) are reading
+  // steps, not picks: they add the linked record and move the reading focus,
+  // so the records being compared stay selected.
   function selectNode(node, keyboard = false, event = {}) {
     if (!node) return;
     const before = model.selectionVersion, previous = selected?.value;

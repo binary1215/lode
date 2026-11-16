@@ -173,11 +173,14 @@
     );
   }
 
+  const partialBadge = (group) => (group.partial ? badge(t("partialBadge"), "historical") : null);
+
   function sessionRow(group) {
     const rank = group.pending ? "pending" : group.unknowns ? "unknown" : "none";
     const marks = el("span", { className: "row-marks" });
     if (group.pending) marks.append(badge(t("pendingCount", group.pending), "pending"));
     if (group.unknowns) marks.append(badge(t("unknownCount", group.unknowns), "unknown"));
+    if (group.partial) marks.append(partialBadge(group));
     marks.append(el("span", { className: "hint", text: t("recordsAt", group.records.length, localTime(group.latest?.recordedAt)) }));
     const row = button("", () => openSession(group.sessionId), `session-row session-${rank}`);
     row.append(
@@ -190,8 +193,8 @@
 
   let restOpen = false;
   function sessionsBlock() {
-    const first = status.sessions.filter((group) => group.pending || group.unknowns);
-    const rest = status.sessions.filter((group) => !group.pending && !group.unknowns);
+    const first = status.sessions.filter((group) => group.pending || group.unknowns || group.partial);
+    const rest = status.sessions.filter((group) => !group.pending && !group.unknowns && !group.partial);
     const rows = el("div", { className: "rows" }, ...first.map(sessionRow));
     if (rest.length) {
       const holder = el("div", { className: "rows" });
@@ -221,19 +224,29 @@
     const kind = item.type === "pending" ? "pending" : "unknown";
     const row = el("div", { className: "item" }, badge(item.type === "pending" ? t("pending") : t("unknown"), kind), el("span", { className: "item-text", text: item.text }));
     const where = el("div", { className: "hint" }, button(t("fromRecord", sessionTitle(group), localTime(item.recordedAt)), () => openRecord(item.recordId)));
-    if (item.state === "finished") where.append(el("span", { text: " · " }), button(t("finishedLater"), () => openRecord(item.finishedBy)));
+    const state = itemState(item);
+    if (state) where.append(el("span", { text: " · " }), state);
     return el("div", {}, row, where);
+  }
+
+  // The state a later record gave an item, with the link to that record.
+  function itemState(item) {
+    if (item.state === "finished") return button(t("finishedLater"), () => openRecord(item.finishedBy));
+    if (item.state === "cancelled") return button(t("cancelledLater"), () => openRecord(item.cancelledBy));
+    if (item.state === "earlier") return button(t("laterRevision"), () => openRecord(item.laterRevision));
+    return null;
   }
 
   function itemsBlock() {
     const open = status.items.filter((item) => item.state === "open");
-    const finished = status.items.filter((item) => item.state === "finished");
+    const closed = status.items.filter((item) => item.state === "finished" || item.state === "cancelled");
     const children = [list(open, itemRow, "item-list")];
     if (!open.length) children.unshift(el("p", { text: t("noOpenItems") }));
-    if (finished.length) {
-      const details = el("details", {}, el("summary", { text: t("finishedItems", finished.length) }), list(finished, itemRow, "item-list"));
+    if (closed.length) {
+      const details = el("details", {}, el("summary", { text: t("finishedItems", closed.length) }), list(closed, itemRow, "item-list"));
       children.push(details);
     }
+    if (status.counts.partialRecords) children.push(el("p", { className: "hint", text: t("partialRecords", status.counts.partialRecords) }));
     children.push(el("p", { className: "hint", text: t("onlyRecorded") }));
     return el("section", { className: "card" }, el("div", { className: "card-head" }, el("h2", { text: t("itemsTitle") }), el("span", { className: "hint", text: t("itemsAcross") })), ...children);
   }
@@ -376,12 +389,15 @@
     for (const record of group.records) {
       const open = record.pending.filter((item) => item.state === "open").length;
       const finished = record.pending.filter((item) => item.state === "finished").length;
+      const cancelled = record.pending.filter((item) => item.state === "cancelled").length;
       const row = button("", () => openRecord(record.id), "record-row");
       const notes = el("span", { className: "row-marks" });
       if (open) notes.append(badge(t("pendingCount", open), "pending"));
       if (record.unknowns.length) notes.append(badge(t("unknownCount", record.unknowns.length), "unknown"));
       if (finished) notes.append(badge(t("finishedCount", finished), "finished"));
-      if (!open && !record.unknowns.length && !finished) notes.append(el("span", { className: "hint", text: t("noItems") }));
+      if (cancelled) notes.append(badge(t("cancelledCount", cancelled), "neutral"));
+      if (record.partial) notes.append(badge(t("partialBadge"), "historical"));
+      else if (!open && !record.unknowns.length && !finished && !cancelled) notes.append(el("span", { className: "hint", text: t("noItems") }));
       row.append(el("span", { className: "hint", text: localTime(record.recordedAt) }), el("span", { className: "row-title", text: record.summary || t("noSummary") }), notes);
       rows.append(row);
     }
@@ -403,6 +419,7 @@
     if (!before && !after) flow.append(el("span", { text: t("flowAlone") }));
     root.append(block(t("flowTitle"), flow));
     if (!record.bodyIncluded) root.append(block(t("bodyMissing")));
+    else if (record.partial) root.append(block(t("partialBody")));
     if (record.judgments.length)
       root.append(
         marked(
@@ -425,9 +442,7 @@
         "div",
         { className: "item" },
         el("span", { className: "item-text", text: item.text }),
-        item.state === "finished"
-          ? button(t("finishedLater"), () => openRecord(item.finishedBy))
-          : badge(t("notFinished"), "neutral"),
+        itemState(item) || badge(t("notFinished"), "neutral"),
         item.nextAction ? el("div", { className: "hint", text: t("nextAction", item.nextAction) }) : null,
       ),
     );
@@ -503,7 +518,7 @@
         el("p", { text: t("pgBuiltAt", localTime(pg.builtAt)) }),
         el("ul", { className: "plain-list board-lines" }, ...overview.header.map((line) => el("li", { text: line }))),
         textLines(parts.facts.map((row) => `${"  ".repeat(row.depth)}${row.text}`)),
-        el("details", {}, el("summary", { text: t("pgComparison") }), textLines(productGraphWalk.renderChanges(ctx.changes || { status: "none", reason: t("pgNoComparison") }))),
+        el("details", {}, el("summary", { text: t("pgComparison") }), textLines(productGraphWalk.renderChanges(ctx.changes || { status: "none", reason: productGraphWalk.WORDS.noComparison }))),
       ),
     );
     const starts = el("div", { className: "entrances" });
@@ -590,11 +605,13 @@
         role: "treeitem",
         tabindex: "0",
         "aria-level": String(depth + 1),
+        // The row's name for assistive technology: its line, without the buttons.
+        "aria-label": label + (onPath ? ` ${productGraphWalk.WORDS.onPath}` : ""),
         ...(expandable ? { "aria-expanded": "false" } : {}),
         "data-tree-id": id,
       },
     });
-    row.style.paddingLeft = `${depth * 1.1}rem`;
+    row.style.paddingLeft = `min(${depth * 1.1}rem, 30vw)`;
     const toggle = el("span", { className: "tree-toggle", text: expandable ? "▸" : onPath ? "↺" : "·", attrs: { "aria-hidden": "true" } });
     row.append(toggle, el("span", { className: "tree-text", text: label + (onPath ? ` ${productGraphWalk.WORDS.onPath}` : "") }));
     const actions = el("span", { className: "tree-actions" });
@@ -710,7 +727,7 @@
     const check = pg.check;
     root.append(el("section", { className: "card" }, el("h2", { text: productGraphWalk.LIMITS_TITLE }), textLines(productGraphWalk.renderLimits(check.limits).slice(1))));
     const W = productGraphWalk.WORDS;
-    root.append(el("section", { className: "card" }, el("h2", { text: W.comparison }), textLines(productGraphWalk.renderChanges(check.changes || { status: "none", reason: t("pgNoComparison") }).slice(1))));
+    root.append(el("section", { className: "card" }, el("h2", { text: W.comparison }), textLines(productGraphWalk.renderChanges(check.changes || { status: "none", reason: W.noComparison }).slice(1))));
     if (check.guide?.length) root.append(el("section", { className: "card" }, el("h2", { text: W.guide }), textLines(productGraphWalk.renderGuide(check.guide).slice(1))));
     const checks = el("section", { className: "card" }, el("h2", { text: W.checks }));
     check.checks.forEach((item, index) => {
@@ -735,16 +752,30 @@
     for (const entry of productGraphWalk.gapLists(check, (pg.graph.nodeTypes || []).map((item) => item.type))) {
       const details = el("details", { className: "card gap-list" }, el("summary", { text: entry.head[0] }));
       for (const line of entry.head.slice(1)) details.append(el("p", { className: "hint", text: line.trim() }));
+      // A list's items, and a file's unreached declarations, are built when
+      // they are opened, not at load.
       if (entry.items.length)
-        details.append(
-          answerBlock(t("gapItems", entry.items.length), entry.items, (item) =>
-            item.declarations?.length
-              ? el("details", {}, el("summary", {}, nodeLink(item.text, item.nodeId)), list(item.declarations, (id) => nodeLink(id, id)))
-              : nodeLink(item.text, item.nodeId),
-          ),
+        whenOpened(details, () =>
+          answerBlock(t("gapItems", entry.items.length), entry.items, (item) => {
+            if (!item.declarations?.length) return nodeLink(item.text, item.nodeId);
+            const file = el("details", {}, el("summary", {}, nodeLink(item.text, item.nodeId)));
+            whenOpened(file, () => list(item.declarations, (id) => nodeLink(id, id)));
+            return file;
+          }),
         );
       root.append(details);
     }
+  }
+
+  function whenOpened(details, build) {
+    let built = false;
+    const fill = () => {
+      if (built || !details.open) return;
+      built = true;
+      details.append(build());
+    };
+    details.addEventListener("toggle", fill);
+    fill();
   }
 
   function nodeLink(text, id) {

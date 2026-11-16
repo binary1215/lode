@@ -1084,7 +1084,7 @@ const bounded = (items) => `${items.slice(0, BOUNDED_LIST).join(", ")}${items.le
 function buildCommandOf(inputs) {
   if (!inputs) return "product-graph-build <source-root> --documents <folder> --rules <entry-rules.json> --out <folder>";
   if (inputs.mode === "project") return `product-graph-build ${inputs.projectRoot}`;
-  return `product-graph-build ${inputs.sourceRoot} --documents ${inputs.documentsDirectory} --rules ${inputs.rulesFile} --out ${inputs.outputDirectory}`;
+  return `product-graph-build ${inputs.sourceRoot ?? "<source-root>"} --documents ${inputs.documentsDirectory ?? "<folder>"} --rules ${inputs.rulesFile ?? "<entry-rules.json>"} --out ${inputs.outputDirectory}`;
 }
 
 function sourceHashNow(sourceRoot, relative) {
@@ -1109,30 +1109,37 @@ function freshnessOf(inputs, graph) {
     result.text = "소스가 바뀌었는지 알 수 없음 — 소스 루트 없이 빌드 폴더만 받았다";
     return result;
   }
-  try {
-    const now = new Map(
-      readDocumentFiles(inputs.documentsDirectory)
-        .files.filter((file) => ["document", "policy", "meaning"].includes(file.role))
-        .map((file) => [file.path, file.sha256]),
-    );
-    const before = new Map((graph.inputs?.documents || []).map((item) => [item.path, item.sha256]));
-    result.documents = {
-      known: true,
-      changed: [...new Set([...now.keys(), ...before.keys()])].filter((file) => now.get(file) !== before.get(file)).sort(compare),
-    };
-  } catch (error) {
-    result.documents.reason = error.code || "문서를 읽지 못했다";
-  }
+  // Each input is compared only when it was given; what was not given stays
+  // "알 수 없음" with that reason.
+  if (!inputs.documentsDirectory) result.documents.reason = "문서 폴더를 받지 않았다";
+  else
+    try {
+      const now = new Map(
+        readDocumentFiles(inputs.documentsDirectory)
+          .files.filter((file) => ["document", "policy", "meaning"].includes(file.role))
+          .map((file) => [file.path, file.sha256]),
+      );
+      const before = new Map((graph.inputs?.documents || []).map((item) => [item.path, item.sha256]));
+      result.documents = {
+        known: true,
+        changed: [...new Set([...now.keys(), ...before.keys()])].filter((file) => now.get(file) !== before.get(file)).sort(compare),
+      };
+    } catch (error) {
+      result.documents.reason = error.code || "문서를 읽지 못했다";
+    }
   let excludes = [];
-  try {
-    const rules = readRules({ ...inputs, rulesRequired: false });
-    result.rules = { known: true, changed: (rules.sha256 ?? null) !== (graph.inputs?.rulesSha256 ?? null) };
-    excludes = rules.rules?.source?.["제외"] || [];
-  } catch (error) {
-    result.rules = { known: true, changed: true, reason: error.code || "호출 방식 표를 읽지 못했다" };
-  }
+  if (!inputs.rulesFile) result.rules.reason = "호출 방식 표 파일을 받지 않았다";
+  else
+    try {
+      const rules = readRules({ ...inputs, rulesRequired: false });
+      result.rules = { known: true, changed: (rules.sha256 ?? null) !== (graph.inputs?.rulesSha256 ?? null) };
+      excludes = rules.rules?.source?.["제외"] || [];
+    } catch (error) {
+      result.rules = { known: true, changed: true, reason: error.code || "호출 방식 표를 읽지 못했다" };
+    }
   const recorded = graph.inputs?.sourceFiles;
-  if (!Array.isArray(recorded)) result.source.reason = "이 빌드는 읽은 소스 파일의 해시를 적지 않았다(0.3.0-beta.126 이전에 만든 빌드)";
+  if (!inputs.sourceRoot) result.source.reason = "소스 루트를 받지 않았다";
+  else if (!Array.isArray(recorded)) result.source.reason = "이 빌드는 읽은 소스 파일의 해시를 적지 않았다(0.3.0-beta.126 이전에 만든 빌드)";
   else
     try {
       const changed = [];
@@ -1153,13 +1160,17 @@ function freshnessOf(inputs, graph) {
   if (result.documents.changed.length) parts.push(`문서 ${result.documents.changed.length}개 (${bounded(result.documents.changed)})`);
   if (result.rules.changed) parts.push("호출 방식 표");
   if (result.source.known && result.source.changed.length) parts.push(`소스 파일 ${result.source.changed.length}개 (${bounded(result.source.changed)})`);
-  const unknown = !result.source.known || !result.documents.known;
+  const unknowns = [
+    ...(!result.source.known ? [`소스가 바뀌었는지 알 수 없음 — ${result.source.reason}`] : []),
+    ...(!result.documents.known ? [`문서가 바뀌었는지 알 수 없음 — ${result.documents.reason}`] : []),
+    ...(!result.rules.known ? [`호출 방식 표가 바뀌었는지 알 수 없음 — ${result.rules.reason}`] : []),
+  ];
   if (parts.length) {
     result.state = "stale";
-    result.text = `빌드가 낡음: ${parts.join(" / ")}${unknown ? ` · 소스가 바뀌었는지 알 수 없음 — ${result.source.reason || result.documents.reason}` : ""}`;
-  } else if (unknown) {
+    result.text = `빌드가 낡음: ${parts.join(" / ")}${unknowns.length ? ` · ${unknowns.join(" · ")}` : ""}`;
+  } else if (unknowns.length) {
     result.state = "unknown";
-    result.text = `소스가 바뀌었는지 알 수 없음 — ${result.source.reason || result.documents.reason}`;
+    result.text = unknowns.join(" · ");
   } else result.text = "빌드 뒤 바뀐 것 없음";
   return result;
 }
@@ -1172,8 +1183,20 @@ function freshnessOf(inputs, graph) {
 export function readProductGraphBuild(options = {}) {
   let inputs = null,
     directory;
-  if (options.buildDirectory) directory = path.resolve(options.buildDirectory);
-  else {
+  if (options.buildDirectory) {
+    directory = path.resolve(options.buildDirectory);
+    // Whatever roots were given with the folder are used for 6.3.
+    if (options.sourceRoot || options.documentsDirectory || options.rulesFile)
+      inputs = {
+        mode: "standalone",
+        sourceRoot: options.sourceRoot ? path.resolve(options.sourceRoot) : null,
+        documentsDirectory: options.documentsDirectory ? path.resolve(options.documentsDirectory) : null,
+        rulesFile: options.rulesFile ? path.resolve(options.rulesFile) : null,
+        rulesRequired: false,
+        outputDirectory: directory,
+        approvals: false,
+      };
+  } else {
     inputs = resolveInputs({ ...options, requireOutput: true });
     directory = inputs.outputDirectory;
   }

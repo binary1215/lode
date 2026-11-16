@@ -126,7 +126,7 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
     `${cliDisplay} product-graph-check <project> [--include-estimates]`,
     `${cliDisplay} product-graph-check <source-root> --documents <folder> --rules <entry-rules.json> [--include-estimates]  # stand-alone, read-only`,
     `${cliDisplay} product-graph-query <project> [overview | node <id> | down <id> | up <id> | reach <id-or-file> | find <text> | gaps | changes] [--list <key>] [--limit <n>] [--cursor <n>] [--depth <n>]  # read-only; the page's text board`,
-    `${cliDisplay} product-graph-query <project> <question> [<id>] --build <folder>  # a stand-alone output folder; its source state is unknown`,
+    `${cliDisplay} product-graph-query <source-root> <question> [<id>] --build <folder> [--documents <folder>] [--rules <entry-rules.json>]  # a stand-alone output folder; what is not given stays unknown`,
     `${cliDisplay} product-graph-baseline <project>  # the only way the comparison baseline moves; refused when the build is stale`,
     `${cliDisplay} product-graph-baseline <source-root> --documents <folder> --rules <entry-rules.json> --out <folder>  # stand-alone`,
     `${cliDisplay} product-graph-approve <project> --input <approval.json>  # the user's approval of one document's current content`,

@@ -22,6 +22,7 @@ export const productGraphWalk = (() => {
     groupCount: (group, count) => `${group} ${count}개`,
     next: "다음",
     onPath: "(위에 있음)",
+    noComparison: "이 빌드에는 기준 비교가 없다",
   });
   const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
   const where = (at) => (at ? `${at.path}:${at.line}` : "");
@@ -105,7 +106,8 @@ export const productGraphWalk = (() => {
     const via = (id, type) => [...new Set((ix.out.get(id) || []).filter((edge) => edge.type === type).map((edge) => edge.to))];
     if (node.type === "화면요소") return via(node.id, "화면요소→기능");
     if (node.type === "유저 활동") return [...new Set(via(node.id, "유저 활동→화면요소").flatMap((element) => via(element, "화면요소→기능")))];
-    if (node.type === "화면") return via(node.id, "화면→기능");
+    if (node.type === "화면")
+      return [...new Set([...via(node.id, "화면→기능"), ...via(node.id, "화면→화면요소").flatMap((element) => via(element, "화면요소→기능"))])];
     return [];
   }
 
@@ -266,8 +268,10 @@ export const productGraphWalk = (() => {
     const calls = ctx.graph?.limits?.calls || ctx.check?.limits?.calls;
     if (calls?.canBeProduct !== undefined)
       return `읽은 범위: 제품 코드일 수 있는 호출 ${calls.canBeProduct}개 중 ${calls.resolved}개를 풀었다. 풀린 call·callback만 따라간다. 타입 없는 글자 스캔이다.`;
-    const summary = ctx.graph?.referenceSummary;
-    return `읽은 범위: 호출 ${summary?.allCalls ?? "?"}개 중 ${summary?.resolvedCalls ?? "?"}개를 풀었다. 풀린 call·callback만 따라간다. 타입 없는 글자 스캔이다.`;
+    const all = calls?.all ?? ctx.graph?.referenceSummary?.allCalls;
+    const resolved = calls?.resolved ?? ctx.graph?.referenceSummary?.resolvedCalls;
+    if (all === undefined || resolved === undefined) return "읽은 범위: 이 빌드에는 호출 수가 없다(이전 버전의 빌드). 풀린 call·callback만 따라간다. 타입 없는 글자 스캔이다.";
+    return `읽은 범위: 호출 ${all}개 중 ${resolved}개를 풀었다(${OLDER_CALLS}). 풀린 call·callback만 따라간다. 타입 없는 글자 스캔이다.`;
   }
 
   function changesLine(ctx) {
@@ -299,10 +303,23 @@ export const productGraphWalk = (() => {
       .map((node) => node.id);
   }
 
+  // Typed input: compared in NFC, and a path typed with backslashes matches
+  // the stored forward slashes.
+  const fold = (value) => String(value).normalize("NFC").toLocaleLowerCase();
+  const needles = (text) => {
+    const value = fold(text || "");
+    return value ? [...new Set([value, value.replaceAll("\\", "/")])] : [];
+  };
+  function resolveId(ctx, id) {
+    if (typeof id !== "string" || !id || ctx.ix.nodes.has(id) || pseudoChildren(ctx, id)) return id;
+    for (const candidate of [id.normalize("NFC"), id.replaceAll("\\", "/"), id.normalize("NFC").replaceAll("\\", "/")]) if (ctx.ix.nodes.has(candidate) || pseudoChildren(ctx, candidate)) return candidate;
+    return id;
+  }
+
   function find(ctx, text) {
-    const needle = String(text || "").toLocaleLowerCase();
-    if (!needle) return [];
-    const hit = (value) => typeof value === "string" && value.toLocaleLowerCase().includes(needle);
+    const wanted = needles(text);
+    if (!wanted.length) return [];
+    const hit = (value) => typeof value === "string" && wanted.some((needle) => fold(value).includes(needle));
     return [...ctx.ix.nodes.values()]
       .filter((node) => hit(node.id) || hit(node.oneLine) || hit(node.name) || hit(node.file) || hit(node.at?.path) || node.positions?.some((item) => hit(item.path)))
       .sort((a, b) => (ctx.ix.typeOrder.get(a.type) ?? 99) - (ctx.ix.typeOrder.get(b.type) ?? 99) || compare(a.id, b.id));
@@ -340,7 +357,9 @@ export const productGraphWalk = (() => {
   // The starts the page's question entrances open.
   const QUESTION_STARTS = Object.freeze({ element: "@화면", function: "@기능", file: "@파일" });
 
-  function stepRows(ctx, id, direction, { depth, limit, cursor, path, level, hint }) {
+  // A down with --depth stops adding rows at this many and says so.
+  const MAX_ROWS = 2000;
+  function stepRows(ctx, id, direction, { depth, limit, cursor, path, level, hint, budget = { left: MAX_ROWS, cut: 0 } }) {
     const items = step(ctx, id, direction);
     const paged = page(items, { limit, cursor });
     const rows = [];
@@ -348,16 +367,27 @@ export const productGraphWalk = (() => {
     for (const item of items) counts.set(item.group, (counts.get(item.group) || 0) + 1);
     let lastGroup = null;
     for (const item of paged.slice) {
+      // Past the bound, a deeper level's rows are counted, not shown. The
+      // first level is paged by --limit and always shown.
+      if (level > 1 && budget.left <= 0) {
+        budget.cut += 1;
+        continue;
+      }
       if (item.group !== lastGroup) {
         rows.push({ depth: level, kind: "group", text: WORDS.groupCount(item.group, counts.get(item.group)) });
         lastGroup = item.group;
       }
       const onPath = path.includes(item.to);
       rows.push({ depth: level + 1, kind: "node", id: item.to, text: childText(ctx, item) + (onPath ? ` ${WORDS.onPath}` : ""), onPath, group: item.group });
-      if (!onPath && depth > 1 && (item.to.startsWith("@") || ctx.ix.nodes.has(item.to)))
-        rows.push(...stepRows(ctx, item.to, direction, { depth: depth - 1, limit, cursor: 0, path: [...path, item.to], level: level + 2, hint: `${direction} ${item.to}` }));
+      budget.left -= 1;
+      if (!onPath && depth > 1 && budget.left > 0 && (item.to.startsWith("@") || ctx.ix.nodes.has(item.to)))
+        rows.push(
+          ...stepRows(ctx, item.to, direction, { depth: depth - 1, limit, cursor: 0, path: [...path, item.to], level: level + 2, hint: `${direction} ${item.to}`, budget }),
+        );
     }
-    if (paged.remaining) rows.push(moreRow(level, paged, level === 1 ? `${hint} --cursor ${paged.nextCursor}` : hint));
+    if (paged.remaining && (level === 1 || budget.left > 0)) rows.push(moreRow(level, paged, level === 1 ? `${hint} --cursor ${paged.nextCursor}` : hint));
+    if (level === 1 && budget.cut)
+      rows.push({ depth: level, kind: "more", text: `외 ${budget.cut}개 줄은 보이지 않았다 — 한 답의 줄 수 한도(${MAX_ROWS})에 닿았다. 다음: 그 줄에서 down <ID>` });
     return rows;
   }
 
@@ -437,7 +467,8 @@ export const productGraphWalk = (() => {
 
   // One answer. question: overview | node | down | up | reach | find | gaps | changes.
   function ask(ctx, request = {}) {
-    const { question = "overview", id = "", text = "", list = null, limit = LIMIT, cursor = 0, depth = 1 } = request;
+    const { question = "overview", text = "", list = null, limit = LIMIT, cursor = 0, depth = 1 } = request;
+    const id = resolveId(ctx, request.id ?? "");
     const header = headerLines(ctx);
     const answer = (title, rows, extra = {}) => {
       const lines = [...header, title, ...rows.map((row) => `${"  ".repeat(row.depth)}${row.text}`)];
@@ -470,6 +501,11 @@ export const productGraphWalk = (() => {
       const paged = page(items, { limit, cursor });
       return answer(pathLine(ctx, [id]), rows, { page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor } });
     }
+    if (!reachDirection(ctx, id))
+      return answer(pathLine(ctx, [id]), [
+        root,
+        { depth: 1, kind: "text", text: `닿음은 ${ctx.ix.nodes.get(id).type}에 쓰지 않는다. 기능·화면요소·유저 활동·화면에서는 닿는 코드를, 코드 노드나 파일에서는 닿는 기능을 묻는다.` },
+      ]);
     const reached = reach(ctx, id);
     const paged = page(reached.ids, { limit, cursor });
     const rows = [root];
@@ -497,6 +533,16 @@ export const productGraphWalk = (() => {
 
   const LIMITS_TITLE = "이 그래프가 답하지 못하는 것";
 
+  // A build made by an older version (0.3.0-beta.124/125) has no split of the
+  // calls and no call-reading lines: what it carries is shown, and what it does
+  // not carry is said, never filled in.
+  const OLDER_CALLS = "이 빌드는 제품 코드일 수 없는 호출과 제품 밖 모듈로 가는 호출을 따로 세지 않았다(이전 버전의 빌드)";
+  function callsLine(calls) {
+    if (!calls) return "- 이 빌드에는 호출 수가 없다(이전 버전의 빌드).";
+    if (!calls.notProduct) return `- 호출 ${calls.all}개 중 ${calls.resolved}개를 하나의 선언으로 풀었다. 풀린 것만 코드→코드 연결이 된다. ${OLDER_CALLS}.`;
+    return `- 호출 ${calls.all}개. 제품 코드일 수 없는 호출 ${calls.notProduct.builtIn + calls.notProduct.keyword}개(언어·런타임 내장 ${calls.notProduct.builtIn}, 호출처럼 보인 언어 키워드 ${calls.notProduct.keyword})와 제품 밖 모듈로 가는 호출 ${calls.notProduct.external}개를 빼면, 제품 코드일 수 있는 호출 ${calls.canBeProduct}개 중 ${calls.resolved}개를 하나의 선언으로 풀었다. 풀린 것만 코드→코드 연결이 된다.`;
+  }
+
   function renderLimits(limits) {
     const documents = limits.documents;
     const usage = !documents.approvalsRead
@@ -507,8 +553,8 @@ export const productGraphWalk = (() => {
     return [
       limits.title,
       `- ${limits.codeReading}`,
-      `- 호출 ${limits.calls.all}개. 제품 코드일 수 없는 호출 ${limits.calls.notProduct.builtIn + limits.calls.notProduct.keyword}개(언어·런타임 내장 ${limits.calls.notProduct.builtIn}, 호출처럼 보인 언어 키워드 ${limits.calls.notProduct.keyword})와 제품 밖 모듈로 가는 호출 ${limits.calls.notProduct.external}개를 빼면, 제품 코드일 수 있는 호출 ${limits.calls.canBeProduct}개 중 ${limits.calls.resolved}개를 하나의 선언으로 풀었다. 풀린 것만 코드→코드 연결이 된다.`,
-      ...limits.callReading.map((line) => `- ${line}`),
+      callsLine(limits.calls),
+      ...(limits.callReading || []).map((line) => `- ${line}`),
       `- reference 종류는 ${limits.referenceKinds.emitted.join(", ")}만 적는다. ${limits.referenceKinds.notToldApart.join(", ")}는 구별하지 못해 적지 않는다.`,
       `- 뽑지 않은 것: ${limits.notExtracted.nodeTypes.join(", ")} 노드, ${limits.notExtracted.edges.join(", ")} 연결, ${limits.notExtracted.grouping}.`,
       ...limits.uiBindingScan.map((line) => `- ${line}`),
@@ -845,6 +891,12 @@ export const productGraphWalk = (() => {
     }
     const known = CHANGE_LISTS.find((item) => item.key === list);
     if (!known) return fail("PRODUCT_GRAPH_QUERY_INVALID", `모르는 목록: ${list}. 있는 것: ${CHANGE_LISTS.map((item) => item.key).join(", ")}`);
+    if (!changes || changes.status !== "compared")
+      return answer(`기준과 비교 — ${known.title}: 비교하지 않음`, [
+        { depth: 1, kind: "text", text: `비교하지 않음 — ${changes?.reason || "이 빌드에는 기준 비교가 없다"}` },
+      ]);
+    if (list === "unexplained" && changes.unexplained?.compared === false)
+      return answer(`기준과 비교 — ${known.title}: 비교하지 않음`, [{ depth: 1, kind: "text", text: `비교하지 않음 — ${changes.unexplained.reason}` }]);
     const items = changeItems(changes, list);
     const paged = page(items, { limit, cursor });
     const rows = paged.slice.map((item) => ({ depth: 1, kind: item.nodeId ? "node" : "text", id: item.nodeId || undefined, text: item.text }));

@@ -16134,10 +16134,14 @@
     "sample-cursor",
     "--depth",
     "3",
+    "--documents",
+    "sample-documents",
     "--limit",
     "3",
     "--list",
-    "sample-list"
+    "sample-list",
+    "--rules",
+    "sample-rules"
    ],
    "calls": [
     {
@@ -16145,6 +16149,9 @@
      "args": [
       {
        "buildDirectory": "sample-build",
+       "sourceRoot": "<root>",
+       "documentsDirectory": "sample-documents",
+       "rulesFile": "sample-rules",
        "question": "overview",
        "id": null,
        "text": null,

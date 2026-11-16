@@ -1627,13 +1627,17 @@ export const OPERATIONS = Object.freeze([
     },
     cli: {
       command: "product-graph-query",
-      flags: ["build", "list", "limit", "cursor", "depth"],
+      flags: ["build", "documents", "rules", "list", "limit", "cursor", "depth"],
       args: ({ root, options }) => {
         const [question = "overview", argument = null, ...extra] = options._positional || [];
         if (extra.length) throw new Error(`Unexpected argument: ${extra[0]}`);
         return [
           {
-            ...(options.build ? { buildDirectory: options.build } : { root }),
+            // With --build the positional root is the source root of that stand-alone
+            // build; --documents and --rules, when given, are compared too (6.3).
+            ...(options.build
+              ? { buildDirectory: options.build, sourceRoot: root, documentsDirectory: options.documents ?? null, rulesFile: options.rules ?? null }
+              : { root }),
             question,
             id: ["node", "down", "up", "reach"].includes(question) ? argument : null,
             text: question === "find" ? argument : null,
