@@ -126,7 +126,8 @@ async function worldState(projectRoot) {
           : null,
     };
   } catch (error) {
-    if (new Set(["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING"]).has(error.code)) return { status: "unavailable", snapshot: null, baseline: null };
+    if (new Set(["WORLD_MODEL_NOT_BUILT", "WORLD_MODEL_SNAPSHOT_MISSING", "WORLD_MODEL_SNAPSHOT_RELEASED"]).has(error.code))
+      return { status: "unavailable", snapshot: null, baseline: null };
     throw error;
   }
 }

@@ -544,7 +544,12 @@ export function readIncrementalRefreshRequest({ root = ".", refreshRequestId } =
   return { status: "verified", file, request };
 }
 
-export async function readIncrementalRefreshReceipt({ root = ".", refreshReceiptId, storeAdapter = null } = {}) {
+// allowReleased: answer status "released-by-retention" (receipt and request
+// verified by digest, no snapshot comparison) when retention released the World
+// the receipt names. Only the reader of one receipt asks for this; every other
+// caller gets WORLD_MODEL_SNAPSHOT_RELEASED, so none treats a released World as
+// present or verified.
+export async function readIncrementalRefreshReceipt({ root = ".", refreshReceiptId, storeAdapter = null, allowReleased = false } = {}) {
   const inspected = readyProject(root);
   const file = receiptFile(inspected.project.projectRoot, refreshReceiptId, inspected.storage);
   if (!fs.existsSync(file)) fail(`Incremental refresh receipt is missing: ${refreshReceiptId}`, "REFRESH_RECEIPT_NOT_FOUND");
@@ -558,11 +563,34 @@ export async function readIncrementalRefreshReceipt({ root = ".", refreshReceipt
   ) {
     fail("Incremental refresh request and receipt disagree.", "REFRESH_REQUEST_RECEIPT_MISMATCH");
   }
-  const baseSnapshot = (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: receipt.base.worldModelId, storeAdapter })).snapshot;
-  const nextSnapshot =
-    receipt.next.worldModelId === receipt.base.worldModelId
-      ? baseSnapshot
-      : (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId: receipt.next.worldModelId, storeAdapter })).snapshot;
+  const released = [];
+  const snapshotOf = async (worldModelId) => {
+    try {
+      return (await readWorldModelSnapshot({ root: inspected.project.projectRoot, worldModelId, storeAdapter })).snapshot;
+    } catch (error) {
+      if (error.code !== "WORLD_MODEL_SNAPSHOT_RELEASED") throw error;
+      released.push({ worldModelId, releasedAt: error.releasedAt, releaseId: error.releaseId, message: error.message });
+      return null;
+    }
+  };
+  const baseSnapshot = await snapshotOf(receipt.base.worldModelId);
+  const nextSnapshot = receipt.next.worldModelId === receipt.base.worldModelId ? baseSnapshot : await snapshotOf(receipt.next.worldModelId);
+  if (released.length && !allowReleased)
+    throw Object.assign(new Error(released.map((item) => item.message).join(" ")), {
+      code: "WORLD_MODEL_SNAPSHOT_RELEASED",
+      released,
+    });
+  if (released.length)
+    return {
+      status: "released-by-retention",
+      file,
+      receipt,
+      requestFile: requestEntry.file,
+      request: requestEntry.request,
+      released,
+      snapshotVerification: "not-made: the World this receipt names was released by retention; the receipt and its request verify by digest",
+      message: released.map((item) => item.message).join(" "),
+    };
   if (
     baseSnapshot.temporalProvenanceGraph.sourceSnapshotId !== receipt.base.sourceSnapshotId ||
     baseSnapshot.temporalProvenanceGraph.graphSnapshotId !== receipt.base.graphSnapshotId ||

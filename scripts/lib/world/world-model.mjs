@@ -1122,7 +1122,19 @@ export async function readWorldModelSnapshot({ root = ".", worldModelId, storeAd
   if (!/^world-model-[a-f0-9]{24}$/.test(worldModelId || "")) fail("World Model snapshot id is invalid.", "INVALID_WORLD_MODEL_ID");
   const adapter = createWorldModelStoreAdapter({ storage, projectRoot: inspected.project.projectRoot, adapter: storeAdapter });
   const snapshotEntry = await adapter.readSnapshot(worldModelId);
-  if (!snapshotEntry) fail(`World Model snapshot is missing: ${worldModelId}`, "WORLD_MODEL_SNAPSHOT_MISSING");
+  if (!snapshotEntry) {
+    // Not stored. A verified retention release record that names it says when
+    // retention released it; otherwise it is missing.
+    const { retentionReleaseOf, releasedMessage } = await import("./snapshot-retention-releases.mjs");
+    const release = retentionReleaseOf({ root: inspected.project.projectRoot, storage, projectId: inspected.project.projectId, id: worldModelId });
+    if (release)
+      throw Object.assign(new Error(releasedMessage(worldModelId, release)), {
+        code: "WORLD_MODEL_SNAPSHOT_RELEASED",
+        releasedAt: release.releasedAt,
+        releaseId: release.releaseId,
+      });
+    fail(`World Model snapshot is missing: ${worldModelId}`, "WORLD_MODEL_SNAPSHOT_MISSING");
+  }
   const snapshot = verifyWorldModelSnapshotOriginal({ document: snapshotEntry.document, worldModelId, storage });
   if (snapshot.projectId !== inspected.project.projectId || !projectOwnsRecordedSnapshot(storage, snapshot, snapshotEntry))
     fail("World snapshot belongs to another Project/root.", "WORLD_MODEL_IDENTITY_MISMATCH");

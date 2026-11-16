@@ -3,7 +3,9 @@ import path from "node:path";
 import { atomicWriteText } from "../core/fs-atomic.mjs";
 import { sha256Hex } from "../core/digest.mjs";
 
-// Rebuildable caches. They are not snapshot roots and are ignored by GC.
+// Rebuildable caches: deleting either only makes the next refresh take the full
+// path. They are not snapshot roots and are ignored by GC. (refresh/ also holds
+// retention release records, which are not caches; see snapshot-retention-releases.mjs.)
 export const FILE_STAT_CACHE_RELATIVE = "refresh/file-stat-cache.json";
 export const INPUT_GENERATION_RELATIVE = "refresh/input-generation.json";
 

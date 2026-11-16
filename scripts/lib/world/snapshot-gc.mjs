@@ -9,9 +9,53 @@ import {
   finishSnapshotCollection,
   snapshotCollectionCancelled,
 } from "./snapshot-reference-lifetime.mjs";
-import { buildSnapshotDeletionClosure, snapshotFileIdentity, sameSnapshotFileIdentity } from "./snapshot-deletion-closure.mjs";
+import {
+  buildSnapshotDeletionClosure,
+  classifyGcStorePath,
+  observeSnapshotRetentionClosure,
+  snapshotFileIdentity,
+  sameSnapshotFileIdentity,
+} from "./snapshot-deletion-closure.mjs";
 import { qualifySnapshotFileSystem } from "./snapshot-filesystem.mjs";
 import { sha256Hex as sha } from "../core/digest.mjs";
+import {
+  ancestryIdsOf,
+  currentRecordPaths,
+  describeSnapshotRetention,
+  isCurrentPointerRoot,
+  isHistoryRoot,
+  namedRecordIds,
+  resolveSnapshotRetentionPolicy,
+} from "./snapshot-retention-policy.mjs";
+import { judgeMissingReference, planRetentionReleases, readRetentionReleases, writeRetentionRelease } from "./snapshot-retention-releases.mjs";
+
+// References from history to snapshots an earlier windowed apply released: a
+// count, the dates, and the first few, so a reader sees "released by retention
+// on <date>" instead of a missing snapshot.
+// Two headings: history that names a released snapshot, and other records
+// (a Capsule, a checkpoint, Session work, a decision) that name one. Both are
+// reported on every run and neither blocks GC.
+function releasedReferenceSummary(references) {
+  const heading = (items, meaning) => {
+    if (!items.length) return null;
+    return {
+      count: items.length,
+      snapshots: new Set(items.map((item) => item.id)).size,
+      releasedOn: [...new Set(items.map((item) => item.releasedAt))].sort(),
+      meaning,
+      entries: items.slice(0, 50).map(({ kind, ...item }) => item),
+    };
+  };
+  const history = heading(
+    references.filter((item) => item.kind !== "released-in-record"),
+    "history names these snapshots; retention released them on the dates given; they are not missing",
+  );
+  const records = heading(
+    references.filter((item) => item.kind === "released-in-record"),
+    "records that name a snapshot retention released: the snapshot is gone and a pin cannot bring it back; reported, not blocking",
+  );
+  return { ...(history ? { releasedReferences: history } : {}), ...(records ? { recordsNamingReleased: records } : {}) };
+}
 
 // Dry-run remains zero-write and observational. Explicit apply separately
 // verifies the supported typed closure under cooperative publisher lifetimes.
@@ -21,7 +65,7 @@ const MAX_FILES = 50_000,
   MAX_SCAN_BYTES = 1024 * 1024 * 1024;
 const snapshotPath = (relative) =>
   /\/(?:world-model|graph-projection)\/snapshots\/((?:world-model|graph-snapshot)-[a-f0-9]{24})\.json(?:\.gz)?$/.exec(relative);
-export function inspectSnapshotGarbageCollection({ root = ".", apply = false } = {}) {
+export function inspectSnapshotGarbageCollection({ root = ".", apply = false, retention = null } = {}) {
   if (typeof apply !== "boolean") throw new Error("apply must be a boolean.");
   const owner = readGraphProject(root),
     projectRoot = owner.projectRoot,
@@ -65,6 +109,11 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
       return true;
     }
   };
+  // What retention released earlier, from the verified release records. A
+  // record that cannot be used is an issue and excuses nothing. Without records
+  // the walk keeps nothing extra.
+  const releases = readRetentionReleases({ root: projectRoot, storage, projectId: owner.project.projectId });
+  const withReleases = releases.records.length > 0;
   function walk(relative) {
     let file, stat;
     try {
@@ -73,6 +122,12 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     } catch (error) {
       issue(relative, error.code || "STORAGE_PATH_UNAVAILABLE");
       physicalIssues.push({ path: relative, reasonCode: error.code || "PHYSICAL_ENTRY_UNAVAILABLE" });
+      return;
+    }
+    // Release records have their own reader, which knows the hard-link pair an
+    // interrupted create can leave; they are never roots here.
+    if (!stat.isDirectory() && !stat.isSymbolicLink() && relative.startsWith(prefix + "/refresh/retention-releases/")) {
+      physicalRows.push({ relative: relative.slice(prefix.length + 1), bytes: stat.size });
       return;
     }
     if (stat.isSymbolicLink() || (!stat.isDirectory() && (!stat.isFile() || stat.nlink !== 1))) {
@@ -105,6 +160,15 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
         }
         return;
       }
+      // The apply's inventory rules: a folder the apply does not enter (a
+      // mailbox, a folder of the user's own, an unsupported folder) is not
+      // entered here either. Its bytes are outside this count, and said so.
+      const kind = classifyGcStorePath(relative.slice(prefix.length + 1), { directory: true });
+      if (kind !== "walk") {
+        if (kind === "unsupported") issue(relative, "UNSUPPORTED_GC_STORAGE_DIRECTORY");
+        physicalIssues.push({ path: relative, reasonCode: "NOT_INVENTORIED_BY_STORAGE_GC" });
+        return;
+      }
       for (const name of fs.readdirSync(file).sort()) {
         if (stopped) break;
         walk(relative + "/" + name);
@@ -117,15 +181,12 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
       return;
     }
     physicalRows.push({ relative: relative.slice(prefix.length + 1), bytes: stat.size });
-    if (
-      relative === prefix + "/graph-discovery/index.json" ||
-      relative === prefix + "/refresh/file-stat-cache.json" ||
-      relative === prefix + "/refresh/input-generation.json" ||
-      relative.startsWith(prefix + "/refresh/.watch-arm-")
-    )
-      return; // Rebuildable membership, refresh input cache or a watcher's leftover startup probe: not a historical root.
-    if (relative.endsWith(".tmp")) {
-      issue(relative, "UNPUBLISHED_OR_UNKNOWN_STAGE");
+    // The apply's inventory rules: caches, generated output, release records and
+    // the user's own product graph files are not roots and not issues.
+    const kind = classifyGcStorePath(relative.slice(prefix.length + 1), { directory: false });
+    if (kind === "ignore" || kind === "user-kept") return;
+    if (kind === "unsupported") {
+      issue(relative, relative.endsWith(".tmp") ? "UNPUBLISHED_OR_UNKNOWN_STAGE" : "UNSUPPORTED_GC_REFERENCE_ROOT");
       return;
     }
     let bytes, document, text;
@@ -154,7 +215,15 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
           document.temporalProvenanceGraph?.graphSnapshotId,
           document.temporalProvenanceGraph?.sourceSnapshotId,
         ].filter(Boolean);
-        snapshots.push({ id: match[1], path: relative, bytes: bytes.length, sha256: sha(bytes), identityIds, references: ids(text) });
+        snapshots.push({
+          id: match[1],
+          path: relative,
+          bytes: bytes.length,
+          sha256: sha(bytes),
+          identityIds,
+          references: ids(text),
+          ...(withReleases ? { ancestryIds: ancestryIdsOf(document) } : {}),
+        });
       } else {
         bytes = fs.readFileSync(file);
         bytesRead += bytes.length;
@@ -172,7 +241,14 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
             for (const child of Object.values(value)) if (child && typeof child === "object") pending.push(child);
           }
         } else if (!/\.(?:md|txt|gitignore)$/.test(relative) && !relative.endsWith("/.gitignore")) issue(relative, "UNKNOWN_REFERENCE_FILE_TYPE");
-        roots.push({ path: relative, references: ids(text) });
+        const storeRelative = relative.slice(prefix.length + 1);
+        roots.push({
+          path: relative,
+          relative: storeRelative,
+          references: ids(text),
+          ...(withReleases && isCurrentPointerRoot(storeRelative) && document ? { namedRecordIds: namedRecordIds(document) } : {}),
+          ...(withReleases && document && typeof document === "object" ? { ancestryIds: ancestryIdsOf(document) } : {}),
+        });
       }
       scanned.push({ path: relative, bytes: bytes.length, sha256: sha(bytes) });
     } catch (error) {
@@ -191,6 +267,13 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
       if (!byId.has(id)) byId.set(id, []);
       byId.get(id).push(snapshot);
     }
+  const walkIssueCount = issues.length;
+  for (const problem of releases.problems) issue(problem.path, problem.reasonCode);
+  const releasedReferences = [];
+  // The records the current pointers name are not history, in every mode.
+  const protectedPaths = withReleases ? currentRecordPaths(roots) : new Set();
+  const snapshotById = new Map(snapshots.map((item) => [item.id, item]));
+  const rootByRelative = new Map(roots.map((item) => [item.relative, item]));
   const reasons = new Map(),
     queue = roots.flatMap((root) => root.references.map((id) => ({ id, reason: "retained-reference:" + root.path })));
   const pinnedFiles = new Map(scanned.map((item) => [item.path, item]));
@@ -209,7 +292,39 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
       // that is neither is reported as missing. Another id (a source snapshot
       // inside a graph) may sit inside an unopened backend's content.
       const wholeSnapshot = /^(?:world-model|graph-snapshot)-[a-f0-9]{24}$/.test(id);
-      if (wholeSnapshot ? !gitStoreNamesSnapshot(id) : !deferredBackends.length) issue(id, "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE");
+      // An id a release record names is judged even where the dry run cannot see
+      // a backend, unless the snapshot that record released is still stored (an
+      // unlink failed after the record was written): then the id is present.
+      const listed = releases.released.get(id);
+      if (listed && byId.has(listed.snapshotId)) continue;
+      if (!listed && (wholeSnapshot ? gitStoreNamesSnapshot(id) : deferredBackends.length)) continue;
+      // judgeMissingReference: history (an older refresh record, a stored
+      // snapshot's own lineage ids) or any other root naming a released id is
+      // reported, not an issue; anything else is.
+      const release = listed;
+      const fromHistory = reason.startsWith("dependency-of:")
+        ? (snapshotById.get(reason.slice("dependency-of:".length))?.ancestryIds || []).includes(id)
+        : reason.startsWith("retained-reference:") && isHistoryRoot(reason.slice("retained-reference:".length + prefix.length + 1), protectedPaths);
+      const rootRelative = reason.startsWith("retained-reference:") ? reason.slice("retained-reference:".length + prefix.length + 1) : null;
+      const verdict = judgeMissingReference({
+        release,
+        fromRoot: rootRelative !== null,
+        history: fromHistory,
+        current: rootRelative !== null && (isCurrentPointerRoot(rootRelative) || protectedPaths.has(rootRelative)),
+        lineage: rootRelative !== null && (rootByRelative.get(rootRelative)?.ancestryIds || []).includes(id),
+      });
+      if (verdict !== "missing") {
+        releasedReferences.push({
+          kind: verdict,
+          path: reason.slice(reason.indexOf(":") + 1),
+          id,
+          releasedAt: release.releasedAt,
+          releaseId: release.releaseId,
+          record: release.path,
+        });
+        continue;
+      }
+      issue(id, "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE");
       continue;
     }
     for (const snapshot of matches) {
@@ -219,23 +334,53 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     }
   }
   const observedUnreferenced = snapshots.filter((item) => !reasons.has(item.path));
+  const retentionPolicy = resolveSnapshotRetentionPolicy({ root: owner.projectRoot, storage: owner.storage, override: retention });
+  // Without a window the dry run is what it was before retention existed: a
+  // cheap string scan that names nothing as reclaimable. With a window it runs
+  // the apply's own walk, root readers and selection (minus the git snapshot
+  // store and the bundle store, which it does not open), so it names exactly
+  // the files the apply would delete from what it can see.
+  let windowed = null;
+  if (!retentionPolicy.preserveAllHistory) {
+    windowed = observeSnapshotRetentionClosure({ root: owner.projectRoot, retention, gitStoreNamesSnapshot, deferredBackends });
+    // The reference walk above is the default scan; under a window the apply's closure judges references instead.
+    issues.splice(walkIssueCount);
+    for (const item of windowed.issues) issues.push(item);
+    releasedReferences.splice(0, releasedReferences.length, ...windowed.releasedReferences);
+  }
   const typedBackendDeferred = deferredBackends.length > 0 && issues.every((item) => item.reasonCode === "TYPED_BACKEND_OBSERVATION_REQUIRED");
   const nextAction = typedBackendDeferred
     ? "Dry-run did not open snapshot-objects.git or snapshot-bundles, so it cannot certify deletions from those backends. Run storage-gc --apply. That reads them. gc_applied with applyPerformed false means the typed closure kept every referenced snapshot."
     : null;
-  const rows = snapshots.map((item) => ({
-    id: item.id,
-    path: item.path,
-    bytes: item.bytes,
-    sha256: item.sha256,
-    observedReference: reasons.get(item.path) || null,
-    disposition: "retain",
-    reasonCode: reasons.has(item.path)
-      ? "RETAINED_REFERENCE_CLOSURE"
-      : issues.length
-        ? "INCOMPLETE_REFERENCE_COVERAGE"
-        : "APPLY_REQUIRES_TYPED_CLOSURE_AND_LIFETIME",
-  }));
+  // D5: when the dry run already knows apply would refuse (issues other than
+  // the unopened typed backends), it names nothing as reclaimable.
+  const applyWouldRefuse = issues.length > 0 && !typedBackendDeferred;
+  const candidatePaths = new Set(
+    windowed && !applyWouldRefuse ? windowed.snapshots.filter((row) => !windowed.retained.has(row.path)).map((row) => row.path) : [],
+  );
+  const rows = snapshots.map((item) => {
+    const reclaim = candidatePaths.has(item.path);
+    return {
+      id: item.id,
+      path: item.path,
+      bytes: item.bytes,
+      sha256: item.sha256,
+      observedReference: reasons.get(item.path) || null,
+      disposition: reclaim ? "reclaim" : "retain",
+      reasonCode: reclaim
+        ? "RETENTION_WINDOW_RELEASED"
+        : windowed
+          ? applyWouldRefuse
+            ? "INCOMPLETE_REFERENCE_COVERAGE"
+            : "RETAINED_REFERENCE_CLOSURE"
+          : reasons.has(item.path)
+            ? "RETAINED_REFERENCE_CLOSURE"
+            : issues.length
+              ? "INCOMPLETE_REFERENCE_COVERAGE"
+              : "APPLY_REQUIRES_TYPED_CLOSURE_AND_LIFETIME",
+    };
+  });
+  const reclaimable = rows.filter((item) => item.disposition === "reclaim");
   return {
     kind: "SnapshotStorageInspection",
     authorityPlane: "P4",
@@ -249,7 +394,20 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     applyPerformed: false,
     deletedCount: 0,
     reclaimedBytes: 0,
-    reclaimableBytes: 0,
+    reclaimableBytes: reclaimable.reduce((n, item) => n + item.bytes, 0),
+    retention: {
+      ...describeSnapshotRetention(retentionPolicy),
+      reclaimableSnapshots: reclaimable.length,
+      released: reclaimable.map((item) => ({ id: item.id, path: item.path, bytes: item.bytes, rule: windowed.releaseRules.get(item.path) || "unreferenced" })),
+      releaseRecords: releases.records.length,
+      ...(releases.staging.length ? { releaseStaging: releases.staging } : {}),
+      ...releasedReferenceSummary(releasedReferences),
+      // What only the apply checks; the preview says so instead of implying it.
+      ...(windowed ? { checksNotMade: ["filesystem qualification", "an active storage GC elsewhere"] } : {}),
+      ...(windowed && deferredBackends.length
+        ? { unseenBackends: deferredBackends, note: "snapshots stored in these backends were not read; the apply reads them and may keep more" }
+        : {}),
+    },
     physicalStorage: mergePhysicalStorageObservations([
       summarizeObservedStorageFiles(physicalRows, { complete: !stopped && !physicalIssues.length, issues: physicalIssues }),
       ...physicalParts,
@@ -257,11 +415,12 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     storedBytesScope: "whole-or-composition-snapshot-files-only",
     snapshotCount: rows.length,
     storedBytes: rows.reduce((n, item) => n + item.bytes, 0),
-    retainedCount: rows.length,
+    retainedCount: rows.length - reclaimable.length,
     observedUnreferencedCount: observedUnreferenced.length,
     observedUnreferencedBytes: observedUnreferenced.reduce((n, item) => n + item.bytes, 0),
-    interpretation:
-      "Observed unreferenced IDs are candidates for further verification, not established safe deletions. Current/previous, parents and all observed retained references are preserved. No age or last-N deletion.",
+    interpretation: retentionPolicy.preserveAllHistory
+      ? "Retention is off: observed unreferenced IDs are candidates for further verification, not established safe deletions. Every retained reference and its ancestry is preserved. No age or last-N deletion. This inspection does not delete."
+      : "A retention window is in force: rows marked reclaim are the snapshot files --apply with the same window would delete. Current pointers and what they name, decision and record pins, snapshots named by hash, snapshots without a trustworthy time and the window stay. Source texts, Canon and Session records are not snapshot files and are not deleted. This inspection does not delete.",
     basis: { digest: sha(JSON.stringify(scanned)), readConsistency: "observed-sequence-not-atomic-filesystem-snapshot", scannedFiles: count, bytesRead },
     backendInspection: { mode: "synchronous-file-observation", deferredBackends, authority: "no-deletion-certificate" },
     coverage: {
@@ -284,7 +443,9 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
 
 // Explicit asynchronous effect, separate from the unchanged zero-write
 // inspection. A diagnostic string scan is never its deletion certificate.
-export async function applySnapshotGarbageCollection({ root = ".", signal, onProcess } = {}) {
+// maxReleaseEntries: entries per release record (tests use a small value to see
+// an apply write several records).
+export async function applySnapshotGarbageCollection({ root = ".", signal, onProcess, retention = null, maxReleaseEntries = undefined } = {}) {
   // Inventory and reclaim are not one deadline. A single clock made a large
   // store abort before any unreachable byte was deleted. Each plain Git
   // command keeps its own bound; the supervised pack step has no clock of its
@@ -319,6 +480,14 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
     support: "cooperating-current-local-entrypoints; not universal old/raw/shared-host exclusion",
     physicalScope: "verified orphan whole World/Graph files, private loose Git refs/objects and domain fragments; source/canonical originals retained",
   };
+  // Which retention is in force, known before anything else, so a refused or
+  // cancelled apply still says whether it was off or a window.
+  try {
+    if (owner.project)
+      result.retention = describeSnapshotRetention(resolveSnapshotRetentionPolicy({ root: owner.projectRoot, storage: owner.storage, override: retention }));
+  } catch {
+    // The policy reader never throws for a bad file; an unreadable store is reported below.
+  }
   if (signal?.aborted) return { ...result, code: "SNAPSHOT_GC_CANCELLED" };
   try {
     const { inspectStorageReaderCompatibility } = await import("./snapshot-storage-compatibility.mjs");
@@ -361,6 +530,7 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
       deadline: null,
       collectionAttempt: attempt,
       shouldContinue: () => !signal?.aborted && !snapshotCollectionCancelled(attempt),
+      retention,
     });
     result.coverage = {
       referenceValidity: closure.certified ? "typed-supported-root-closure" : "incomplete-preserved",
@@ -391,7 +561,72 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
     }
     withSnapshotCollectionUnlink(attempt, () => {});
     result.applyAvailable = true;
-    for (const candidate of closure.candidates) {
+    // Under a window, record what this apply releases before anything is
+    // unlinked. If the record cannot be written, nothing is deleted. A default
+    // apply (no window) writes none.
+    // Only what this apply will try to unlink: a git-stored snapshot whose refs
+    // are packed is deferred, never listed.
+    const toRelease = closure.candidates.filter((row) => row.backend !== "git" || closure.mixed.physicalEligible);
+    if (closure.retentionPolicy && !closure.retentionPolicy.preserveAllHistory && toRelease.length) {
+      try {
+        const documents = planRetentionReleases({
+          projectId: closure.owner.projectId,
+          policy: closure.retentionPolicy,
+          collectionAttemptId: "snapshot-collection-" + attempt.nonce,
+          releasedAt: new Date().toISOString(),
+          ...(maxReleaseEntries === undefined ? {} : { maxEntries: maxReleaseEntries }),
+          released: toRelease.map((row) => ({
+            id: row.id,
+            hash: row.worldModelHash || row.graphSnapshotHash || null,
+            identityIds: [row.id, ...(row.identityIds || [])],
+            rule: closure.releaseRules?.get(row.path) || "unreferenced",
+          })),
+        });
+        // One at a time, so a failure part way can name the records already on
+        // disk. Those list snapshots that are still stored (nothing is unlinked
+        // yet); a stored snapshot is always read as present.
+        const written = [];
+        try {
+          for (const document of documents)
+            written.push({
+              path: writeRetentionRelease({ root: closure.owner.root, storage: closure.owner.storage, document }),
+              releaseId: document.releaseId,
+              releasedAt: document.releasedAt,
+              count: document.released.length,
+            });
+        } catch (error) {
+          if (written.length)
+            result.retentionRelease = {
+              records: written,
+              writtenBeforeFailure: true,
+              note: "these records were written before a later one failed; nothing was unlinked, so every snapshot they list is still stored and read as present",
+            };
+          throw error;
+        }
+        result.retentionRelease = {
+          path: written[0].path,
+          releaseId: written[0].releaseId,
+          releasedAt: written[0].releasedAt,
+          count: written.reduce((sum, item) => sum + item.count, 0),
+          records: written,
+        };
+      } catch (error) {
+        result.code = error.code || "RETENTION_RELEASE_WRITE_FAILED";
+        result.status = "gc_preserved";
+        result.applyAvailable = false;
+        return result;
+      }
+    }
+    // Under a window, Worlds before Graphs: history names both, and a World
+    // names its Graph, so if an unlink fails or is cancelled part way what
+    // remains is a Graph nothing current names, never a stored World whose Graph
+    // is gone. Without a window the candidates are orphans nothing names, and
+    // the order stays as it was.
+    const windowedApply = closure.retentionPolicy && !closure.retentionPolicy.preserveAllHistory;
+    const unlinkOrder = windowedApply
+      ? [...closure.candidates].sort((left, right) => Number(right.id.startsWith("world-model-")) - Number(left.id.startsWith("world-model-")))
+      : closure.candidates;
+    for (const candidate of unlinkOrder) {
       if (signal?.aborted) {
         result.code = "SNAPSHOT_GC_CANCELLED";
         break;
@@ -441,10 +676,25 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
         pinnedPaths: closure.pinnedPaths,
       });
     }
+    const retentionPolicy = closure.retentionPolicy || { keepCount: null, keepDays: null, source: "unresolved", preserveAllHistory: true };
+    const deletedPaths = new Set([...result.deleted.map((item) => item.path), ...result.retiredRefs.map((item) => item.path)]);
     result.retention = {
+      ...describeSnapshotRetention(retentionPolicy),
       referencedSnapshots: closure.retained.size,
       eligibleOrphanSnapshots: closure.candidates.length,
-      policy: "all retained references and ancestry preserved; zero reclaimed bytes can be a complete successful result",
+      releaseRecords: (closure.releaseRecords || []).length + (result.retentionRelease?.records.length || 0),
+      ...(closure.releaseStaging?.length ? { releaseStaging: closure.releaseStaging } : {}),
+      ...releasedReferenceSummary(closure.releasedReferences || []),
+      // Each deleted snapshot and the rule it went under: no retained root
+      // names it, or it is outside the window.
+      released: closure.candidates
+        .filter((row) => deletedPaths.has(row.path))
+        .map((row) => ({
+          id: row.id,
+          path: row.path,
+          bytes: row.bytes,
+          rule: closure.releaseRules?.get(row.path) || "unreferenced",
+        })),
     };
     result.status = result.code
       ? result.applyPerformed

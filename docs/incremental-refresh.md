@@ -137,6 +137,8 @@ The local reference implementation stores:
 
 Requests and receipts are content-derived immutable artifacts. The current file is a digest-verified replaceable pointer. A later full index or refresh can make the latest receipt stale without invalidating its historical evidence.
 
+`refresh/` also holds files of two other kinds. `refresh/file-stat-cache.json` and `refresh/input-generation.json` are caches: deleting either only makes the next refresh take the full path once. `refresh/retention-releases/retention-release-*.json` are release records a windowed storage GC wrote (see [snapshot storage](snapshot-storage.md)); they are not caches and must not be deleted. Deleting one changes nothing stored, but the history it covers looks damaged again: `world-refresh-read` of an old receipt reports its World missing instead of released, and storage GC without a window reports incomplete reference coverage and deletes nothing until the history is reconciled.
+
 ## CLI and MCP
 
 ```powershell

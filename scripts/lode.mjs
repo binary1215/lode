@@ -176,7 +176,7 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
     `${cliDisplay} ${continuityName} <project> [--fresh]`,
     `${cliDisplay} world-index <project> [--git-log <host-exported-log-file>] [--runtime-state <host-exported-json-file>] [--parent-snapshot <id,id>] [--revision-parents <json-file>]`,
     `${cliDisplay} world-status <project>`,
-    `${cliDisplay} storage-gc <project> [--apply]  # inspect; explicitly reclaim verified orphan snapshot storage`,
+    `${cliDisplay} storage-gc <project> [--apply] [--keep-count <n>] [--keep-days <n>]  # inspect; --apply deletes unreferenced snapshots; a retention window (policy file or --keep-count/--keep-days) also releases older World history`,
     `${cliDisplay} world-refresh <project> [--expect-changed <path,path>] [--trigger-evidence <id,id>] [--parent-snapshot <id,id>]`,
     `${cliDisplay} world-refresh-status <project>`,
     `${cliDisplay} world-refresh-read <project> --receipt <incremental-refresh-receipt-id>`,

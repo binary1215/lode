@@ -3429,8 +3429,9 @@ export const OPERATIONS = Object.freeze([
         additionalProperties: false,
       },
     },
-    mcp: { args: (args) => [{ root: args.project_root, refreshReceiptId: args.refresh_receipt_id }] },
-    cli: { command: "world-refresh-read", flags: ["receipt"], args: ({ root, options }) => [{ root, refreshReceiptId: options.receipt }] },
+    // The reader of one receipt may be told its World was released by retention; internal callers never are.
+    mcp: { args: (args) => [{ root: args.project_root, refreshReceiptId: args.refresh_receipt_id, allowReleased: true }] },
+    cli: { command: "world-refresh-read", flags: ["receipt"], args: ({ root, options }) => [{ root, refreshReceiptId: options.receipt, allowReleased: true }] },
     impl: () => import("../world/incremental-refresh.mjs").then((module) => module.readIncrementalRefreshReceipt),
   },
   {
@@ -5700,13 +5701,16 @@ export const OPERATIONS = Object.freeze([
     name: "cli:storage-gc",
     cli: {
       command: "storage-gc",
-      flags: ["apply"],
+      flags: ["apply", "keep-count", "keep-days"],
       handle: async (context) => {
         const { root, options, onProcess, signal } = context;
         const { inspectSnapshotPreservationClosure } = await import("../world/snapshot-preservation-closure.mjs");
         const { inspectSnapshotGarbageCollection, applySnapshotGarbageCollection } = await import("../world/snapshot-gc.mjs");
-        if (options.apply === true || options.apply === "true") return await applySnapshotGarbageCollection({ root, signal, onProcess });
-        const inspection = inspectSnapshotGarbageCollection({ root });
+        const { parseRetentionOptions } = await import("../world/snapshot-retention-policy.mjs");
+        // A value that is not a whole number in range is a usage error, never a silent no-window run.
+        const retention = parseRetentionOptions(options);
+        if (options.apply === true || options.apply === "true") return await applySnapshotGarbageCollection({ root, signal, onProcess, retention });
+        const inspection = inspectSnapshotGarbageCollection({ root, retention });
         try {
           inspection.typedClosure = await inspectSnapshotPreservationClosure({ root });
         } catch (error) {

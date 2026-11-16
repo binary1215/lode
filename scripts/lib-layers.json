@@ -267,6 +267,8 @@
     "snapshot-gc.mjs": "world",
     "snapshot-preservation-closure.mjs": "world",
     "snapshot-reference-lifetime.mjs": "world",
+    "snapshot-retention-policy.mjs": "world",
+    "snapshot-retention-releases.mjs": "world",
     "snapshot-storage-accounting.mjs": "world",
     "snapshot-storage-codec.mjs": "world",
     "snapshot-storage-compatibility.mjs": "world",
