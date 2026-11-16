@@ -18647,7 +18647,8 @@
      "fn": "snapshot-gc#inspectSnapshotGarbageCollection",
      "args": [
       {
-       "root": "<root>"
+       "root": "<root>",
+       "retention": null
       }
      ]
     },
@@ -18663,30 +18664,6 @@
    "outcome": {
     "error": "TypeError",
     "message": "Cannot set properties of undefined (setting 'typedClosure')"
-   }
-  },
-  {
-   "surface": "cli",
-   "command": "storage-gc",
-   "argv": [
-    "storage-gc",
-    "<root>",
-    "--apply"
-   ],
-   "calls": [
-    {
-     "fn": "snapshot-gc#applySnapshotGarbageCollection",
-     "args": [
-      {
-       "root": "<root>",
-       "signal": "$undefined",
-       "onProcess": "$undefined"
-      }
-     ]
-    }
-   ],
-   "outcome": {
-    "ok": true
    }
   },
   {
@@ -21500,6 +21477,38 @@
        "depth": 3,
        "maxNodes": 3,
        "maxEdges": 3
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "storage-gc",
+   "argv": [
+    "storage-gc",
+    "<root>",
+    "--apply",
+    "--keep-count",
+    "sample-keep-count",
+    "--keep-days",
+    "sample-keep-days"
+   ],
+   "calls": [
+    {
+     "fn": "snapshot-gc#applySnapshotGarbageCollection",
+     "args": [
+      {
+       "root": "<root>",
+       "signal": "$undefined",
+       "onProcess": "$undefined",
+       "retention": {
+        "keepCount": null,
+        "keepDays": null
+       }
       }
      ]
     }

@@ -144,8 +144,7 @@ export function selectRetainedSnapshotIds({ snapshots = [], roots = [], policy, 
         .endsWith("world-model/current.json")
     )
       continue;
-    const ancestry = new Set(root.ancestryIds || []);
-    for (const id of root.references || []) if (id.startsWith("world-model-") && !ancestry.has(id)) stack.push(id);
+    for (const id of root.references || []) if (id.startsWith("world-model-")) stack.push(id);
   }
   while (stack.length) {
     const id = stack.pop();
