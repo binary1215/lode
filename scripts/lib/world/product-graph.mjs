@@ -37,7 +37,19 @@ import {
   parsePolicyFile,
   parseScreenDocument,
 } from "./product-graph-documents.mjs";
-import { assertUniqueIds, extractProductGraphCode } from "./product-graph-extraction.mjs";
+import { assertUniqueIds, extractProductGraphCode, productGraphCodeFiles } from "./product-graph-extraction.mjs";
+import {
+  PRODUCT_GRAPH_BASELINE_FILE,
+  addContentHashes,
+  baselineFromGraph,
+  compareWithBaseline,
+  noBaseline,
+  productGraphReader,
+  readBaseline,
+  serializeBaseline,
+  sourceTextHash,
+} from "./product-graph-compare.mjs";
+import { productGraphWalk as walk } from "../../graph-explorer/product-graph-walk.js";
 
 export const PRODUCT_GRAPH_VERSION = 1;
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
@@ -820,7 +832,7 @@ function graphDocument({ extraction, loaded, computed, inputs, rules, result }) 
       compare(a.at?.path || "", b.at?.path || "") ||
       (a.at?.line || 0) - (b.at?.line || 0),
   );
-  return {
+  const graph = {
     schemaVersion: 1,
     kind: "LodeProductGraph",
     generator: { name: "lode-product-graph", version: PRODUCT_GRAPH_VERSION },
@@ -831,7 +843,12 @@ function graphDocument({ extraction, loaded, computed, inputs, rules, result }) 
       documents: loaded.documents.map(({ path: documentPath, sha256, status }) => ({ path: documentPath, sha256, status })),
       rulesSha256: rules.sha256,
       approvalsRead: loaded.approvalsRead,
-      sourceFiles: extraction.scannedFiles,
+      // Every source file the build read, with the hash of its normalised
+      // text, so a reader can tell whether the source moved since.
+      sourceFiles: [...extraction.readFiles.entries()]
+        .map(([file, text]) => ({ path: file, sha256: sourceTextHash(text) }))
+        .sort((a, b) => compare(a.path, b.path)),
+      reader: productGraphReader(PRODUCT_GRAPH_VERSION),
       codeFiles: extraction.codeFiles,
       sourceExcludes: extraction.excludes,
     },
@@ -844,147 +861,25 @@ function graphDocument({ extraction, loaded, computed, inputs, rules, result }) 
     nodes,
     edges,
   };
+  return addContentHashes(graph, extraction.readFiles, extraction.unresolvedHandlers);
 }
 
 // ---------- readable text ----------
 
-const where = (at) => (at ? `${at.path}:${at.line}` : "");
-const labelText = (labels) => (labels?.length ? ` [${labels.join(", ")}]` : "");
-const LIST_LIMIT = 50;
-
-function listLines(items, render) {
-  const lines = items.slice(0, LIST_LIMIT).map((item) => `  - ${render(item)}`);
-  if (items.length > LIST_LIMIT) lines.push(`  - 외 ${items.length - LIST_LIMIT}개 (구조화된 결과에 모두 있다)`);
-  return lines;
-}
-
+// check.txt. Its parts are rendered by the walk module the page and
+// product-graph-query share, so the page shows the build's own lines.
 export function renderProductGraphText(result) {
-  const lines = [...renderLimits(result.limits), ""];
-  if (result.guide?.length) {
-    lines.push("처음 쓸 때 — 빠진 입력");
-    for (const item of result.guide) lines.push(`- ${item.input} (${item.state}). 쓰는 곳: ${item.unlocks.join(", ")}. 다음: ${item.next}`);
-    lines.push("");
-  }
-  lines.push("제품 그래프 정합성 검사", "");
-  result.checks.forEach((check, index) => {
-    lines.push(`${index + 1}. ${check.heading} — ${check.meaning}`);
-    if (check.outcome === "검사 못 함") lines.push(`   검사 못 함: ${check.reason}`);
-    else if (check.outcome === "0건") lines.push("   0건");
-    else {
-      lines.push(`   ${check.findings.length}건`);
-      for (const finding of check.findings) {
-        if (check.key === "element-function-without-activity")
-          lines.push(`   - ${finding.id} → 기능 ${finding.functions.join(", ")} (${where(finding.at)})${labelText(finding.labels)}`);
-        else if (check.key === "screen-without-activity")
-          lines.push(`   - ${finding.id}${finding.name ? ` ${finding.name}` : ""} (${where(finding.at)})${labelText(finding.labels)}`);
-        else if (check.key === "screen-policy-differs") {
-          lines.push(`   - ${finding.screen}의 정책 ${finding.id} (${where(finding.at)}, 정책 ${where(finding.policyAt)})${labelText(finding.labels)}`);
-          for (const difference of finding.differences) lines.push(`     ${difference.field}: 화면설계서 "${difference.screen}" / 정책 "${difference.policy}"`);
-        } else if (check.key === "journey-order-differs")
-          lines.push(`   - ${finding.id} → ${finding.next}: ${finding.problem} (${where(finding.at)})${labelText(finding.labels)}`);
-      }
-    }
-    if (check.sideBySide) {
-      lines.push(`   제품코어${labelText(check.sideBySide.labels)}`);
-      for (const part of check.sideBySide.제품코어)
-        lines.push(`     ${part.heading}: ${part.text === null ? "(절 없음)" : part.text.replace(/\s+/g, " ").slice(0, 200)}`);
-      lines.push("   정책");
-      for (const policy of check.sideBySide.정책)
-        lines.push(`     ${policy.id} (${policy.kind}) 조건: ${policy.조건} / 주체: ${policy.주체} / 행위: ${policy.행위}`);
-    }
-    lines.push("");
-  });
-  const lists = result.lists;
-  lines.push(`문서가 가리키는데 없는 ID: ${lists.missingIds.length}건`);
-  lines.push(
-    ...listLines(lists.missingIds, (item) => `${item.kind} ${item.id} (${where(item.at)})${item.note ? ` — ${item.note}` : ""}${labelText(item.labels)}`),
+  const nodeTypes = NODE_TYPES;
+  return (
+    [
+      ...walk.renderLimits(result.limits),
+      "",
+      ...walk.renderChanges(result.changes),
+      ...walk.renderGuide(result.guide),
+      ...walk.renderChecks(result.checks),
+      ...walk.renderGapLists(walk.gapLists(result, nodeTypes)),
+    ].join("\n") + "\n"
   );
-  if (lists.unpointedFunctionsReason) {
-    lines.push(`어떤 화면요소·화면도 가리키지 않는 기능: 기능 ${lists.unpointedFunctions.length}개 중 — 검사 못 함: ${lists.unpointedFunctionsReason}`);
-  } else {
-    lines.push(`어떤 화면요소·화면도 가리키지 않는 기능: ${lists.unpointedFunctions.length}개`);
-    lines.push(...listLines(lists.unpointedFunctions, (id) => id));
-  }
-  const unreached = lists.unreachedCode;
-  const calls = lists.unresolvedReferences;
-  lines.push(
-    `어느 기능에서도 닿지 않는 코드: 선언 ${unreached.declarations}개 — 풀린 호출 ${calls.resolved} / 전체 ${calls.all}로 따라간 결과다. '닿지 않음'은 풀린 경로를 찾지 못했다는 뜻이고, 죽은 코드라는 뜻이 아니다.`,
-  );
-  lines.push(
-    "  처리 코드가 파일 전체인 기능(스크립트, command 파일, 등록 파일 등)은 그 파일과 파일 맨 위의 호출까지 닿은 것으로 본다. 그 파일 안의 선언은 풀린 호출로만 닿는다. 클래스에 닿으면 생성자에 닿은 것으로 본다.",
-  );
-  lines.push(`  아무것도 닿지 않는 파일 ${unreached.filesNothingReached}개, 일부만 닿는 파일 ${unreached.filesPartlyReached}개. 많은 파일부터:`);
-  lines.push(
-    ...listLines(unreached.files, (file) =>
-      file.declarations.length
-        ? `${file.path} — 선언 ${file.declarations.length}개${file.nothingReached ? " (파일 전체가 닿지 않음)" : ""}`
-        : `${file.path} — 선언 없는 파일, 닿지 않음`,
-    ),
-  );
-  lines.push(`하나로 정하지 못한 호출: ${calls.unresolved}개 (전체 ${calls.all}개 중). 이유별:`);
-  for (const reason of calls.byReason) lines.push(`  - ${reason.label}: ${reason.count}개 — 정하려면: ${reason.settle}`);
-  const looked = lists.notLookedAt;
-  lines.push(
-    `코드로 읽지 않은 파일(보지 않음): ${looked.files}개${looked.byExtension.length ? ` (${looked.byExtension.map((item) => `${item.extension} ${item.count}`).join(", ")})` : ""}. 테스트로 분류해 코드 층에 넣지 않은 코드 파일 ${looked.testCodeFiles}개, 읽지 못한 코드 파일 ${looked.unreadableCodeFiles}개.`,
-  );
-  if (looked.skipped.length) lines.push(`  건너뛴 것: ${looked.skipped.map((item) => `${item.reason} ${item.count}`).join(", ")}`);
-  lines.push(`사라진 기능의 뜻: ${lists.vanishedMeanings.length}개`);
-  lines.push(...listLines(lists.vanishedMeanings, (item) => `${item.id} — "${item.text}" (${where(item.at)})`));
-  if (lists.partlyResolvedRows.length) {
-    lines.push(`표 항목의 일부만 풀린 기능: ${lists.partlyResolvedRows.length}개 (풀린 처리 코드는 그대로 쓰고, 풀리지 않은 부분을 적는다)`);
-    lines.push(...listLines(lists.partlyResolvedRows, (item) => `${item.id} (${where(item.position)}) — ${item.reason}`));
-  }
-  if (lists.multiRowFunctions.length) {
-    lines.push(`여러 표 항목에서 나온 기능: ${lists.multiRowFunctions.length}개 (모든 항목의 처리 코드를 함께 쓴다. 언급까지 맞는 패턴이면 규칙을 고친다)`);
-    lines.push(...listLines(lists.multiRowFunctions, (item) => `${item.id} — ${item.positions.map(where).join(", ")}`));
-  }
-  lines.push(`처리 코드를 찾지 못한 기능: ${lists.unresolvedHandlers.length}개`);
-  lines.push(...listLines(lists.unresolvedHandlers, (item) => `${item.id} (${where(item.position)}) — ${item.reason}`));
-  lines.push(`기능으로 삼지 않은 연결: ${lists.notTakenBindings.length}개`);
-  lines.push(
-    ...listLines(
-      lists.notTakenBindings,
-      (item) =>
-        `${item.path}:${item.line} ${item.component} ${item.emitter ? `${item.emitter} ` : ""}${item.event} → ${item.target || "(대상 없음)"} — ${item.pattern}`,
-    ),
-  );
-  lines.push(`화면 코드인데 규칙이 없음: ${lists.uiWithoutRule.length}개`);
-  lines.push(...listLines(lists.uiWithoutRule, (item) => `${item.path} — ${item.sign}`));
-  if (lists.outOfScope.length) {
-    lines.push(`범위 밖으로 둔 입구: ${lists.outOfScope.length}개`);
-    lines.push(...listLines(lists.outOfScope, (item) => `${item.id} (${where(item.position)})`));
-  }
-  if (lists.ruleIssues.length) {
-    lines.push(`호출 방식 표 문제: ${lists.ruleIssues.length}개`);
-    lines.push(...listLines(lists.ruleIssues, (item) => `${item.종류}: ${item.path} — ${item.reason}`));
-  }
-  lines.push("노드 수:");
-  for (const type of NODE_TYPES) {
-    const count = result.counts[type];
-    const usedCount = result.usedCounts[type];
-    lines.push(`  - ${type} ${count}${typeof usedCount === "number" && usedCount !== count ? ` (검사에 쓴 것 ${usedCount})` : ""}`);
-  }
-  lines.push("문서별 상태:");
-  lines.push(
-    ...listLines(
-      result.documents.list,
-      (item) =>
-        `${item.path} — ${item.status}${item.status !== "승인" ? ` (${item.estimateKind || "어느 쪽 추정인지 적지 않음"}) — 승인할 digest ${item.approvalDigest}` : ""}`,
-    ),
-  );
-  if (lists.formatIssues.length) {
-    lines.push(`문서 형식 문제: ${lists.formatIssues.length}개`);
-    lines.push(...listLines(lists.formatIssues, (item) => `${item.path}:${item.line} ${item.kind}${item.detail ? `: ${item.detail}` : ""}`));
-  }
-  if (lists.unrecognizedFiles.length) {
-    lines.push(`읽지 않은 파일: ${lists.unrecognizedFiles.length}개`);
-    lines.push(...listLines(lists.unrecognizedFiles, (item) => item));
-  }
-  if (lists.approvalIssues.length) {
-    lines.push(`승인 기록으로 읽지 못한 파일: ${lists.approvalIssues.length}개`);
-    lines.push(...listLines(lists.approvalIssues, (item) => `${item.path} — ${item.reason}`));
-  }
-  return lines.join("\n") + "\n";
 }
 
 // ---------- what this graph cannot answer ----------
@@ -1057,32 +952,6 @@ function limitsOf({ extraction, computed, includeEstimates, loaded, callbacks })
   };
 }
 
-function renderLimits(limits) {
-  const documents = limits.documents;
-  const usage = !documents.approvalsRead
-    ? `독립 실행이라 승인 기록을 읽지 않았다(모든 문서가 추정). 이번 실행은 ${documents.includeEstimates ? `추정 문서 ${documents.used.length}개를 썼고, 그것에 기댄 결과에는 [추정: …]을 붙였다` : "추정 문서를 쓰지 않았다"}.`
-    : documents.includeEstimates
-      ? `이번 실행은 승인과 추정 문서 ${documents.used.length}개를 모두 썼고, 추정에 기댄 결과에는 [추정: …]을 붙였다.`
-      : `이번 실행은 승인된 문서 ${documents.used.length}개만 썼다.`;
-  return [
-    limits.title,
-    `- ${limits.codeReading}`,
-    `- 호출 ${limits.calls.all}개. 제품 코드일 수 없는 호출 ${limits.calls.notProduct.builtIn + limits.calls.notProduct.keyword}개(언어·런타임 내장 ${limits.calls.notProduct.builtIn}, 호출처럼 보인 언어 키워드 ${limits.calls.notProduct.keyword})와 제품 밖 모듈로 가는 호출 ${limits.calls.notProduct.external}개를 빼면, 제품 코드일 수 있는 호출 ${limits.calls.canBeProduct}개 중 ${limits.calls.resolved}개를 하나의 선언으로 풀었다. 풀린 것만 코드→코드 연결이 된다.`,
-    ...limits.callReading.map((line) => `- ${line}`),
-    `- reference 종류는 ${limits.referenceKinds.emitted.join(", ")}만 적는다. ${limits.referenceKinds.notToldApart.join(", ")}는 구별하지 못해 적지 않는다.`,
-    `- 뽑지 않은 것: ${limits.notExtracted.nodeTypes.join(", ")} 노드, ${limits.notExtracted.edges.join(", ")} 연결, ${limits.notExtracted.grouping}.`,
-    ...limits.uiBindingScan.map((line) => `- ${line}`),
-    ...(limits.tableRows ? [`- ${limits.tableRows}`] : []),
-    ...(limits.lineLocalFallback.count
-      ? [
-          `- lexer가 파일 끝에서 문자열·템플릿·주석 안에 있어 코드만 판정을 줄 단위로 되돌린 파일 ${limits.lineLocalFallback.count}개: ${limits.lineLocalFallback.files.slice(0, 10).join(", ")}${limits.lineLocalFallback.count > 10 ? ` 외 ${limits.lineLocalFallback.count - 10}개` : ""}.`,
-        ]
-      : []),
-    `- ${limits.execution}`,
-    `- 문서: 승인 ${documents.approved}, 승인 뒤 바뀜 ${documents.changedAfterApproval}, 추정 ${documents.estimated}. 승인 뒤 바뀜은 승인 기록의 본문과 지금 본문이 달라 추정으로 쓴다. ${usage}`,
-  ];
-}
-
 // ---------- operations ----------
 
 function run(options, { requireOutput }) {
@@ -1120,8 +989,56 @@ function run(options, { requireOutput }) {
     documents: { ...computed.documentSummary, approvalsRead: loaded.approvalsRead },
   };
   result.limits = limitsOf({ extraction, computed, includeEstimates, loaded, callbacks });
+  const graph = graphDocument({ extraction, loaded, computed, inputs, rules, result });
+  const baseline = compareToBaseline({ inputs, graph, computed, takeIfMissing: requireOutput });
+  result.changes = baseline.changes;
   result.text = renderProductGraphText(result);
-  return { inputs, rules, extraction, loaded, computed, result };
+  return { inputs, rules, extraction, loaded, computed, result, graph, baseline };
+}
+
+const baselineFile = (inputs) => path.join(inputs.outputDirectory, PRODUCT_GRAPH_BASELINE_FILE);
+
+// The comparison with the baseline (8A.3). A missing baseline is taken from
+// this build by a build (never by a check); an unreadable one is reported and
+// left as it is. A baseline never blocks a build, except that a build which
+// does not reproduce the baseline's nodes for unchanged files stops.
+// The output folder as it is on disk: null when absent. A path under a regular
+// file is "absent" too (ENOTDIR on POSIX, ENOENT on Windows).
+function outputStat(directory) {
+  try {
+    return fs.lstatSync(directory, { throwIfNoEntry: false }) || null;
+  } catch (error) {
+    if (error.code === "ENOTDIR") return null;
+    throw error;
+  }
+}
+
+function compareToBaseline({ inputs, graph, computed, takeIfMissing }) {
+  if (!inputs.outputDirectory) return { changes: noBaseline("독립 검사에는 출력 폴더가 없어 기준을 읽지 않는다") };
+  // Something other than a folder where the output folder belongs is refused
+  // by a build with the product graph reason before anything under it is read;
+  // a check reports it and reads no baseline.
+  const existing = outputStat(inputs.outputDirectory);
+  // (A link is left to the linked-path check that follows.)
+  if (existing && !existing.isDirectory() && !existing.isSymbolicLink()) {
+    if (takeIfMissing) fail("PRODUCT_GRAPH_OUTPUT_NOT_DIRECTORY", "출력 폴더 자리에 폴더가 아닌 것이 있다.");
+    return { changes: noBaseline("출력 폴더 자리에 폴더가 아닌 것이 있어 기준을 읽지 않았다") };
+  }
+  if (inputs.mode === "project") assertNoLinkedComponents(inputs.projectRoot, baselineFile(inputs));
+  const read = readBaseline(baselineFile(inputs));
+  const meaning = computed.meaningDocument;
+  const meaningLines = (meaning?.parsed.meanings || []).map((item) => ({ id: item.id, at: { path: meaning.path, line: item.line } }));
+  if (read.baseline) return { changes: compareWithBaseline(graph, read.baseline, { meaningLines }), state: { status: "kept", setAt: read.baseline.setAt } };
+  if (read.missing && takeIfMissing) {
+    const taken = baselineFromGraph(graph, { setAt: new Date().toISOString() });
+    return {
+      changes: compareWithBaseline(graph, taken, { meaningLines }),
+      taken,
+      state: { status: "taken-now", setAt: taken.setAt, message: "기준 없음 — 이번 빌드를 기준으로 삼았다" },
+    };
+  }
+  const reason = read.missing ? "기준 파일이 없다 — 첫 빌드가 이 빌드를 기준으로 삼는다" : `${read.reason} — product-graph-baseline으로 다시 잡을 수 있다`;
+  return { changes: noBaseline(reason), state: { status: "none", reason } };
 }
 
 export function checkProductGraph(options = {}) {
@@ -1131,8 +1048,7 @@ export function checkProductGraph(options = {}) {
 
 export function buildProductGraph(options = {}) {
   const ran = run(options, { requireOutput: true });
-  const { inputs, result } = ran;
-  const graph = graphDocument(ran);
+  const { inputs, result, graph, baseline } = ran;
   const output = inputs.outputDirectory;
   const { text, ...structured } = result;
   const files = [
@@ -1140,6 +1056,7 @@ export function buildProductGraph(options = {}) {
     ["check.json", json(structured)],
     ["check.txt", text],
   ];
+  const created = baseline.taken ? [[PRODUCT_GRAPH_BASELINE_FILE, serializeBaseline(baseline.taken)]] : [];
   const write = () => {
     if (inputs.mode === "project") assertNoLinkedComponents(inputs.projectRoot, output);
     const existing = fs.lstatSync(output, { throwIfNoEntry: false });
@@ -1156,17 +1073,237 @@ export function buildProductGraph(options = {}) {
         }
     }
     for (const [name, content] of files) atomicWriteArtifact(path.join(output, name), content);
+    // The baseline is written once; only product-graph-baseline moves it.
+    for (const [name, content] of created)
+      try {
+        atomicCreateArtifact(path.join(output, name), content);
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error;
+      }
   };
   if (inputs.mode === "project") withProjectMutation({ root: inputs.projectRoot, storage: inputs.storage, scope: "product-graph-build", timeoutMs: 0 }, write);
   else write();
   return {
     status: "built",
     mode: result.mode,
-    written: files.map(([name, content]) => ({ name, bytes: Buffer.byteLength(content), sha256: sha256Hex(content) })),
+    written: [...files, ...created].map(([name, content]) => ({ name, bytes: Buffer.byteLength(content), sha256: sha256Hex(content) })),
+    baseline: baseline.state || { status: "none" },
     outputLocation: inputs.mode === "project" ? `${inputs.storage.directory}/${PRODUCT_GRAPH_DIRECTORY}/${PRODUCT_GRAPH_BUILD_DIRECTORY}` : output,
     nodes: graph.nodes.length,
     edges: graph.edges.length,
     ...result,
+  };
+}
+
+// ---------- reading an existing build (query, viewer, baseline move) ----------
+
+const BOUNDED_LIST = 5;
+const PRODUCT_GRAPH_SOURCE_READ_BYTES = 1024 * 1024;
+const bounded = (items) => `${items.slice(0, BOUNDED_LIST).join(", ")}${items.length > BOUNDED_LIST ? ` 외 ${items.length - BOUNDED_LIST}개` : ""}`;
+
+function buildCommandOf(inputs) {
+  if (!inputs) return "product-graph-build <source-root> --documents <folder> --rules <entry-rules.json> --out <folder>";
+  if (inputs.mode === "project") return `product-graph-build ${inputs.projectRoot}`;
+  return `product-graph-build ${inputs.sourceRoot ?? "<source-root>"} --documents ${inputs.documentsDirectory ?? "<folder>"} --rules ${inputs.rulesFile ?? "<entry-rules.json>"} --out ${inputs.outputDirectory}`;
+}
+
+function sourceHashNow(sourceRoot, relative) {
+  try {
+    const file = path.join(sourceRoot, ...relative.split("/"));
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile() || stat.size > PRODUCT_GRAPH_SOURCE_READ_BYTES) return null;
+    return sourceTextHash(new TextDecoder("utf-8", { fatal: true }).decode(fs.readFileSync(file)));
+  } catch {
+    return null;
+  }
+}
+
+// 6.3: is this build still the source as it is now? Compares the documents,
+// the rules file and every source file the build read (and looks for new code
+// files) with what is on disk. Read-only. Without a source root, unknown.
+function freshnessOf(inputs, graph) {
+  const result = { state: "fresh", documents: { known: false, changed: [] }, rules: { known: false, changed: false }, source: { known: false, changed: [] } };
+  if (!inputs) {
+    result.state = "unknown";
+    result.source.reason = "소스 루트 없이 빌드 폴더만 받았다";
+    result.text = "소스가 바뀌었는지 알 수 없음 — 소스 루트 없이 빌드 폴더만 받았다";
+    return result;
+  }
+  // Each input is compared only when it was given; what was not given stays
+  // "알 수 없음" with that reason.
+  if (!inputs.documentsDirectory) result.documents.reason = "문서 폴더를 받지 않았다";
+  else
+    try {
+      const now = new Map(
+        readDocumentFiles(inputs.documentsDirectory)
+          .files.filter((file) => ["document", "policy", "meaning"].includes(file.role))
+          .map((file) => [file.path, file.sha256]),
+      );
+      const before = new Map((graph.inputs?.documents || []).map((item) => [item.path, item.sha256]));
+      result.documents = {
+        known: true,
+        changed: [...new Set([...now.keys(), ...before.keys()])].filter((file) => now.get(file) !== before.get(file)).sort(compare),
+      };
+    } catch (error) {
+      result.documents.reason = error.code || "문서를 읽지 못했다";
+    }
+  let excludes = [];
+  if (!inputs.rulesFile) result.rules.reason = "호출 방식 표 파일을 받지 않았다";
+  else
+    try {
+      const rules = readRules({ ...inputs, rulesRequired: false });
+      result.rules = { known: true, changed: (rules.sha256 ?? null) !== (graph.inputs?.rulesSha256 ?? null) };
+      excludes = rules.rules?.source?.["제외"] || [];
+    } catch (error) {
+      result.rules = { known: true, changed: true, reason: error.code || "호출 방식 표를 읽지 못했다" };
+    }
+  const recorded = graph.inputs?.sourceFiles;
+  if (!inputs.sourceRoot) result.source.reason = "소스 루트를 받지 않았다";
+  else if (!Array.isArray(recorded)) result.source.reason = "이 빌드는 읽은 소스 파일의 해시를 적지 않았다(0.3.0-beta.126 이전에 만든 빌드)";
+  else
+    try {
+      const changed = [];
+      const known = new Set();
+      for (const item of recorded) {
+        known.add(item.path);
+        if (sourceHashNow(inputs.sourceRoot, item.path) !== item.sha256) changed.push(item.path);
+      }
+      // A code file the build would read now but did not (a file it cannot
+      // read as text is not one the build reads either).
+      for (const file of productGraphCodeFiles(inputs.sourceRoot, excludes))
+        if (!known.has(file) && sourceHashNow(inputs.sourceRoot, file) !== null) changed.push(file);
+      result.source = { known: true, changed: changed.sort(compare) };
+    } catch (error) {
+      result.source.reason = `소스를 읽지 못했다 (${error.code || "읽기 실패"})`;
+    }
+  const parts = [];
+  if (result.documents.changed.length) parts.push(`문서 ${result.documents.changed.length}개 (${bounded(result.documents.changed)})`);
+  if (result.rules.changed) parts.push("호출 방식 표");
+  if (result.source.known && result.source.changed.length) parts.push(`소스 파일 ${result.source.changed.length}개 (${bounded(result.source.changed)})`);
+  const unknowns = [
+    ...(!result.source.known ? [`소스가 바뀌었는지 알 수 없음 — ${result.source.reason}`] : []),
+    ...(!result.documents.known ? [`문서가 바뀌었는지 알 수 없음 — ${result.documents.reason}`] : []),
+    ...(!result.rules.known ? [`호출 방식 표가 바뀌었는지 알 수 없음 — ${result.rules.reason}`] : []),
+  ];
+  if (parts.length) {
+    result.state = "stale";
+    result.text = `빌드가 낡음: ${parts.join(" / ")}${unknowns.length ? ` · ${unknowns.join(" · ")}` : ""}`;
+  } else if (unknowns.length) {
+    result.state = "unknown";
+    result.text = unknowns.join(" · ");
+  } else result.text = "빌드 뒤 바뀐 것 없음";
+  return result;
+}
+
+// Reads the existing build: graph.json, check.json, the time of graph.json
+// and the baseline's time. Never builds, checks or writes. Project mode reads
+// the Project's build folder; { buildDirectory } reads a stand-alone output
+// folder (its source state is then unknown); the stand-alone build options
+// read --out with the given roots.
+export function readProductGraphBuild(options = {}) {
+  let inputs = null,
+    directory;
+  if (options.buildDirectory) {
+    directory = path.resolve(options.buildDirectory);
+    // Whatever roots were given with the folder are used for 6.3.
+    if (options.sourceRoot || options.documentsDirectory || options.rulesFile)
+      inputs = {
+        mode: "standalone",
+        sourceRoot: options.sourceRoot ? path.resolve(options.sourceRoot) : null,
+        documentsDirectory: options.documentsDirectory ? path.resolve(options.documentsDirectory) : null,
+        rulesFile: options.rulesFile ? path.resolve(options.rulesFile) : null,
+        rulesRequired: false,
+        outputDirectory: directory,
+        approvals: false,
+      };
+  } else {
+    inputs = resolveInputs({ ...options, requireOutput: true });
+    directory = inputs.outputDirectory;
+  }
+  const buildCommand = buildCommandOf(inputs);
+  const folder = outputStat(directory);
+  if (folder && !folder.isDirectory() && !folder.isSymbolicLink())
+    return {
+      status: "unreadable",
+      code: "PRODUCT_GRAPH_OUTPUT_NOT_DIRECTORY",
+      reason: "빌드 폴더 자리에 폴더가 아닌 것이 있다",
+      buildCommand,
+      inputs,
+      directory,
+    };
+  if (!folder) return { status: "not-built", code: "PRODUCT_GRAPH_NOT_BUILT", reason: "없음, 빌드 필요", buildCommand, inputs, directory };
+  if (inputs?.mode === "project") assertNoLinkedComponents(inputs.projectRoot, path.join(directory, "graph.json"));
+  const graphFile = path.join(directory, "graph.json");
+  const stat = outputStat(graphFile);
+  if (!stat) return { status: "not-built", code: "PRODUCT_GRAPH_NOT_BUILT", reason: "없음, 빌드 필요", buildCommand, inputs, directory };
+  let graph, check;
+  try {
+    if (!stat.isFile()) throw Object.assign(new Error("not a file"), { code: "PRODUCT_GRAPH_BUILD_UNREADABLE" });
+    graph = JSON.parse(fs.readFileSync(graphFile, "utf8"));
+    check = JSON.parse(fs.readFileSync(path.join(directory, "check.json"), "utf8"));
+  } catch (error) {
+    return {
+      status: "unreadable",
+      code: "PRODUCT_GRAPH_BUILD_UNREADABLE",
+      reason: `빌드 파일을 읽지 못했다 (${error.code || "JSON이 아니다"})`,
+      buildCommand,
+      inputs,
+      directory,
+    };
+  }
+  if (graph?.kind !== "LodeProductGraph" || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges) || check?.kind !== "ProductGraphCheck")
+    return { status: "unreadable", code: "PRODUCT_GRAPH_BUILD_UNREADABLE", reason: "빌드 파일의 모양이 제품 그래프가 아니다", buildCommand, inputs, directory };
+  const baseline = readBaseline(path.join(directory, PRODUCT_GRAPH_BASELINE_FILE));
+  return {
+    status: "built",
+    builtAt: stat.mtime.toISOString(),
+    graph,
+    check,
+    freshness: freshnessOf(inputs, graph),
+    baselineNow: baseline.baseline ? { setAt: baseline.baseline.setAt } : null,
+    buildCommand,
+    inputs,
+    directory,
+  };
+}
+
+// 8A.2: the only operation that moves the baseline. Takes the existing build
+// as the new baseline when that build is the source as it is now.
+export function moveProductGraphBaseline(options = {}) {
+  if (options.buildDirectory)
+    fail("PRODUCT_GRAPH_BUILD_STALE", "소스 루트 없이 빌드 폴더만으로는 기준을 옮기지 않는다. 프로젝트나 빌드와 같은 독립 실행 옵션을 준다.");
+  const read = readProductGraphBuild(options);
+  if (read.status === "not-built") fail("PRODUCT_GRAPH_NOT_BUILT", `제품 그래프 빌드가 없다. 먼저 빌드한다: ${read.buildCommand}`);
+  if (read.status !== "built") fail(read.code || "PRODUCT_GRAPH_BUILD_UNREADABLE", read.reason);
+  const { graph, check, inputs } = read;
+  if (!Array.isArray(graph.inputs?.sourceFiles) || graph.nodes.some((node) => !Object.hasOwn(node, "contentSha256")))
+    fail("PRODUCT_GRAPH_BUILD_STALE", `이 빌드에는 내용 해시가 없다(이전 버전의 빌드). 다시 빌드한 뒤 옮긴다: ${read.buildCommand}`);
+  if (read.freshness.state !== "fresh") fail("PRODUCT_GRAPH_BUILD_STALE", `${read.freshness.text}. 다시 빌드한 뒤 옮긴다: ${read.buildCommand}`);
+  const file = path.join(read.directory, PRODUCT_GRAPH_BASELINE_FILE);
+  const counts = check.changes?.status === "compared" ? check.changes.counts : null;
+  const dropped = {
+    changes: counts ? counts.changed + counts.added + counts.removed + counts.reachChanged : 0,
+    reviewAgain: counts ? counts.reviewAgain : 0,
+  };
+  const move = () => {
+    const old = readBaseline(file);
+    const previous = old.baseline ? { setAt: old.baseline.setAt, droppedChanges: dropped.changes, droppedReviewAgain: dropped.reviewAgain } : null;
+    const baseline = baselineFromGraph(graph, { setAt: new Date().toISOString(), previous });
+    if (inputs.mode === "project") assertNoLinkedComponents(inputs.projectRoot, file);
+    atomicWriteArtifact(file, serializeBaseline(baseline));
+    return { baseline, previous };
+  };
+  const { baseline, previous } =
+    inputs.mode === "project"
+      ? withProjectMutation({ root: inputs.projectRoot, storage: inputs.storage, scope: "product-graph-build", timeoutMs: 0 }, move)
+      : move();
+  return {
+    status: "moved",
+    setAt: baseline.setAt,
+    previous,
+    dropped,
+    text: `기준을 옮겼다: ${baseline.setAt}. 바뀐 것 ${dropped.changes}개와 다시 볼 것 ${dropped.reviewAgain}개가 목록에서 빠진다(다음 빌드부터).${previous ? ` 이전 기준: ${previous.setAt}.` : " 이전 기준은 없었다."}\n`,
+    graphUnchanged: true,
   };
 }
 

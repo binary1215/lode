@@ -11,6 +11,69 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.127 — publication tracked separately
+
+- Added: the Graph Explorer opens on where the work stands, shows the
+  product graph, and an agent can ask the product graph.
+  - One exported file, four views. Status comes first: what the project is
+    for (marked as set by the user), Sessions with something to look at
+    first, and pending work and unknowns collected across Sessions. Then the
+    product graph, its gaps, and the existing map, unchanged, behind its tab
+    and a link.
+  - Pending work is shown as finished only when a later record of the same
+    Session says so for the same item. A Session that ended, a later record
+    with nothing pending, or a pass never closes it. A cancelled item has
+    its own state. A record whose text arrived only in part says so.
+  - The product graph is an indented tree walked one step at a time with
+    the path shown: 유저 활동 → 화면요소 → 기능 → 코드 with documents, 기능 by
+    kind without them. Estimates are marked on every node and edge they
+    touch and never look approved. With no build the view says "없음, 빌드
+    필요" and shows no sample.
+  - The gaps view shows what `check.txt` says, in its order and numbers.
+    "검사 못 함" never looks like "0건".
+  - New options: `--view status|product|gaps|map` and `--lang en|ko`
+    (default `en`). The product graph words are shown as they are in both
+    languages; the map view stays English. A plain click now selects one
+    record, Ctrl/Cmd or Shift adds. Light and dark follow the device.
+  - `product-graph-query` (CLI) and `lode_product_graph_query` (through
+    `lode_tools_call`) answer from the existing build without building:
+    overview, one node, one step down or up, the code a 기능, 화면요소, 유저
+    활동 or 화면 reaches or the 기능 that reach a file, find, gaps, and
+    changes. Every answer starts with whether the build is still the source
+    as it is now, how much of the calls resolved, and what changed since the
+    baseline. Output is paged and says how much remains. The text is also
+    the text board of the page.
+- Added: the product graph build compares with a baseline instead of only
+  replacing its output.
+  - Every node carries a content hash (a declaration by the text of its
+    lines, a 기능 by its kind, handling and handlers plus a second hash over
+    all code it reaches). Hashes are attributes; IDs do not change. Line
+    endings and moving a declaration inside its file change no hash.
+  - `build/baseline.json` is taken by the first build. Later builds compare
+    with it and do not move it, so building again keeps showing everything
+    that changed. Only `product-graph-baseline` moves it; it refuses a build
+    that is not the current source and says what the move drops.
+  - The comparison uses the original's four words per node, 변화 없음 / 변경
+    / 신규 / 사라짐, adds 닿는 코드가 바뀜 for a 기능 whose reached code
+    changed, pairs a vanished and a new node with the same content as
+    "옮겨졌을 수 있음", and names a changed rules file or reader first.
+  - "다시 볼 것" lists the 뜻 lines and document rows that hang on what
+    changed. It reports only: no document, 뜻 line or approval is changed,
+    and an approved document keeps its approval with a mark.
+  - The build still reads all source every time. What is new is the
+    comparison, its result and the baseline. All new values live in the
+    generated `build/` folder; builds made by 0.3.0-beta.124–126 stay
+    readable, and an unknown build shape is answered with
+    `PRODUCT_GRAPH_BUILD_UNREADABLE`.
+- Limits: a moved or renamed file is 사라짐 plus 신규 with a hint, not one
+  identity. A 뜻 line or an approval does not record what it was written
+  from, so "look again" is relative to the baseline. A newly added non-code
+  entry file is not seen as a stale build until the next build. On Lode
+  itself the build takes about 5 seconds and the baseline is 1.7 MB; the
+  exported file grows by the size of the product graph (the author measured
+  20.7 MB to 23.1 MB). Not checked with a screen reader, and the light
+  theme was checked by token contrast, not by eye.
+
 ## 0.3.0-beta.126 — publication tracked separately
 
 - Changed: the product graph says what a call is, and resolves the calls a

@@ -99,8 +99,8 @@ const GROUPS = [
   },
   {
     name: "lode_product_graph",
-    summary: "Build, check or approve documents of the product graph (the original's 제품 그래프), apart from the Product Model.",
-    actions: ["build", "check", "approve"],
+    summary: "Build, check, query, move the baseline of, or approve documents of the product graph (the original's 제품 그래프), apart from the Product Model.",
+    actions: ["build", "check", "query", "baseline", "approve"],
   },
   {
     name: "lode_vcs",

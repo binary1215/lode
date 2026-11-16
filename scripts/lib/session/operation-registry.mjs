@@ -1586,6 +1586,93 @@ export const OPERATIONS = Object.freeze([
     impl: () => import("../world/product-graph.mjs").then((module) => module.checkProductGraph),
   },
   {
+    name: "lode_product_graph_query",
+    tool: {
+      name: "lode_product_graph_query",
+      description:
+        "Ask the existing product graph build one step at a time, read-only (never builds, checks or writes). Helps when you need which code a user action or 기능 reaches (reach), what reaches a file or function (reach on a 코드 node or file path), what points to a node (up), one step down from a node (down), where the gaps are (gaps) or what changed since the baseline (changes); overview lists the starts. The graph is a text scan without types that follows resolved call and callback references only; every answer starts with whether the build is still the source as it is now and how many calls were resolved. Not a prerequisite of ordinary work. With no build the answer is PRODUCT_GRAPH_NOT_BUILT with the build command.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          question: { type: "string", enum: ["overview", "node", "down", "up", "reach", "find", "gaps", "changes"], default: "overview" },
+          id: {
+            type: "string",
+            minLength: 1,
+            description: "Node ID for node, down, up and reach (a file path for a file node); a start such as @기능 for down.",
+          },
+          text: { type: "string", minLength: 1, description: "What find looks for in IDs, plain words and paths." },
+          list: { type: "string", minLength: 1, description: "One list for gaps or changes, by its key." },
+          limit: { type: "integer", minimum: 1, maximum: 500, default: 50 },
+          cursor: { type: "integer", minimum: 0, default: 0 },
+          depth: { type: "integer", minimum: 1, maximum: 8, default: 1 },
+        },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+    },
+    mcp: {
+      args: (args) => [
+        {
+          root: args.project_root,
+          question: args.question ?? "overview",
+          id: args.id ?? null,
+          text: args.text ?? null,
+          list: args.list ?? null,
+          limit: args.limit ?? 50,
+          cursor: args.cursor ?? 0,
+          depth: args.depth ?? 1,
+        },
+      ],
+    },
+    cli: {
+      command: "product-graph-query",
+      flags: ["build", "documents", "rules", "list", "limit", "cursor", "depth"],
+      args: ({ root, options }) => {
+        const [question = "overview", argument = null, ...extra] = options._positional || [];
+        if (extra.length) throw new Error(`Unexpected argument: ${extra[0]}`);
+        return [
+          {
+            // With --build the positional root is the source root of that stand-alone
+            // build; --documents and --rules, when given, are compared too (6.3).
+            ...(options.build
+              ? { buildDirectory: options.build, sourceRoot: root, documentsDirectory: options.documents ?? null, rulesFile: options.rules ?? null }
+              : { root }),
+            question,
+            id: ["node", "down", "up", "reach"].includes(question) ? argument : null,
+            text: question === "find" ? argument : null,
+            list: options.list ?? null,
+            limit: options.limit ?? 50,
+            cursor: options.cursor ?? 0,
+            depth: options.depth ?? 1,
+          },
+        ];
+      },
+    },
+    impl: () => import("../world/product-graph-query.mjs").then((module) => module.queryProductGraph),
+  },
+  {
+    name: "lode_product_graph_baseline",
+    tool: {
+      name: "lode_product_graph_baseline",
+      description:
+        "Move the product graph's comparison baseline to the existing build. This is the only way the baseline moves; builds, checks, queries and exports never move it. Refused with PRODUCT_GRAPH_BUILD_STALE when the build is not the source as it is now. The result says how many changed items and 다시 볼 것 items leave the list. Writes only build/baseline.json.",
+      inputSchema: {
+        type: "object",
+        properties: { project_root: { type: "string", minLength: 1 } },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root }] },
+    cli: {
+      command: "product-graph-baseline",
+      flags: ["documents", "rules", "out"],
+      args: ({ root, options }) => [productGraphCliOptions(root, options, { output: true })],
+    },
+    impl: () => import("../world/product-graph.mjs").then((module) => module.moveProductGraphBaseline),
+  },
+  {
     name: "lode_product_graph_approve",
     tool: {
       name: "lode_product_graph_approve",
@@ -5260,7 +5347,7 @@ export const OPERATIONS = Object.freeze([
     name: "cli:graph-explorer",
     cli: {
       command: "graph-explorer",
-      flags: ["anchors", "history", "layer", "output", "paths", "query", "share"],
+      flags: ["anchors", "history", "lang", "layer", "output", "paths", "query", "share", "view"],
       handle: async (context) => {
         const { root, options } = context;
         return import("../world/graph-explorer.mjs").then(({ exportGraphExplorer }) =>
@@ -5273,6 +5360,8 @@ export const OPERATIONS = Object.freeze([
             history: options.history === true,
             share: options.share === true,
             output: options.output || null,
+            view: options.view || null,
+            lang: options.lang || "en",
           }),
         );
       },
@@ -5984,6 +6073,8 @@ const supplementalReadOnlyHints = {
   lode_feature_mapping_review: false,
   lode_product_graph_build: false,
   lode_product_graph_check: true,
+  lode_product_graph_query: true,
+  lode_product_graph_baseline: false,
   lode_product_graph_approve: false,
   lode_conformance_propose: false,
   lode_conformance_disposition: false,

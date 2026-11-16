@@ -1,0 +1,309 @@
+{
+  "kind": "ProductGraphCheck",
+  "schemaVersion": 1,
+  "mode": "독립 실행",
+  "includeEstimates": true,
+  "checks": [
+    {
+      "key": "product-core-policy",
+      "heading": "제품코어와 부딪히는 정책",
+      "meaning": "정책이나 제품코어 중 하나가 틀렸다",
+      "outcome": "검사 못 함",
+      "reason": "제품 정의서가 없다, 정책 파일이 없다"
+    },
+    {
+      "key": "element-function-without-activity",
+      "heading": "화면요소 → 기능이 있는데 그 화면요소를 가리키는 유저 활동이 없다",
+      "meaning": "기획에 빠진 일이거나 쓰이지 않는 기능",
+      "outcome": "0건",
+      "compared": 1
+    },
+    {
+      "key": "activity-navigate",
+      "heading": "앞 활동의 화면에서 다음 활동의 화면으로 가는 navigate가 없다",
+      "meaning": "막힌 동선",
+      "outcome": "검사 못 함",
+      "reason": "navigate 연결을 뽑지 않음"
+    },
+    {
+      "key": "screen-without-activity",
+      "heading": "어떤 유저 활동도 가리키지 않는 화면",
+      "meaning": "목적 없는 화면",
+      "outcome": "0건",
+      "compared": 1
+    },
+    {
+      "key": "screen-policy-differs",
+      "heading": "화면 정책 절과 정책 노드가 다르다",
+      "meaning": "둘 중 하나가 낡았다",
+      "outcome": "검사 못 함",
+      "reason": "정책 파일이 없다"
+    },
+    {
+      "key": "journey-order-differs",
+      "heading": "유저 활동의 다음 활동과 유저저니 순서가 다르다",
+      "meaning": "둘 중 하나가 낡았다",
+      "outcome": "검사 못 함",
+      "reason": "유저 저니맵이 없다"
+    }
+  ],
+  "guide": [
+    {
+      "input": "제품 정의서",
+      "state": "없음",
+      "reason": "제품 정의서가 없다",
+      "unlocks": [
+        "검사 1"
+      ],
+      "next": "제품 정의서.md를 쓰고 → --include-estimates로 검사한다 (승인은 Lode 프로젝트에서만 센다)"
+    },
+    {
+      "input": "유저 저니맵",
+      "state": "없음",
+      "reason": "유저 저니맵이 없다",
+      "unlocks": [
+        "검사 6"
+      ],
+      "next": "유저 저니맵.md를 쓰고 → --include-estimates로 검사한다 (승인은 Lode 프로젝트에서만 센다)"
+    },
+    {
+      "input": "정책 파일",
+      "state": "없음",
+      "reason": "정책 파일이 없다",
+      "unlocks": [
+        "검사 1",
+        "검사 5"
+      ],
+      "next": "정책.md를 쓰고 → --include-estimates로 검사한다 (승인은 Lode 프로젝트에서만 센다)"
+    }
+  ],
+  "lists": {
+    "missingIds": [],
+    "unpointedFunctions": [],
+    "unpointedFunctionsReason": null,
+    "vanishedMeanings": [],
+    "unreachedCode": {
+      "declarations": 0,
+      "filesNothingReached": 0,
+      "filesPartlyReached": 0,
+      "files": [],
+      "startedFrom": 1,
+      "extraCodeNodes": 0
+    },
+    "unresolvedReferences": {
+      "all": 3,
+      "resolved": 3,
+      "unresolved": 0,
+      "byReason": [
+        {
+          "reason": "ambiguous",
+          "label": "같은 이름의 선언이 여럿이라 하나로 정하지 못함",
+          "settle": "어느 선언인지 정해 줄 import 경로나 타입 정보",
+          "count": 0,
+          "callees": []
+        },
+        {
+          "reason": "keyword",
+          "label": "호출처럼 보이지만 언어 키워드임 (import(, async (, super( 같은 것)",
+          "settle": "정할 것이 없다. 호출이 아니다",
+          "count": 0,
+          "callees": []
+        },
+        {
+          "reason": "no-declaration",
+          "label": "스캔한 코드 어디에도 그 이름의 선언이 없음",
+          "settle": "언어 내장·런타임 이름이면 정할 것이 없다. 제품 코드라면 그 파일이 스캔 범위(확장자, source.제외)에 드는지 확인",
+          "count": 0,
+          "callees": []
+        },
+        {
+          "reason": "external-import",
+          "label": "제품 밖 모듈(상대 경로가 아닌 import)에서 들여온 이름",
+          "settle": "그 패키지 코드를 스캔 범위에 넣거나, 제품 밖 경계로 둔다는 판단",
+          "count": 0,
+          "callees": []
+        },
+        {
+          "reason": "unknown-receiver",
+          "label": "받는 쪽(객체)의 타입을 모르는 호출",
+          "settle": "타입 정보(구문 트리와 타입 검사기)",
+          "count": 0,
+          "callees": []
+        },
+        {
+          "reason": "declared-elsewhere",
+          "label": "이 파일에는 그 이름의 함수·클래스 선언이 없고 다른 파일에만 있으며, 잇는 import도 없음",
+          "settle": "지역 변수에 담긴 함수, 전역 이름, star import까지 읽는 해석기 (타입 정보)",
+          "count": 0,
+          "callees": []
+        },
+        {
+          "reason": "dynamic-import",
+          "label": "동적 import: 경로가 글자 그대로가 아니거나, 같은 식에서 꺼내는 이름이 없음",
+          "settle": "경로를 글자로 쓰고 같은 식에서 이름을 꺼내기(.then((m) => m.이름) 또는 const { 이름 } = await import(...)), 또는 프로젝트 규칙",
+          "count": 0,
+          "callees": []
+        },
+        {
+          "reason": "rest",
+          "label": "그 밖: 스캔이 이유를 정하지 못함 (들여온 모듈을 찾지 못함, 모듈에 그 이름이 없음, 한 줄에 같은 이름이 메서드와 함수로 함께 쓰임)",
+          "settle": "구문 트리 기반의 더 정밀한 해석기",
+          "count": 0,
+          "callees": []
+        }
+      ]
+    },
+    "notLookedAt": {
+      "files": 1,
+      "byExtension": [
+        {
+          "extension": ".json",
+          "count": 1
+        }
+      ],
+      "testCodeFiles": 0,
+      "unreadableCodeFiles": 0,
+      "skipped": []
+    },
+    "unresolvedHandlers": [],
+    "multiRowFunctions": [],
+    "partlyResolvedRows": [],
+    "notTakenBindings": [],
+    "uiWithoutRule": [],
+    "outOfScope": [],
+    "ruleIssues": [],
+    "formatIssues": [
+      {
+        "path": "유저플로우 기획서/UA-NOTE-01.md",
+        "line": 1,
+        "kind": "절 없음",
+        "detail": "무엇을 하는가"
+      },
+      {
+        "path": "유저플로우 기획서/UA-NOTE-01.md",
+        "line": 1,
+        "kind": "절 없음",
+        "detail": "언제 하게 되나"
+      },
+      {
+        "path": "유저플로우 기획서/UA-NOTE-01.md",
+        "line": 1,
+        "kind": "절 없음",
+        "detail": "얻는 것"
+      }
+    ],
+    "unrecognizedFiles": [],
+    "approvalIssues": []
+  },
+  "counts": {
+    "제품코어": 0,
+    "유저저니": 0,
+    "IA": 0,
+    "유저 활동": 1,
+    "화면": 1,
+    "화면요소": 1,
+    "정책": 0,
+    "기능": 1,
+    "코드": 6,
+    "데이터": "뽑지 않음",
+    "외부 연결": "뽑지 않음",
+    "DB": "뽑지 않음",
+    "계측 이벤트": "뽑지 않음"
+  },
+  "usedCounts": {
+    "유저 활동": 1,
+    "화면": 1,
+    "화면요소": 1,
+    "정책": 0
+  },
+  "referenceSummary": {
+    "resolvedCalls": 3,
+    "callbacks": 0,
+    "unresolvedCalls": 0
+  },
+  "documents": {
+    "approved": 0,
+    "changedAfterApproval": 0,
+    "estimated": 2,
+    "list": [
+      {
+        "path": "유저플로우 기획서/UA-NOTE-01.md",
+        "nodeType": "유저 활동",
+        "id": "UA-NOTE-01",
+        "approvalDigest": "cf3aa74caf15b4a6f07605facce8964ae44162c0202ac86ab92f870a035211b9",
+        "status": "추정",
+        "estimateKind": "코드만 보고 쓴 추정"
+      },
+      {
+        "path": "화면설계서/MAIN-01.md",
+        "nodeType": "화면",
+        "id": "MAIN-01",
+        "approvalDigest": "1ca9ae073237fc92edf6f13dd108abaaa581d0eb842f842f326f45ed5b6a5f78",
+        "status": "추정",
+        "estimateKind": null
+      }
+    ],
+    "approvalsRead": false
+  },
+  "limits": {
+    "title": "이 그래프가 답하지 못하는 것",
+    "codeReading": "코드는 정규식 기반 소스 분석으로 읽었다. 구문 트리가 아니고 타입 정보가 없다.",
+    "calls": {
+      "resolved": 3,
+      "all": 3,
+      "keywordPseudoCalls": 0,
+      "callbacks": 0
+    },
+    "referenceKinds": {
+      "emitted": [
+        "call",
+        "callback"
+      ],
+      "notToldApart": [
+        "framework-invoked",
+        "render",
+        "type reference",
+        "re-render",
+        "response",
+        "enqueue",
+        "navigate",
+        "http",
+        "defines"
+      ]
+    },
+    "notExtracted": {
+      "nodeTypes": [
+        "데이터",
+        "외부 연결",
+        "DB",
+        "계측 이벤트"
+      ],
+      "edges": [
+        "navigate"
+      ],
+      "grouping": "C4 묶음"
+    },
+    "uiBindingScan": [
+      "UI 연결은 패턴을 글자에 맞춰 찾는다. 여러 줄에 걸친 연결, 문자열로 만든 연결, 툴킷이 이름으로 자동으로 잇는 연결, 이벤트 이름을 실행 중에 계산하는 연결은 보지 못한다.",
+      "코드인지는 글자 단위 lexer로 가린다. JS·TS·Python 파일에서는 주석과 문자열(여러 줄 문자열과 템플릿 문자열 포함) 안의 연결을 걸러내고, HTML·Vue·Svelte 파일에서는 <!-- --> 주석만 걸러낸다. JSX의 on<Event>={…} 속성은 주석과 문자열을 가리지 않는다. lexer는 파서가 아니어서 정규식 리터럴을 바로 앞 글자로만 알아본다.",
+      "템플릿의 같은 태그 id는 가장 가까운 < 와 > 사이에서 찾는다. 이벤트 메서드는 이름으로만 찾고 상속은 확인하지 않는다."
+    ],
+    "lineLocalFallback": {
+      "count": 0,
+      "files": []
+    },
+    "tableRows": null,
+    "execution": "아무것도 실행하지 않았다. 문서와 코드를 비교할 뿐이고, 어느 발견도 실행 근거에 기대지 않는다.",
+    "documents": {
+      "approved": 0,
+      "changedAfterApproval": 0,
+      "estimated": 2,
+      "approvalsRead": false,
+      "includeEstimates": true,
+      "used": [
+        "유저플로우 기획서/UA-NOTE-01.md",
+        "화면설계서/MAIN-01.md"
+      ]
+    }
+  }
+}

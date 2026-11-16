@@ -7,6 +7,7 @@ import { collectGraphExplorerInventory } from "./project-graph.mjs";
 import { LocalJsonWorldModelStoreAdapter, createLocalReadOnlyWorldModelStoreAdapter } from "./world-model-store.mjs";
 import { inspectGraphLineageComparison } from "./graph-lineage.mjs";
 import { renderGraphExplorer } from "./graph-explorer-html.mjs";
+import { readProductGraphBuild } from "./product-graph.mjs";
 import { sha256Hex as sha } from "../core/digest.mjs";
 import { failCode as fail } from "../core/errors.mjs";
 
@@ -14,6 +15,50 @@ const MAX_ORIGINAL = 64 * 1024,
   MAX_ORIGINAL_TOTAL = 256 * 1024;
 const reason = (error) => (/^[A-Z][A-Z0-9_]{0,95}$/.test(error?.code || "") ? error.code : "GRAPH_EXPLORER_UNAVAILABLE");
 export const explorerReferenceKey = (reference) => JSON.stringify([reference?.path || null, reference?.digest || null]);
+export const GRAPH_EXPLORER_VIEWS = Object.freeze(["status", "product", "gaps", "map"]);
+export const GRAPH_EXPLORER_LANGUAGES = Object.freeze(["en", "ko"]);
+
+function checkViewOptions({ view, lang }) {
+  if (view !== null && !GRAPH_EXPLORER_VIEWS.includes(view)) fail("GRAPH_EXPLORER_INVALID_VIEW");
+  if (!GRAPH_EXPLORER_LANGUAGES.includes(lang)) fail("GRAPH_EXPLORER_INVALID_LANG");
+}
+
+// 4.1: the start view. Without --view, options that only mean something on the
+// map open the map; otherwise the status view.
+function initialViewOf({ view, query, anchorIds, paths, layer }) {
+  if (view) return view;
+  return query || anchorIds.length || paths.length || layer === "code" ? "map" : "status";
+}
+
+// 6.1: the existing product graph build, read as it is. The export never
+// builds, checks or approves; it reads graph.json and check.json, the time of
+// graph.json and the baseline's time, and hashes the documents, the rules file
+// and the source files the build read to tell whether the build is still the
+// source as it is now (6.3).
+function productGraphSection(owner, share) {
+  if (!owner.project) return { status: "not-built", reason: "PROJECT_GRAPH_NOT_INITIALIZED", buildCommand: "product-graph-build <project>" };
+  const root = owner.projectRoot;
+  // A shared copy names no local path: the command is written with a
+  // placeholder, not by searching for the root in a string (a root spelled in
+  // another case or given as a relative path would slip through that).
+  const command = (value) => (share ? "product-graph-build <project>" : value);
+  try {
+    const read = readProductGraphBuild({ root });
+    if (read.status !== "built") return { status: read.status, reason: read.reason, buildCommand: command(read.buildCommand) };
+    return {
+      status: "built",
+      builtAt: read.builtAt,
+      builtAtSource: "graph.json file modification time",
+      freshness: { state: read.freshness.state, text: read.freshness.text },
+      baselineNow: read.baselineNow,
+      buildCommand: command(read.buildCommand),
+      graph: read.graph,
+      check: read.check,
+    };
+  } catch (error) {
+    return { status: "unreadable", reason: reason(error), buildCommand: command(`product-graph-build ${root}`) };
+  }
+}
 
 function readOnlyLocalAdapter(Base, owner, directory) {
   const adapter = createLocalReadOnlyWorldModelStoreAdapter(owner);
@@ -76,8 +121,11 @@ export async function buildGraphExplorerSnapshot({
   layer = "project",
   history = false,
   share = false,
+  view = null,
+  lang = "en",
 } = {}) {
   if (typeof share !== "boolean") fail("GRAPH_EXPLORER_INVALID_SHARE_OPTION");
+  checkViewOptions({ view, lang });
   if (!["project", "code"].includes(layer)) fail("GRAPH_EXPLORER_INVALID_LAYER");
   const started = performance.now(),
     owner = readGraphProject(root),
@@ -207,6 +255,9 @@ export async function buildGraphExplorerSnapshot({
     }
   }
   if (!owner.project) unavailable.push("PROJECT_GRAPH_NOT_INITIALIZED");
+  const productStarted = performance.now();
+  const productGraph = productGraphSection(owner, share);
+  const productGraphMs = performance.now() - productStarted;
   // These are generated viewer hints, not original evidence. Do not recursively
   // redact raw bodies, hashes, historical references or canonical graph records.
   if (share)
@@ -231,6 +282,8 @@ export async function buildGraphExplorerSnapshot({
     },
     focus: { kind: layer, nativeSessionSelectionClaimed: false },
     initialLayer: layer,
+    initialView: initialViewOf({ view, query, anchorIds, paths, layer }),
+    lang,
     graph,
     codeGraph,
     originals,
@@ -258,9 +311,11 @@ export async function buildGraphExplorerSnapshot({
       exportMs: performance.now() - started,
       originalReferenceCount: originalReadCount,
       originalBytes,
+      productGraphMs,
       queryInventoryReads: "not-measured-by-this-view; output-node-limit-is-not-an-inventory-read-limit",
     },
     interpretation: "A generated local evidence snapshot, not a live view, Session binding, recovery direction or action approval.",
+    productGraph,
   };
 }
 
@@ -273,7 +328,10 @@ export async function exportGraphExplorer({
   history = false,
   share = false,
   output = null,
+  view = null,
+  lang = "en",
 } = {}) {
+  checkViewOptions({ view, lang });
   // Validate explicit output before doing potentially expensive reads. Only the
   // newly requested report is writable; no canonical/runtime directory is used.
   let file = output ? path.resolve(output) : null;
@@ -289,7 +347,7 @@ export async function exportGraphExplorer({
     file = path.resolve(resolved, path.relative(ancestor, file));
   }
   if (file && fs.existsSync(file)) fail("GRAPH_EXPLORER_OUTPUT_EXISTS");
-  const snapshot = await buildGraphExplorerSnapshot({ root, query, anchorIds, paths, layer, history, share }),
+  const snapshot = await buildGraphExplorerSnapshot({ root, query, anchorIds, paths, layer, history, share, view, lang }),
     html = renderGraphExplorer(snapshot);
   const bytes = Buffer.byteLength(html);
   if (!file) file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "lode-graph-explorer-")), "index.html");
@@ -314,6 +372,13 @@ export async function exportGraphExplorer({
     coverage: snapshot.graph.coverage,
     metrics: snapshot.metrics,
     generatedAt: snapshot.generatedAt,
+    initialView: snapshot.initialView,
+    lang: snapshot.lang,
+    productGraph: {
+      status: snapshot.productGraph.status,
+      builtAt: snapshot.productGraph.builtAt || null,
+      freshness: snapshot.productGraph.freshness?.state || null,
+    },
     snapshotAuthority: "P4-derived-view",
     ordinaryWorkBlocked: false,
   };
