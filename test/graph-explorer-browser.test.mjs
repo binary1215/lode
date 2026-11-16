@@ -75,7 +75,8 @@ test("explicit direct-neighbor map navigation keeps narrow cards readable, selec
   ui.event("focus");
   ui.event(mapNode("generic-0"), "keydown", { shiftKey: true, key: "ArrowRight" });
   const pinned = mapNode("generic-0").getAttribute("transform");
-  ui.event(ui.ids.get("records").children[1].children[0]);
+  // A plain click selects one record only (bundle 2, 4.3); Ctrl adds it.
+  ui.event(ui.ids.get("records").children[1].children[0], "click", { ctrlKey: true });
   const camera = ui.ids.get("graph").getAttribute("viewBox"),
     rootCard = ui.ids.get("selection-cards").children[0];
   rootCard.open = true;

@@ -1543,7 +1543,8 @@ function formatProductGraph(value) {
 
 export function formatMcpToolContent(name, value) {
   name = resolveOperation(name)?.semanticName ?? name;
-  if (["lode_product_graph_build", "lode_product_graph_check"].includes(name)) return formatProductGraph(value) ?? JSON.stringify(value);
+  if (["lode_product_graph_build", "lode_product_graph_check", "lode_product_graph_baseline", "lode_product_graph_query"].includes(name))
+    return formatProductGraph(value) ?? JSON.stringify(value);
   if (name === "lode_session_list") return formatSessionList(value);
   if (["lode_runtime_invocation_authorization", "lode_bounded_worker_status"].includes(name)) return formatPreparedRuntimeRead(value);
   if (name === "lode_project_graph") return formatGraphInventory(value) ?? formatTerminalGraph(value) ?? JSON.stringify(value);
@@ -1588,7 +1589,10 @@ export function formatCliError(error) {
 
 export function formatCliResult(command, value, presentation = {}) {
   if (["product-graph-build", "product-graph-check"].includes(command) && typeof value?.text === "string")
-    return command === "product-graph-build" ? `${value.text}\n만든 파일: ${value.outputLocation}\n` : value.text;
+    return command === "product-graph-build"
+      ? `${value.text}\n${value.baseline?.message ? `${value.baseline.message}\n` : ""}만든 파일: ${value.outputLocation}\n`
+      : value.text;
+  if (["product-graph-query", "product-graph-baseline"].includes(command) && typeof value?.text === "string") return value.text;
   if (command === "session-list") return formatSessionList(value);
   if (command === "runtime-invocation-read") return formatPreparedRuntimeRead(value);
   if (value?.status === "session_selection_unresolved") return formatUnavailableSession(value, { doctor: command === "doctor" });

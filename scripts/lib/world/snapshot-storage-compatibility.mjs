@@ -199,7 +199,7 @@ export function inspectStorageReaderCompatibility({ root, storage, verifyWorldPo
     layers,
     ordinaryWorkBlocked: false,
     nextAction:
-      "Read only the needed World/Graph with a reader supporting the declared layout/schema/producer. An absent hint is unknown; no setup or refresh is required for ordinary work. A layout this reader already understands with no minimumReader is upgraded in place by refresh, storage GC or world-index; snapshot bytes stay put.",
+      "Read only the needed World/Graph with a reader supporting the declared layout/schema/producer. An absent hint is unknown; no setup or refresh is required for ordinary work. A layout this reader already understands with no minimumReader is upgraded in place by the next refresh (storage GC reads it as it is and does not rewrite it); snapshot bytes stay put.",
   };
 }
 
@@ -242,6 +242,37 @@ export async function upgradeLegacyReaderPointers({ root, storage }) {
     if (written[idField] !== pointer[idField] || written[hashField] !== pointer[hashField] || !written.readerRequirements.minimumReader)
       fail("STORAGE_POINTER_CHANGED");
     upgraded.push(layer);
+  }
+  // The World pointer names the Graph pointer id it was published with. When
+  // that id is not the current Graph pointer's (an upgrade that stopped
+  // between the two writes, or a Graph pointer upgraded by an earlier run) and
+  // the Graph snapshot id and hash still agree, the link is repaired; otherwise
+  // it is left for the reader to report.
+  const worldFile = path.join(root, storage.directory, "world-model", "current.json");
+  const graphFile = path.join(root, storage.directory, "graph-projection", "current.json");
+  const world = readPointer(root, worldFile),
+    graph = readPointer(root, graphFile);
+  const linked = world?.sourceAdapters?.graphProjection;
+  if (
+    linked &&
+    graph?.pointerId &&
+    linked.pointerId !== graph.pointerId &&
+    linked.graphSnapshotId === graph.graphSnapshotId &&
+    linked.graphSnapshotHash === graph.graphSnapshotHash
+  ) {
+    verifyWorldModelPointerOriginal(world, storage.projectId);
+    verifyGraphProjectionPointer(graph, null, storage);
+    const next = { ...world, sourceAdapters: { ...world.sourceAdapters, graphProjection: { ...linked, pointerId: graph.pointerId } } };
+    atomicWriteText(worldFile, JSON.stringify(next));
+    const written = readPointer(root, worldFile);
+    verifyWorldModelPointerOriginal(written, storage.projectId);
+    if (
+      written.worldModelId !== world.worldModelId ||
+      written.worldModelHash !== world.worldModelHash ||
+      written.sourceAdapters?.graphProjection?.pointerId !== graph.pointerId
+    )
+      fail("STORAGE_POINTER_CHANGED");
+    upgraded.push("world-graph-link");
   }
   return { upgraded };
 }

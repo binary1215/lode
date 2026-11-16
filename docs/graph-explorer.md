@@ -4,6 +4,51 @@ Graph Explorer makes a local, read-only picture of existing Lode evidence. Use i
 to follow a purpose or recorded judgment to sources, relationships, results and
 remaining questions. It is optional: ordinary work and recovery do not depend on it.
 
+## Four views
+
+The file opens on **Status**. Tabs next to it switch, without loading anything, to
+**Product graph**, **Gaps** and **Map** (the evidence map described below).
+
+- **Status** answers "where does the work stand". It shows the user's current
+  direction (goal, conditions to keep, things decided not to do), marked as set by
+  the user; counts of work sessions, saved work records, pending work and unknowns;
+  one row per Session, those with pending work first, those with only unknowns
+  next, the rest folded; and the pending work and unknowns of every record, each
+  linking to the record it comes from. Only what the records say is shown: an item
+  counts as finished only when a later record of the same Session has a completed
+  todo with the same `todoId` whose `prior` or `resolves` names it. A Session
+  ending, a later record with no pending work, a passing check or similar words never
+  finish an item. A Session page lists its records newest first; a record page shows
+  what came before and after, the agent's judgments with their reasons (marked as
+  written by the agent), the files it refers to (their retained text opens in place
+  when the copy has it) and, folded, the record ID and digest. A folder that is not a
+  Lode Project, or a Project without work records, says what is missing.
+- **Product graph** reads the existing [product graph](product-graph-usage.md)
+  build; the export never builds it. The first block says when `graph.json` was
+  written (the file's time), whether the build is still the source as it is now, the
+  limits, the node counts and the document states; the comparison with the baseline
+  is a separate statement. Pick a start (with documents: 제품코어, 유저저니, 유저 활동;
+  without: 기능 by 호출 방식 under the guide), then open one level at a time. The
+  path from the start to the current row stays on top, a node already on that path is
+  marked "위에 있음", levels are paged 50 rows at a time, and only opened levels are in
+  the page. Each row offers what points to it, and, for a 기능 (or what stands for one)
+  the code it reaches, for code the 기능 that reach it. "Show as text" shows exactly
+  what `product-graph-query` prints for the same question. With no build the view
+  says "없음, 빌드 필요" and the command.
+- **Gaps** shows `check.json` in the order of `check.txt`: what the graph cannot
+  answer, the comparison with the baseline and 다시 볼 것, the first-run guide, the six
+  정합성 검사 lines (each ends in findings, 0건 or 검사 못 함 with its reason, marked
+  differently) and every list with its count. An item that names a node opens it in
+  the product graph view.
+
+Options: `--view status|product|gaps|map` picks the first view; without it,
+`--query`, `--anchors`, `--paths` or `--layer code` open the map. `--lang ko`
+gives Korean frame and view text (default `en`); the product graph's own words are
+shown as the build wrote them in both, and the map stays English in this version.
+Light and dark follow the device setting. Times are shown in the viewer's time zone.
+At phone width every view is one column. Tabs and tree rows work from the keyboard
+(Enter or Right opens a row, Left folds it).
+
 ## Open a snapshot
 
 Ask Lode: “Create a local graph snapshot for this project.” In a distribution
@@ -79,9 +124,10 @@ The Source layer shows the existing code graph’s imports and calls. They retai
 their separate original identifiers and basis; matching paths do not create new
 relationships. Product and Work are filters over shared evidence, not two databases.
 
-Start with records from search, the map or the list. Click or Enter adds a record
-to the selection and changes reading focus; it does not move the camera or unfold
-neighbors. Ctrl/Cmd-click, a checkbox or Space toggles membership. Use Clear
+Start with records from search, the map or the list. A plain click or Enter selects
+only that record and changes reading focus; it does not move the camera or unfold
+neighbors. Ctrl/Cmd-click, Shift-click, a checkbox or Space adds or removes one record.
+Read focus on a reading card moves focus without changing the selection. Use Clear
 selection or Select only focus explicitly. Shift-drag the map background, or turn
 on Rectangle select, to add visible records; the list and keyboard can select the
 same set. Escape cancels a gesture/calculation without clearing prior selection.

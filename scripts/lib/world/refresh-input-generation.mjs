@@ -353,6 +353,10 @@ export function writeRefreshInputGeneration({ root, storage, snapshot, verifiedF
     reader,
     // The World's skipped counters, compared by the fast path's walk.
     skipped: snapshot.skipped ?? null,
+    // The Session the build was routed to (its state is part of the World).
+    // The stamp sees that Session's files; the fast path declines when a
+    // refresh is routed to another Session.
+    sessionId: snapshot.runtimeState?.sessionId ?? null,
     snapshotStore: snapshotStoreStamp(root, storage),
     files,
   };
