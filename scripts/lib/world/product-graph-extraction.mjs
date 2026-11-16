@@ -105,15 +105,34 @@ function walkSource(sourceRoot, excludes, skipped = new Map()) {
   return files;
 }
 
+// Every file the build reads as text, by path: its text as read. The build
+// hashes these (inputs.sourceFiles) so a later reader can tell whether the
+// source moved since. Set only while extractProductGraphCode runs.
+let readLog = null;
+
 function readText(sourceRoot, relative) {
   const file = path.join(sourceRoot, ...relative.split("/"));
   const stat = fs.lstatSync(file);
   if (!stat.isFile() || stat.size > MAX_READ_BYTES) return null;
   try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(fs.readFileSync(file)).replace(/^﻿/, "");
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(fs.readFileSync(file)).replace(/^﻿/, "");
+    if (readLog) readLog.set(relative, text);
+    return text;
   } catch {
     return null;
   }
+}
+
+// The files a build would read as code now: the same walk and the same
+// classification as the build. Used to tell a new code file from an unread one.
+export function productGraphCodeFiles(sourceRoot, excludes = []) {
+  return walkSource(
+    path.resolve(sourceRoot),
+    excludes.map((item) => item.replace(/\/$/, "")),
+  ).filter((relative) => {
+    const extension = path.posix.extname(relative).toLowerCase();
+    return CODE_LANGUAGES[extension] && classifySourcePath(relative, extension) !== "test";
+  });
 }
 
 // A 코드 ID carries no line number. A declaration whose qualified name repeats
@@ -1096,6 +1115,17 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
 
 // Finds 기능 (entry points) and links each to the code that receives it.
 export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
+  const previous = readLog;
+  readLog = new Map();
+  try {
+    const result = extractWithReadLog({ sourceRoot, projectRules });
+    return { ...result, readFiles: readLog };
+  } finally {
+    readLog = previous;
+  }
+}
+
+function extractWithReadLog({ sourceRoot, projectRules }) {
   const root = path.resolve(sourceRoot);
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) fail("PRODUCT_GRAPH_SOURCE_ROOT_MISSING");
   const excludes = (projectRules?.source?.["제외"] || []).map((item) => item.replace(/\/$/, ""));

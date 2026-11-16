@@ -18,7 +18,7 @@
 lode-agent product-graph-build <project>
 ```
 
-빌드는 문서, 정책 파일과 뜻 파일, 호출 방식 표, 소스 트리를 읽고 `.lode/context/product-graph/build/` 아래에 `graph.json`, `check.json`, `check.txt`를 씁니다. 그 밖에는 아무것도 쓰지 않습니다. 문서, 승인 기록, `product-model.json`은 그대로입니다. 같은 입력으로 두 번 빌드하면 바이트까지 같습니다.
+빌드는 문서, 정책 파일과 뜻 파일, 호출 방식 표, 소스 트리를 읽고 `.lode/context/product-graph/build/` 아래에 `graph.json`, `check.json`, `check.txt`를, 처음에는 `baseline.json`도 씁니다(아래 기준 뒤 바뀐 것 참고). 그 밖에는 아무것도 쓰지 않습니다. 문서, 승인 기록, `product-model.json`은 그대로입니다. 같은 입력을 같은 폴더에 두 번 빌드하면 바이트까지 같습니다. 결과를 한 단계씩 읽으려면 아래 그래프에 묻기를 보거나 [Graph Explorer](graph-explorer.md)의 제품 그래프 보기를 엽니다.
 
 ## 검사
 
@@ -29,7 +29,7 @@ lode-agent product-graph-check <project> --include-estimates
 
 검사는 읽기만 합니다. 정합성 검사 여섯 줄과 그 뒤의 목록을 한국어로 냅니다. 기본으로는 승인된 문서만 쓰고, 빼 둔 추정 문서가 몇 개인지 알려 줍니다. `--include-estimates`를 주면 추정 문서도 쓰고, 그것에 기댄 발견마다 `[추정: 코드만 보고 쓴 추정]` 같은 표시를 붙입니다.
 
-MCP에서는 같은 연산이 묶음 tool `lode_product_graph`의 action `build`, `check`, `approve`이고, `lode_tools_call`(검사는 `lode_tools_read`도 됨)로 부릅니다. 기본 tool 목록에는 없습니다.
+MCP에서는 같은 연산이 묶음 tool `lode_product_graph`의 action `build`, `check`, `query`, `baseline`, `approve`이고, `lode_tools_call`(읽기만 하는 검사와 질의는 `lode_tools_read`도 됨)로 부릅니다. 기본 tool 목록에는 없습니다.
 
 ## 승인
 
@@ -58,6 +58,37 @@ digest를 받은 뒤 문서가 바뀌었으면 승인을 거절합니다. 승인
 - **어느 기능에서도 닿지 않는 코드**는 풀린 reference로 어느 기능에서도 닿지 않는 선언을, 많은 파일부터 적습니다. 풀린 호출이 적으면 항목이 많은 것이 당연합니다. 항목은 판정이 아니라 읽는 사람에게 던지는 질문(빠진 기능인가, 죽은 코드인가)입니다.
 - **하나로 정하지 못한 호출**은 이유마다 개수와 무엇이 있으면 정해지는지를 적습니다. 한계 블록은 호출을 세 수로 나눕니다. 전체, 제품 코드일 수 없거나 제품 밖 모듈로 가는 호출, 그리고 나머지 중 풀린 수입니다. **코드로 읽지 않은 파일**은 보지 않은 것을 세므로, 덮지 못한 곳이 드러납니다.
 - **사라진 기능의 뜻**은 기능이 없어진 뜻 줄을 적습니다. 대개 이름을 바꾼 뒤입니다. 그 줄을 손으로 새 ID로 옮깁니다. 빌드는 `기능 뜻.md`를 고치지 않습니다.
+
+## 그래프에 묻기
+
+```bash
+lode-agent product-graph-query <project>                      # overview: the first block and the starts
+lode-agent product-graph-query <project> node cli:sync
+lode-agent product-graph-query <project> down cli:sync [--depth 2]
+lode-agent product-graph-query <project> up cli:sync
+lode-agent product-graph-query <project> reach cli:sync       # code a 기능 reaches
+lode-agent product-graph-query <project> reach src/store.mjs  # 기능 that reach a file or a 코드 node
+lode-agent product-graph-query <project> find store
+lode-agent product-graph-query <project> gaps [--list unreachedCode]
+lode-agent product-graph-query <project> changes [--list reviewAgain]
+lode-agent product-graph-query <source-root> overview --build <folder>   # a stand-alone output folder
+```
+
+질의는 이미 있는 빌드를 읽기만 하고, 빌드·검사·승인·쓰기를 하지 않습니다. 모든 답은 세 줄로 시작합니다. `graph.json`을 쓴 시각과 빌드가 지금 소스 그대로인지(빌드 뒤 바뀐 것 없음, 빌드가 낡음: …, 소스가 바뀌었는지 알 수 없음), 제품 코드일 수 있는 호출 중 몇 개를 풀었는지, 기준 뒤 무엇이 바뀌었는지입니다. 그다음 경로 줄과 들여 쓴 트리가 빌드의 말로 나옵니다. 답은 쪽으로 나뉩니다(`--limit`, 기본 50, 그리고 `--cursor`). 더 있는 답은 몇 개가 남았는지와 다음 쪽 명령을 말합니다. `down`과 시작점 `@기능`, `@기능/<kind>`, `@화면`, `@유저 활동`, `@파일`, `@바뀐 것`은 한 단계씩 갑니다. 이미 경로에 있는 노드는 위에 있음으로 표시합니다. `reach`는 풀린 call·callback 참조만 따라가고, 검사가 어느 기능에서도 닿지 않는 코드에 쓰는 것과 같은 닫힘입니다. `--json`은 구조화된 결과를 줍니다. 글자는 같은 질문에 대한 뷰어의 "글자로 보기"와 같습니다. 빌드가 없으면 답은 `PRODUCT_GRAPH_NOT_BUILT`와 빌드 명령이고, 모르는 ID는 `PRODUCT_GRAPH_NODE_NOT_FOUND`와 가까운 것들입니다.
+
+MCP에서는 묶은 도구 `lode_product_graph`의 `query` 동작(`lode_product_graph_query`)이 같은 질문입니다. 사용자 동작이 어떤 코드에 닿는지, 무엇이 한 파일에 닿는지, 빈 곳이 어디인지 알아야 할 때 도움이 됩니다. 타입 없는 스캔이고, 보통 작업의 전제가 아닙니다.
+
+## 기준 뒤 바뀐 것
+
+빌드는 읽은 것을 해시합니다. 코드 노드마다 그 글(파일은 전체, 선언은 줄 범위), 기능마다 종류·처리·처리 코드(그리고 닿는 코드 전체에 대한 두 번째 해시), 문서 노드마다 적힌 값, 읽은 소스 파일마다 그 글(`inputs.sourceFiles`)입니다. 글은 BOM을 빼고 CR LF와 CR을 LF로 바꾼 뒤 비교하므로, 다른 체크아웃의 줄 끝은 아무것도 바꾸지 않고, 선언을 글을 바꾸지 않은 채 파일 안에서 옮겨도 해시는 그대로입니다. 선언은 범위 끝의 빈 줄을 뺀 글로 해시하므로, 파일의 마지막 선언 뒤에 코드를 붙이면 그 파일과 새 선언만 바뀝니다. 줄 끝이 CR뿐인 파일은 파일 전체로는 LF 사본과 같은 해시이지만, 공유 스캔이 한 줄로 읽어서 선언의 줄 범위와 해시는 LF 사본과 다릅니다. 이 해시는 생성된 `build/` 폴더에만 있고, ID는 바뀌지 않습니다. 읽는 방식은 생성기, 그 그래프 버전, 소스 분석 버전으로 비교합니다. Lode 버전은 참고로만 적으므로, 코드를 똑같이 읽는 업그레이드는 바뀐 것으로 치지 않습니다.
+
+첫 빌드는 자신을 기준(`build/baseline.json`)으로 삼고 "기준 없음 — 이번 빌드를 기준으로 삼았다"고 말합니다. 뒤의 빌드는 기준과 비교하고 기준을 옮기지 않으므로, 다시 빌드해도 기준 뒤 바뀐 것을 모두 계속 보여 줍니다. `check.txt`와 `check.json`(`changes`)은 한계 바로 다음에 이것을 줍니다. 기준을 잡은 때와 그 뒤 움직인 것(소스 파일, 문서, 호출 방식 표, 읽는 방식), 노드 종류별로 변화 없음은 수로, 변경·신규·사라짐은 ID로, 자신의 내용은 같지만 닿는 코드가 바뀐 기능(닿는 코드가 바뀜)과 바뀐 노드, 새로 생기거나 사라진 연결, 옮겨졌을 수 있는 쌍(같은 종류·이름·내용), 소스가 그대로인 곳에서 달라진 것, 그리고 **다시 볼 것**: 바뀐 것을 가리키는 뜻 줄과 문서 줄(화면요소→기능, 기능→화면요소, 화면→코드)과 그 문서의 상태입니다. 그중 승인된 문서는 "승인된 문서가 가리키는 것이 기준 뒤 바뀜"으로 표시하고 승인은 그대로 둡니다. 그 글이 아직 맞는지는 사람이 판단하기 때문입니다. 빌드는 문서, 뜻 줄, 승인을 바꾸지 않습니다.
+
+```bash
+lode-agent product-graph-baseline <project>
+```
+
+기준은 이 명령으로만 옮겨집니다. 이미 있는 빌드를 기준으로 삼고, 그 빌드가 지금 소스 그대로가 아니면 `PRODUCT_GRAPH_BUILD_STALE`로 거절하며, 바뀐 것과 다시 볼 것 몇 개가 목록에서 빠지는지 말합니다. `build/`를 지우면 그 목록만 잃습니다. 빌드가 지금 소스 그대로인지는 빌드가 읽은 모든 파일과 새로 생긴 코드 파일로 확인합니다. 코드가 아닌 새 파일(예: hook JSON이나 플러그인 매니페스트)은 다음 빌드에서야 보입니다. 같은 읽는 방식에서 기준과 글이 같은 파일의 노드가 해시나 줄 범위가 다르면 빌드는 `PRODUCT_GRAPH_NOT_REPRODUCIBLE`로 멈추고 아무것도 쓰지 않습니다.
 
 ## 다른 폴더를 건드리지 않고 비교하기
 
