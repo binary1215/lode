@@ -47,6 +47,20 @@ export function resolveSnapshotRetentionPolicy({ root, storage, override = null 
   return { ...policy, source, preserveAllHistory: false };
 }
 
+export function snapshotIdsIn(value, found = new Set()) {
+  if (typeof value === "string") {
+    if (/^(?:world-model|graph-snapshot|source-snapshot)-[a-f0-9]{24}$/.test(value)) found.add(value);
+    return found;
+  }
+  if (!value || typeof value !== "object") return found;
+  if (Array.isArray(value)) {
+    for (const child of value) snapshotIdsIn(child, found);
+    return found;
+  }
+  for (const child of Object.values(value)) snapshotIdsIn(child, found);
+  return found;
+}
+
 export function ancestryIdsOf(document) {
   const found = new Set();
   const add = (value) => {

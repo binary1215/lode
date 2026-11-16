@@ -76,6 +76,8 @@ test("retention drops unpinned refresh history and keeps a decision diff", async
   const current = await refreshWorldModel({ root: f.root });
   assert.equal(current.status, "refreshed");
   const beforeBytes = treeBytes(path.join(f.root, f.storage.directory));
+  const defaultDry = inspectSnapshotGarbageCollection({ root: f.root });
+  assert.equal(defaultDry.snapshots.find((row) => row.id === middle.worldModel.worldModelId).disposition, "retain");
   const dry = inspectSnapshotGarbageCollection({ root: f.root, retention: { keepCount: 1, keepDays: 0 } });
   assert.equal(dry.status, "gc_dry_run");
   assert.equal(dry.deletedCount, 0);

@@ -12,7 +12,14 @@ import {
 import { buildSnapshotDeletionClosure, snapshotFileIdentity, sameSnapshotFileIdentity } from "./snapshot-deletion-closure.mjs";
 import { qualifySnapshotFileSystem } from "./snapshot-filesystem.mjs";
 import { sha256Hex as sha } from "../core/digest.mjs";
-import { ancestryIdsOf, resolveSnapshotRetentionPolicy, selectRetainedSnapshotIds, SNAPSHOT_RETENTION_RELATIVE } from "./snapshot-retention-policy.mjs";
+import { hydrateSnapshotEntry } from "./snapshot-domain-bundles.mjs";
+import {
+  ancestryIdsOf,
+  resolveSnapshotRetentionPolicy,
+  selectRetainedSnapshotIds,
+  snapshotIdsIn,
+  SNAPSHOT_RETENTION_RELATIVE,
+} from "./snapshot-retention-policy.mjs";
 
 // Dry-run remains zero-write and observational. Explicit apply separately
 // verifies the supported typed closure under cooperative publisher lifetimes.
@@ -124,12 +131,20 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false, re
           issue(relative, "SNAPSHOT_FILENAME_ID_MISMATCH");
           return;
         }
+        let logical = document;
+        if (document.kind === "SnapshotComposition") {
+          try {
+            logical = hydrateSnapshotEntry({ root: owner.projectRoot, storage: owner.storage, entry: { location: file, document } }).document;
+          } catch (error) {
+            issue(relative, error.code || "TYPED_BACKEND_OBSERVATION_REQUIRED");
+          }
+        }
         const identityIds = [
-          document.worldModelId,
-          document.graphSnapshotId,
-          document.sourceSnapshotId,
-          document.temporalProvenanceGraph?.graphSnapshotId,
-          document.temporalProvenanceGraph?.sourceSnapshotId,
+          logical.worldModelId,
+          logical.graphSnapshotId,
+          logical.sourceSnapshotId,
+          logical.temporalProvenanceGraph?.graphSnapshotId,
+          logical.temporalProvenanceGraph?.sourceSnapshotId,
         ].filter(Boolean);
         snapshots.push({
           id: match[1],
@@ -137,8 +152,8 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false, re
           bytes: bytes.length,
           sha256: sha(bytes),
           identityIds,
-          references: ids(text),
-          ancestryIds: ancestryIdsOf(document),
+          references: logical === document ? ids(text) : [...snapshotIdsIn(logical)],
+          ancestryIds: ancestryIdsOf(logical),
           mtimeMs: stat.mtimeMs,
         });
       } else {
