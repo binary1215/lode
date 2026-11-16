@@ -333,8 +333,9 @@ test("a persisted world that differs from the refresh preview is not left publis
     const result = originalRead.call(fs, file, ...args);
     if (path.resolve(String(file)) === canon) {
       canonReads += 1;
-      // Reads 1–4 are the two non-persisted previews. The persisting build starts at read 5.
-      if (canonReads === 4) {
+      // Read 1 checks the canon hash. Reads 2–3 are the one non-persisted child preview.
+      // The persisting build starts at read 4, so this write stays out of the preview pair.
+      if (canonReads === 3) {
         const model = JSON.parse(originalCanon);
         model.featureGroups = [{ key: "editing", name: "Editing", description: "Edit the document.", parentFeatureGroupKeys: [] }];
         fs.writeFileSync(canon, `${JSON.stringify(model, null, 2)}\n`);
