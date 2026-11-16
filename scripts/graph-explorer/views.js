@@ -763,6 +763,8 @@
   renderGaps();
   show(active);
   document.documentElement.dataset.viewsReady = "true";
+  // Time from the start of page load until the first view was drawn.
+  document.documentElement.dataset.viewsReadyMs = String(Math.round(performance.now()));
   // The map prepares after the first view is on screen.
   setTimeout(startMap, 0);
 })();

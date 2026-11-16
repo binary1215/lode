@@ -16,7 +16,7 @@ You do not need to write 기능 or 코드: they come from the source tree. Cite 
 lode-agent product-graph-build <project>
 ```
 
-The build reads the documents, the policy and meaning files, the entry rules and the source tree, and writes `graph.json`, `check.json` and `check.txt` under `.lode/context/product-graph/build/`. It writes nothing else: documents, approvals and `product-model.json` stay as they are. Two builds of the same input give the same bytes.
+The build reads the documents, the policy and meaning files, the entry rules and the source tree, and writes `graph.json`, `check.json` and `check.txt` under `.lode/context/product-graph/build/`, and `baseline.json` the first time (see Changes since the baseline below). It writes nothing else: documents, approvals and `product-model.json` stay as they are. Two builds of the same input into the same folder give the same bytes. To read the result one step at a time, see Ask the graph below or open the product graph view of the [Graph Explorer](graph-explorer.md).
 
 ## Check
 
@@ -27,7 +27,7 @@ lode-agent product-graph-check <project> --include-estimates
 
 The check is read-only. It prints the six rows of the 정합성 검사 and the lists that follow them, in Korean. By default it uses approved documents only and says how many estimates it left out. With `--include-estimates` it also uses estimates and labels every finding that rests on one, for example `[추정: 코드만 보고 쓴 추정]`.
 
-Through MCP the same operations are the grouped tool `lode_product_graph` with action `build`, `check` or `approve`, routed through `lode_tools_call` (or `lode_tools_read` for the check). They are not on the default tool list.
+Through MCP the same operations are the grouped tool `lode_product_graph` with action `build`, `check`, `query`, `baseline` or `approve`, routed through `lode_tools_call` (or `lode_tools_read` for the read-only check and query). They are not on the default tool list.
 
 ## Approve
 
@@ -56,6 +56,37 @@ If the document changed after the digest was taken, the approval is refused. Edi
 - **어느 기능에서도 닿지 않는 코드** lists declarations no 기능 reaches through resolved references, most-affected files first. With few resolved calls, many entries are expected; an entry is a question for a reader (a missing 기능, or dead code), not a verdict.
 - **하나로 정하지 못한 호출** gives one count per reason and what would settle it; the limits block puts the calls in three numbers: all, those that cannot be product code or go to modules outside the product, and of the rest how many resolved. **코드로 읽지 않은 파일** counts what was not looked at, so a gap in coverage is visible.
 - **사라진 기능의 뜻** lists 뜻 lines whose 기능 is gone, usually after a rename: move the line to the new ID by hand. A build never edits `기능 뜻.md`.
+
+## Ask the graph
+
+```bash
+lode-agent product-graph-query <project>                      # overview: the first block and the starts
+lode-agent product-graph-query <project> node cli:sync
+lode-agent product-graph-query <project> down cli:sync [--depth 2]
+lode-agent product-graph-query <project> up cli:sync
+lode-agent product-graph-query <project> reach cli:sync       # code a 기능 reaches
+lode-agent product-graph-query <project> reach src/store.mjs  # 기능 that reach a file or a 코드 node
+lode-agent product-graph-query <project> find store
+lode-agent product-graph-query <project> gaps [--list unreachedCode]
+lode-agent product-graph-query <project> changes [--list reviewAgain]
+lode-agent product-graph-query <source-root> overview --build <folder>   # a stand-alone output folder
+```
+
+The query reads the existing build and never builds, checks, approves or writes. Every answer starts with three lines: when `graph.json` was written and whether the build is still the source as it is now (빌드 뒤 바뀐 것 없음, 빌드가 낡음: …, or 소스가 바뀌었는지 알 수 없음), how many calls that can be product code were resolved, and what changed since the baseline. Then the path line and the indented tree, in the build's words. Answers are paged (`--limit`, default 50, and `--cursor`); an answer with more says how many remain and the command for the next page. `down` and the starts `@기능`, `@기능/<kind>`, `@화면`, `@유저 활동`, `@파일` and `@바뀐 것` go one step at a time; a node already on the path is marked 위에 있음. `reach` follows resolved call and callback references only, the same closure the check uses for 어느 기능에서도 닿지 않는 코드. `--json` gives the structured form. The text is the same as the viewer's "Show as text" for the same question. With no build the answer is `PRODUCT_GRAPH_NOT_BUILT` with the build command; an unknown ID is `PRODUCT_GRAPH_NODE_NOT_FOUND` with the nearest matches.
+
+Through MCP the same question is the grouped tool `lode_product_graph` with action `query` (`lode_product_graph_query`). The graph helps when you need which code a user action reaches, what reaches a file, or where the gaps are; it is a scan without types and never a prerequisite of ordinary work.
+
+## Changes since the baseline
+
+Every build hashes what it read: each 코드 node's text (a file's whole text, a declaration's line range), each 기능's kind, handling and 처리 코드 (and a second hash over the code it reaches), each document node's stated fields, and every source file it read (`inputs.sourceFiles`). Text is compared after dropping a BOM and turning CR LF and CR into LF, so another checkout's line endings change nothing, and moving a declaration inside its file without changing its text keeps its hash. These hashes live only in the generated `build/` folder; IDs do not change.
+
+The first build takes itself as the baseline (`build/baseline.json`) and says "기준 없음 — 이번 빌드를 기준으로 삼았다". Later builds compare with it and never move it, so building again keeps showing everything that changed since the baseline. `check.txt` and `check.json` (`changes`) give, right after the limits: when the baseline was set and what moved since (source files, documents, the rules file, the reader); per node type 변화 없음 as a count and 변경, 신규, 사라짐 by ID; 기능 whose own content is the same but whose reached code changed (닿는 코드가 바뀜) with the changed nodes; new and gone links; pairs that may have moved (same type, name and content); what changed where the source did not; and **다시 볼 것**: 뜻 lines and document rows (화면요소→기능, 기능→화면요소, 화면→코드) that point at something changed, with the document's state. An approved document among them is marked "승인된 문서가 가리키는 것이 기준 뒤 바뀜"; its approval stays, because whether its text is still right is a person's judgment. The build changes no document, 뜻 line or approval.
+
+```bash
+lode-agent product-graph-baseline <project>
+```
+
+Moving the baseline is the only way it moves. It takes the existing build, refuses with `PRODUCT_GRAPH_BUILD_STALE` when that build is not the source as it is now, and says how many changed items and 다시 볼 것 items leave the list. Deleting `build/` loses only that list. If a build finds a node in a file whose text equals the baseline's but whose hash or lines differ under the same reader, it stops with `PRODUCT_GRAPH_NOT_REPRODUCIBLE` and writes nothing.
 
 ## Comparing another directory without touching it
 
