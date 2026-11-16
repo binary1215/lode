@@ -134,6 +134,8 @@ directly, through `lode_tools_read` / `lode_tools_call`, and in their historical
 | `lode_feature_mapping` | `review` | `lode_tools_call` | `lode_feature_mapping_review` |
 | `lode_product_graph` | `build` | `lode_tools_call` | `lode_product_graph_build` |
 | `lode_product_graph` | `check` | `lode_tools_read` | `lode_product_graph_check` |
+| `lode_product_graph` | `query` | `lode_tools_read` | `lode_product_graph_query` |
+| `lode_product_graph` | `baseline` | `lode_tools_call` | `lode_product_graph_baseline` |
 | `lode_product_graph` | `approve` | `lode_tools_call` | `lode_product_graph_approve` |
 | `lode_vcs` | `change_set_status` | `lode_tools_read` | `lode_change_set_status` |
 | `lode_vcs` | `evidence` | `lode_tools_read` | `lode_vcs_evidence` |

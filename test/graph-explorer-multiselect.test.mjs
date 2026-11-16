@@ -37,6 +37,13 @@ const selectionCount = (ui) => Number(ui.ids.get("selection-count").textContent.
 const cards = vm.runInNewContext(fs.readFileSync(new URL("../scripts/graph-explorer/cards.js", import.meta.url), "utf8") + "\nexplorerCards");
 const descendants = (element) => [element, ...element.children.flatMap(descendants)];
 const readingCard = (ui, id) => ui.ids.get("selection-cards").children.find((item) => item.getAttribute("data-record") === `node:${id}`);
+// Reading focus on a record that is already selected, keeping the selection: a
+// plain click now selects only that record (bundle 2, 4.3), so these tests use
+// the reading card's Read focus action, paging back to the card when needed.
+function readFocus(ui, id) {
+  for (let page = 0; page < 1000 && !readingCard(ui, id); page++) ui.event("cards-prev");
+  ui.event(descendants(readingCard(ui, id)).find((item) => item.tagName === "button" && item.textContent === "Read focus"));
+}
 
 test("fit explored uses explicit subset Canvas detail when cards would be unreadable, stays cancellable and returns to focused cards", async () => {
   const count = 1200,
@@ -352,18 +359,18 @@ test("bundled UI keeps additive selection, cards, camera, map mode, folding and 
     ui = explorerDom(snapshot),
     initialCamera = camera(ui),
     initialPasses = ui.document.documentElement.dataset.explorerSearchPasses;
-  ui.event(nodeElement(ui, "B"));
+  ui.event(nodeElement(ui, "B"), "click", { ctrlKey: true });
   assert.equal(selectionCount(ui), 2);
   assert.equal(ui.ids.get("selection-cards").children.length, 2);
   assert.equal(camera(ui), initialCamera);
-  ui.event(nodeElement(ui, "A"));
+  readFocus(ui, "A");
   assert.equal(selectionCount(ui), 2);
   assert.equal(camera(ui), initialCamera);
   assert.equal(ui.document.documentElement.dataset.explorerSearchPasses, initialPasses, "Focus must reuse metadata search");
   const cardA = ui.ids.get("selection-cards").children[0];
   cardA.open = true;
   cardA.children.find((item) => item.tagName === "details").open = true;
-  ui.event(nodeElement(ui, "B"));
+  readFocus(ui, "B");
   assert.equal(ui.ids.get("selection-cards").children[0], cardA, "Focus must not replace other cards");
   ui.event("expand");
   await ui.settle();
@@ -403,16 +410,16 @@ test("bundled UI keeps additive selection, cards, camera, map mode, folding and 
 
 test("connection result references survive reading focus; changing selection makes the old scope explicitly stale", async () => {
   const ui = explorerDom(input({ nodes: nodes("A", "B", "C", "D"), edges: [edge("A", "B"), edge("B", "C"), edge("C", "D")] }));
-  ui.event(recordButton(ui, "C"));
+  ui.event(recordButton(ui, "C"), "click", { ctrlKey: true });
   ui.event("connect-selection");
   await ui.settle();
   const roots = ui.ids.get("connection-roots").textContent,
     box = camera(ui);
-  ui.event(nodeElement(ui, "A"));
+  readFocus(ui, "A");
   assert.equal(ui.ids.get("connection-roots").textContent, roots);
   assert.doesNotMatch(ui.ids.get("connection-status").textContent, /Previous connection result/);
   assert.equal(camera(ui), box);
-  ui.event(recordButton(ui, "D"));
+  ui.event(recordButton(ui, "D"), "click", { ctrlKey: true });
   assert.match(ui.ids.get("connection-status").textContent, /Previous connection result/);
 });
 
@@ -430,7 +437,7 @@ test("Canvas selection, zoom, pan, rectangle and Escape use CSS/DPR-aware coordi
     const view = api.viewport(camera(ui).split(" ").map(Number), rect),
       at = points.get(id),
       client = view.toClient(at.x, at.y);
-    ui.event("overview", "click", { clientX: client.x, clientY: client.y });
+    ui.event("overview", "click", { clientX: client.x, clientY: client.y, ctrlKey: true });
   }
   click("B");
   assert.equal(selectionCount(ui), 2);
@@ -548,7 +555,7 @@ test("multiple exact file pairs stay open with their roles, partial/missing stat
     }),
     before = JSON.stringify(snapshot);
   const ui = explorerDom(snapshot, { narrow: true });
-  ui.event(recordButton(ui, "B"));
+  ui.event(recordButton(ui, "B"), "click", { ctrlKey: true });
   const body = ui.ids.get("context-lineage-body").textContent;
   assert(body.includes("src/one.mjs"));
   assert(body.includes("src/two.mjs"));
@@ -583,10 +590,10 @@ test("multiple exact file pairs stay open with their roles, partial/missing stat
   exactPre.scrollTop = 39;
   exactPre.scrollLeft = 8;
   const panel = ui.ids.get("context-lineage-body");
-  ui.event(recordButton(ui, "A"));
+  readFocus(ui, "A");
   assert.equal(ui.ids.get("context-lineage-body"), panel);
   assert.match(ui.ids.get("comparison-position").textContent, /changed region 2\/4/);
-  ui.event(recordButton(ui, "C"));
+  ui.event(recordButton(ui, "C"), "click", { ctrlKey: true });
   assert(ui.ids.get("context-lineage-body").textContent.includes("deletion/rename not established"));
   assert(ui.ids.get("context-lineage-body").textContent.includes("not an empty diff"));
   assert(ui.ids.get("context-lineage-body").contains(excerpt));
@@ -614,7 +621,7 @@ test("Project/layer/revision selections and their cameras remain separate even w
   };
   const before = JSON.stringify(snapshot),
     ui = explorerDom(snapshot);
-  ui.event(recordButton(ui, "B"));
+  ui.event(recordButton(ui, "B"), "click", { ctrlKey: true });
   ui.event("zoom-in");
   ui.flush();
   const projectBox = camera(ui);
@@ -622,9 +629,9 @@ test("Project/layer/revision selections and their cameras remain separate even w
   ui.event("layer", "change");
   assert.equal(selectionCount(ui), 0);
   assert.match(ui.ids.get("layer-info").textContent, /No unique exact source identity/);
-  ui.event(recordButton(ui, "Code A"));
+  ui.event(recordButton(ui, "Code A"), "click", { ctrlKey: true });
   assert.equal(selectionCount(ui), 1);
-  ui.event(recordButton(ui, "Code Z"));
+  ui.event(recordButton(ui, "Code Z"), "click", { ctrlKey: true });
   assert.equal(selectionCount(ui), 2);
   ui.ids.get("layer").value = "project";
   ui.event("layer", "change");
@@ -708,7 +715,7 @@ test("separate changed regions keep exact offsets and distinct pair disclosure n
   ui.event("change-next");
   ui.event("change-next");
   assert.match(ui.ids.get("comparison-position").textContent, /changed region 2\/2/);
-  ui.event(recordButton(ui, "B"));
+  ui.event(recordButton(ui, "B"), "click", { ctrlKey: true });
   const excerptsB = descendants(root).filter(
     (item) => item.tagName === "details" && item.children[0]?.textContent === "Exact before / after excerpts" && !excerptsA.includes(item),
   );
@@ -902,7 +909,7 @@ test("large complete inventory remains reachable, selection/cards are paged not 
   assert.match(ui.ids.get("reading-range").textContent, /101–200 of 12000/);
   const searches = ui.document.documentElement.dataset.explorerSearchPasses,
     box = camera(ui);
-  ui.event(recordButton(ui, "A"));
+  readFocus(ui, "A");
   assert.equal(camera(ui), box);
   assert.equal(ui.document.documentElement.dataset.explorerSearchPasses, searches);
   ui.ids.get("search").value = "N11999";
@@ -927,7 +934,7 @@ test("list keyboard and checkboxes retain list focus; keyboard camera stages ret
   ui.event(recordButton(ui, "B"), "keydown", { key: " " });
   assert.equal(selectionCount(ui), 2);
   assert.equal(ui.stats.focusedElement.getAttribute("data-record-entry"), "B");
-  ui.event(recordButton(ui, "C"), "click", { detail: 0 });
+  ui.event(recordButton(ui, "C"), "click", { detail: 0, ctrlKey: true });
   assert.equal(selectionCount(ui), 3);
   assert.equal(ui.stats.focusedElement.getAttribute("data-record-entry"), "C");
   const toggle = ui.ids.get("records").children.find((row) => row.children[0].getAttribute("data-record-entry") === "B").children[1];
@@ -978,7 +985,7 @@ test("plain SVG-node pointerdown/up/click keeps the node click target instead of
   const ui = explorerDom(input({ nodes: nodes("A", "B"), edges: [edge("A", "B")] }));
   const node = nodeElement(ui, "B"),
     box = camera(ui);
-  ui.pointerClick(node, { clientX: 500, clientY: 560 });
+  ui.pointerClick(node, { clientX: 500, clientY: 560, ctrlKey: true });
   assert.equal(selectionCount(ui), 2);
   assert.equal(camera(ui), box);
   assert(ui.ids.get("selection-cards").textContent.includes("B"));
@@ -1064,10 +1071,10 @@ test("expanded simultaneous map/reading cards preserve unavailable, historical, 
   ui.ids.get("include-history").checked = true;
   ui.event("include-history", "change");
   for (let i = 0; i < states.length; i++) {
-    ui.event(recordButton(ui, `Source ${i}`));
+    ui.event(recordButton(ui, `Source ${i}`), "click", { ctrlKey: true });
     readingCard(ui, `S${i}`).open = true;
   }
-  ui.event(recordButton(ui, "Source 1"));
+  readFocus(ui, "S1");
   assert.match(ui.ids.get("selected-caption").textContent, /historical-source-bytes/);
   const unavailable = visibleConditions(readingCard(ui, "S0")),
     historical = visibleConditions(readingCard(ui, "S1"));
@@ -1078,7 +1085,7 @@ test("expanded simultaneous map/reading cards preserve unavailable, historical, 
   for (let i = 0; i < states.length; i++) {
     const condition = visibleConditions(readingCard(ui, `S${i}`));
     assert(condition.includes(states[i]), states[i]);
-    ui.event(recordButton(ui, `Source ${i}`));
+    readFocus(ui, `S${i}`);
     ui.event("focus");
     ui.event(nodeElement(ui, `S${i}`).querySelectorAll("[data-card-control]")[0]);
     await ui.settle();
@@ -1210,7 +1217,7 @@ test("reading cards retain A/B expansion, scroll and pages through C changes, fi
   snapshot.codeGraph = { nodes: [{ ...graph.nodes[0], name: "Code A", revisionId: "different-revision" }], edges: [], status: "current" };
   const before = JSON.stringify(snapshot),
     ui = explorerDom(snapshot);
-  ui.event(recordButton(ui, "B"));
+  ui.event(recordButton(ui, "B"), "click", { ctrlKey: true });
   const remember = (id) => {
     const card = readingCard(ui, id);
     card.open = true;
@@ -1229,7 +1236,7 @@ test("reading cards retain A/B expansion, scroll and pages through C changes, fi
     box = camera(ui);
   ui.event(mapA, "keydown", { shiftKey: true, key: "ArrowRight" });
   const pinned = mapA.getAttribute("transform");
-  ui.event(recordButton(ui, "C"));
+  ui.event(recordButton(ui, "C"), "click", { ctrlKey: true });
   assert.equal(readingCard(ui, "A"), a.card);
   assert.equal(readingCard(ui, "B"), b.card);
   const removeC = descendants(readingCard(ui, "C")).find((item) => item.tagName === "button" && item.textContent === "Remove");
@@ -1267,7 +1274,7 @@ test("reading cards retain A/B expansion, scroll and pages through C changes, fi
   ui.ids.get("layer").value = "code";
   ui.event("layer", "change");
   assert.equal(selectionCount(ui), 0);
-  ui.event(recordButton(ui, "Code A"));
+  ui.event(recordButton(ui, "Code A"), "click", { ctrlKey: true });
   assert(
     !readingCard(ui, "A")
       .children.filter((item) => item.tagName === "details")
@@ -1353,12 +1360,12 @@ test("declared work groups keep one map card per node and restore member paginat
   assert.equal(ui.stats.focusedElement, next);
   assert(membership.contains(next));
   assert.match(nav.textContent, /21–26 \/ 26/);
-  ui.event(recordButton(ui, "C"));
+  ui.event(recordButton(ui, "C"), "click", { ctrlKey: true });
   assert.equal(readingCard(ui, "A"), card);
   assert(membership.open);
   const remove = descendants(card).find((item) => item.tagName === "button" && item.textContent === "Remove");
   ui.event(remove);
-  ui.event(recordButton(ui, "A"));
+  ui.event(recordButton(ui, "A"), "click", { ctrlKey: true });
   const restored = readingCard(ui, "A"),
     group = restored.children.find((item) => item.className === "record-membership");
   assert(group.open);
@@ -1521,7 +1528,7 @@ test("compact evidence summaries and independent map/reading disclosures are ind
   record.open = true;
   ui.event(record, "toggle");
   assert.equal(inner.scrollTop, 37, "Explicit reading collapse does not lose its internal scroll position");
-  ui.event(recordButton(ui, "B"));
+  ui.event(recordButton(ui, "B"), "click", { ctrlKey: true });
   assert.equal(readingCard(ui, "B").open, false);
   assert(readingCard(ui, "A").open);
   ui.event(control("A"));

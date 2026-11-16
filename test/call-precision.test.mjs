@@ -242,8 +242,12 @@ test("Lode itself: the reasons add up, every 값 node is called, and two builds 
     });
   const result = run("first");
   run("second");
-  for (const name of ["graph.json", "check.json", "check.txt"])
-    assert.deepEqual(fs.readFileSync(path.join(base, "second", name)), fs.readFileSync(path.join(base, "first", name)), name);
+  // graph.json is byte-identical across folders; the check names each folder's
+  // own baseline time (bundle 2), so it is compared within one folder.
+  assert.deepEqual(fs.readFileSync(path.join(base, "second", "graph.json")), fs.readFileSync(path.join(base, "first", "graph.json")));
+  const before = ["graph.json", "check.json", "check.txt"].map((name) => fs.readFileSync(path.join(base, "first", name)));
+  run("first");
+  ["graph.json", "check.json", "check.txt"].forEach((name, index) => assert.deepEqual(fs.readFileSync(path.join(base, "first", name)), before[index], name));
   const numbers = result.limits.calls;
   assert.equal(numbers.notProduct.builtIn + numbers.notProduct.keyword + numbers.notProduct.external + numbers.canBeProduct, numbers.all);
   assert.equal(result.lists.unresolvedReferences.byReason.reduce((sum, reason) => sum + reason.count, 0) + numbers.resolved, numbers.all);

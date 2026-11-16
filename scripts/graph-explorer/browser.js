@@ -1,14 +1,21 @@
-(() => {
+// The map view. Started by views.js once the first view is on screen (or at
+// once when the map is the first view).
+const startExplorerMap = () => {
   "use strict";
   const initialTime = performance.now();
   let data;
   try {
-    data = explorerCodec.decode(JSON.parse(document.getElementById("snapshot").textContent));
+    // views.js decoded the snapshot once; decode again only without it.
+    data = typeof explorerSnapshotData !== "undefined" && explorerSnapshotData ? explorerSnapshotData : explorerCodec.decode(JSON.parse(document.getElementById("snapshot").textContent));
     if (data?.kind !== "GraphExplorerSnapshot" || !Array.isArray(data.graph?.nodes) || !Array.isArray(data.graph?.edges)) throw new Error("Invalid snapshot");
   }
   catch { document.getElementById("status").textContent = "Snapshot data could not be decoded. Original records were not changed; regenerate this optional report."; return; }
   const $ = id => document.getElementById(id), ns = "http://www.w3.org/2000/svg";
   const hide = (element, value) => { element.hidden = value; if (value) element.setAttribute("hidden", ""); else element.removeAttribute("hidden"); };
+  // Canvas colours follow the page's light or dark theme variables.
+  const themeColor = (name, fallback) => {
+    try { const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); return value || fallback; } catch { return fallback; }
+  };
   let activeGraph = data.initialLayer === "code" ? data.codeGraph : data.graph, selected = null;
   $("layer").value = activeGraph === data.graph ? "project" : "code";
   let box = [0, 0, 1000, 700], drag = null, suppressClick = false;
@@ -355,7 +362,8 @@
     canvas.width = Math.max(1, Math.round(rect.width * dpr)); canvas.height = Math.max(1, Math.round(rect.height * dpr));
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr * camera.scale, 0, 0, dpr * camera.scale, dpr * (camera.left - box[0] * camera.scale), dpr * (camera.top - box[1] * camera.scale));
-    ctx.strokeStyle = "#627b9e"; ctx.globalAlpha = .22; ctx.beginPath();
+    const colors = { edge: themeColor("--map-edge", "#627b9e"), chosen: themeColor("--map-chosen", "#ffffff"), path: themeColor("--map-path", "#96e4c0"), found: themeColor("--map-found", "#f2d674"), past: themeColor("--map-historical", "#a38baa"), code: themeColor("--code", "#80baff"), context: themeColor("--context", "#eabd87") };
+    ctx.strokeStyle = colors.edge; ctx.globalAlpha = .22; ctx.beginPath();
     let edges = 0; const included = overviewIncluded();
     const window = overview.window(box);
     for (const edge of window.edges) {
@@ -369,12 +377,12 @@
       const node = model.nodes.get(id);
       const point = overview.points.get(node.nodeId); if (!point) continue;
       if (point.x < box[0] || point.x > box[0] + box[2] || point.y < box[1] || point.y > box[1] + box[3]) continue;
-      ctx.fillStyle = model.chosen.has(node.nodeId) ? "#ffffff" : connectionResult?.nodes.has(node.nodeId) ? "#96e4c0" : $("search").value && foundIds.has(node.nodeId) ? "#f2d674" : historical(node) ? "#a38baa" : isCode(node) ? "#80baff" : "#eabd87";
+      ctx.fillStyle = model.chosen.has(node.nodeId) ? colors.chosen : connectionResult?.nodes.has(node.nodeId) ? colors.path : $("search").value && foundIds.has(node.nodeId) ? colors.found : historical(node) ? colors.past : isCode(node) ? colors.code : colors.context;
       const radius = (model.chosen.has(node.nodeId) ? 3 : 1) / camera.scale;
       ctx.fillRect(point.x - radius, point.y - radius, radius * 2, radius * 2);
     }
     // Highlight actual directed relationships without reversing their stored ends.
-    ctx.strokeStyle = "#96e4c0"; ctx.lineWidth = 2 / camera.scale; ctx.beginPath();
+    ctx.strokeStyle = colors.path; ctx.lineWidth = 2 / camera.scale; ctx.beginPath();
     const highlighted = new Set([...(connectionResult?.edges || []), ...chosenEdges]);
     for (const id of model.chosen) for (const edge of model.links(id)) if (model.chosen.has(edge.from) && model.chosen.has(edge.to)) highlighted.add(edge);
     for (const edge of highlighted) if (included.has(edge.from) && included.has(edge.to) && edgeInScope(edge)) {
@@ -398,8 +406,10 @@
   function selectNode(node, keyboard = false, event = {}) {
     if (!node) return;
     const before = model.selectionVersion, previous = selected?.value;
-    if (!model.choose(node.nodeId, { toggle: Boolean(event.ctrlKey || event.metaKey || event.key === " " || event.toggle), only: event.only === true, position: !canvasMode() })) return;
-    if (event.only) { chosenEdges.clear(); edgeVersion++; }
+    const toggle = Boolean(event.ctrlKey || event.metaKey || event.shiftKey || event.key === " " || event.toggle);
+    const only = event.only === true || (event.userPick === true && !toggle);
+    if (!model.choose(node.nodeId, { toggle, only, position: !canvasMode() })) return;
+    if (only) { chosenEdges.clear(); edgeVersion++; }
     if (before !== model.selectionVersion) cancelWork();
     selected = model.focus ? { kind: "node", value: model.nodes.get(model.focus) } : chosenEdges.size ? { kind: "edge", value: [...chosenEdges][0] } : null;
     if (event.mapNavigation) {
@@ -487,11 +497,11 @@
     remember(`Read ${relation(edge)}`); render(); if (keyboard) $("selected-title").focus();
   }
   function accessibleActivate(el, action) {
-    el.addEventListener("click", event => { if (!suppressClick) action(event.detail === 0, event); });
+    el.addEventListener("click", event => { if (!suppressClick) { event.userPick = true; action(event.detail === 0, event); } });
     el.addEventListener("keydown", event => {
       if (event.target !== el && (event.target.closest?.("[data-card-control]") || event.target.closest?.("[data-card-body]"))) return;
       if (event.key === "Enter" && event.shiftKey && el.getAttribute("data-node")) return;
-      if (["Enter", " "].includes(event.key)) { event.preventDefault(); action(true, event); }
+      if (["Enter", " "].includes(event.key)) { event.preventDefault(); event.userPick = true; action(true, event); }
     });
   }
   function renderList(found) {
@@ -499,6 +509,7 @@
     listPage = Math.min(listPage, Math.max(0, Math.ceil(found.length / PAGE_SIZE) - 1));
     for (const node of found.slice(listPage * PAGE_SIZE, (listPage + 1) * PAGE_SIZE)) {
       const activate = (event, toggle = false) => {
+        if (!toggle && event) event.userPick = true;
         selectNode(node, false, toggle ? { toggle: true } : event);
         // Rendering replaces the list. Keep keyboard/checkbox work in that
         // list instead of moving focus to a different map control.
@@ -557,7 +568,7 @@
       children.push(cache.guides);
     }
     if (!cache.defs) { cache.defs = svg("defs", {}); const marker = svg("marker", { id: "edge-arrow", viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 5, markerHeight: 5, orient: "auto" });
-      marker.append(svg("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "#8ca6c9" })); cache.defs.append(marker); }
+      marker.append(svg("path", { d: "M 0 0 L 10 5 L 0 10 z", class: "edge-arrow-head" })); cache.defs.append(marker); }
     children.push(cache.defs);
     const index = cardIndex(), rectangles = new Map(shown.map(node => [node.nodeId, explorerCards.bounds(model.positions.get(node.nodeId), model.extent(node.nodeId))]));
     const visibleGroups = new Set();
@@ -1493,7 +1504,7 @@
     if (suppressClick) return;
     const camera = explorerModel.viewport(box, $("overview").getBoundingClientRect()), point = camera.fromClient(event.clientX, event.clientY);
     const id = overviewModel().hit(point.x, point.y, overviewIncluded(), 8 / camera.scale);
-    if (id) selectNode(model.nodes.get(id), event.detail === 0, event);
+    if (id) { event.userPick = true; selectNode(model.nodes.get(id), event.detail === 0, event); }
   });
   $("clear-selection").addEventListener("click", () => { cancelWork(); model.clearSelection(); chosenEdges.clear(); edgeVersion++; selected = null; remember("Clear selection only"); render(); });
   $("only-focus").addEventListener("click", () => { if (selected?.kind === "node") selectNode(selected.value, false, { only: true }); else if (selected) { chosenEdges = new Set([selected.value]); model.clearSelection(); edgeVersion++; cancelWork(); remember("Select only relationship"); render(); } });
@@ -1603,4 +1614,4 @@
   render();
   if (first) prepareNeighborhood().catch(calculationFailed);
   document.documentElement.dataset.explorerReady = "true"; document.documentElement.dataset.explorerInitialRenderMs = String(performance.now() - initialTime);
-})();
+};

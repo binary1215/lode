@@ -91,9 +91,10 @@ test("acceptance 1: Lode on itself yields tool:, cli:, hook: and command: 기능
   assert.deepEqual([...kind("hook:")].sort(), [...events].sort());
   const skills = fs.readdirSync(path.join(pluginRoot, "skills")).filter((name) => fs.existsSync(path.join(pluginRoot, "skills", name, "SKILL.md")));
   assert.deepEqual([...kind("command:")].sort(), skills.map((name) => `command:${name}`).sort());
+  // The first build into a folder also takes the comparison baseline (bundle 2, 8A.2).
   assert.deepEqual(
     result.written.map((item) => item.name),
-    ["graph.json", "check.json", "check.txt"],
+    ["graph.json", "check.json", "check.txt", "baseline.json"],
   );
 });
 
@@ -211,22 +212,25 @@ test("acceptance 2, Lode on itself: the Graph Explorer's DOM listeners yield fe/
     outputDirectory: out,
   });
   const graph = JSON.parse(fs.readFileSync(path.join(out, "graph.json"), "utf8"));
-  const browser = "scripts/graph-explorer/browser.js";
+  // The map (browser.js) and, since bundle 2, the other views (views.js).
+  const pages = ["scripts/graph-explorer/browser.js", "scripts/graph-explorer/views.js"];
   const front = graph.nodes.filter((node) => node.type === "기능" && node.id.startsWith("fe/"));
   assert(front.length > 0);
-  for (const node of front) assert.match(node.id, /^fe\/scripts\/graph-explorer\/browser\//, node.id);
-  // Every listener line is a 기능 position or a listed wiring not taken, except
-  // one whose event name is computed at run time (not readable by regex).
-  const seen = new Set([
-    ...front.flatMap((node) => node.positions.filter((position) => position.path === browser).map((position) => position.line)),
-    ...result.lists.notTakenBindings.filter((item) => item.path === browser).map((item) => item.line),
-  ]);
-  const lines = fs.readFileSync(path.join(pluginRoot, browser), "utf8").split("\n");
-  const unread = lines.map((line, index) => [line, index + 1]).filter(([line, number]) => line.includes(".addEventListener(") && !seen.has(number));
-  assert(
-    unread.every(([line]) => !/addEventListener\(\s*["'`]/.test(line)),
-    JSON.stringify(unread),
-  );
+  for (const node of front) assert.match(node.id, /^fe\/scripts\/graph-explorer\/(browser|views)\//, node.id);
+  for (const page of pages) {
+    // Every listener line is a 기능 position or a listed wiring not taken, except
+    // one whose event name is computed at run time (not readable by regex).
+    const seen = new Set([
+      ...front.flatMap((node) => node.positions.filter((position) => position.path === page).map((position) => position.line)),
+      ...result.lists.notTakenBindings.filter((item) => item.path === page).map((item) => item.line),
+    ]);
+    const lines = fs.readFileSync(path.join(pluginRoot, page), "utf8").split("\n");
+    const unread = lines.map((line, index) => [line, index + 1]).filter(([line, number]) => line.includes(".addEventListener(") && !seen.has(number));
+    assert(
+      unread.every(([line]) => !/addEventListener\(\s*["'`]/.test(line)),
+      JSON.stringify(unread),
+    );
+  }
 });
 
 test("acceptance 3: checks over the document fixture find each planted gap exactly and say why the others cannot run", () => {
@@ -373,9 +377,20 @@ test("acceptance 5 / 15: two builds of the same input give byte-identical files,
     });
   const first = filesUnder(path.join(base, "first")),
     second = filesUnder(path.join(base, "second"));
-  assert.deepEqual([...first.keys()].sort(), ["check.json", "check.txt", "graph.json"]);
+  assert.deepEqual([...first.keys()].sort(), ["baseline.json", "check.json", "check.txt", "graph.json"]);
   assert.deepEqual([...second.keys()].sort(), [...first.keys()].sort());
-  for (const [name, bytes] of first) assert.deepEqual(second.get(name), bytes, name);
+  // Each folder took its own baseline at its own time (bundle 2, 8A.2), and the
+  // check names that time; graph.json is byte-identical across folders.
+  assert.deepEqual(second.get("graph.json"), first.get("graph.json"));
+  // Building again into the same folder changes no byte.
+  buildProductGraph({
+    sourceRoot: signalProduct,
+    documentsDirectory: signalDocuments,
+    rulesFile: emptyRules,
+    outputDirectory: path.join(base, "first"),
+    includeEstimates: true,
+  });
+  for (const [name, bytes] of filesUnder(path.join(base, "first"))) assert.deepEqual(bytes, first.get(name), name);
 
   const f = productProject(t);
   const build = path.join(f.family, "build");
@@ -383,7 +398,7 @@ test("acceptance 5 / 15: two builds of the same input give byte-identical files,
   const projectFirst = filesUnder(build);
   buildProductGraph({ root: f.root });
   const projectSecond = filesUnder(build);
-  assert.deepEqual([...projectFirst.keys()].sort(), [".gitignore", "check.json", "check.txt", "graph.json"]);
+  assert.deepEqual([...projectFirst.keys()].sort(), [".gitignore", "baseline.json", "check.json", "check.txt", "graph.json"]);
   assert.deepEqual([...projectSecond.keys()].sort(), [...projectFirst.keys()].sort());
   for (const [name, bytes] of projectFirst) assert.deepEqual(projectSecond.get(name), bytes, name);
 });
@@ -461,7 +476,7 @@ test("acceptance 7: stand-alone mode writes only under the output directory; pro
   await runCommand(["product-graph-build", source, "--documents", signalDocuments, "--rules", emptyRules, "--out", path.join(base, "out")]);
   assert.deepEqual(tree(source), before);
   assert.deepEqual(tree(signalDocuments), documentsBefore);
-  assert.deepEqual(Object.keys(tree(path.join(base, "out"))).sort(), ["check.json", "check.txt", "graph.json"]);
+  assert.deepEqual(Object.keys(tree(path.join(base, "out"))).sort(), ["baseline.json", "check.json", "check.txt", "graph.json"]);
   const checkBefore = tree(source);
   await runCommand(["product-graph-check", source, "--documents", signalDocuments, "--rules", emptyRules]);
   assert.deepEqual(tree(source), checkBefore);
@@ -1246,7 +1261,10 @@ test("acceptance 22: with table-row rules, two builds are byte-identical and no 
   run("first");
   run("second");
   const first = filesUnder(path.join(base, "first"));
-  for (const [name, bytes] of first) assert.deepEqual(filesUnder(path.join(base, "second")).get(name), bytes, name);
+  // graph.json is byte-identical across folders; each folder's baseline has its own time.
+  assert.deepEqual(filesUnder(path.join(base, "second")).get("graph.json"), first.get("graph.json"));
+  run("first");
+  for (const [name, bytes] of filesUnder(path.join(base, "first"))) assert.deepEqual(bytes, first.get(name), name);
   const graph = JSON.parse(first.get("graph.json").toString("utf8"));
   for (const node of graph.nodes) assert(!/@\d+$/.test(node.id), node.id);
 });

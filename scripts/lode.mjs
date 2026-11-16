@@ -21,6 +21,11 @@ export function parse(argv) {
   const options = {};
   for (let index = 0; index < rest.length; index += 1) {
     const item = rest[index];
+    // product-graph-query <project> <question> [<id or text>]
+    if (command === "product-graph-query" && !item.startsWith("--")) {
+      (options._positional ||= []).push(item);
+      continue;
+    }
     if (!item.startsWith("--")) throw new Error(`Unexpected argument: ${item}`);
     const key = item.slice(2);
     if (command === "storage-gc" && ["apply", "diagnostics"].includes(key)) {
@@ -68,7 +73,7 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
     `${cliDisplay} doctor <project>`,
     `${cliDisplay} graph-query <project> --query <text> [--view all|work|product] [--paths <path,...>] [--anchors <id,...>] [--depth <n>] [--max-nodes <n>] [--max-edges <n>] [--world-model <id>] [--details] [--inventory-page --inventory-paths <owned-path,...> --inventory-cursor <returned-cursor>]`,
     `${cliDisplay} graph-index <project>`,
-    `${cliDisplay} graph-explorer <project> [--layer project|code] [--query <text-or-source>] [--anchors <id,...>] [--paths <path,...>] [--history] [--share] [--output <new-file.html>]`,
+    `${cliDisplay} graph-explorer <project> [--view status|product|gaps|map] [--lang en|ko] [--layer project|code] [--query <text-or-source>] [--anchors <id,...>] [--paths <path,...>] [--history] [--share] [--output <new-file.html>]`,
     `${cliDisplay} project-export <project> --destination <bundle-folder> [--provenance project-proof-metadata|selected-only] [--sources selected-retained-sources|refs-only] [--session <logical-session>] (default: project-proof-metadata)`,
     `${cliDisplay} project-bundle-inspect <bundle-folder-or-HANDOFF.md> [--expected-bundle <bundle-id>] [--handoff-offset <bytes> --handoff-max-bytes <bytes>]`,
     `${cliDisplay} project-import <target-project> --bundle <bundle-folder> [--expected-bundle <bundle-id>]`,
@@ -120,6 +125,10 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
     `${cliDisplay} product-graph-build <source-root> --documents <folder> --rules <entry-rules.json> --out <folder> [--include-estimates]  # stand-alone; writes only under --out`,
     `${cliDisplay} product-graph-check <project> [--include-estimates]`,
     `${cliDisplay} product-graph-check <source-root> --documents <folder> --rules <entry-rules.json> [--include-estimates]  # stand-alone, read-only`,
+    `${cliDisplay} product-graph-query <project> [overview | node <id> | down <id> | up <id> | reach <id-or-file> | find <text> | gaps | changes] [--list <key>] [--limit <n>] [--cursor <n>] [--depth <n>]  # read-only; the page's text board`,
+    `${cliDisplay} product-graph-query <project> <question> [<id>] --build <folder>  # a stand-alone output folder; its source state is unknown`,
+    `${cliDisplay} product-graph-baseline <project>  # the only way the comparison baseline moves; refused when the build is stale`,
+    `${cliDisplay} product-graph-baseline <source-root> --documents <folder> --rules <entry-rules.json> --out <folder>  # stand-alone`,
     `${cliDisplay} product-graph-approve <project> --input <approval.json>  # the user's approval of one document's current content`,
     `${cliDisplay} change-set-record <project> --input <change-set.json>`,
     `${cliDisplay} change-set-status <project>`,

@@ -5588,6 +5588,26 @@
   },
   {
    "surface": "mcp",
+   "tool": "lode_product_graph_baseline",
+   "input": {
+    "project_root": "<root>"
+   },
+   "calls": [
+    {
+     "fn": "product-graph#moveProductGraphBaseline",
+     "args": [
+      {
+       "root": "<root>"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
    "tool": "lode_product_graph_build",
    "input": {
     "project_root": "<root>"
@@ -5708,6 +5728,101 @@
       {
        "root": "<root>",
        "includeEstimates": false
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_query",
+   "input": {
+    "project_root": "<root>"
+   },
+   "calls": [
+    {
+     "fn": "product-graph-query#queryProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "question": "overview",
+       "id": null,
+       "text": null,
+       "list": null,
+       "limit": 50,
+       "cursor": 0,
+       "depth": 1
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_query",
+   "input": {
+    "project_root": "<root>",
+    "question": "overview",
+    "id": "sample-id",
+    "text": "sample-text",
+    "list": "sample-list",
+    "limit": 1,
+    "cursor": 0,
+    "depth": 1
+   },
+   "calls": [
+    {
+     "fn": "product-graph-query#queryProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "question": "overview",
+       "id": "sample-id",
+       "text": "sample-text",
+       "list": "sample-list",
+       "limit": 1,
+       "cursor": 0,
+       "depth": 1
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_query",
+   "input": {
+    "project_root": "<root>",
+    "question": "",
+    "id": "",
+    "text": "",
+    "list": "",
+    "limit": 0,
+    "cursor": 0,
+    "depth": 0
+   },
+   "calls": [
+    {
+     "fn": "product-graph-query#queryProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "question": "",
+       "id": "",
+       "text": "",
+       "list": "",
+       "limit": 0,
+       "cursor": 0,
+       "depth": 0
       }
      ]
     }
@@ -13699,7 +13814,9 @@
        "layer": "project",
        "history": false,
        "share": false,
-       "output": null
+       "output": null,
+       "view": null,
+       "lang": "en"
       }
      ]
     }
@@ -13717,6 +13834,8 @@
     "--anchors",
     "sample-anchors",
     "--history",
+    "--lang",
+    "sample-lang",
     "--layer",
     "sample-layer",
     "--output",
@@ -13725,7 +13844,9 @@
     "sample-paths",
     "--query",
     "sample-query",
-    "--share"
+    "--share",
+    "--view",
+    "sample-view"
    ],
    "calls": [
     {
@@ -13743,7 +13864,9 @@
        "layer": "sample-layer",
        "history": true,
        "share": true,
-       "output": "sample-output"
+       "output": "sample-output",
+       "view": "sample-view",
+       "lang": "sample-lang"
       }
      ]
     }
@@ -15836,6 +15959,59 @@
   },
   {
    "surface": "cli",
+   "command": "product-graph-baseline",
+   "argv": [
+    "product-graph-baseline",
+    "<root>"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph#moveProductGraphBaseline",
+     "args": [
+      {
+       "root": "<root>",
+       "includeEstimates": false
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-baseline",
+   "argv": [
+    "product-graph-baseline",
+    "<root>",
+    "--documents",
+    "sample-documents",
+    "--out",
+    "sample-out",
+    "--rules",
+    "sample-rules"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph#moveProductGraphBaseline",
+     "args": [
+      {
+       "sourceRoot": "<root>",
+       "documentsDirectory": "sample-documents",
+       "rulesFile": "sample-rules",
+       "outputDirectory": "sample-out",
+       "includeEstimates": false
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "product-graph-build",
    "argv": [
     "product-graph-build",
@@ -15916,6 +16092,72 @@
    "outcome": {
     "error": "Error",
     "message": "Unexpected argument: sample-include-estimates"
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-query",
+   "argv": [
+    "product-graph-query",
+    "<root>"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph-query#queryProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "question": "overview",
+       "id": null,
+       "text": null,
+       "list": null,
+       "limit": 50,
+       "cursor": 0,
+       "depth": 1
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-query",
+   "argv": [
+    "product-graph-query",
+    "<root>",
+    "--build",
+    "sample-build",
+    "--cursor",
+    "sample-cursor",
+    "--depth",
+    "3",
+    "--limit",
+    "3",
+    "--list",
+    "sample-list"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph-query#queryProductGraph",
+     "args": [
+      {
+       "buildDirectory": "sample-build",
+       "question": "overview",
+       "id": null,
+       "text": null,
+       "list": "sample-list",
+       "limit": "3",
+       "cursor": "sample-cursor",
+       "depth": "3"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
    }
   },
   {
