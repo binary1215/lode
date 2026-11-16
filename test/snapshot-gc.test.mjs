@@ -28,7 +28,7 @@ import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib
 import { startRun, finishRun, getPendingReviewContext, reviewRun, inspectRunStorageTransition } from "../scripts/lib/runtime/run-lineage.mjs";
 import { recordChangeSet, readChangeSet } from "../scripts/lib/world/change-set.mjs";
 import { buildSnapshotDeletionClosure, snapshotFileIdentity } from "../scripts/lib/world/snapshot-deletion-closure.mjs";
-import { classifySnapshotFileSystem } from "../scripts/lib/world/snapshot-filesystem.mjs";
+import { classifySnapshotFileSystem, filesystemNameFromMountTable } from "../scripts/lib/world/snapshot-filesystem.mjs";
 import { decodeSnapshotBytes } from "../scripts/lib/world/snapshot-storage-codec.mjs";
 import { emptyProductModelDocument } from "../scripts/lib/world/product-model.mjs";
 
@@ -405,6 +405,9 @@ test("filesystem qualification rejects mapped network/unknown types without prob
   assert.equal(classifySnapshotFileSystem({ platform: "linux", type: 0xef53 }), "qualified-local");
   assert.equal(classifySnapshotFileSystem({ platform: "linux", type: 0x6969 }), "unsupported-or-unknown");
   assert.equal(classifySnapshotFileSystem({ platform: "unknown" }), "unsupported-or-unknown");
+  assert.equal(filesystemNameFromMountTable("/dev/disk1s1 on / (apfs, local, journaled)\n", "/tmp/lode"), "apfs");
+  assert.equal(filesystemNameFromMountTable("server:/share on /Volumes/share (nfs, nodev, nosuid)\n", "/Volumes/share/proj"), "nfs");
+  assert.equal(filesystemNameFromMountTable("/dev/disk3s5 on /System/Volumes/Data (apfs, local, journaled, nobrowse)\n/dev/disk1s1 on / (apfs, sealed)\n", "/System/Volumes/Data/tmp"), "apfs");
   assert.equal(classifySnapshotFileSystem({ platform: "darwin", fstypeName: "apfs" }), "qualified-local");
   assert.equal(classifySnapshotFileSystem({ platform: "darwin", fstypeName: "hfs" }), "qualified-local");
   assert.equal(classifySnapshotFileSystem({ platform: "darwin", fstypeName: "nfs" }), "unsupported-or-unknown");

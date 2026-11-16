@@ -73,7 +73,7 @@ CLI에서 `--apply`를 명시하면 별도의 typed 참조 검증이 끝날 때�
 
 스캔은 한 번에 원본 한 파일만 해제하고 기존 순수 typed 검증을 적용한 뒤 ID·source alias·전체 hash·정확한 물리 pin 요약만 보유합니다. 개별 파일의 기존 512 MiB 해제 상한은 할당/파싱 전에 적용하고, 전체 저장 입력 1 GiB·최대 50,000 항목·인코딩한 요약 64 MiB 상한을 적용합니다. 누적 해제량은 계측하되 작은 누적 decoded 한도로 정상 이력을 일괄 차단하지 않습니다. 이 수치는 V8 전체 RSS 보장이 아닙니다. 파일 사이에 event loop를 양보하고 취소를 확인해 일반 작업이 들어오면 다음 파일 전에 중단합니다.
 
-GC만 OS 파일시스템을 확인합니다. Windows는 숨김·기한 제한 DriveInfo 조회로 고정 드라이브 여부를 확인하고 mapped/network/불명 드라이브를 보존합니다. Linux는 statfs의 ext 계열·XFS·Btrfs·tmpfs만 현재 지원합니다. macOS는 `stat -f %Sf`(셸 없음)가 보고하는 APFS·HFS·MSDOS를 지원합니다. 네트워크와 알 수 없는 FS는 정리를 보존합니다. 저장소 순회와 Git 객체 읽기는 하나의 공유 기한이나 짧은 입장 잠금 안에 두지 않습니다. Git 명령마다 한도가 있고, 다음 실행은 이전에 이미 지운 도달 불가 파일 다음을 이어 갑니다. 일반 작업에 PowerShell 조회를 추가하지 않으며, 정적으로 비지원인 플랫폼/UNC/불명 FS에서는 새 writer 등록도 요구하지 않습니다. OS 분류가 모든 숨겨진 backing layer나 비협조 host의 부재를 증명하지는 않습니다.
+GC만 OS 파일시스템을 확인합니다. Windows는 숨김·기한 제한 DriveInfo 조회로 고정 드라이브 여부를 확인하고 mapped/network/불명 드라이브를 보존합니다. Linux는 statfs의 ext 계열·XFS·Btrfs·tmpfs만 현재 지원합니다. macOS는 `/sbin/mount`(셸 없음)가 적는 APFS·HFS·MSDOS를 지원합니다. 네트워크와 알 수 없는 FS는 정리를 보존합니다. 저장소 순회와 Git 객체 읽기는 하나의 공유 기한이나 짧은 입장 잠금 안에 두지 않습니다. Git 명령마다 한도가 있고, 다음 실행은 이전에 이미 지운 도달 불가 파일 다음을 이어 갑니다. 일반 작업에 PowerShell 조회를 추가하지 않으며, 정적으로 비지원인 플랫폼/UNC/불명 FS에서는 새 writer 등록도 요구하지 않습니다. OS 분류가 모든 숨겨진 backing layer나 비협조 host의 부재를 증명하지는 않습니다.
 
 지원하는 혼합 backend는 함께 검증하며, 디렉터리가 있다는 이유로 GC 전체를 막거나 게시 수명 등록을 우회하지 않습니다. owner/config가 없는 잘못된 Git marker는 계속 GC에서 제외하고 기존 일반 작업 우회를 유지합니다. 초기 Git retirement는 Core 소유 SHA256 direct loose ref이며 packed ref·reflog·snapshot symref가 없는 형식만 지원합니다. 두 lock을 대기 없이 소유하고 ref 하나를 정확한 OID·실물 identity로 비교·삭제합니다. 미지원 형식은 보존하며, source 원본은 다른 Git/domain orphan 정리를 막지 않고 자체 보존합니다.
 

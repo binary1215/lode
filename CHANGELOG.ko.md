@@ -13,7 +13,7 @@ GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 �
 
 - 수정: `minimumReader`를 쓰기 전 저장소(beta.80 모양: layout과 composition만 있는 `readerRequirements`, `minimumReader`와 `writer` 없음)는 refresh, storage GC, `world-index`가 올립니다. 포인터에만 `minimumReader`와 `writer`가 생깁니다. 스냅샷 바이트, 레코드 ID, 해시, 원문은 그대로입니다. `minimumReader`가 명시적 null이거나 쓸 수 없는 값이면 여전히 `STORAGE_VERSION_MISMATCH`입니다.
 - 수정: 그 불일치 문구가 더 이상 "a newer reader or newer"가 아닙니다. status, refresh, GC는 저장소 손상이 아닌 버전 불일치라고 말합니다. 이 설치가 저장소보다 오래된 다운그레이드도 같습니다. 복구는 Lode를 올리거나, layout을 읽는 reader에서 `world-index`를 실행하는 것입니다.
-- 수정: 스냅샷 GC가 저장소 전체를 30초 안에 못 보면 회수를 포기하지 않습니다. 목록 작성은 하나의 공유 기한이나 입장 잠금 안에 있지 않습니다. Git 명령마다 자신의 한도가 있습니다. 참조가 끝난 도달 불가 스냅샷과 도메인 번들은 지워지고, 다음 실행은 남은 것부터 이어 갑니다. `stat -f %Sf`가 보고하는 macOS APFS, HFS, MSDOS에서도 같은 GC를 돌립니다. 그 밖 플랫폼과 네트워크 파일시스템은 보존합니다.
+- 수정: 스냅샷 GC가 저장소 전체를 30초 안에 못 보면 회수를 포기하지 않습니다. 목록 작성은 하나의 공유 기한이나 입장 잠금 안에 있지 않습니다. Git 명령마다 자신의 한도가 있습니다. 참조가 끝난 도달 불가 스냅샷과 도메인 번들은 지워지고, 다음 실행은 남은 것부터 이어 갑니다. `/sbin/mount`가 적는 macOS APFS, HFS, MSDOS에서도 같은 GC를 돌립니다. 그 밖 플랫폼과 네트워크 파일시스템은 보존합니다.
 - 변경: refresh는 크기, mtime, ctime, inode가 마지막 검증 스캔과 다를 때만 파일을 다시 읽고 해시합니다. 같으면 그 검증된 digest와 분석을 재사용합니다. 소스 스탯과 스냅샷이 아닌 저장 입력이 그대로인 refresh는 세계 그래프를 다시 만들지 않고 새 World/Graph 스냅샷을 쓰지 않습니다. 실제로 바뀐 편집은 스냅샷을 다시 만듭니다.
 
 ## 0.3.0-beta.126 — 게시 결과는 별도 확인

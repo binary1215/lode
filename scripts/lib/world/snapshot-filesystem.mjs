@@ -13,19 +13,36 @@ export function classifySnapshotFileSystem({ platform, type, driveType, fstypeNa
   if (platform === "darwin") return DARWIN_LOCAL.has(String(fstypeName || "").toLowerCase()) ? "qualified-local" : "unsupported-or-unknown";
   return "unsupported-or-unknown";
 }
-// macOS statfs type is not a Linux magic number. `stat -f %T` is the fstypename
-// (apfs, hfs, nfs, ...). Cached per root for this process. Shell is never used.
+// macOS stat(1) reports file type, not the filesystem. /sbin/mount lines look like
+// "/dev/disk1s1 on / (apfs, local, journaled)". The first option is the type.
+// Cached per root for this process. Shell is never used.
+export function filesystemNameFromMountTable(text, root) {
+  const target = String(root || "/").replace(/\/+$/, "") + "/";
+  let best = "";
+  let name = "";
+  for (const line of String(text || "").split("\n")) {
+    const on = line.indexOf(" on ");
+    const paren = line.lastIndexOf(" (");
+    if (on < 0 || paren <= on || !line.endsWith(")")) continue;
+    const point = line.slice(on + 4, paren).replace(/\/+$/, "") + "/";
+    if ((target === point || target.startsWith(point)) && point.length >= best.length) {
+      best = point;
+      name = line
+        .slice(paren + 2, -1)
+        .split(",")[0]
+        .trim()
+        .toLowerCase();
+    }
+  }
+  return name;
+}
 export function darwinFilesystemName(root) {
-  const key = String(root);
+  const key = path.resolve(String(root));
   if (darwinNameCache.has(key)) return darwinNameCache.get(key);
   let name = "";
   try {
-    // BSD stat: %Sf is the filesystem type name (apfs, hfs, nfs). %T is the file type.
-    const result = spawnSync("/usr/bin/stat", ["-f", "%Sf", key], { encoding: "utf8", timeout: 1000, windowsHide: true, shell: false });
-    if (result.status === 0)
-      name = String(result.stdout || "")
-        .trim()
-        .toLowerCase();
+    const result = spawnSync("/sbin/mount", [], { encoding: "utf8", timeout: 2000, windowsHide: true, shell: false, maxBuffer: 1024 * 1024 });
+    if (result.status === 0) name = filesystemNameFromMountTable(result.stdout, key);
   } catch {
     name = "";
   }

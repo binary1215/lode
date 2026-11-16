@@ -15,7 +15,7 @@ import { GoWorkerComputeAdapter } from "../worker/go-worker-adapter.mjs";
 import { familyFormatForOriginal, formatForVerifiedOwner } from "../storage/project-storage-format.mjs";
 import { buildRepositorySourceScope, pathWithinRepositorySourceScope, verifyRepositorySourceScope } from "./repository-source-scope.mjs";
 import { sha256Hex as digest } from "../core/digest.mjs";
-import { loadFileStatCache, rememberFileStat, saveFileStatCache, statMatchesCached } from "./refresh-input-generation.mjs";
+import { loadFileStatCache, rememberFileStat, statMatchesCached } from "./refresh-input-generation.mjs";
 import { canonicalJson, canonicalValue as canonical } from "../core/canonical-json.mjs";
 import { failWith } from "../core/errors.mjs";
 
@@ -592,11 +592,6 @@ export async function executeIncrementalRepositoryScan({
       statCache,
     }),
   );
-  if (statCache && storage) {
-    const live = new Set(result.files.map((file) => file.path));
-    for (const key of [...statCache.keys()]) if (!live.has(key)) statCache.delete(key);
-    saveFileStatCache(projectRoot, storage, statCache);
-  }
   const completed = completeComputeResult(request, result, { limits });
   request = completed.request;
   const response = completed.response;
