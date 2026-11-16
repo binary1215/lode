@@ -323,7 +323,7 @@ function resolvedReferenceCommit(gitPath, references, packedReferences, ref, vis
   return record.kind === "tag" && record.peeled ? record.peeled : record.target;
 }
 
-function gitHeadState(root) {
+export function gitHeadState(root) {
   let repository;
   try {
     repository = resolveLocalGitRepository(root);

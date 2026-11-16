@@ -178,7 +178,9 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     const { id, reason } = queue[i],
       matches = byId.get(id) || [];
     if (!matches.length) {
-      issue(id, "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE");
+      // A dry run does not open snapshot-objects.git or snapshot-bundles.
+      // An id that is absent as a whole file may still be inside those backends.
+      if (!deferredBackends.length) issue(id, "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE");
       continue;
     }
     for (const snapshot of matches) {
@@ -188,6 +190,10 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     }
   }
   const observedUnreferenced = snapshots.filter((item) => !reasons.has(item.path));
+  const typedBackendDeferred = deferredBackends.length > 0 && issues.every((item) => item.reasonCode === "TYPED_BACKEND_OBSERVATION_REQUIRED");
+  const nextAction = typedBackendDeferred
+    ? "Dry-run did not open snapshot-objects.git or snapshot-bundles, so it cannot certify deletions from those backends. Run storage-gc --apply. That reads them. gc_applied with applyPerformed false means the typed closure kept every referenced snapshot."
+    : null;
   const rows = snapshots.map((item) => ({
     id: item.id,
     path: item.path,
@@ -208,8 +214,9 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     projectId: owner.project.projectId,
     status: apply ? "gc_apply_unavailable_preserved" : "gc_dry_run",
     requestedApply: apply,
-    ...(apply ? { code: "SNAPSHOT_GC_APPLY_UNAVAILABLE" } : {}),
-    applyAvailable: false,
+    ...(apply && !typedBackendDeferred ? { code: "SNAPSHOT_GC_APPLY_UNAVAILABLE" } : {}),
+    applyAvailable: issues.length === 0 || typedBackendDeferred,
+    ...(nextAction ? { nextAction } : {}),
     applyPerformed: false,
     deletedCount: 0,
     reclaimedBytes: 0,
@@ -416,6 +423,9 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
           ? "gc_partial"
           : "gc_preserved"
         : "gc_applied";
+    if (result.status === "gc_applied" && !result.applyPerformed)
+      result.nextAction =
+        "Typed closure certified the retained snapshots. Nothing unreachable was deleted. A dry run that names TYPED_BACKEND_OBSERVATION_REQUIRED has not opened snapshot-objects.git or snapshot-bundles; this apply did.";
     return result;
   } catch (error) {
     result.code = error.code || "SNAPSHOT_GC_FAILED";

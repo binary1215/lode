@@ -23,6 +23,7 @@ import {
   createBoundedWorkerJobHost,
   startBoundedWorkerJob,
   readBoundedWorkerJob,
+  readStableRegularFile,
   readBoundedWorkerPatch,
   cancelBoundedWorkerJob,
   reconcileBoundedWorkerJob,
@@ -405,4 +406,61 @@ test("proposal freeze recovery requires exact settled result and complete native
   assert.equal(reconcileBoundedWorkerJob(f.input, { onProcess }).status, "completed");
   assert.equal(hash(fs.readFileSync(patchFile)), hash(original));
   assert.equal(readBoundedWorkerPatch(f.input, { onProcess }).origin, "provider-patch-proposal");
+});
+
+function statWithMovedTimestamps(stat) {
+  const moved = Object.assign(Object.create(Object.getPrototypeOf(stat)), stat);
+  const bump = (value) => (typeof value === "bigint" ? value + 1n : value + 1);
+  Object.defineProperty(moved, "mtimeNs", { value: bump(stat.mtimeNs) });
+  Object.defineProperty(moved, "ctimeNs", { value: bump(stat.ctimeNs) });
+  return moved;
+}
+
+test("a worker job read accepts a Windows metadata timestamp change when the bytes match", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "job-read-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, "result.json");
+  const bytes = Buffer.from('{"status":"completed"}\n');
+  fs.writeFileSync(file, bytes);
+  const original = fs.fstatSync;
+  let fstats = 0;
+  fs.fstatSync = function (fd, ...args) {
+    const stat = original.call(fs, fd, ...args);
+    fstats += 1;
+    return fstats === 2 ? statWithMovedTimestamps(stat) : stat;
+  };
+  try {
+    assert.equal(readStableRegularFile(file).equals(bytes), true);
+    assert.equal(fstats >= 3, true);
+  } finally {
+    fs.fstatSync = original;
+  }
+});
+
+test("a worker job read still rejects bytes that change during the read", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "job-read-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = path.join(root, "result.json");
+  fs.writeFileSync(file, Buffer.from('{"status":"completed"}\n'));
+  const originalStat = fs.fstatSync;
+  const originalRead = fs.readSync;
+  let fstats = 0;
+  let reads = 0;
+  fs.fstatSync = function (fd, ...args) {
+    const stat = originalStat.call(fs, fd, ...args);
+    fstats += 1;
+    return fstats === 2 ? statWithMovedTimestamps(stat) : stat;
+  };
+  fs.readSync = function (...args) {
+    const n = originalRead.apply(fs, args);
+    reads += 1;
+    if (reads === 1) fs.writeFileSync(file, Buffer.from('{"status":"changed"}\n'));
+    return n;
+  };
+  try {
+    assert.throws(() => readStableRegularFile(file), { code: "WORKER_JOB_CONFLICT" });
+  } finally {
+    fs.fstatSync = originalStat;
+    fs.readSync = originalRead;
+  }
 });

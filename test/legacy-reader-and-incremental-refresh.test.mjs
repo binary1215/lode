@@ -7,7 +7,7 @@ import test from "node:test";
 import { initializeProject, inspectProject } from "../scripts/lib/session/lode-core.mjs";
 import { buildWorldModel, readWorldModel, readWorldModelSnapshot } from "../scripts/lib/world/world-model.mjs";
 import { refreshWorldModel } from "../scripts/lib/world/incremental-refresh.mjs";
-import { applySnapshotGarbageCollection } from "../scripts/lib/world/snapshot-gc.mjs";
+import { applySnapshotGarbageCollection, inspectSnapshotGarbageCollection } from "../scripts/lib/world/snapshot-gc.mjs";
 import { graphProjectionCanonicalJson } from "../scripts/lib/world/graph-projection-adapter.mjs";
 import { sha256Hex } from "../scripts/lib/core/digest.mjs";
 import { formatProjectStatus } from "../scripts/lib/session/cli-presentation.mjs";
@@ -262,41 +262,113 @@ test("a store written by beta.80 commit 6d9f6be stays readable and keeps its sna
   assert.equal(archived.status, 0, archived.stderr);
   const extracted = spawnSync("tar", ["-xf", archive, "-C", tree], { encoding: "utf8" });
   assert.equal(extracted.status, 0, extracted.stderr);
-  const script = path.join(tree, "write-beta80-store.mjs");
-  fs.writeFileSync(
-    script,
-    [
-      'import fs from "node:fs";',
-      'import path from "node:path";',
-      'import { initializeProject } from "./scripts/lib/head-core.mjs";',
-      'import { buildWorldModel } from "./scripts/lib/world-model.mjs";',
-      "const root = process.argv[2];",
-      'initializeProject({ root, pluginRoot: process.cwd(), runtimes: ["codex", "claude", "opencode"] });',
-      'fs.writeFileSync(path.join(root, "module.py"), "def compute_value():\\n    return \'beta80\'\\n");',
-      "const built = await buildWorldModel({ root });",
-      "process.stdout.write(JSON.stringify({ worldModelId: built.snapshot.worldModelId, file: built.file }));",
-      "",
-    ].join("\n"),
-  );
-  const written = spawnSync(process.execPath, [script, projectRoot], { cwd: tree, encoding: "utf8" });
-  assert.equal(written.status, 0, written.stderr);
-  const built = JSON.parse(written.stdout);
+  fs.writeFileSync(path.join(projectRoot, "module.py"), "def compute_value():\n    return 'beta80'\n");
+  const init = spawnSync(process.execPath, ["scripts/lode.mjs", "init", projectRoot, "--runtime", "codex", "--runtime", "claude", "--runtime", "opencode"], {
+    cwd: tree,
+    encoding: "utf8",
+  });
+  assert.equal(init.status, 0, init.stderr || init.stdout);
+  const indexed = spawnSync(process.execPath, ["scripts/lode.mjs", "world-index", projectRoot], { cwd: tree, encoding: "utf8" });
+  assert.equal(indexed.status, 0, indexed.stderr || indexed.stdout);
   const source = fs.readFileSync(path.join(projectRoot, "module.py"));
-  const snapshotBytes = fs.readFileSync(built.file);
   const pointerFile = path.join(projectRoot, ".lode", "world-model", "current.json");
+  const graphFile = path.join(projectRoot, ".lode", "graph-projection", "current.json");
   const pointer = JSON.parse(fs.readFileSync(pointerFile, "utf8"));
+  const graphPointer = JSON.parse(fs.readFileSync(graphFile, "utf8"));
+  const snapshotFile = path.join(projectRoot, ".lode", "world-model", "snapshots", `${pointer.worldModelId}.json.gz`);
+  const snapshotBytes = fs.readFileSync(snapshotFile);
+  const snapshotNames = (relative) => fs.readdirSync(path.join(projectRoot, ".lode", relative)).sort();
+  const worldSnapshots = snapshotNames("world-model/snapshots");
+  const graphSnapshots = snapshotNames("graph-projection/snapshots");
   assert.equal(pointer.readerRequirements.layout, "chunked-code-v3");
   assert.equal(Object.hasOwn(pointer.readerRequirements, "minimumReader"), false);
   assert.equal(Object.hasOwn(pointer.readerRequirements, "writer"), false);
   const loaded = await readWorldModel({ root: projectRoot });
-  assert.equal(loaded.snapshot.worldModelId, built.worldModelId);
+  assert.equal(loaded.snapshot.worldModelId, pointer.worldModelId);
   assert.equal(loaded.snapshot.files.find((file) => file.path === "module.py").digest, sha256Hex(source));
-  await refreshWorldModel({ root: projectRoot });
-  assert.equal(fs.readFileSync(built.file).equals(snapshotBytes), true);
+  const dryRun = inspectSnapshotGarbageCollection({ root: projectRoot });
+  assert.equal(
+    dryRun.coverage.issues.some((issue) => issue.reasonCode === "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE"),
+    false,
+  );
+  assert.equal(dryRun.applyAvailable, true);
+  assert.match(dryRun.nextAction, /storage-gc --apply/);
+  const refreshed = await refreshWorldModel({ root: projectRoot });
+  assert.equal(refreshed.status, "unchanged");
+  assert.equal(fs.readFileSync(snapshotFile).equals(snapshotBytes), true);
   assert.equal(fs.readFileSync(path.join(projectRoot, "module.py")).equals(source), true);
   const upgraded = JSON.parse(fs.readFileSync(pointerFile, "utf8"));
+  const upgradedGraph = JSON.parse(fs.readFileSync(graphFile, "utf8"));
+  assert.equal(upgraded.worldModelId, pointer.worldModelId);
+  assert.equal(upgraded.worldModelHash, pointer.worldModelHash);
+  assert.equal(upgradedGraph.graphSnapshotId, graphPointer.graphSnapshotId);
+  assert.equal(upgradedGraph.graphSnapshotHash, graphPointer.graphSnapshotHash);
   assert.equal(upgraded.readerRequirements.minimumReader, "0.3.0-beta.75");
-  const original = await readWorldModelSnapshot({ root: projectRoot, worldModelId: built.worldModelId });
-  assert.equal(original.snapshot.worldModelId, built.worldModelId);
+  assert.deepEqual(snapshotNames("world-model/snapshots"), worldSnapshots);
+  assert.deepEqual(snapshotNames("graph-projection/snapshots"), graphSnapshots);
+  const original = await readWorldModelSnapshot({ root: projectRoot, worldModelId: pointer.worldModelId });
+  assert.equal(original.snapshot.worldModelId, pointer.worldModelId);
+  assert.equal(original.snapshot.worldModelHash, pointer.worldModelHash);
   assert.equal(original.snapshot.files.find((file) => file.path === "module.py").digest, sha256Hex(source));
+  const applied = await applySnapshotGarbageCollection({ root: projectRoot });
+  assert.equal(applied.status, "gc_applied");
+  assert.equal(applied.applyPerformed, false);
+  assert.match(applied.nextAction, /Typed closure certified/);
+  assert.equal(JSON.parse(fs.readFileSync(pointerFile, "utf8")).worldModelId, pointer.worldModelId);
+});
+
+test("a persisted world that differs from the refresh preview is not left published", async (t) => {
+  const f = project(t);
+  fs.writeFileSync(path.join(f.root, "a.py"), "def value():\n    return 1\n");
+  const built = await buildWorldModel({ root: f.root });
+  fs.writeFileSync(path.join(f.root, "a.py"), "def value():\n    return 2\n");
+  const canon = path.join(f.root, f.storage.directory, "context", "product-model.json");
+  const originalCanon = fs.readFileSync(canon, "utf8");
+  const originalRead = fs.readFileSync;
+  let canonReads = 0;
+  fs.readFileSync = function (file, ...args) {
+    const result = originalRead.call(fs, file, ...args);
+    if (path.resolve(String(file)) === canon) {
+      canonReads += 1;
+      // Reads 1–4 are the two non-persisted previews. The persisting build starts at read 5.
+      if (canonReads === 4) {
+        const model = JSON.parse(originalCanon);
+        model.featureGroups = [{ key: "editing", name: "Editing", description: "Edit the document.", parentFeatureGroupKeys: [] }];
+        fs.writeFileSync(canon, `${JSON.stringify(model, null, 2)}\n`);
+      }
+    }
+    return result;
+  };
+  try {
+    await assert.rejects(refreshWorldModel({ root: f.root }), { code: "REFRESH_PERSISTENCE_MISMATCH" });
+  } finally {
+    fs.readFileSync = originalRead;
+  }
+  assert.equal(canonReads >= 2, true);
+  const current = await readWorldModel({ root: f.root });
+  assert.equal(current.snapshot.worldModelId, built.snapshot.worldModelId);
+  assert.equal(current.snapshot.worldModelHash, built.snapshot.worldModelHash);
+  const graph = JSON.parse(fs.readFileSync(path.join(f.root, f.storage.directory, "graph-projection", "current.json"), "utf8"));
+  assert.equal(graph.graphSnapshotId, built.snapshot.temporalProvenanceGraph.graphSnapshotId);
+  assert.equal(graph.graphSnapshotHash, built.snapshot.temporalProvenanceGraph.graphSnapshotHash);
+});
+
+test("gc dry-run and apply agree when snapshot backends are present", async (t) => {
+  const f = project(t);
+  fs.writeFileSync(path.join(f.root, "a.py"), "def value():\n    return 1\n");
+  const built = await buildWorldModel({ root: f.root });
+  const dryRun = inspectSnapshotGarbageCollection({ root: f.root });
+  assert.equal(
+    dryRun.coverage.issues.some((issue) => issue.reasonCode === "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE"),
+    false,
+  );
+  assert.equal(dryRun.applyAvailable, true);
+  assert.match(dryRun.nextAction, /storage-gc --apply/);
+  const applied = await applySnapshotGarbageCollection({ root: f.root });
+  assert.equal(applied.status, "gc_applied");
+  assert.equal(applied.applyAvailable, true);
+  assert.match(applied.nextAction, /Typed closure certified/);
+  const current = await readWorldModel({ root: f.root });
+  assert.equal(current.snapshot.worldModelId, built.snapshot.worldModelId);
+  assert.equal(current.snapshot.worldModelHash, built.snapshot.worldModelHash);
 });

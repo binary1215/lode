@@ -5,7 +5,7 @@ import { inspectProject, SCHEMA_VERSION } from "../head-core.mjs";
 import { executeIncrementalRepositoryScan, managedRootFilesForProject, sourceTreeMatchesPublishedFiles } from "./repository-scan.mjs";
 import { readRefreshInputGeneration, refreshInputStamp } from "./refresh-input-generation.mjs";
 import { readRepositorySourceScope } from "./repository-source-scope.mjs";
-import { buildWorldModel, deriveIncrementalRevisionParents, inspectWorldModel, readWorldModel, readWorldModelSnapshot } from "./world-model.mjs";
+import { buildWorldModel, deriveIncrementalRevisionParents, gitHeadState, inspectWorldModel, readWorldModel, readWorldModelSnapshot } from "./world-model.mjs";
 import {
   completePostRefreshProjection,
   inspectPostRefreshProjection as inspectPostRefreshProjectionArtifact,
@@ -18,6 +18,7 @@ import { sha256Hex as digest } from "../core/digest.mjs";
 import { canonicalJson, canonicalValue as canonical } from "../core/canonical-json.mjs";
 import { failWith } from "../core/errors.mjs";
 import { atomicWriteText as atomicWrite } from "../core/fs-atomic.mjs";
+import { readProductModelCanon } from "./product-model.mjs";
 
 export const INCREMENTAL_REFRESH_VERSION = "0.2.0";
 const LEGACY_INCREMENTAL_REFRESH_VERSION = "0.1.0";
@@ -32,6 +33,22 @@ const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 
 function compareText(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function sourceFilesMatch(storedFiles, scannedFiles) {
+  if (!Array.isArray(storedFiles) || !Array.isArray(scannedFiles) || storedFiles.length !== scannedFiles.length) return false;
+  const digests = new Map(scannedFiles.map((file) => [file.path, file.digest]));
+  return storedFiles.every((file) => digests.get(file.path) === file.digest);
+}
+
+function recordedInputsMatch(snapshot, scannedFiles, projectRoot, storage) {
+  if (!sourceFilesMatch(snapshot.files, scannedFiles)) return false;
+  const git = gitHeadState(projectRoot);
+  const storedGit = snapshot.git || {};
+  if ((git.status || "") !== (storedGit.status || "") || (git.commit || "") !== (storedGit.commit || "") || (git.ref || "") !== (storedGit.ref || ""))
+    return false;
+  const canon = readProductModelCanon({ projectRoot, storage });
+  return canon.model.productModelHash === snapshot.productModel?.productModelHash;
 }
 
 function assertFields(record, allowed, label) {
@@ -649,7 +666,8 @@ async function refreshWorldModelLocked({
   });
   const mismatch = compatibility.layers.find((layer) => ["STORAGE_VERSION_MISMATCH", "INVALID_READER_REQUIREMENTS"].includes(layer.reasonCode));
   if (mismatch) throw Object.assign(new Error(mismatch.message || mismatch.reasonCode), { code: mismatch.reasonCode });
-  if (compatibility.layers.some((layer) => layer.legacyDeclaration)) await upgradeLegacyReaderPointers({ root: projectRoot, storage: inspected.storage });
+  const wasLegacy = compatibility.layers.some((layer) => layer.legacyDeclaration);
+  if (wasLegacy) await upgradeLegacyReaderPointers({ root: projectRoot, storage: inspected.storage });
   const stored = await readWorldModel({ root: projectRoot, storeAdapter });
   const previousSnapshot = stored.snapshot;
   const request = buildIncrementalRefreshRequest(
@@ -675,6 +693,14 @@ async function refreshWorldModelLocked({
   if (request.expectation.mode === "exact" && canonicalJson(observedPaths) !== canonicalJson(request.expectation.paths)) {
     fail("Observed changed paths do not match the exact refresh expectation.", "REFRESH_CHANGE_EXPECTATION_MISMATCH");
   }
+  // A legacy store is upgraded on its pointer only while the recorded source,
+  // git head and product canon are still the bytes this snapshot names. Rebuilding
+  // would publish a new id just because this reader describes those bytes differently.
+  const keepLegacySnapshot =
+    wasLegacy &&
+    !request.additionalParentSourceSnapshotIds.length &&
+    !(Array.isArray(request.expectation?.paths) && request.expectation.paths.length) &&
+    recordedInputsMatch(previousSnapshot, repositoryScanExecution.result.files, projectRoot, inspected.storage);
 
   const common = {
     root: projectRoot,
@@ -684,16 +710,18 @@ async function refreshWorldModelLocked({
     runtimeStateAdapter,
     repositoryScanExecution,
   };
-  const sameLineagePreview = await buildWorldModel({
-    ...common,
-    parentSourceSnapshotIds: previousSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds,
-    revisionParentIds: previousSnapshot.temporalProvenanceGraph.revisionParentIds,
-    filterRevisionParentsToCurrentEntities: true,
-  });
+  const sameLineagePreview = keepLegacySnapshot
+    ? null
+    : await buildWorldModel({
+        ...common,
+        parentSourceSnapshotIds: previousSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds,
+        revisionParentIds: previousSnapshot.temporalProvenanceGraph.revisionParentIds,
+        filterRevisionParentsToCurrentEntities: true,
+      });
   const additionalParentsRequested = request.additionalParentSourceSnapshotIds.some(
     (parentId) => !previousSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds.includes(parentId),
   );
-  const requiresRefresh = sameLineagePreview.snapshot.worldModelId !== previousSnapshot.worldModelId || additionalParentsRequested;
+  const requiresRefresh = !keepLegacySnapshot && (sameLineagePreview.snapshot.worldModelId !== previousSnapshot.worldModelId || additionalParentsRequested);
   let nextPreview = sameLineagePreview;
   let revisionParentIds = previousSnapshot.temporalProvenanceGraph.revisionParentIds;
   let parentSourceSnapshotIds = previousSnapshot.temporalProvenanceGraph.parentSourceSnapshotIds;
@@ -724,6 +752,10 @@ async function refreshWorldModelLocked({
 
   let world = stored;
   if (requiresRefresh) {
+    const worldPointerFile = path.join(projectRoot, inspected.storage.directory, "world-model/current.json");
+    const graphPointerFile = path.join(projectRoot, inspected.storage.directory, "graph-projection/current.json");
+    const savedWorldPointer = fs.readFileSync(worldPointerFile, "utf8");
+    const savedGraphPointer = fs.readFileSync(graphPointerFile, "utf8");
     world = await buildWorldModel({
       root: projectRoot,
       persist: true,
@@ -734,7 +766,6 @@ async function refreshWorldModelLocked({
       repositoryScanExecution,
       parentSourceSnapshotIds,
       revisionParentIds,
-      expectedWorldModelId: nextPreview.snapshot.worldModelId,
       expectedCurrentWorldModelId: previousSnapshot.worldModelId,
       writerLease,
     });
@@ -742,6 +773,8 @@ async function refreshWorldModelLocked({
       world.snapshot.worldModelId !== receipt.next.worldModelId ||
       world.snapshot.temporalProvenanceGraph.sourceSnapshotId !== receipt.next.sourceSnapshotId
     ) {
+      atomicWrite(worldPointerFile, savedWorldPointer);
+      atomicWrite(graphPointerFile, savedGraphPointer);
       fail("Persisted World Model does not match the verified refresh receipt.", "REFRESH_PERSISTENCE_MISMATCH");
     }
   }

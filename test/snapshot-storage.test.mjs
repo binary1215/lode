@@ -258,7 +258,12 @@ test("storage inspection traces retained history and reports unreferenced bytes 
   const report = inspectSnapshotGarbageCollection({ root: f.root });
   assert.equal(report.status, "gc_dry_run");
   assert.equal(report.deletedCount, 0);
-  assert.equal(report.applyAvailable, false);
+  assert.equal(report.applyAvailable, true);
+  assert.match(report.nextAction, /storage-gc --apply/);
+  assert.equal(
+    report.coverage.issues.every((issue) => issue.reasonCode === "TYPED_BACKEND_OBSERVATION_REQUIRED"),
+    true,
+  );
   assert(report.observedUnreferencedBytes > 0);
   assert(report.snapshots.some((row) => row.id === first.snapshot.worldModelId && row.reasonCode === "RETAINED_REFERENCE_CLOSURE"));
   assert(report.snapshots.some((row) => row.id === currentId && row.reasonCode === "RETAINED_REFERENCE_CLOSURE"));
