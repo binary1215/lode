@@ -42,7 +42,16 @@ export function queryProductGraph(options = {}) {
         : `제품 그래프 빌드를 읽지 못했다: ${read.reason}. 다시 만들려면: ${read.buildCommand}`;
     return { status: read.status, code: read.code, message, buildCommand: read.buildCommand, text: `${message}\n`, ...common };
   }
-  const answer = walk.ask(productGraphQueryContext(read), request);
+  // A build in a shape no released version wrote may lack what one question
+  // needs. That question answers with a stated code; other questions that the
+  // build can answer still work.
+  let answer;
+  try {
+    answer = walk.ask(productGraphQueryContext(read), request);
+  } catch {
+    const message = `이 빌드(${read.directory})는 이 질문에 답할 모양이 아니다: 알려진 어느 버전의 빌드와도 모양이 다르다. 다시 만들려면: ${read.buildCommand}`;
+    return { status: "unreadable", code: "PRODUCT_GRAPH_BUILD_UNREADABLE", message, buildCommand: read.buildCommand, text: `${message}\n`, ...common };
+  }
   const { text: answerText, ok, code, message, ...structured } = answer;
   return {
     status: ok ? "answered" : "refused",

@@ -1108,6 +1108,34 @@ test("C2: the map prepares off-stage after the first view and works when opened 
   assert(cards().length > 0);
 });
 
+test("R2-1: a build in a shape no version wrote answers a question it cannot serve with a stated code; the others still answer", async (t) => {
+  const damaged = path.join(temporary(t), "build");
+  fs.cpSync(older("beta-126"), damaged, { recursive: true });
+  const check = json(path.join(damaged, "check.json"));
+  delete check.limits.calls;
+  check.lists.missingIds = "not a list";
+  fs.writeFileSync(path.join(damaged, "check.json"), JSON.stringify(check));
+  const graph = json(path.join(damaged, "graph.json"));
+  delete graph.limits.calls;
+  fs.writeFileSync(path.join(damaged, "graph.json"), JSON.stringify(graph));
+  const gaps = await runCommand(["product-graph-query", ".", "gaps", "--build", damaged]);
+  assert.equal(gaps.code, "PRODUCT_GRAPH_BUILD_UNREADABLE");
+  assert(gaps.text.includes(damaged), "names the build folder");
+  assert.match(gaps.text, /다시 만들려면: product-graph-build /);
+  assert.doesNotMatch(gaps.text, /TypeError|Cannot read|undefined|\bat /);
+  for (const request of [
+    { question: "overview" },
+    { question: "node", id: "cli:notes" },
+    { question: "down", id: "cli:notes" },
+    { question: "reach", id: "MAIN-01" },
+    { question: "find", text: "notes" },
+  ]) {
+    const answer = queryProductGraph({ buildDirectory: damaged, ...request });
+    assert.equal(answer.status, "answered", JSON.stringify(request));
+  }
+  assert.match(queryProductGraph({ buildDirectory: damaged }).header[1], /이 빌드에는 호출 수가 없다|호출 \d+개 중/);
+});
+
 test("C3: --share names no local path in the product graph section, however the root was given", async (t) => {
   const f = notesProject(t, { records: false });
   buildProductGraph({ root: f.root });
