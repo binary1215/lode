@@ -11,6 +11,67 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.128 — publication tracked separately
+
+- Fixed: a store whose pointer was written before `minimumReader` existed
+  (the beta.80 shape: a layout this reader understands, no `minimumReader`
+  or `writer`) is read again instead of `STORAGE_VERSION_MISMATCH`. Refresh
+  records `minimumReader` and `writer` on the pointer only, under its writer
+  lease, and keeps the World pointer's link to the Graph pointer in step.
+  Storage GC reads such a pointer and leaves it as it is. Snapshot files,
+  record ids, hashes and source text are not rewritten. The first refresh
+  of such a store answers from a shorter comparison (sources, git head,
+  product canon) and does not rebuild; the next one compares everything. An
+  explicit null, an unusable or a higher `minimumReader` is still a
+  mismatch, and the message says it is a version mismatch and not corrupted
+  storage, also for a downgrade, and how to recover. Tested against a store
+  written by the beta.80 commit.
+- Fixed: snapshot GC no longer gives up when walking a large store takes
+  more than 30 seconds in total. Each plain Git command keeps its own limit;
+  the pack step has none and stops on cancellation. macOS APFS and HFS
+  volumes qualify for collection; FAT, network and unknown volumes stay
+  preserved. A dry run says when it did not open the typed backends, and it
+  still reports a retained World or Graph snapshot that is neither a file
+  nor a ref of the Git store. A watcher probe file left behind is not in
+  its way.
+- Changed: refresh does less for inputs that did not change.
+  - When everything a refresh reads is as the published World recorded it,
+    refresh answers `unchanged` without rebuilding the World and Graph and
+    without writing a snapshot. After an edit, an untouched file keeps its
+    verified digest and analysis and is not read again.
+  - A file counts as untouched only by a stat (size, modification and change
+    time, inode, device) taken before the read that produced its digest and
+    confirmed after it. A file saved while a refresh runs is read again by
+    the next refresh. A modification time without a sub-second part is not
+    trusted until two seconds have passed.
+  - The other inputs are recorded as they were before the scan and the build
+    read anything: the project store outside snapshots, the local git head
+    and refs (also in a linked worktree), the files of the snapshot stores,
+    the number of files the scan skips per reason, the selected Session, and
+    the analysis and plugin versions. A record saved or a commit made while
+    a refresh runs, a new binary or over-size file, a lost snapshot file or
+    a plugin upgrade each send the next refresh down the full path.
+  - A full refresh that finds nothing changed renews that record. A build
+    given its own store, projection, history, runtime state, scan or
+    in-memory projection writes none and always takes the full path.
+  - A refresh that would publish a World other than the previewed one is
+    still refused before any pointer moves (`REFRESH_PREVIEW_DRIFT`).
+- Fixed: the filesystem refresh watcher reports `ready` once the operating
+  system has delivered an event for its own probe file, because macOS drops
+  changes made before the stream listens. The probe has a bounded number of
+  attempts and reports `not-armed` when no event arrives.
+- Changed: a worker job file whose timestamps move while it is read is
+  accepted only when a second read gives the same bytes and the timestamps
+  have stopped moving. Changed bytes are still a conflict.
+- Limits: the two files under `refresh/` are caches. Deleting them costs one
+  full refresh and nothing else. A real edit still builds and stores a new
+  snapshot. An unchanged answer now also stats every file of the snapshot
+  stores, which costs more on a large store than the first measurements of
+  this change. macOS and Linux behaviour is covered by CI only. Several
+  states of this change before merge answered `unchanged` for a changed
+  input (a file saved during a refresh, a commit in a linked worktree, a
+  record saved during a build); they were found in review and fixed.
+
 ## 0.3.0-beta.127 — publication tracked separately
 
 - Added: the Graph Explorer opens on where the work stands, shows the

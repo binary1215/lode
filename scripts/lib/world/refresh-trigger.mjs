@@ -916,6 +916,8 @@ export function createFileSystemRefreshWatcher({
   documentProjectionAdapter = null,
   onDelivery = () => {},
   onError = () => {},
+  armAttemptLimit: armAttemptLimitOption = 50,
+  armIntervalMs: armIntervalMsOption = 40,
 } = {}) {
   const queue = new DebouncedRefreshTriggerQueue({ root, sourceKind: "filesystem", debounceMs, maxEvents, documentProjectionAdapter, onDelivery, onError });
   const reportError = (error) => {
@@ -923,9 +925,63 @@ export function createFileSystemRefreshWatcher({
       onError(error);
     } catch {}
   };
+  // macOS FSEvents drops writes that happen before the stream is listening and does not replay them.
+  // A private file under the selected storage directory is rewritten until that stream reports it,
+  // or until the attempt bound says the watcher is not armed. Callers that must not lose the first
+  // edit await `ready`. The arm file is ignored storage, never a refresh input.
+  const storageDirectory = queue.storage.directory;
+  const armAttemptLimit = Number.isInteger(armAttemptLimitOption) && armAttemptLimitOption >= 0 ? armAttemptLimitOption : 50;
+  const armIntervalMs = Number.isInteger(armIntervalMsOption) && armIntervalMsOption >= 10 ? armIntervalMsOption : 40;
+  const armName = `.watch-arm-${process.pid}-${Date.now().toString(36)}`;
+  const armRelative = `${storageDirectory}/refresh/${armName}`.replaceAll("\\", "/");
+  const armPath = path.join(queue.root, storageDirectory, "refresh", armName);
+  let armTimer = null;
+  let armAttempts = 0;
+  let armAttempted = false;
+  let armSettled = false;
+  let resolveReady = () => {};
+  const ready = new Promise((resolve) => {
+    resolveReady = resolve;
+  });
+  const settleArm = (status) => {
+    if (armSettled) return;
+    armSettled = true;
+    if (armTimer) clearInterval(armTimer);
+    armTimer = null;
+    try {
+      fs.rmSync(armPath, { force: true });
+    } catch {
+      /* the arm file is a startup probe, not project state */
+    }
+    resolveReady({ status });
+  };
+  const armSignal = (filename) => {
+    if (!armAttempted || filename == null) return false;
+    const name = String(filename).replaceAll("\\", "/").replace(/^\.\//, "");
+    return name === armRelative || name.endsWith(`/${armName}`) || name.endsWith(armName);
+  };
+  const writeArm = () => {
+    if (armSettled) return;
+    armAttempts += 1;
+    if (armAttempts > armAttemptLimit) {
+      settleArm("not-armed");
+      return;
+    }
+    armAttempted = true;
+    try {
+      fs.mkdirSync(path.dirname(armPath), { recursive: true });
+      fs.writeFileSync(armPath, "arm\n");
+    } catch {
+      /* the next interval retries until the stream reports the file, the bound, or close */
+    }
+  };
   let watcher;
   try {
     watcher = fs.watch(fs.realpathSync.native(queue.root), { recursive: true, encoding: "utf8" }, async (eventType, filename) => {
+      if (armSignal(filename)) {
+        settleArm("armed");
+        return;
+      }
       try {
         await queue.enqueue(
           filename == null
@@ -940,11 +996,18 @@ export function createFileSystemRefreshWatcher({
     fail(`Filesystem refresh watcher could not start: ${error.message}`, "REFRESH_WATCHER_START_FAILED");
   }
   watcher.on("error", reportError);
+  writeArm();
+  if (!armSettled) {
+    armTimer = setInterval(writeArm, armIntervalMs);
+    armTimer.unref?.();
+  }
   return {
     projectRoot: queue.root,
     queue,
     watcher,
+    ready,
     async close({ flush = true } = {}) {
+      settleArm("not-armed");
       watcher.close();
       return queue.close({ flush });
     },

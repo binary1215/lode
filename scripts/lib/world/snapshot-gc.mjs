@@ -41,6 +41,30 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     stopped = false;
   const deferredBackends = [];
   const issue = (relative, reasonCode) => issues.push({ path: relative, reasonCode });
+  // Whether the git snapshot store has a ref for this id, read from its ref
+  // files without running git (a loose ref or a packed-refs line). Unreadable
+  // ref files count as "may hold it": the apply opens the store and decides.
+  let packedSnapshotRefs = null;
+  const gitStoreNamesSnapshot = (id) => {
+    if (!deferredBackends.includes(prefix + "/snapshot-objects.git") || !/^[a-z][a-z0-9-]{0,127}$/.test(id)) return false;
+    const gitDirectory = path.join(projectRoot, prefix, "snapshot-objects.git");
+    try {
+      if (fs.lstatSync(path.join(gitDirectory, "refs", "lode-snapshots", id), { throwIfNoEntry: false })?.isFile()) return true;
+      if (packedSnapshotRefs === null) {
+        const packed = path.join(gitDirectory, "packed-refs");
+        const stat = fs.lstatSync(packed, { throwIfNoEntry: false });
+        packedSnapshotRefs = new Set();
+        if (stat?.isFile())
+          for (const line of fs.readFileSync(packed, "utf8").split("\n")) {
+            const match = / refs\/lode-snapshots\/(\S+)$/.exec(line.trim());
+            if (match) packedSnapshotRefs.add(match[1]);
+          }
+      }
+      return packedSnapshotRefs.has(id);
+    } catch {
+      return true;
+    }
+  };
   function walk(relative) {
     let file, stat;
     try {
@@ -93,7 +117,13 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
       return;
     }
     physicalRows.push({ relative: relative.slice(prefix.length + 1), bytes: stat.size });
-    if (relative === prefix + "/graph-discovery/index.json") return; // Rebuildable membership, not a historical root.
+    if (
+      relative === prefix + "/graph-discovery/index.json" ||
+      relative === prefix + "/refresh/file-stat-cache.json" ||
+      relative === prefix + "/refresh/input-generation.json" ||
+      relative.startsWith(prefix + "/refresh/.watch-arm-")
+    )
+      return; // Rebuildable membership, refresh input cache or a watcher's leftover startup probe: not a historical root.
     if (relative.endsWith(".tmp")) {
       issue(relative, "UNPUBLISHED_OR_UNKNOWN_STAGE");
       return;
@@ -173,7 +203,13 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     const { id, reason } = queue[i],
       matches = byId.get(id) || [];
     if (!matches.length) {
-      issue(id, "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE");
+      // A dry run does not open snapshot-objects.git or snapshot-bundles. A
+      // whole World or Graph snapshot is either a file here or a ref of the git
+      // store (a bundle is only a part a whole snapshot names), so such an id
+      // that is neither is reported as missing. Another id (a source snapshot
+      // inside a graph) may sit inside an unopened backend's content.
+      const wholeSnapshot = /^(?:world-model|graph-snapshot)-[a-f0-9]{24}$/.test(id);
+      if (wholeSnapshot ? !gitStoreNamesSnapshot(id) : !deferredBackends.length) issue(id, "RETAINED_SNAPSHOT_REFERENCE_UNAVAILABLE");
       continue;
     }
     for (const snapshot of matches) {
@@ -183,6 +219,10 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     }
   }
   const observedUnreferenced = snapshots.filter((item) => !reasons.has(item.path));
+  const typedBackendDeferred = deferredBackends.length > 0 && issues.every((item) => item.reasonCode === "TYPED_BACKEND_OBSERVATION_REQUIRED");
+  const nextAction = typedBackendDeferred
+    ? "Dry-run did not open snapshot-objects.git or snapshot-bundles, so it cannot certify deletions from those backends. Run storage-gc --apply. That reads them. gc_applied with applyPerformed false means the typed closure kept every referenced snapshot."
+    : null;
   const rows = snapshots.map((item) => ({
     id: item.id,
     path: item.path,
@@ -203,8 +243,9 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
     projectId: owner.project.projectId,
     status: apply ? "gc_apply_unavailable_preserved" : "gc_dry_run",
     requestedApply: apply,
-    ...(apply ? { code: "SNAPSHOT_GC_APPLY_UNAVAILABLE" } : {}),
-    applyAvailable: false,
+    ...(apply && !typedBackendDeferred ? { code: "SNAPSHOT_GC_APPLY_UNAVAILABLE" } : {}),
+    applyAvailable: issues.length === 0 || typedBackendDeferred,
+    ...(nextAction ? { nextAction } : {}),
     applyPerformed: false,
     deletedCount: 0,
     reclaimedBytes: 0,
@@ -244,7 +285,10 @@ export function inspectSnapshotGarbageCollection({ root = ".", apply = false } =
 // Explicit asynchronous effect, separate from the unchanged zero-write
 // inspection. A diagnostic string scan is never its deletion certificate.
 export async function applySnapshotGarbageCollection({ root = ".", signal, onProcess } = {}) {
-  const deadline = Date.now() + 30_000;
+  // Inventory and reclaim are not one deadline. A single clock made a large
+  // store abort before any unreachable byte was deleted. Each plain Git
+  // command keeps its own bound; the supervised pack step has no clock of its
+  // own and stops on cancellation. Admission covers one unlink, not the walk.
   const owner = readGraphProject(root);
   const result = {
     kind: "SnapshotStorageInspection",
@@ -291,10 +335,13 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
       return {
         ...result,
         code: mismatch.reasonCode,
-        message: mismatch.message,
+        message: mismatch.message || mismatch.reasonCode,
         requiredVersion: mismatch.requiredVersion || null,
         installedVersion: mismatch.installedVersion || null,
       };
+    // A pointer written before minimumReader existed is read as it is. GC does
+    // not rewrite it: that write belongs under the writer lease, which the next
+    // refresh holds when it records the missing fields.
   } catch (error) {
     if (error.code === "STORAGE_VERSION_MISMATCH") return { ...result, code: error.code, message: error.message };
   }
@@ -302,7 +349,7 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
   if (attempt.status !== "active") return { ...result, status: attempt.status === "yielded" ? "gc_yielded" : "gc_preserved", code: attempt.reasonCode };
   let closure;
   try {
-    result.filesystem = await qualifySnapshotFileSystem({ root: owner.projectRoot, signal, onProcess, deadline });
+    result.filesystem = await qualifySnapshotFileSystem({ root: owner.projectRoot, signal, onProcess, deadline: Date.now() + 3_000 });
     if (result.filesystem.status !== "qualified-local") {
       result.code = signal?.aborted ? "SNAPSHOT_GC_CANCELLED" : result.filesystem.reasonCode;
       return result;
@@ -311,7 +358,7 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
       root,
       signal,
       onProcess,
-      deadline,
+      deadline: null,
       collectionAttempt: attempt,
       shouldContinue: () => !signal?.aborted && !snapshotCollectionCancelled(attempt),
     });
@@ -347,10 +394,6 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
     for (const candidate of closure.candidates) {
       if (signal?.aborted) {
         result.code = "SNAPSHOT_GC_CANCELLED";
-        break;
-      }
-      if (Date.now() >= deadline) {
-        result.code = "SNAPSHOT_GIT_TIMEOUT";
         break;
       }
       try {
@@ -412,6 +455,9 @@ export async function applySnapshotGarbageCollection({ root = ".", signal, onPro
           ? "gc_partial"
           : "gc_preserved"
         : "gc_applied";
+    if (result.status === "gc_applied" && !result.applyPerformed)
+      result.nextAction =
+        "Typed closure certified the retained snapshots. Nothing unreachable was deleted. A dry run that names TYPED_BACKEND_OBSERVATION_REQUIRED has not opened snapshot-objects.git or snapshot-bundles; this apply did.";
     return result;
   } catch (error) {
     result.code = error.code || "SNAPSHOT_GC_FAILED";

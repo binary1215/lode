@@ -78,7 +78,29 @@ function regularBytes(file, limit, publicationAlias = false) {
       offset += n;
     }
     const after = fs.fstatSync(fd);
-    if (after.size !== actual.size || after.mtimeMs !== actual.mtimeMs || after.ctimeMs !== actual.ctimeMs) fail("Worker job file changed during read.");
+    if (after.ino !== actual.ino || after.size !== actual.size) fail("Worker job file changed.");
+    // Millisecond fields: these are plain stats, which carry no nanosecond fields.
+    const timestampMoved = after.mtimeMs !== actual.mtimeMs || after.ctimeMs !== actual.ctimeMs;
+    if (!timestampMoved) return bytes;
+    // Windows can update access or metadata timestamps while a read's bytes stay
+    // identical. A second read of the same descriptor must match before those
+    // timestamps are ignored. Different bytes are still a conflict.
+    const again = Buffer.alloc(after.size);
+    let againOffset = 0;
+    while (againOffset < again.length) {
+      const n = fs.readSync(fd, again, againOffset, again.length - againOffset, againOffset);
+      if (!n) fail("Worker job file was truncated.");
+      againOffset += n;
+    }
+    const confirmed = fs.fstatSync(fd);
+    if (
+      confirmed.ino !== actual.ino ||
+      confirmed.size !== actual.size ||
+      confirmed.mtimeMs !== after.mtimeMs ||
+      confirmed.ctimeMs !== after.ctimeMs ||
+      !again.equals(bytes)
+    )
+      fail("Worker job file changed during read.");
     return bytes;
   } finally {
     fs.closeSync(fd);
@@ -86,6 +108,9 @@ function regularBytes(file, limit, publicationAlias = false) {
 }
 function read(file, limit = 8 * 1024 * 1024) {
   return JSON.parse(regularBytes(file, limit, true));
+}
+export function readStableRegularFile(file, limit = 8 * 1024 * 1024) {
+  return regularBytes(file, limit, false);
 }
 function publish(file, value) {
   const pending = `${file}.pending`;

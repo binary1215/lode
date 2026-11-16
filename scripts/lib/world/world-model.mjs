@@ -1,4 +1,5 @@
 import { snapshotReaderRequirements } from "./snapshot-storage-compatibility.mjs";
+import { refreshInputStamp, writeRefreshInputGeneration } from "./refresh-input-generation.mjs";
 import { stabilizeTemporalRelationIdentities } from "./temporal-relation-identity.mjs";
 import fs from "node:fs";
 import { resolveLocalGitRepository } from "./local-git-repository.mjs";
@@ -322,7 +323,7 @@ function resolvedReferenceCommit(gitPath, references, packedReferences, ref, vis
   return record.kind === "tag" && record.peeled ? record.peeled : record.target;
 }
 
-function gitHeadState(root) {
+export function gitHeadState(root) {
   let repository;
   try {
     repository = resolveLocalGitRepository(root);
@@ -663,6 +664,14 @@ export function deriveIncrementalRevisionParents({ previousGraph, candidateGraph
     parents[candidate.logicalEntityId] = unchanged ? [...previous.parentRevisionIds] : [previous.nodeId];
   }
   return Object.fromEntries(Object.entries(parents).sort(([left], [right]) => left.localeCompare(right)));
+}
+
+// What this installation writes into a World apart from the inputs. A new
+// analysis version or plugin version must not be answered with "unchanged".
+let installedPackageVersion = null;
+export function refreshReaderIdentity() {
+  installedPackageVersion ??= JSON.parse(fs.readFileSync(new URL("../../../package.json", import.meta.url), "utf8")).version;
+  return digest(canonicalJson({ indexer: indexerState(), package: installedPackageVersion }));
 }
 
 function indexerState() {
@@ -1548,11 +1557,47 @@ async function buildWorldModelLocked({
   expectedWorldModelId = "",
   expectedCurrentWorldModelId = "",
   writerLease = null,
+  // A string: the stamp the caller took before its own reads (a refresh scans
+  // before it builds). false: write no generation. Otherwise taken here.
+  refreshInputStampBeforeRead = null,
 } = {}) {
   if (filterRevisionParentsToCurrentEntities && persist) {
     fail("Current-entity revision-parent filtering is available only for non-persisted refresh previews.", "REVISION_PARENT_FILTER_PREVIEW_ONLY");
   }
-  const inspected = readyProject(root);
+  let inspected = readyProject(root);
+  // A generation vouches only for inputs the stamp sees: the project store and
+  // the local git state. A build given any other source (an adapter, an
+  // in-memory projection, a scan result of its own) writes none; the next full
+  // unchanged refresh renews it. A refresh passes its own scan and stamp.
+  const callerSources =
+    storeAdapter ||
+    graphProjectionAdapter ||
+    gitHistoryAdapter ||
+    runtimeStateAdapter ||
+    sourceRelationEvidenceAdapter ||
+    computeAdapter ||
+    onboardingProjectionInput ||
+    productPolicyProjectionInput ||
+    featureMappingProjectionInput ||
+    changeSetProjectionInput ||
+    documentChangeProjectionInput ||
+    observationProjectionInput ||
+    productOperatingProjectionInput ||
+    releaseObservationProjectionInput ||
+    (repositoryScanExecution && typeof refreshInputStampBeforeRead !== "string");
+  // Before anything below is read. Taken after the build, a record saved or a
+  // commit made while it was building would be stamped as already known.
+  let stampBeforeRead = callerSources ? false : refreshInputStampBeforeRead;
+  if (persist && stampBeforeRead !== false && typeof stampBeforeRead !== "string") {
+    try {
+      stampBeforeRead = refreshInputStamp(inspected.project.projectRoot, inspected.storage);
+      // The project read above (state, Session, managed files) came before the
+      // stamp; read it again so the World holds what the stamp saw or newer.
+      inspected = readyProject(root);
+    } catch {
+      stampBeforeRead = false;
+    }
+  }
   const storage = inspected.storage;
   const project = inspected.project;
   const worldStoreAdapter = createWorldModelStoreAdapter({ storage, projectRoot: project.projectRoot, adapter: storeAdapter });
@@ -2189,6 +2234,20 @@ async function buildWorldModelLocked({
     };
     error.message += ` Local World pointer was published (${worldModelId}); local Graph publication: ${error.worldPublication.graphLocal}; dependent projection did not complete against the same current basis. Current pointers were not rolled back.`;
     throw noteCanonBasisError(error, project.projectRoot, storage, productCanonBasis);
+  }
+  try {
+    // Without the stamp from before the reads there is nothing honest to record.
+    if (typeof stampBeforeRead === "string")
+      writeRefreshInputGeneration({
+        root: project.projectRoot,
+        storage,
+        snapshot,
+        verifiedFiles: selectedRepositoryScanExecution.verifiedFiles ?? null,
+        stamp: stampBeforeRead,
+        reader: refreshReaderIdentity(),
+      });
+  } catch {
+    /* The generation cache is an optimization. Publication already succeeded. */
   }
   return {
     status: changed ? "indexed" : "unchanged",

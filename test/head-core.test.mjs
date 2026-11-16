@@ -9,6 +9,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { initializeProject, convergeProjectInstallation, inspectProject, inspectRuntimeAdapters } from "../scripts/lib/head-core.mjs";
+import { seedLegacyProject } from "./helpers/legacy-project-fixture.mjs";
 import { coreEntryGuidance } from "../scripts/lib/session/lode-entry-guidance.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "../scripts/lib/lode-artifact-composition.mjs";
 import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
@@ -2322,7 +2323,8 @@ test("watches filesystem changes through the bounded debounced refresh adapter",
     watcher.watcher.off("change", observeRawEvent);
     await watcher.close({ flush: false });
   });
-  await new Promise((resolve) => setImmediate(resolve)); // Let native watcher startup enter the event loop.
+  const armed = await watcher.ready; // macOS FSEvents drops a write made before the stream is listening.
+  assert.equal(armed.status, "armed");
   observations.appendElapsedMs = performance.now() - startedAt;
   fs.appendFileSync(path.join(root, "src", "watched.mjs"), "export const changed = 2;\n");
   const result = await delivered;
@@ -2338,6 +2340,29 @@ test("watches filesystem changes through the bounded debounced refresh adapter",
   assert.deepEqual(result.refresh.request.trigger.evidenceIds, [result.batch.triggerBatchId]);
   const closed = await watcher.close({ flush: false });
   assert.equal(closed.closed, true);
+});
+
+test("filesystem watcher probe uses the selected storage directory and reports when it is not armed", async (t) => {
+  const legacyRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-head-watch-")));
+  t.after(() => fs.rmSync(legacyRoot, { recursive: true, force: true }));
+  seedLegacyProject(legacyRoot, pluginRoot);
+  const legacyWatcher = createFileSystemRefreshWatcher({ root: legacyRoot, debounceMs: 25 });
+  t.after(async () => {
+    await legacyWatcher.close({ flush: false });
+  });
+  const armed = await legacyWatcher.ready;
+  assert.equal(armed.status, "armed");
+  assert.equal(fs.existsSync(path.join(legacyRoot, ".head", "refresh")), true);
+  assert.equal(fs.existsSync(path.join(legacyRoot, ".lode")), false);
+
+  const root = temporaryProject();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initializeProject({ root, pluginRoot, runtimes: ["codex"] });
+  const unarmed = createFileSystemRefreshWatcher({ root, debounceMs: 25, armAttemptLimit: 0 });
+  t.after(async () => {
+    await unarmed.close({ flush: false });
+  });
+  assert.deepEqual(await unarmed.ready, { status: "not-armed" });
 });
 
 test("deduplicates large temporal edge sets without variadic stack growth", () => {
