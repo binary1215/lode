@@ -80,10 +80,12 @@
   build/check.json
   build/check.txt
   build/baseline.json
+  build/baseline-content.json
+  build/build-context.json
 ```
 
 - 문서, 정책 파일, 뜻 파일, 호출 방식 표, 승인 기록은 `product-model.json`처럼 사용자가 가진 Canon입니다. Lode는 읽기만 하고 스스로 고쳐 쓰지 않으며, 관리 매니페스트 digest에도 들어가지 않습니다.
-- `build/`는 만들어지는 출력입니다. 위 파일들과 소스 트리로 다시 만들 수 있고, Git이 무시합니다(새 Project에는 생성 저장소 규칙으로, 이미 있는 Project에는 빌드할 때마다 쓰는 자체 `.gitignore`로). `build/baseline.json`은 빌드가 비교하는 기준입니다. 첫 빌드가 잡고 `product-graph-baseline`만 옮깁니다([제품 그래프 쓰는 법](product-graph-usage.md) 참고). `build/`를 지우면 기준 뒤 바뀐 것 목록만 잃습니다.
+- `build/`는 만들어지는 출력입니다. 위 파일들과 소스 트리로 다시 만들 수 있고, Git이 무시합니다(새 Project에는 생성 저장소 규칙으로, 이미 있는 Project에는 빌드할 때마다 쓰는 자체 `.gitignore`로). `build/baseline.json`은 빌드가 비교하는 기준입니다. 첫 빌드가 잡고 `product-graph-baseline`만 옮깁니다([제품 그래프 쓰는 법](product-graph-usage.md) 참고). `build/baseline-content.json`은 `changes --list content`만 보이는 제한된 이전 본문을, `build/build-context.json`은 영향 미리보기가 비교하는 범위를 담습니다. `build/`를 지우면 기준 뒤 바뀐 것 목록과 그 전후 본문 표시만 사라집니다. Canon은 보존됩니다.
 - 파일 이름은 원본의 문서 이름과 노드 ID를 씁니다. 한국어 이름을 그대로 씁니다.
 - 이동용 내보내기와 가져오기는 Canon 파일을 옮깁니다(`build/`는 옮기지 않음). 이미 있는 Project로 가져올 때는 다른 Canon처럼 대상의 파일을 바꾸지 않고 보관합니다. 폴더 복사 채택은 이 파일들을 검증하고 바뀌지 않았기를 요구합니다. 세 결과 모두 `productGraph`에 다룬 문서와 승인 기록 수, 그 밖의 사용자 파일, `build/`를 옮기지 않았다는 것, Lode가 알아보지 못해 빼 둔 이름을 적고, 대상에 다른 파일이 있어 거절할 때는 그 파일을 적습니다. 어느 파일도 World 입력이 아니므로, 바뀌어도 World ID는 그대로입니다.
 - 스냅숏 GC는 Canon 파일을 검증된 루트로 읽고 `build/`는 건너뜁니다. 묶음 안에서 Lode가 알아보지 못하는 파일이나 폴더는 사용자의 것입니다. 지우지 않고, 루트로 쓰지 않고, issue로 치지 않으며, 남겨 둔 것으로 이름을 적습니다(`productGraphKept`). 알아보는 파일이 검증에 실패하거나 묶음 어딘가에 링크가 있으면 여전히 수거를 멈춥니다.

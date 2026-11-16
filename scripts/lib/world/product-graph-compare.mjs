@@ -44,8 +44,29 @@ export function declarationText(fileLines, [start, end]) {
   return slice.join("\n");
 }
 
+// What a non-code node's content hash covers, and what its "content" display
+// shows: exactly these fields, so the display hashes to contentSha256 and a
+// line shift in a document (positions, a 기능's oneLine) is not a content change.
+function statedContent(node, ix, reasons) {
+  if (node.type === "기능") {
+    const handlers = walk.handlersOf(ix, node.id).sort(compare);
+    return { kind: node.kind, handling: node.handling, handlers, reasons: handlers.length ? [] : [...(reasons.get(node.id) || [])].sort(compare) };
+  }
+  const { at, basis, contentSha256, reachSha256, ...stated } = node;
+  return stated;
+}
+
+const reasonsOf = (unresolvedHandlers = []) => {
+  const reasons = new Map();
+  for (const item of unresolvedHandlers) {
+    if (!reasons.has(item.id)) reasons.set(item.id, new Set());
+    reasons.get(item.id).add(item.reason);
+  }
+  return reasons;
+};
+
 // Adds contentSha256 to every node and reachSha256 to every 기능, in place.
-// Hashes are attributes; no ID changes.
+// Hashes are attributes; no ID changes. Derived from scratch on every build.
 export function addContentHashes(graph, readFiles, unresolvedHandlers = []) {
   const texts = new Map();
   for (const [file, text] of readFiles) texts.set(file, normalizeSourceText(text));
@@ -54,26 +75,14 @@ export function addContentHashes(graph, readFiles, unresolvedHandlers = []) {
     if (!linesOf.has(file)) linesOf.set(file, texts.get(file).split("\n"));
     return linesOf.get(file);
   };
-  const reasons = new Map();
-  for (const item of unresolvedHandlers) {
-    if (!reasons.has(item.id)) reasons.set(item.id, new Set());
-    reasons.get(item.id).add(item.reason);
-  }
+  const reasons = reasonsOf(unresolvedHandlers);
   const ix = walk.index(graph);
   for (const node of graph.nodes) {
     if (node.type === "코드") {
       if (!texts.has(node.file)) node.contentSha256 = null;
       else if (node.id === node.file || !node.lines) node.contentSha256 = textHash(texts.get(node.file));
       else node.contentSha256 = textHash(declarationText(lines(node.file), node.lines));
-    } else if (node.type === "기능") {
-      const handlers = walk.handlersOf(ix, node.id).sort(compare);
-      node.contentSha256 = sha256Hex(
-        canonicalJson({ kind: node.kind, handling: node.handling, handlers, reasons: handlers.length ? [] : [...(reasons.get(node.id) || [])].sort(compare) }),
-      );
-    } else {
-      const { at, basis, contentSha256, ...stated } = node;
-      node.contentSha256 = sha256Hex(canonicalJson(stated));
-    }
+    } else node.contentSha256 = sha256Hex(canonicalJson(statedContent(node, ix, reasons)));
   }
   for (const node of graph.nodes) {
     if (node.type !== "기능") continue;
@@ -84,6 +93,159 @@ export function addContentHashes(graph, readFiles, unresolvedHandlers = []) {
     node.reachSha256 = sha256Hex(canonicalJson(reached));
   }
   return graph;
+}
+
+// ---------- retained content (before/after display) ----------
+
+// The "before" side of a content change is kept in one generated local file
+// next to the baseline. It is never in check.json, check.txt, a build or check
+// reply or a Graph Explorer export; only `changes --list content` reads it.
+export const PRODUCT_GRAPH_RETAINED_CONTENT_FILE = "baseline-content.json";
+export const RETAINED_CONTENT_BUDGET = Object.freeze({ totalBytes: 2 * 1024 * 1024, entryBytes: 16 * 1024 });
+// A reader never reads a retained file larger than this.
+export const RETAINED_CONTENT_MAX_FILE_BYTES = 4 * 1024 * 1024;
+
+// One node's content as text, or null when it cannot be shown exactly: code is
+// the normalised source range (its hash is contentSha256); every other node is
+// its stated fields as indented JSON (the canonical form of which hashes to
+// contentSha256). sourceFor(path) gives the normalised text of a file whose
+// hash matches the graph's record of it, or null.
+export function nodeContent(node, { sourceFor, ix, reasons }) {
+  if (node.type === "코드") {
+    const text = sourceFor(node.file);
+    if (text === null || text === undefined) return null;
+    const shown = node.id === node.file || !node.lines ? text : declarationText(text.split("\n"), node.lines);
+    return textHash(shown) === node.contentSha256 ? { format: "source-lines", text: shown } : null;
+  }
+  const stated = statedContent(node, ix, reasons);
+  return sha256Hex(canonicalJson(stated)) === node.contentSha256 ? { format: "stated-fields", text: JSON.stringify(stated, null, 2) } : null;
+}
+
+// A source reader bound to the graph's own record of each file.
+export function graphSourceReader(graph, readText) {
+  const recorded = new Map((graph.inputs?.sourceFiles || []).map((file) => [file.path, file.sha256]));
+  const cache = new Map();
+  return (relative) => {
+    if (!cache.has(relative)) {
+      let text = null;
+      try {
+        const raw = readText(relative);
+        if (typeof raw === "string" && recorded.get(relative) === sourceTextHash(raw)) text = normalizeSourceText(raw);
+      } catch {
+        text = null;
+      }
+      cache.set(relative, text);
+    }
+    return cache.get(relative);
+  };
+}
+
+// An exact prefix of text within maxBytes, never splitting a character.
+export function textPrefix(text, maxBytes) {
+  if (Buffer.byteLength(text) <= maxBytes) return text;
+  let shown = Buffer.from(text).subarray(0, maxBytes).toString("utf8");
+  while (Buffer.byteLength(shown) > maxBytes || !text.startsWith(shown)) shown = shown.slice(0, -1);
+  return shown;
+}
+
+// The retained-content document for a baseline. Only whole contents are
+// kept, so every "before" shown can be checked against the baseline's hash.
+// The budget (file bytes: each entry's key and JSON) goes to the smallest
+// contents first, so no node loses its text because of its ID's order; a
+// content larger than the per-node bound or the rest of the budget is not
+// kept, and has no entry. only(id) limits it to some nodes (a backfill keeps
+// only those whose content equals the baseline's).
+export function retainedContentFor({ graph, baselineBytes, readText, unresolvedHandlers = [], only = null, budget = RETAINED_CONTENT_BUDGET }) {
+  const ix = walk.index(graph);
+  const reasons = reasonsOf(unresolvedHandlers);
+  const sourceFor = graphSourceReader(graph, readText);
+  const costOf = (id, entry) => Buffer.byteLength(JSON.stringify(id)) + Buffer.byteLength(JSON.stringify(entry)) + 2;
+  const contents = [];
+  for (const node of graph.nodes) {
+    if (only && !only(node)) continue;
+    const content = nodeContent(node, { sourceFor, ix, reasons });
+    if (!content) continue;
+    const entry = { format: content.format, text: content.text };
+    contents.push({ id: node.id, entry, cost: costOf(node.id, entry) });
+  }
+  contents.sort((a, b) => a.cost - b.cost || compare(a.id, b.id));
+  let remaining = budget.totalBytes;
+  const entries = {};
+  let kept = 0,
+    keptBytes = 0,
+    tooLarge = 0,
+    overBudget = 0;
+  for (const item of contents) {
+    if (item.cost > budget.entryBytes) tooLarge += 1;
+    else if (item.cost > remaining) overBudget += 1;
+    else {
+      entries[item.id] = item.entry;
+      remaining -= item.cost;
+      keptBytes += item.cost;
+      kept += 1;
+    }
+  }
+  return {
+    schemaVersion: 1,
+    kind: "LodeProductGraphRetainedContent",
+    baselineSha256: sha256Hex(baselineBytes),
+    reader: JSON.parse(readerKey(graph.inputs.reader)),
+    budget: { totalBytes: budget.totalBytes, entryBytes: budget.entryBytes, counted: "file bytes of each entry (key and JSON)" },
+    counts: { nodes: graph.nodes.length, shown: contents.length, kept, tooLarge, overBudget, notShown: graph.nodes.length - contents.length, bytes: keptBytes },
+    entries,
+  };
+}
+
+// Compact: the budget is in file bytes.
+export const serializeRetainedContent = (document) => `${JSON.stringify(document)}\n`;
+
+// Reads the retained "before" content of the baseline at baselineBytes. Each
+// entry is checked against the baseline: a complete entry must hash to the
+// baseline node's contentSha256 (code: its text; stated fields: their
+// canonical form); a partial entry is a prefix of such content and cannot be
+// re-verified on its own. The file is bound to the baseline's bytes and to the
+// way code is read (readerKey), not to the installed Lode, so an update that
+// reads code the same way keeps it.
+export function readRetainedContent(file, { baseline, baselineBytes }) {
+  let document;
+  try {
+    const stat = fs.lstatSync(file, { throwIfNoEntry: false });
+    if (!stat) return { status: "missing", entries: new Map(), reason: "보관 본문 파일이 없다" };
+    if (!stat.isFile() || stat.isSymbolicLink()) return { status: "unreadable", entries: new Map(), reason: "보관 본문 파일이 보통 파일이 아니다" };
+    if (stat.size > RETAINED_CONTENT_MAX_FILE_BYTES) return { status: "unreadable", entries: new Map(), reason: "보관 본문 파일이 너무 크다" };
+    document = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return { status: "unreadable", entries: new Map(), reason: "보관 본문 파일을 읽지 못했다" };
+  }
+  if (document?.kind !== "LodeProductGraphRetainedContent" || document.schemaVersion !== 1 || !document.entries || typeof document.entries !== "object")
+    return { status: "unreadable", entries: new Map(), reason: "보관 본문 파일의 모양이 다르다" };
+  if (document.baselineSha256 !== sha256Hex(baselineBytes)) return { status: "other-baseline", entries: new Map(), reason: "다른 기준의 보관 본문이다" };
+  if (readerKey(document.reader) !== readerKey(baseline.reader))
+    return { status: "other-reader", entries: new Map(), reason: "코드를 다르게 읽는 버전의 보관 본문이다" };
+  const hashes = new Map(baseline.nodes.map(([id, , , , , contentSha256]) => [id, contentSha256]));
+  const entries = new Map();
+  let rejected = 0;
+  for (const [id, entry] of Object.entries(document.entries)) {
+    const expected = hashes.get(id);
+    // Whole entries only: the text must hash to the baseline's content hash.
+    const ok =
+      entry &&
+      typeof entry.text === "string" &&
+      ["source-lines", "stated-fields"].includes(entry.format) &&
+      expected &&
+      (entry.format === "source-lines"
+        ? textHash(entry.text) === expected
+        : (() => {
+            try {
+              return sha256Hex(canonicalJson(JSON.parse(entry.text))) === expected;
+            } catch {
+              return false;
+            }
+          })());
+    if (ok) entries.set(id, { format: entry.format, text: entry.text, complete: true, totalBytes: Buffer.byteLength(entry.text) });
+    else rejected += 1;
+  }
+  return { status: "read", entries, rejected, counts: document.counts || null, budget: document.budget || null };
 }
 
 // ---------- baseline ----------
@@ -180,7 +342,7 @@ function movableName(node) {
   return `코드\u0000${node.kind}\u0000${hash >= 0 ? node.id.slice(hash + 1).replace(/~\d+$/, "") : node.id}`;
 }
 
-function baselineGraph(baseline) {
+export function baselineGraph(baseline) {
   const endpoint = (value) => (typeof value === "number" ? baseline.nodes[value][0] : value);
   return {
     nodeTypes: [],
@@ -190,7 +352,11 @@ function baselineGraph(baseline) {
 }
 
 // meaningLines: [{ id, at }] — the lines of 기능 뜻.md.
-export function compareWithBaseline(graph, baseline, { meaningLines = [] } = {}) {
+// retained: what readRetainedContent found for this baseline (only its counts
+// and which nodes have a "before" are used here; no text leaves this file).
+// baselineSha256: the hash of the baseline file's bytes, so a later reader of
+// these changes knows which baseline they belong to.
+export function compareWithBaseline(graph, baseline, { meaningLines = [], retained = null, baselineSha256 = null } = {}) {
   const sameReader = readerKey(graph.inputs.reader) === readerKey(baseline.reader);
   const sameRules = (graph.inputs.rulesSha256 ?? null) === (baseline.rulesSha256 ?? null);
   const before = baselineGraph(baseline);
@@ -354,6 +520,13 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [] } = {})
     });
   }
   const sum = (field) => byType.reduce((total, group) => total + group[field].length, 0);
+  // Which nodes' content changed, and whether a "before" is retained for
+  // them. The text itself is only in the answer to `changes --list content`.
+  const contentChanges = [];
+  for (const [id, change] of [...status].sort(([a], [b]) => compare(a, b))) {
+    const node = afterIx.nodes.get(id) || beforeIx.nodes.get(id);
+    contentChanges.push({ id, type: node?.type || null, change, beforeRetained: Boolean(retained?.entries?.has(id)) });
+  }
   const changes = {
     status: "compared",
     baseline: { setAt: baseline.setAt, previous: baseline.previous ?? null },
@@ -371,6 +544,24 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [] } = {})
     maybeMoved,
     unexplained,
     reviewAgain,
+    contentChanges,
+    content: {
+      question: "changes --list content",
+      baselineSha256,
+      changed: contentChanges.length,
+      beforeRetained: contentChanges.filter((item) => item.beforeRetained).length,
+      retainedFile: retained
+        ? { status: retained.status, ...(retained.reason ? { reason: retained.reason } : {}), ...(retained.action ? { action: retained.action } : {}) }
+        : { status: "not-read" },
+      note: "본문은 이 결과에 넣지 않는다. 전후 본문은 changes --list content 질문으로만 보인다.",
+    },
+    interpretation: {
+      kind: "net-diff",
+      intermediateEvents: "not-observed",
+      changeReasons: "not-inferred",
+      rawByteEquality: false,
+      declarationBoundary: "scanner-line-range; not an AST body",
+    },
   };
   changes.counts = {
     changed: sum("changed"),

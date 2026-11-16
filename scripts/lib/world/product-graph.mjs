@@ -10,7 +10,7 @@ import path from "node:path";
 import { sha256Hex } from "../core/digest.mjs";
 import { failCode as fail } from "../core/errors.mjs";
 import { atomicCreateArtifact, atomicWriteArtifact } from "../core/fs-atomic.mjs";
-import { readGraphProject } from "./discovery-index.mjs";
+import { readGraphProject, safeGraphFile } from "./discovery-index.mjs";
 import { withProjectMutation } from "../storage/project-mutation-lock.mjs";
 import {
   PRODUCT_GRAPH_APPROVAL_DIRECTORY,
@@ -40,13 +40,18 @@ import {
 import { assertUniqueIds, extractProductGraphCode, productGraphCodeFiles } from "./product-graph-extraction.mjs";
 import {
   PRODUCT_GRAPH_BASELINE_FILE,
+  PRODUCT_GRAPH_RETAINED_CONTENT_FILE,
   addContentHashes,
   baselineFromGraph,
   compareWithBaseline,
   noBaseline,
   productGraphReader,
   readBaseline,
+  readerKey,
+  readRetainedContent,
+  retainedContentFor,
   serializeBaseline,
+  serializeRetainedContent,
   sourceTextHash,
 } from "./product-graph-compare.mjs";
 import { productGraphWalk as walk } from "../../graph-explorer/product-graph-walk.js";
@@ -55,6 +60,15 @@ export const PRODUCT_GRAPH_VERSION = 1;
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const nfc = (name) => name.normalize("NFC");
+// What the impact preview compares between builds: the Project, the source
+// root (as a hash, never the path) and the way code is read. Nothing in it
+// changes with a plugin update that reads code the same way.
+const buildScope = (inputs) => ({
+  projectId: inputs.projectId || null,
+  sourceRootHash: sha256Hex(fs.realpathSync.native(inputs.sourceRoot).replaceAll("\\", "/")),
+  reader: JSON.parse(readerKey(productGraphReader(PRODUCT_GRAPH_VERSION))),
+});
+export const PRODUCT_GRAPH_BUILD_CONTEXT_FILE = "build-context.json";
 
 export const NODE_TYPES = Object.freeze([
   "제품코어",
@@ -990,7 +1004,7 @@ function run(options, { requireOutput }) {
   };
   result.limits = limitsOf({ extraction, computed, includeEstimates, loaded, callbacks });
   const graph = graphDocument({ extraction, loaded, computed, inputs, rules, result });
-  const baseline = compareToBaseline({ inputs, graph, computed, takeIfMissing: requireOutput });
+  const baseline = compareToBaseline({ inputs, graph, computed, readFiles: extraction.readFiles, takeIfMissing: requireOutput });
   result.changes = baseline.changes;
   result.text = renderProductGraphText(result);
   return { inputs, rules, extraction, loaded, computed, result, graph, baseline };
@@ -1013,7 +1027,13 @@ function outputStat(directory) {
   }
 }
 
-function compareToBaseline({ inputs, graph, computed, takeIfMissing }) {
+const retainedFile = (inputs) => path.join(inputs.outputDirectory, PRODUCT_GRAPH_RETAINED_CONTENT_FILE);
+
+// What a document of retained content says about itself to the comparison,
+// read back the way the next build will read it from disk.
+const retainedView = (document) => ({ status: "read", entries: new Map(Object.keys(document.entries).map((id) => [id, true])) });
+
+function compareToBaseline({ inputs, graph, computed, takeIfMissing, readFiles }) {
   if (!inputs.outputDirectory) return { changes: noBaseline("독립 검사에는 출력 폴더가 없어 기준을 읽지 않는다") };
   // Something other than a folder where the output folder belongs is refused
   // by a build with the product graph reason before anything under it is read;
@@ -1028,12 +1048,60 @@ function compareToBaseline({ inputs, graph, computed, takeIfMissing }) {
   const read = readBaseline(baselineFile(inputs));
   const meaning = computed.meaningDocument;
   const meaningLines = (meaning?.parsed.meanings || []).map((item) => ({ id: item.id, at: { path: meaning.path, line: item.line } }));
-  if (read.baseline) return { changes: compareWithBaseline(graph, read.baseline, { meaningLines }), state: { status: "kept", setAt: read.baseline.setAt } };
+  if (read.baseline) {
+    const baselineBytes = fs.readFileSync(baselineFile(inputs));
+    const baselineSha256 = sha256Hex(baselineBytes);
+    if (inputs.mode === "project") assertNoLinkedComponents(inputs.projectRoot, retainedFile(inputs));
+    let retained = readRetainedContent(retainedFile(inputs), { baseline: read.baseline, baselineBytes });
+    // The retained file is derived from the baseline: when it is missing, for
+    // another baseline (an interrupted move) or unreadable, a build writes it
+    // again from this build, only for nodes whose content is still the
+    // baseline's. Only when the baseline was read the way this build reads
+    // code; otherwise nothing is written and the reason says what to do. A
+    // check computes the same in memory.
+    let retainedCreate = null,
+      retainedReplace = false;
+    const sameReader = readerKey(read.baseline.reader) === readerKey(graph.inputs.reader);
+    if (["missing", "other-baseline", "unreadable", "other-reader"].includes(retained.status)) {
+      if (sameReader) {
+        const hashes = new Map(read.baseline.nodes.map(([id, , , , , contentSha256]) => [id, contentSha256]));
+        retainedCreate = retainedContentFor({
+          graph,
+          baselineBytes,
+          readText: (relative) => readFiles.get(relative),
+          unresolvedHandlers: computed.lists?.unresolvedHandlers || [],
+          only: (node) => Boolean(node.contentSha256) && hashes.get(node.id) === node.contentSha256,
+        });
+        retainedReplace = retained.status !== "missing";
+        retained = { ...retainedView(retainedCreate), rebuiltFrom: retained.status };
+      } else
+        retained = {
+          status: "other-reader",
+          entries: new Map(),
+          reason: "기준이 지금과 다른 방식으로 코드를 읽어 잡혔다",
+          action: "product-graph-baseline으로 기준을 다시 잡으면 이전 본문이 보관된다",
+        };
+    }
+    return {
+      changes: compareWithBaseline(graph, read.baseline, { meaningLines, retained, baselineSha256 }),
+      state: { status: "kept", setAt: read.baseline.setAt },
+      retainedCreate,
+      retainedReplace,
+    };
+  }
   if (read.missing && takeIfMissing) {
     const taken = baselineFromGraph(graph, { setAt: new Date().toISOString() });
+    const takenBytes = Buffer.from(serializeBaseline(taken));
+    const retainedCreate = retainedContentFor({
+      graph,
+      baselineBytes: takenBytes,
+      readText: (relative) => readFiles.get(relative),
+      unresolvedHandlers: computed.lists?.unresolvedHandlers || [],
+    });
     return {
-      changes: compareWithBaseline(graph, taken, { meaningLines }),
+      changes: compareWithBaseline(graph, taken, { meaningLines, retained: retainedView(retainedCreate), baselineSha256: sha256Hex(takenBytes) }),
       taken,
+      retainedCreate,
       state: { status: "taken-now", setAt: taken.setAt, message: "기준 없음 — 이번 빌드를 기준으로 삼았다" },
     };
   }
@@ -1051,12 +1119,20 @@ export function buildProductGraph(options = {}) {
   const { inputs, result, graph, baseline } = ran;
   const output = inputs.outputDirectory;
   const { text, ...structured } = result;
+  const graphText = json(graph);
   const files = [
-    ["graph.json", json(graph)],
+    ["graph.json", graphText],
     ["check.json", json(structured)],
     ["check.txt", text],
+    [PRODUCT_GRAPH_BUILD_CONTEXT_FILE, json({ kind: "ProductGraphBuildContext", graphFileSha256: sha256Hex(graphText), scope: buildScope(inputs) })],
   ];
-  const created = baseline.taken ? [[PRODUCT_GRAPH_BASELINE_FILE, serializeBaseline(baseline.taken)]] : [];
+  // The retained "before" content: created with a new baseline, or once for a
+  // baseline that has none (only nodes whose content equals the baseline's).
+  const created = [];
+  if (baseline.taken) created.push([PRODUCT_GRAPH_BASELINE_FILE, serializeBaseline(baseline.taken)]);
+  const replaced = [];
+  if (baseline.retainedCreate)
+    (baseline.retainedReplace ? replaced : created).push([PRODUCT_GRAPH_RETAINED_CONTENT_FILE, serializeRetainedContent(baseline.retainedCreate)]);
   const write = () => {
     if (inputs.mode === "project") assertNoLinkedComponents(inputs.projectRoot, output);
     const existing = fs.lstatSync(output, { throwIfNoEntry: false });
@@ -1072,8 +1148,9 @@ export function buildProductGraph(options = {}) {
           if (error.code !== "EEXIST") throw error;
         }
     }
-    for (const [name, content] of files) atomicWriteArtifact(path.join(output, name), content);
-    // The baseline is written once; only product-graph-baseline moves it.
+    for (const [name, content] of [...files, ...replaced]) atomicWriteArtifact(path.join(output, name), content);
+    // The baseline and its retained content are written once; only
+    // product-graph-baseline moves them.
     for (const [name, content] of created)
       try {
         atomicCreateArtifact(path.join(output, name), content);
@@ -1086,7 +1163,7 @@ export function buildProductGraph(options = {}) {
   return {
     status: "built",
     mode: result.mode,
-    written: [...files, ...created].map(([name, content]) => ({ name, bytes: Buffer.byteLength(content), sha256: sha256Hex(content) })),
+    written: [...files, ...replaced, ...created].map(([name, content]) => ({ name, bytes: Buffer.byteLength(content), sha256: sha256Hex(content) })),
     baseline: baseline.state || { status: "none" },
     outputLocation: inputs.mode === "project" ? `${inputs.storage.directory}/${PRODUCT_GRAPH_DIRECTORY}/${PRODUCT_GRAPH_BUILD_DIRECTORY}` : output,
     nodes: graph.nodes.length,
@@ -1107,8 +1184,22 @@ function buildCommandOf(inputs) {
   return `product-graph-build ${inputs.sourceRoot ?? "<source-root>"} --documents ${inputs.documentsDirectory ?? "<folder>"} --rules ${inputs.rulesFile ?? "<entry-rules.json>"} --out ${inputs.outputDirectory}`;
 }
 
+// A source file's text as it is now, read inside the source root, or null.
+export function sourceTextNow(sourceRoot, relative) {
+  try {
+    const file = safeGraphFile(sourceRoot, relative);
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > PRODUCT_GRAPH_SOURCE_READ_BYTES) return null;
+    return new TextDecoder("utf-8", { fatal: true }).decode(fs.readFileSync(file));
+  } catch {
+    return null;
+  }
+}
+
 function sourceHashNow(sourceRoot, relative) {
   try {
+    // Every source file on every read: the plain read main used (lstat refuses
+    // a linked file). The checked read is kept for showing content.
     const file = path.join(sourceRoot, ...relative.split("/"));
     const stat = fs.lstatSync(file);
     if (!stat.isFile() || stat.size > PRODUCT_GRAPH_SOURCE_READ_BYTES) return null;
@@ -1236,11 +1327,13 @@ export function readProductGraphBuild(options = {}) {
   const graphFile = path.join(directory, "graph.json");
   const stat = outputStat(graphFile);
   if (!stat) return { status: "not-built", code: "PRODUCT_GRAPH_NOT_BUILT", reason: "없음, 빌드 필요", buildCommand, inputs, directory };
-  let graph, check;
+  let graph, check, graphBytes, checkText;
   try {
     if (!stat.isFile()) throw Object.assign(new Error("not a file"), { code: "PRODUCT_GRAPH_BUILD_UNREADABLE" });
-    graph = JSON.parse(fs.readFileSync(graphFile, "utf8"));
-    check = JSON.parse(fs.readFileSync(path.join(directory, "check.json"), "utf8"));
+    graphBytes = fs.readFileSync(graphFile);
+    graph = JSON.parse(graphBytes.toString("utf8"));
+    checkText = fs.readFileSync(path.join(directory, "check.json"));
+    check = JSON.parse(checkText.toString("utf8"));
   } catch (error) {
     return {
       status: "unreadable",
@@ -1254,17 +1347,58 @@ export function readProductGraphBuild(options = {}) {
   if (graph?.kind !== "LodeProductGraph" || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges) || check?.kind !== "ProductGraphCheck")
     return { status: "unreadable", code: "PRODUCT_GRAPH_BUILD_UNREADABLE", reason: "빌드 파일의 모양이 제품 그래프가 아니다", buildCommand, inputs, directory };
   const baseline = readBaseline(path.join(directory, PRODUCT_GRAPH_BASELINE_FILE));
+  // The hashes of the build files are taken only when a question needs them
+  // (a later page, the impact preview); a plain question does not pay for them.
+  let graphFileSha256 = null,
+    checkFileSha256 = null;
+  const checkBytes = checkText;
   return {
     status: "built",
     builtAt: stat.mtime.toISOString(),
     graph,
+    get graphFileSha256() {
+      return (graphFileSha256 ??= sha256Hex(graphBytes));
+    },
+    get checkFileSha256() {
+      return (checkFileSha256 ??= sha256Hex(checkBytes));
+    },
     check,
     freshness: freshnessOf(inputs, graph),
     baselineNow: baseline.baseline ? { setAt: baseline.baseline.setAt } : null,
+    baselineEvidence: baseline.baseline || null,
     buildCommand,
     inputs,
     directory,
   };
+}
+
+// The retained "before" content of a read build's baseline (only the
+// `changes --list content` question reads it).
+export function readProductGraphRetainedContent(read) {
+  const baselinePath = path.join(read.directory, PRODUCT_GRAPH_BASELINE_FILE);
+  if (!read.baselineEvidence) return { status: "no-baseline", entries: new Map(), reason: "기준이 없다" };
+  if (read.inputs?.mode === "project") assertNoLinkedComponents(read.inputs.projectRoot, path.join(read.directory, PRODUCT_GRAPH_RETAINED_CONTENT_FILE));
+  let baselineBytes;
+  try {
+    baselineBytes = fs.readFileSync(baselinePath);
+  } catch {
+    return { status: "unreadable", entries: new Map(), reason: "기준 파일을 읽지 못했다" };
+  }
+  return {
+    ...readRetainedContent(path.join(read.directory, PRODUCT_GRAPH_RETAINED_CONTENT_FILE), { baseline: read.baselineEvidence, baselineBytes }),
+    baselineSha256: sha256Hex(baselineBytes),
+  };
+}
+
+// The build's scope record, read only by the impact preview. Unknown (null)
+// when absent or written for a different graph.json.
+export function readProductGraphBuildContext(read) {
+  try {
+    const metadata = JSON.parse(readBounded(path.join(read.directory, PRODUCT_GRAPH_BUILD_CONTEXT_FILE)).toString("utf8"));
+    return metadata?.kind === "ProductGraphBuildContext" && metadata.graphFileSha256 === read.graphFileSha256 ? metadata : null;
+  } catch {
+    return null;
+  }
 }
 
 // 8A.2: the only operation that moves the baseline. Takes the existing build
@@ -1289,8 +1423,23 @@ export function moveProductGraphBaseline(options = {}) {
     const old = readBaseline(file);
     const previous = old.baseline ? { setAt: old.baseline.setAt, droppedChanges: dropped.changes, droppedReviewAgain: dropped.reviewAgain } : null;
     const baseline = baselineFromGraph(graph, { setAt: new Date().toISOString(), previous });
-    if (inputs.mode === "project") assertNoLinkedComponents(inputs.projectRoot, file);
-    atomicWriteArtifact(file, serializeBaseline(baseline));
+    const baselineText = serializeBaseline(baseline);
+    const retained = retainedContentFor({
+      graph,
+      baselineBytes: Buffer.from(baselineText),
+      readText: (relative) => sourceTextNow(inputs.sourceRoot, relative),
+      unresolvedHandlers: check.lists?.unresolvedHandlers || [],
+    });
+    const contentFile = path.join(read.directory, PRODUCT_GRAPH_RETAINED_CONTENT_FILE);
+    if (inputs.mode === "project") {
+      assertNoLinkedComponents(inputs.projectRoot, file);
+      assertNoLinkedComponents(inputs.projectRoot, contentFile);
+    }
+    // The retained file first: if the move stops between the two writes, the
+    // old baseline stays with a retained file for another baseline, which the
+    // next build writes again.
+    atomicWriteArtifact(contentFile, serializeRetainedContent(retained));
+    atomicWriteArtifact(file, baselineText);
     return { baseline, previous };
   };
   const { baseline, previous } =

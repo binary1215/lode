@@ -536,13 +536,20 @@
     );
     const search = el("input", { attrs: { type: "search", id: "product-search", "aria-label": t("pgSearch"), placeholder: t("pgSearch") } });
     const results = el("div", { attrs: { id: "product-search-results" } });
-    search.addEventListener("input", () => {
+    // Ranked search over the whole graph: run once typing pauses (150 ms), not on every keystroke.
+    let pending = null;
+    const runSearch = () => {
+      pending = null;
       const found = search.value ? productGraphWalk.find(ctx, search.value) : [];
       results.replaceChildren(
         search.value
           ? answerBlock(t("pgFound", found.length), found, (node) => button(productGraphWalk.nodeLine(ctx, node.id), () => setRoot(node.id), "tree-link"))
           : el("span", {}),
       );
+    };
+    search.addEventListener("input", () => {
+      if (pending !== null) clearTimeout(pending);
+      pending = setTimeout(runSearch, 150);
     });
     root.append(
       el("section", { className: "card" }, el("h2", { text: t("pgStarts") }), starts, el("h3", { text: t("pgQuestions") }), questions, el("label", { text: t("pgSearch"), attrs: { for: "product-search" } }), search, results),

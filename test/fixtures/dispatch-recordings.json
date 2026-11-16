@@ -5755,7 +5755,14 @@
        "list": null,
        "limit": 50,
        "cursor": 0,
-       "depth": 1
+       "depth": 1,
+       "candidateBuildDirectory": null,
+       "proposalBaseBuildDirectory": null,
+       "nodeTypes": [],
+       "relatedTo": null,
+       "edgeTypes": [],
+       "basisStates": [],
+       "expectedBasisSha256": null
       }
      ]
     }
@@ -5770,6 +5777,19 @@
    "input": {
     "project_root": "<root>",
     "question": "overview",
+    "candidate_build": "sample-candidate_build",
+    "proposal_base_build": "sample-proposal_base_build",
+    "node_types": [
+     "sample-node_types"
+    ],
+    "related_to": "sample-related_to",
+    "edge_types": [
+     "sample-edge_types"
+    ],
+    "basis_states": [
+     "sample-basis_states"
+    ],
+    "expected_basis_sha256": "sample-expected_basis_sha256",
     "id": "sample-id",
     "text": "sample-text",
     "list": "sample-list",
@@ -5789,7 +5809,20 @@
        "list": "sample-list",
        "limit": 1,
        "cursor": 0,
-       "depth": 1
+       "depth": 1,
+       "candidateBuildDirectory": "sample-candidate_build",
+       "proposalBaseBuildDirectory": "sample-proposal_base_build",
+       "nodeTypes": [
+        "sample-node_types"
+       ],
+       "relatedTo": "sample-related_to",
+       "edgeTypes": [
+        "sample-edge_types"
+       ],
+       "basisStates": [
+        "sample-basis_states"
+       ],
+       "expectedBasisSha256": "sample-expected_basis_sha256"
       }
      ]
     }
@@ -5804,6 +5837,13 @@
    "input": {
     "project_root": "<root>",
     "question": "",
+    "candidate_build": "",
+    "proposal_base_build": "",
+    "node_types": [],
+    "related_to": "",
+    "edge_types": [],
+    "basis_states": [],
+    "expected_basis_sha256": "",
     "id": "",
     "text": "",
     "list": "",
@@ -5823,7 +5863,14 @@
        "list": "",
        "limit": 0,
        "cursor": 0,
-       "depth": 0
+       "depth": 0,
+       "candidateBuildDirectory": "",
+       "proposalBaseBuildDirectory": "",
+       "nodeTypes": [],
+       "relatedTo": "",
+       "edgeTypes": [],
+       "basisStates": [],
+       "expectedBasisSha256": ""
       }
      ]
     }
@@ -16114,7 +16161,14 @@
        "list": null,
        "limit": 50,
        "cursor": 0,
-       "depth": 1
+       "depth": 1,
+       "candidateBuildDirectory": null,
+       "proposalBaseBuildDirectory": null,
+       "nodeTypes": [],
+       "relatedTo": null,
+       "edgeTypes": [],
+       "basisStates": [],
+       "expectedBasisSha256": null
       }
      ]
     }
@@ -16129,18 +16183,32 @@
    "argv": [
     "product-graph-query",
     "<root>",
+    "--basis-states",
+    "sample-basis-states",
     "--build",
     "sample-build",
+    "--candidate-build",
+    "sample-candidate-build",
     "--cursor",
     "sample-cursor",
     "--depth",
     "3",
     "--documents",
     "sample-documents",
+    "--edge-types",
+    "sample-edge-types",
+    "--expected-basis-sha256",
+    "sample-expected-basis-sha256",
     "--limit",
     "3",
     "--list",
     "sample-list",
+    "--node-types",
+    "sample-node-types",
+    "--proposal-base-build",
+    "sample-proposal-base-build",
+    "--related-to",
+    "sample-related-to",
     "--rules",
     "sample-rules"
    ],
@@ -16159,7 +16227,20 @@
        "list": "sample-list",
        "limit": "3",
        "cursor": "sample-cursor",
-       "depth": "3"
+       "depth": "3",
+       "candidateBuildDirectory": "sample-candidate-build",
+       "proposalBaseBuildDirectory": "sample-proposal-base-build",
+       "nodeTypes": [
+        "sample-node-types"
+       ],
+       "relatedTo": "sample-related-to",
+       "edgeTypes": [
+        "sample-edge-types"
+       ],
+       "basisStates": [
+        "sample-basis-states"
+       ],
+       "expectedBasisSha256": "sample-expected-basis-sha256"
       }
      ]
     }

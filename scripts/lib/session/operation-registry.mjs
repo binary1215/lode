@@ -1534,7 +1534,7 @@ export const OPERATIONS = Object.freeze([
     tool: {
       name: "lode_product_graph_build",
       description:
-        "Build the project's product graph (the original 제품 그래프 model, apart from the Product Model): 기능 and 코드 from the source tree by script, the other nodes from the user's documents in the store. Writes only the generated output folder; documents, policy, meaning lines and approvals are never rewritten. Includes the 정합성 검사 result.",
+        "Build the project's product graph (the original 제품 그래프 model, apart from the Product Model): 기능 and 코드 from the source tree by script, the other nodes from the user's documents in the store. Writes only the generated output folder (graph.json, check.json, check.txt, build-context.json; with a new baseline also baseline.json and baseline-content.json, which holds the baseline's own source text for `changes --list content` and never leaves the build folder); documents, policy, meaning lines and approvals are never rewritten. Includes the 정합성 검사 result; its comparison says which nodes' content changed, not their text.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1590,12 +1590,39 @@ export const OPERATIONS = Object.freeze([
     tool: {
       name: "lode_product_graph_query",
       description:
-        "Ask the existing product graph build one step at a time, read-only (never builds, checks or writes). Helps when you need which code a user action or 기능 reaches (reach), what reaches a file or function (reach on a 코드 node or file path), what points to a node (up), one step down from a node (down), where the gaps are (gaps) or what changed since the baseline (changes); overview lists the starts. The graph is a text scan without types that follows resolved call and callback references only; every answer starts with whether the build is still the source as it is now and how many calls were resolved. Not a prerequisite of ordinary work. With no build the answer is PRODUCT_GRAPH_NOT_BUILT with the build command.",
+        "Ask the existing product graph build one step at a time, read-only (never builds, checks or writes). Helps when you need which code a user action or 기능 reaches (reach), what reaches a file or function (reach on a 코드 node or file path), what points to a node (up), one step down from a node (down), where the gaps are (gaps) or what changed since the baseline (changes); overview lists the starts. find ranks words (BM25) and can be narrowed by node_types, basis_states, or related_to with edge_types. impact compares three existing builds (proposal_base_build, the current build, candidate_build) read-only. changes with list content returns product source text (before and after, bounded and paged); ask it only when the text itself is needed. A page with more items returns page.nextMcpArguments to send as they are. The graph is a text scan without types that follows resolved call and callback references only; every answer starts with whether the build is still the source as it is now and how many calls were resolved. Not a prerequisite of ordinary work. With no build the answer is PRODUCT_GRAPH_NOT_BUILT with the build command.",
       inputSchema: {
         type: "object",
         properties: {
           project_root: { type: "string", minLength: 1 },
-          question: { type: "string", enum: ["overview", "node", "down", "up", "reach", "find", "gaps", "changes"], default: "overview" },
+          question: { type: "string", enum: ["overview", "node", "down", "up", "reach", "find", "gaps", "changes", "impact"], default: "overview" },
+          candidate_build: {
+            type: "string",
+            minLength: 1,
+            description: "Existing generated candidate build folder for read-only impact preview; never applies or approves it.",
+          },
+          proposal_base_build: {
+            type: "string",
+            minLength: 1,
+            description: "Existing build at the proposal's explicit starting point. Omit only to use the recorded baseline hashes with partial coverage.",
+          },
+          node_types: { type: "array", items: { type: "string", minLength: 1 }, description: "Filter node types before full-text ranking and pagination." },
+          related_to: { type: "string", minLength: 1, description: "Restrict find to this exact anchor's recorded edge neighborhood, before ranking." },
+          edge_types: {
+            type: "array",
+            items: { type: "string", minLength: 1 },
+            description: "Connection-kind restriction used with related_to; it does not filter unrelated global searches by itself.",
+          },
+          basis_states: {
+            type: "array",
+            items: { type: "string", minLength: 1 },
+            description: "Optional exact recorded basis-status filter; never changes an approval.",
+          },
+          expected_basis_sha256: {
+            type: "string",
+            pattern: "^[a-f0-9]{64}$",
+            description: "Reuse the returned query basis for a later page; a changed build is reported rather than mixed.",
+          },
           id: {
             type: "string",
             minLength: 1,
@@ -1622,12 +1649,34 @@ export const OPERATIONS = Object.freeze([
           limit: args.limit ?? 50,
           cursor: args.cursor ?? 0,
           depth: args.depth ?? 1,
+          candidateBuildDirectory: args.candidate_build ?? null,
+          proposalBaseBuildDirectory: args.proposal_base_build ?? null,
+          nodeTypes: args.node_types ?? [],
+          relatedTo: args.related_to ?? null,
+          edgeTypes: args.edge_types ?? [],
+          basisStates: args.basis_states ?? [],
+          expectedBasisSha256: args.expected_basis_sha256 ?? null,
         },
       ],
     },
     cli: {
       command: "product-graph-query",
-      flags: ["build", "documents", "rules", "list", "limit", "cursor", "depth"],
+      flags: [
+        "build",
+        "documents",
+        "rules",
+        "list",
+        "limit",
+        "cursor",
+        "depth",
+        "candidate-build",
+        "proposal-base-build",
+        "node-types",
+        "related-to",
+        "edge-types",
+        "basis-states",
+        "expected-basis-sha256",
+      ],
       args: ({ root, options }) => {
         const [question = "overview", argument = null, ...extra] = options._positional || [];
         if (extra.length) throw new Error(`Unexpected argument: ${extra[0]}`);
@@ -1645,6 +1694,13 @@ export const OPERATIONS = Object.freeze([
             limit: options.limit ?? 50,
             cursor: options.cursor ?? 0,
             depth: options.depth ?? 1,
+            candidateBuildDirectory: options["candidate-build"] ?? null,
+            proposalBaseBuildDirectory: options["proposal-base-build"] ?? null,
+            nodeTypes: options["node-types"]?.split(",") ?? [],
+            relatedTo: options["related-to"] ?? null,
+            edgeTypes: options["edge-types"]?.split(",") ?? [],
+            basisStates: options["basis-states"]?.split(",") ?? [],
+            expectedBasisSha256: options["expected-basis-sha256"] ?? null,
           },
         ];
       },
@@ -1656,7 +1712,7 @@ export const OPERATIONS = Object.freeze([
     tool: {
       name: "lode_product_graph_baseline",
       description:
-        "Move the product graph's comparison baseline to the existing build. This is the only way the baseline moves; builds, checks, queries and exports never move it. Refused with PRODUCT_GRAPH_BUILD_STALE when the build is not the source as it is now. The result says how many changed items and 다시 볼 것 items leave the list. Writes only build/baseline.json.",
+        "Move the product graph's comparison baseline to the existing build. This is the only way the baseline moves; builds, checks, queries and exports never move it. Refused with PRODUCT_GRAPH_BUILD_STALE when the build is not the source as it is now. The result says how many changed items and 다시 볼 것 items leave the list. Writes build/baseline-content.json (the new baseline's source text) and build/baseline.json, nothing else.",
       inputSchema: {
         type: "object",
         properties: { project_root: { type: "string", minLength: 1 } },

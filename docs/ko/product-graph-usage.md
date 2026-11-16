@@ -18,7 +18,7 @@
 lode-agent product-graph-build <project>
 ```
 
-빌드는 문서, 정책 파일과 뜻 파일, 호출 방식 표, 소스 트리를 읽고 `.lode/context/product-graph/build/` 아래에 `graph.json`, `check.json`, `check.txt`를, 처음에는 `baseline.json`도 씁니다(아래 기준 뒤 바뀐 것 참고). 그 밖에는 아무것도 쓰지 않습니다. 문서, 승인 기록, `product-model.json`은 그대로입니다. 같은 입력을 같은 폴더에 두 번 빌드하면 바이트까지 같습니다. 결과를 한 단계씩 읽으려면 아래 그래프에 묻기를 보거나 [Graph Explorer](graph-explorer.md)의 제품 그래프 보기를 엽니다.
+빌드는 문서, 정책 파일과 뜻 파일, 호출 방식 표, 소스 트리를 읽고 `.lode/context/product-graph/build/` 아래에 `graph.json`, `check.json`, `check.txt`, `build-context.json`을, 처음에는 `baseline.json`과 `baseline-content.json`(기준 자신의 소스 본문. `changes --list content`에만 씁니다. 아래 참고)도 씁니다. 그 밖에는 아무것도 쓰지 않습니다. 문서, 승인 기록, `product-model.json`은 그대로입니다. 같은 입력을 같은 폴더에 두 번 빌드하면 바이트까지 같습니다. 결과를 한 단계씩 읽으려면 아래 그래프에 묻기를 보거나 [Graph Explorer](graph-explorer.md)의 제품 그래프 보기를 엽니다.
 
 ## 검사
 
@@ -88,7 +88,7 @@ MCP에서는 묶은 도구 `lode_product_graph`의 `query` 동작(`lode_product_
 lode-agent product-graph-baseline <project>
 ```
 
-기준은 이 명령으로만 옮겨집니다. 이미 있는 빌드를 기준으로 삼고, 그 빌드가 지금 소스 그대로가 아니면 `PRODUCT_GRAPH_BUILD_STALE`로 거절하며, 바뀐 것과 다시 볼 것 몇 개가 목록에서 빠지는지 말합니다. `build/`를 지우면 그 목록만 잃습니다. 빌드가 지금 소스 그대로인지는 빌드가 읽은 모든 파일과 새로 생긴 코드 파일로 확인합니다. 코드가 아닌 새 파일(예: hook JSON이나 플러그인 매니페스트)은 다음 빌드에서야 보입니다. 같은 읽는 방식에서 기준과 글이 같은 파일의 노드가 해시나 줄 범위가 다르면 빌드는 `PRODUCT_GRAPH_NOT_REPRODUCIBLE`로 멈추고 아무것도 쓰지 않습니다.
+기준은 이 명령으로만 옮겨집니다. 이미 있는 빌드를 기준으로 삼고, 그 빌드가 지금 소스 그대로가 아니면 `PRODUCT_GRAPH_BUILD_STALE`로 거절하며, 바뀐 것과 다시 볼 것 몇 개가 목록에서 빠지는지 말합니다. `build/baseline-content.json`(새 기준의 소스 본문)을 쓰고 이어서 `build/baseline.json`을 쓰며, 그 밖에는 쓰지 않습니다. `build/`를 지우면 그 목록과 전후 본문 표시만 잃습니다. 빌드가 지금 소스 그대로인지는 빌드가 읽은 모든 파일과 새로 생긴 코드 파일로 확인합니다. 코드가 아닌 새 파일(예: hook JSON이나 플러그인 매니페스트)은 다음 빌드에서야 보입니다. 같은 읽는 방식에서 기준과 글이 같은 파일의 노드가 해시나 줄 범위가 다르면 빌드는 `PRODUCT_GRAPH_NOT_REPRODUCIBLE`로 멈추고 아무것도 쓰지 않습니다.
 
 ## 다른 폴더를 건드리지 않고 비교하기
 
@@ -129,3 +129,61 @@ export const COMMANDS = [
 ```
 
 그러면 그 이름을 선언·들여오거나 묶지 않는 모든 파일에서 `hostLog(x)`는 내장 함수, `host.run(x)`는 내장 네임스페이스의 멤버입니다.
+
+
+## 흐름을 찾고, 실제 변경과 제안 영향을 보기
+
+ID를 몰라도 질문으로 시작할 수 있습니다.
+
+```bash
+lode-agent product-graph-query <project> find "메모를 저장할 때 오류"
+lode-agent product-graph-query <project> find "saveNote" --node-types 기능 --related-to P1 --edge-types 정책→기능
+lode-agent product-graph-query <project> changes --list content
+lode-agent product-graph-query <project> impact --proposal-base-build <starting-build> --candidate-build <proposed-build>
+```
+
+**찾기**는 묻는 그래프마다 새로 만드는 BM25 단어 색인을 씁니다(그래프나 질문 사이에 남기는 것이 없습니다). 정확한 ID/경로를 먼저 보이고 동점 순서는 일정합니다. 종류, 기록된 근거 상태, edge 이웃 필터는 순위와 페이지 나누기 전에 적용합니다. `--edge-types`는 `--related-to`의 이웃만 좁힙니다. 그래프에 없는 `--related-to` ID는 빈 결과가 아니라 거절합니다(`PRODUCT_GRAPH_NODE_NOT_FOUND`). 코드 식별자는 나누고 한글은 두 글자 조각으로 활용형을 찾습니다. 단어 일치일 뿐 뜻 판단이 아니며, 비슷한 말이 연결·승인·현재성을 만들지 않습니다. 보이는 페이지의 결과에 대해서만 기록된 인접 edge를 함께 보입니다. 페이지의 찾기도 같은 코드입니다.
+
+**내용 변경.** `check.json`, `check.txt`, 빌드·검사 응답(CLI, MCP), Graph Explorer 내보내기(로컬, `--share`)는 어떤 노드의 내용이 바뀌었는지와 이전 본문이 보관됐는지만 말하고 본문 자체는 넣지 않습니다. 본문은 `changes --list content` 질문으로만 보이며, 제품 소스 본문입니다. 이전은 보관 파일에서, 현재는 지금 소스에서 이 빌드와 여전히 맞는 곳만 읽습니다. 한 쪽은 16 KiB까지이고, 한 페이지는 256 KiB까지 온전한 항목만 담으며 다음 페이지는 빠진 첫 항목에서 시작합니다. 잘린 쪽은 생략한 바이트를 적습니다. 구조화된 응답에서 본문은 `rows[].detail`에만 있습니다. 빌드에서 연 페이지는 본문 대신 명령을 보입니다. 목록은 비교한 그 기준에 속합니다. `product-graph-baseline` 뒤나 보관 본문이 생기기 전에 만든 빌드에서는 다음 빌드까지 이 질문을 `PRODUCT_GRAPH_BUILD_STALE`로 거절하고 본문을 보이지 않습니다.
+
+- 코드 내용은 정규화한 소스 구간입니다(BOM 제거, 줄끝 LF. 원래 바이트와 같다는 뜻이 아니며 스캐너의 줄 구간이지 AST 본문이 아닙니다). 다른 노드의 내용은 내용 해시가 다루는 필드 그대로라서 보이는 본문이 기록된 해시와 맞습니다. 기능의 위치와 한 줄 뜻은 여기에 들지 않으므로 진입점 위에서 줄이 밀려도 내용 변경이 아닙니다.
+- 이전 본문은 `build/baseline.json` 옆의 `build/baseline-content.json`에 있습니다. 생성 파일이고 로컬이며 `build/`와 함께 Git이 무시하고, 파일 바이트로 2 MiB까지입니다(4 MiB를 넘는 파일은 읽지 않습니다). 온전한 내용만 작은 것부터 하나에 16 KiB까지 담으므로 보이는 이전 본문은 모두 기준의 내용 해시와 맞춰 본 것입니다. 그보다 크거나 예산을 넘는 내용은 항목이 없고 "보관되지 않음"으로 보입니다. 기준 파일의 바이트와 코드를 읽는 방식(생성기, 그래프 버전, 소스 분석)에 묶이며 설치된 Lode 버전에는 묶이지 않으므로, 코드를 같게 읽는 업데이트 뒤에도 그대로 씁니다. 손으로 고친 항목은 맞지 않아 보이지 않습니다. 이 파일은 파생물입니다. 없거나, 다른 기준의 것이거나(예: 두 번의 쓰기 사이에서 멈춘 기준 이동), 읽을 수 없으면 다음 빌드가 그 빌드의 소스에서 내용이 아직 기준과 같은 노드만 다시 쓰고 `changes.content.retainedFile`에 그렇게 적습니다. 기준을 다른 방식으로 코드를 읽은 버전이 잡았다면 아무것도 쓰지 않고 `product-graph-baseline`을 실행하라고 적습니다. 파일을 지우면 전후 본문 표시만 잃고 비교 자체는 그대로입니다. 포터블 export/import와 Graph Explorer 내보내기는 이 파일을 옮기지 않습니다. 폴더 복사는 `build/`를 있는 그대로 옮깁니다.
+
+**영향**은 이미 있는 빌드 셋을 읽기만 하고 아무것도 바꾸지 않습니다. 제안이 출발한 상태, 지금 상태, 출발 상태에 제안을 적용한 상태입니다. 같은 최종값 변경과 서로 다른 변경, 동시 정책 변경, 지운 화면요소나 코드를 가리키는 남은 참조를 구분하고, 횟수가 있는 관계·출처·삭제 대 수정 충돌을 알립니다. 충돌이 없다는 것은 제품 승인이 아니고 정적 미리보기는 실행 증거가 아닙니다. 세 빌드가 같은 Project에서 나왔거나(빌드마다 `build/build-context.json`에 Project, 소스 루트 해시, 코드를 읽는 방식을 적습니다) 독립 실행이면 같은 소스 루트에서 나왔고, 코드를 같게 읽고 같은 호출 방식 표를 쓸 때만 "verified"입니다. Project 빌드와 독립 실행 `--out` 빌드가 섞였거나 서로 다른 독립 실행 루트(다른 worktree)면 "partial"이며 이유를 적습니다. 출발 빌드를 빼면(그때는 기록된 기준 해시를 씁니다) 역시 partial입니다. 읽을 수 없는 빌드 폴더를 주면 이유와 함께 거절합니다.
+
+서로 다른 세 상태를 verified로 비교하려면 Project 안에서 빌드하고 매번 `build/`를 복사해 둡니다. 아래 단계는 스스로 만들지 않은 것은 아무것도 지우지 않으며, 깨끗한 작업 트리에서 시작해야 합니다. `git status --porcelain`이 아무것도 출력하지 않아야 합니다(내 작업은 먼저 커밋하거나 stash합니다. `build/`는 Git이 무시하므로 상관없습니다). 출발 커밋을 기준으로 만든 patch로 제안이 주어졌을 때:
+
+```bash
+git status --porcelain                           # must print nothing
+git switch --detach <commit-the-proposal-started-from>
+lode-agent product-graph-build <project>
+cp -r <project>/.lode/context/product-graph/build <somewhere>/start
+git apply <proposal.patch>
+lode-agent product-graph-build <project>
+cp -r <project>/.lode/context/product-graph/build <somewhere>/proposal
+git apply -R <proposal.patch>                    # undoes exactly what git apply did
+git switch -                                     # back to the branch you were on
+lode-agent product-graph-build <project>         # build/ is the current state again
+lode-agent product-graph-query <project> impact --proposal-base-build <somewhere>/start --candidate-build <somewhere>/proposal
+```
+
+`git apply -R`은 `git apply`가 한 일만 정확히 되돌리고, 작업 트리가 그 상태가 아니면 오류로 멈춥니다. 그 밖의 것은 건드리지 않습니다. 출발 커밋에서 갈라진 브랜치로 제안이 주어졌을 때:
+
+```bash
+git status --porcelain                           # must print nothing
+git switch --detach <commit-the-proposal-started-from>
+lode-agent product-graph-build <project>
+cp -r <project>/.lode/context/product-graph/build <somewhere>/start
+git switch --detach <proposal-branch>
+lode-agent product-graph-build <project>
+cp -r <project>/.lode/context/product-graph/build <somewhere>/proposal
+git switch <the-branch-you-were-on>
+lode-agent product-graph-build <project>         # build/ is the current state again
+lode-agent product-graph-query <project> impact --proposal-base-build <somewhere>/start --candidate-build <somewhere>/proposal
+```
+
+제안은 출발 지점을 임시로 체크아웃한 곳에만 적용하고 지금 상태에는 적용하지 않습니다. 미리보기는 지금 적용하면 만날 것을 보입니다. 다른 커밋에서 빌드해도 기준은 옮겨지지 않습니다. 빌드는 기준을 옮기지 않습니다.
+
+**페이지.** 출력된 다음 페이지 안내는 질문을 그대로 되풀이합니다. 필터, `--limit`, `--depth`, 빌드 폴더, 그리고 그 페이지가 무엇에서 답했는지(빌드 파일, 비교, 질문)의 해시인 `--expected-basis-sha256`을 담습니다. 그중 하나라도 바뀌었으면 다음 페이지는 섞지 않고 거절합니다(`PRODUCT_GRAPH_QUERY_BASIS_CHANGED`). 처음부터 다시 묻습니다. 응답은 같은 것을 `page.nextArguments`(Core/CLI 옵션 이름과 빌드 위치)와, Project일 때 `page.nextMcpArguments`(MCP 도구 인자 이름)에 담습니다. 그대로 보내면 됩니다. 기준 없이 손으로 친 cursor는 예전처럼 답합니다.
+
+빌드는 매번 소스에서 모든 것을 다시 만듭니다. 파싱 캐시는 없습니다.

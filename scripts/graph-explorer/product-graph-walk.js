@@ -294,7 +294,7 @@ export const productGraphWalk = (() => {
   }
 
   function moreRow(level, paged, hint) {
-    return { depth: level, kind: "more", text: `외 ${paged.remaining}개 — 다음: ${hint}` };
+    return { depth: level, kind: "more", hint, text: `외 ${paged.remaining}개 — 다음: ${hint}` };
   }
 
   function nearest(ctx, id) {
@@ -316,13 +316,200 @@ export const productGraphWalk = (() => {
     return id;
   }
 
-  function find(ctx, text) {
+  // Request-local full-text index. This ranks words, never product meaning,
+  // approval, currentness or causality. No edges are inferred from a match.
+  function searchTokens(value) {
+    const parts = String(value).replace(/([a-z\d])([A-Z])/g, "$1 $2").normalize("NFC").toLowerCase().match(/[\p{L}\p{N}_$]+/gu) || [];
+    const tokens = [];
+    for (const word of parts) {
+      tokens.push(word);
+      // Character bigrams let inflected Korean questions find the written
+      // words without a product-specific vocabulary or stemmer.
+      if (/^[가-힣]{3,}$/.test(word)) for (let i = 0; i < word.length - 1; i += 1) tokens.push(word.slice(i, i + 2));
+      if (word.includes("_")) tokens.push(...word.split("_").filter(Boolean));
+    }
+    return tokens;
+  }
+
+  // Built once per context (one graph) and kept on it; nothing is kept between
+  // contexts, so an answer never depends on what was asked before.
+  function searchIndex(ctx) {
+    if (ctx.searchIndex) return ctx.searchIndex;
+    const documents = [], postings = new Map();
+    const stats = { tokenizedNodes: 0 };
+    for (const node of ctx.ix.nodes.values()) {
+      const fields = Object.fromEntries(Object.entries(node).filter(([key, value]) => typeof value === "string" && !/sha256|^type$|^kind$/i.test(key)));
+      fields.path = [node.file, node.at?.path, ...(node.positions || []).map((p) => p.path)].filter(Boolean).join(" ");
+      const terms = new Map(), tokens = Object.values(fields).flatMap(searchTokens);
+      for (const token of tokens) terms.set(token, (terms.get(token) || 0) + 1);
+      stats.tokenizedNodes += 1;
+      const doc = { node, fields, terms, length: tokens.length };
+      documents.push(doc);
+      for (const token of terms.keys()) push(postings, token, doc);
+    }
+    const average = documents.reduce((n, doc) => n + doc.length, 0) / Math.max(1, documents.length);
+    return (ctx.searchIndex = { documents, postings, average: average || 1, stats });
+  }
+
+  function connections(ctx, id, limit = 6) {
+    return [...(ctx.ix.into.get(id) || []), ...(ctx.ix.out.get(id) || [])]
+      .filter((edge) => ctx.ix.nodes.has(edge.from) && ctx.ix.nodes.has(edge.to))
+      .sort((a, b) => compare(a.type, b.type) || compare(a.from, b.from) || compare(a.to, b.to))
+      .slice(0, limit)
+      .map((edge) => ({ type: edge.type, from: edge.from, to: edge.to, ...(edge.at ? { at: edge.at } : {}), ...(edge.basis ? { basis: edge.basis } : {}) }));
+  }
+
+  function search(ctx, text, { nodeTypes = [], relatedTo = null, edgeTypes = [], basisStates = [], depth = 1 } = {}) {
     const wanted = needles(text);
     if (!wanted.length) return [];
-    const hit = (value) => typeof value === "string" && wanted.some((needle) => fold(value).includes(needle));
-    return [...ctx.ix.nodes.values()]
-      .filter((node) => hit(node.id) || hit(node.oneLine) || hit(node.name) || hit(node.file) || hit(node.at?.path) || node.positions?.some((item) => hit(item.path)))
-      .sort((a, b) => (ctx.ix.typeOrder.get(a.type) ?? 99) - (ctx.ix.typeOrder.get(b.type) ?? 99) || compare(a.id, b.id));
+    const ix = searchIndex(ctx), tokens = [...new Set(searchTokens(text))], scores = new Map();
+    let nearby = null;
+    if (relatedTo) {
+      nearby = new Set(ctx.ix.nodes.has(resolveId(ctx, relatedTo)) ? [resolveId(ctx, relatedTo)] : []);
+      let frontier = [...nearby];
+      for (let level = 0; level < depth; level += 1) {
+        const next = [];
+        for (const id of frontier) for (const edge of [...(ctx.ix.out.get(id) || []), ...(ctx.ix.into.get(id) || [])]) {
+          if (edgeTypes.length && !edgeTypes.includes(edge.type)) continue;
+          const target = edge.from === id ? edge.to : edge.from;
+          if (ctx.ix.nodes.has(target) && !nearby.has(target)) { nearby.add(target); next.push(target); }
+        }
+        frontier = next;
+      }
+    }
+    const candidates = ix.documents.filter(({ node }) => (!nodeTypes.length || nodeTypes.includes(node.type)) && (!nearby || nearby.has(node.id)) && (!basisStates.length || basisStates.includes(node.basis?.status)));
+    const allowed = new Set(candidates), average = candidates.reduce((n, doc) => n + doc.length, 0) / Math.max(1, candidates.length) || 1;
+    for (const token of tokens) {
+      const docs = (ix.postings.get(token) || []).filter((doc) => allowed.has(doc));
+      const idf = Math.log(1 + (candidates.length - docs.length + 0.5) / (docs.length + 0.5));
+      for (const doc of docs) {
+        const tf = doc.terms.get(token);
+        scores.set(doc, (scores.get(doc) || 0) + idf * tf * 2.2 / (tf + 1.2 * (0.25 + 0.75 * doc.length / average)));
+      }
+    }
+    // Preserve ID/path and literal-substring discovery even when tokenisation
+    // cannot represent the input (punctuation, a partial code identifier).
+    for (const doc of candidates) {
+      const hit = (value) => wanted.some((word) => fold(value || "").replaceAll("\\", "/").includes(word));
+      if (!scores.has(doc) && Object.values(doc.fields).some(hit)) scores.set(doc, 0);
+    }
+    return [...scores].map(([doc, score]) => {
+      const exact = wanted.some((word) => [doc.node.id, doc.node.file, doc.node.at?.path, ...(doc.node.positions || []).map((p) => p.path)]
+        .some((value) => typeof value === "string" && fold(value).replaceAll("\\", "/") === word));
+      const matchedTerms = tokens.filter((term) => doc.terms.has(term));
+      return { node: doc.node, score, exact, matchedTerms, basis: doc.node.basis || null };
+    }).sort((a, b) => Number(b.exact) - Number(a.exact) || b.score - a.score || compare(a.node.id, b.node.id));
+  }
+
+  function find(ctx, text) {
+    return search(ctx, text).map((item) => item.node);
+  }
+
+  const stable = (value) => JSON.stringify(value, (_, item) => item && !Array.isArray(item) && typeof item === "object" ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => compare(a, b))) : item);
+  const edgeIdentity = (edge, detailed = true) => stable([edge.type, edge.from, edge.to, ...(detailed ? [edge.at || null, edge.count || 1, edge.basis || null] : [])]);
+
+  // Three-way structural preview only. The proposal's declared starting point
+  // is not guessed from a timestamp, a title or a convenient current file.
+  function impact(ctx, { proposalBase = null, candidate = null, compatibility = null } = {}) {
+    if (!candidate?.nodes || !candidate?.edges) return { status: "unavailable", reason: "제안 빌드를 받지 않았다", conflicts: [], remainingReferences: [] };
+    if (!proposalBase?.nodes || !proposalBase?.edges) return { status: "unavailable", reason: "제안 출발 기준이 없다", conflicts: [], remainingReferences: [] };
+    const minimal = proposalBase.kind === "LodeProductGraphBaseline";
+    const base = minimal ? {
+      nodes: proposalBase.nodes.map(([id, type, kind, file, lines, contentSha256, reachSha256]) => ({ id, type, kind, file, lines, contentSha256, reachSha256 })),
+      edges: proposalBase.edges.map(([type, from, to]) => ({ type, from: typeof from === "number" ? proposalBase.nodes[from]?.[0] : from, to: typeof to === "number" ? proposalBase.nodes[to]?.[0] : to })),
+    } : proposalBase;
+    const shaped = (graph) => Array.isArray(graph.nodes) && Array.isArray(graph.edges) && graph.nodes.every((n) => n && typeof n.id === "string" && typeof n.type === "string") && new Set(graph.nodes.map((n) => n.id)).size === graph.nodes.length && graph.edges.every((e) => e && [e.type, e.from, e.to].every((v) => typeof v === "string") && (e.count === undefined || Number.isSafeInteger(e.count) && e.count > 0) && (e.at == null || typeof e.at.path === "string" && Number.isSafeInteger(e.at.line) && e.at.line > 0));
+    if (![base, ctx.graph, candidate].every(shaped)) return { status: "unavailable", reason: "중복 ID 또는 잘못된 노드/edge 모양", conflicts: [], remainingReferences: [] };
+    const maps = [base, ctx.graph, candidate].map((graph) => new Map(graph.nodes.map((node) => [node.id, node])));
+    const state = (node) => {
+      if (!node) return null;
+      if (minimal) return stable([node.type, node.contentSha256 ?? null, node.reachSha256 ?? null]);
+      const { at, positions, lines, ...rest } = node;
+      return stable(rest);
+    };
+    const conflicts = [], currentChanges = [], proposedChanges = [], affected = new Set();
+    for (const id of [...new Set(maps.flatMap((map) => [...map.keys()]))].sort(compare)) {
+      const [old, current, proposed] = maps.map((map) => map.get(id)), [b, c, p] = [old, current, proposed].map(state);
+      if (b !== c) currentChanges.push(id);
+      if (b !== p) { proposedChanges.push(id); affected.add(id); }
+      if (b !== c && b !== p && c !== p) conflicts.push({ kind: old?.type === "정책" || current?.type === "정책" || proposed?.type === "정책" ? "concurrent-policy-change" : "divergent-node-change", id, before: old || null, current: current || null, proposed: proposed || null });
+    }
+    // A counted call is one logical typed relation; count/basis are state,
+    // never a different identity. Multiple citations of the same endpoints
+    // remain occurrences distinguished by their original source position.
+    const grouped = [base, ctx.graph, candidate].map((graph) => {
+      const groups = new Map();
+      for (const edge of graph.edges) push(groups, edgeIdentity(edge, false), edge);
+      return groups;
+    });
+    const parallelGroups = new Set([...new Set(grouped.flatMap((groups) => [...groups.keys()]))].filter((key) => grouped.some((groups) => (groups.get(key)?.length || 0) > 1)));
+    const ambiguousRelations = [];
+    const edgeMaps = grouped.map((groups, side) => {
+      const out = new Map();
+      for (const [logical, edges] of groups) for (const [ordinal, edge] of edges.entries()) {
+        let key = logical;
+        if (parallelGroups.has(logical)) {
+          if (!edge.at?.path || !Number.isInteger(edge.at?.line)) {
+            ambiguousRelations.push({ side, edge, reason: "병렬 관계의 출처 위치를 확인할 수 없다" });
+            key += `\0unmatched:${ordinal}`;
+          } else key += `\0${stable(edge.at)}`;
+        }
+        if (out.has(key)) {
+          ambiguousRelations.push({ side, edge, reason: "같은 출처의 병렬 관계를 하나로 식별할 수 없다" });
+          key += `\0duplicate:${ordinal}`;
+        }
+        out.set(key, edge);
+      }
+      return out;
+    });
+    const edgeState = (edge) => {
+      if (!edge) return null;
+      if (minimal) return edgeIdentity(edge, false); // the old tuples do not record count/basis
+      const { at, ...fields } = edge;
+      return stable({ ...fields, count: edge.count ?? 1, basis: edge.basis ?? null });
+    };
+    const edgeChanges = [];
+    const effectiveEdges = new Map();
+    for (const key of [...new Set(edgeMaps.flatMap((map) => [...map.keys()]))].sort(compare)) {
+      const [old, current, proposed] = edgeMaps.map((map) => map.get(key));
+      const [b, c, p] = [old, current, proposed].map(edgeState);
+      if (b !== c && b !== p && c !== p) conflicts.push({ kind: !current || !proposed ? "edge-delete-versus-update" : "divergent-edge-change", edge: proposed || current || old, before: old || null, current: current || null, proposed: proposed || null });
+      if (b !== p) {
+        const edge = proposed || old;
+        edgeChanges.push({ ...edge, change: !old ? "added" : !proposed ? "removed" : "changed", before: old || null, after: proposed || null });
+        affected.add(edge.from); affected.add(edge.to);
+      }
+      const effective = b !== p ? proposed : current;
+      if (effective) effectiveEdges.set(key, effective);
+    }
+    const removed = new Set(proposedChanges.filter((id) => maps[0].has(id) && !maps[2].has(id)));
+    const currentOnly = currentChanges.filter((id) => !proposedChanges.includes(id));
+    const effectiveNodes = new Set([...maps[2].keys(), ...currentOnly.filter((id) => maps[1].has(id) && !removed.has(id))]);
+    for (const id of currentOnly) if (!maps[1].has(id)) effectiveNodes.delete(id);
+    const remainingReferences = [...effectiveEdges.values()].filter((edge) => !effectiveNodes.has(edge.from) || !effectiveNodes.has(edge.to)).map((edge) => ({ ...edge, missing: [edge.from, edge.to].filter((id) => !effectiveNodes.has(id)) }));
+    for (const edge of remainingReferences) conflicts.push({ kind: "remaining-reference", edge });
+    // Bounded reverse impact over actual relations; no semantic edges added.
+    const queue = [...affected], visited = new Set(queue);
+    const impactIndexes = [ctx.ix, index(candidate)];
+    for (let i = 0; i < queue.length; i += 1) for (const ix of impactIndexes) {
+      for (const edge of ix.into.get(queue[i]) || []) if (!visited.has(edge.from) && ix.nodes.has(edge.from)) { visited.add(edge.from); queue.push(edge.from); }
+    }
+    const complete = !minimal && compatibility?.status === "verified" && !ambiguousRelations.length;
+    return { status: complete ? "compared" : "partial", compatibility: compatibility || { status: "unknown", reasons: ["빌드/Project/소스 루트/reader 근거 미확인"] }, basis: minimal ? "baseline hashes; historical display may be unavailable" : "explicit proposal starting build", conflicts, ambiguousRelations, remainingReferences, currentChanges, proposedChanges, edgeChanges, affected: [...visited].sort(compare), structuralConflictFree: complete ? conflicts.length === 0 : null, productApproved: false, causeInferred: false };
+  }
+
+  function impactAnswer(result, { answer, limit, cursor }) {
+    const items = [
+      ...(result.conflicts || []).map((item) => ({ text: `${item.kind}: ${item.id || `${item.edge.from} → ${item.edge.to}`}`, detail: item })),
+      ...(result.ambiguousRelations || []).map((item) => ({ text: `${item.reason}: ${item.edge.from} → ${item.edge.to}`, detail: item })),
+      ...(result.affected || []).map((id) => ({ id, text: `확인할 실제 연결: ${id}` })),
+    ];
+    const paged = page(items, { limit, cursor });
+    const rows = [{ depth: 0, kind: "text", text: `구조적 미리보기 (${result.status}). 충돌 없음은 제품 승인이 아니다. ${result.reason || result.basis || ""}${result.compatibility?.reasons?.length ? ` — ${result.compatibility.reasons.join(" / ")}` : ""}` },
+      ...paged.slice.map((item) => ({ depth: 1, kind: item.id ? "node" : "text", ...item }))];
+    if (paged.remaining) rows.push(moreRow(1, paged, `impact --cursor ${paged.nextCursor}`));
+    const { conflicts, ambiguousRelations, affected, edgeChanges, currentChanges, proposedChanges, remainingReferences, ...summary } = result;
+    return answer("반영 전 영향 미리보기", rows, { impact: { ...summary, counts: { conflicts: conflicts?.length || 0, ambiguousRelations: ambiguousRelations?.length || 0, affected: affected?.length || 0, edgeChanges: edgeChanges?.length || 0, currentChanges: currentChanges?.length || 0, proposedChanges: proposedChanges?.length || 0, remainingReferences: remainingReferences?.length || 0 }, conflicts: paged.slice.filter((item) => item.detail?.kind).map((item) => item.detail), ambiguousRelations: paged.slice.filter((item) => item.detail?.reason).map((item) => item.detail), affected: paged.slice.filter((item) => item.id).map((item) => item.id), coverage: paged.remaining ? "partial-page" : "complete-page" }, page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor } });
   }
 
   // Reach: from a 기능 (or what stands for 기능) the code reached; from a 코드
@@ -481,14 +668,20 @@ export const productGraphWalk = (() => {
     };
     if (question === "overview") return answer("개요", overviewRows(ctx));
     if (question === "find") {
-      const matches = find(ctx, text);
+      const matches = search(ctx, text, request);
       const paged = page(matches, { limit, cursor });
-      const rows = paged.slice.map((node) => ({ depth: 1, kind: "node", id: node.id, text: nodeLine(ctx, node.id) }));
+      for (const item of paged.slice) item.connections = connections(ctx, item.node.id);
+      const rows = paged.slice.flatMap((item) => [
+        { depth: 1, kind: "node", id: item.node.id, text: nodeLine(ctx, item.node.id), score: item.score, exact: item.exact, matchedTerms: item.matchedTerms },
+        ...item.connections.map((edge) => ({ depth: 2, kind: "text", text: `${edge.from} —${edge.type}→ ${edge.to}${edge.at ? ` (${where(edge.at)})` : ""}`, edge })),
+      ]);
+      rows.unshift({ depth: 0, kind: "text", text: "관련 단어순(BM25); 검색 점수는 승인·현재성·인과가 아니다. 아래 연결은 기록된 edge만이다." });
       if (paged.remaining) rows.push(moreRow(1, paged, `find ${JSON.stringify(String(text))} --cursor ${paged.nextCursor}`));
-      return answer(`찾기: ${text} — ${matches.length}개`, rows, { page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor } });
+      return answer(`찾기: ${text} — ${matches.length}개`, rows, { search: { algorithm: "BM25", semanticJudgment: false, indexing: ctx.searchIndex?.stats, results: paged.slice.map(({ node, ...item }) => ({ id: node.id, ...item })) }, page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor } });
     }
     if (question === "gaps") return gapsAnswer(ctx, { list, limit, cursor, answer });
     if (question === "changes") return changesAnswer(ctx, { list, limit, cursor, answer });
+    if (question === "impact") return impactAnswer(impact(ctx, request), { answer, limit, cursor });
     if (!["node", "down", "up", "reach"].includes(question)) return fail("PRODUCT_GRAPH_QUERY_INVALID", `모르는 질문: ${question}`);
     const pseudo = id.startsWith("@");
     if (pseudo ? !pseudoChildren(ctx, id) || question !== "down" : !ctx.ix.nodes.has(id)) return notFound();
@@ -789,6 +982,7 @@ export const productGraphWalk = (() => {
   // ---------- the comparison with the baseline (8A) ----------
 
   const CHANGE_LISTS = Object.freeze([
+    { key: "content", title: "실제 전후 내용" },
     { key: "changed", title: "변경" },
     { key: "added", title: "신규" },
     { key: "removed", title: "사라짐" },
@@ -800,8 +994,34 @@ export const productGraphWalk = (() => {
   ]);
 
   // Items of one comparison list, one line each.
-  function changeItems(changes, key) {
+  function contentSide(label, side) {
+    if (!side || !["available", "partial"].includes(side.status)) return `${label}: ${side?.status === "absent" ? "없음" : `보이지 않음 — ${side?.reason || "이유 없음"}`}`;
+    const lines = side.text.split("\n"), shown = lines.slice(0, 40).map((line) => line.slice(0, 240));
+    const left = side.omittedBytes ? ` (${side.omittedBytes}바이트 생략: ${side.omittedBecause})` : "";
+    return `${label} (${side.format}${side.status === "partial" ? ", 앞부분만" : ""}${left}):\n${shown.join("\n")}${lines.length > 40 ? `\n… ${lines.length - 40}줄 더 — --json의 rows[].detail에 이 페이지 한도 안의 전체가 있다` : ""}`;
+  }
+
+  function contentHeadline(item) {
+    const read = (side) => { try { return side?.status === "available" && side.format === "stated-fields" ? JSON.parse(side.text) : null; } catch { return null; } };
+    const before = read(item.before), after = read(item.after);
+    if (!before && !after) return "";
+    const keys = [...new Set([...Object.keys(before || {}), ...Object.keys(after || {})])].filter((key) => JSON.stringify(before?.[key]) !== JSON.stringify(after?.[key]));
+    return keys.map((key) => `${key}: ${before ? JSON.stringify(before[key] ?? null).slice(0, 240) : "이전 없음"} → ${after ? JSON.stringify(after[key] ?? null).slice(0, 240) : "현재 없음"}`).join("\n");
+  }
+
+  // content: the bodies come only with the `changes --list content` question
+  // (content holds that page's before/after); without them, each item says how
+  // to ask. A page opened from a build has no bodies.
+  function changeItems(changes, key, content = null) {
     if (!changes || changes.status !== "compared") return [];
+    if (key === "content") return (changes.contentChanges || []).map((item) => {
+      const sides = content?.entries?.get(item.id);
+      const head = `${item.type} ${item.id} (${CHANGE_WORDS[item.change] || item.change})`;
+      if (!sides) return { text: `${head} — 이전 본문 ${item.beforeRetained ? "보관됨" : "없음"}. 본문은 product-graph-query <project> changes --list content 로만 본다.`, nodeId: item.change === "removed" ? null : item.id };
+      const detail = { ...item, before: sides.before, after: sides.after };
+      const headline = contentHeadline(detail);
+      return { text: `${head}${headline ? `\n${headline}` : ""}\n${contentSide("이전", sides.before)}\n${contentSide("현재", sides.after)}`, nodeId: sides.after.status === "absent" ? null : item.id, detail };
+    });
     const flat = (field) => (changes.byType || []).flatMap((group) => (group[field] || []).map((id) => ({ text: `${group.type} ${id}`, nodeId: field === "removed" ? null : id })));
     if (key === "changed" || key === "added" || key === "removed") return flat(key);
     if (key === "reachChanged")
@@ -876,6 +1096,8 @@ export const productGraphWalk = (() => {
     if (changes.unexplained?.compared === false) lines.push(`- 소스가 그대로인 곳에서 달라진 것: 비교하지 않음 — ${changes.unexplained.reason}`);
     else section("소스가 그대로인 곳에서 달라진 것 (원인은 적지 않는다)", changeItems(changes, "unexplained"));
     section("다시 볼 것 (보고만 한다. 문서·뜻 줄·승인은 바꾸지 않는다)", changeItems(changes, "reviewAgain"));
+    if (changes.content?.changed)
+      lines.push(`- 내용이 바뀐 노드 ${changes.content.changed}개 (이전 본문 보관 ${changes.content.beforeRetained}개). 본문은 여기 넣지 않는다: product-graph-query <project> changes --list content`);
     lines.push("");
     return lines;
   }
@@ -897,9 +1119,9 @@ export const productGraphWalk = (() => {
       ]);
     if (list === "unexplained" && changes.unexplained?.compared === false)
       return answer(`기준과 비교 — ${known.title}: 비교하지 않음`, [{ depth: 1, kind: "text", text: `비교하지 않음 — ${changes.unexplained.reason}` }]);
-    const items = changeItems(changes, list);
+    const items = changeItems(changes, list, ctx.content);
     const paged = page(items, { limit, cursor });
-    const rows = paged.slice.map((item) => ({ depth: 1, kind: item.nodeId ? "node" : "text", id: item.nodeId || undefined, text: item.text }));
+    const rows = paged.slice.map((item) => ({ depth: 1, kind: item.nodeId ? "node" : "text", id: item.nodeId || undefined, text: item.text, ...(item.detail ? { detail: item.detail } : {}) }));
     if (paged.remaining) rows.push(moreRow(1, paged, `changes --list ${list} --cursor ${paged.nextCursor}`));
     return answer(`기준과 비교 — ${known.title} ${items.length}개`, rows, {
       page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor },
@@ -943,6 +1165,7 @@ export const productGraphWalk = (() => {
   }
 
   return Object.freeze({
+    resolveId,
     WORDS,
     QUESTION_STARTS,
     reachDirection,
@@ -962,6 +1185,8 @@ export const productGraphWalk = (() => {
     step,
     reach,
     find,
+    search,
+    impact,
     ask,
     headerLines,
     pseudoChildren,
@@ -973,6 +1198,7 @@ export const productGraphWalk = (() => {
     renderGapLists,
     renderChanges,
     changeItems,
+    contentHeadline,
     changeCount,
   });
 })();

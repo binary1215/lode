@@ -96,7 +96,7 @@ test("acceptance 1: Lode on itself yields tool:, cli:, hook: and command: 기능
   // The first build into a folder also takes the comparison baseline (bundle 2, 8A.2).
   assert.deepEqual(
     result.written.map((item) => item.name),
-    ["graph.json", "check.json", "check.txt", "baseline.json"],
+    ["graph.json", "check.json", "check.txt", "build-context.json", "baseline.json", "baseline-content.json"],
   );
 });
 
@@ -379,7 +379,7 @@ test("acceptance 5 / 15: two builds of the same input give byte-identical files,
     });
   const first = filesUnder(path.join(base, "first")),
     second = filesUnder(path.join(base, "second"));
-  assert.deepEqual([...first.keys()].sort(), ["baseline.json", "check.json", "check.txt", "graph.json"]);
+  assert.deepEqual([...first.keys()].sort(), ["baseline-content.json", "baseline.json", "build-context.json", "check.json", "check.txt", "graph.json"]);
   assert.deepEqual([...second.keys()].sort(), [...first.keys()].sort());
   // Each folder took its own baseline at its own time (bundle 2, 8A.2), and the
   // check names that time; graph.json is byte-identical across folders.
@@ -400,7 +400,15 @@ test("acceptance 5 / 15: two builds of the same input give byte-identical files,
   const projectFirst = filesUnder(build);
   buildProductGraph({ root: f.root });
   const projectSecond = filesUnder(build);
-  assert.deepEqual([...projectFirst.keys()].sort(), [".gitignore", "baseline.json", "check.json", "check.txt", "graph.json"]);
+  assert.deepEqual([...projectFirst.keys()].sort(), [
+    ".gitignore",
+    "baseline-content.json",
+    "baseline.json",
+    "build-context.json",
+    "check.json",
+    "check.txt",
+    "graph.json",
+  ]);
   assert.deepEqual([...projectSecond.keys()].sort(), [...projectFirst.keys()].sort());
   for (const [name, bytes] of projectFirst) assert.deepEqual(projectSecond.get(name), bytes, name);
 });
@@ -478,7 +486,14 @@ test("acceptance 7: stand-alone mode writes only under the output directory; pro
   await runCommand(["product-graph-build", source, "--documents", signalDocuments, "--rules", emptyRules, "--out", path.join(base, "out")]);
   assert.deepEqual(tree(source), before);
   assert.deepEqual(tree(signalDocuments), documentsBefore);
-  assert.deepEqual(Object.keys(tree(path.join(base, "out"))).sort(), ["baseline.json", "check.json", "check.txt", "graph.json"]);
+  assert.deepEqual(Object.keys(tree(path.join(base, "out"))).sort(), [
+    "baseline-content.json",
+    "baseline.json",
+    "build-context.json",
+    "check.json",
+    "check.txt",
+    "graph.json",
+  ]);
   const checkBefore = tree(source);
   await runCommand(["product-graph-check", source, "--documents", signalDocuments, "--rules", emptyRules]);
   assert.deepEqual(tree(source), checkBefore);
@@ -1288,4 +1303,32 @@ test("acceptance 22: with table-row rules, two builds are byte-identical and no 
   for (const [name, bytes] of filesUnder(path.join(base, "first"))) assert.deepEqual(bytes, first.get(name), name);
   const graph = JSON.parse(first.get("graph.json").toString("utf8"));
   for (const node of graph.nodes) assert(!/@\d+$/.test(node.id), node.id);
+});
+
+// Review of #84: every build derives everything again. A same-length edit that
+// only a cache would miss (static to public) leaves no edge a clean build lacks.
+test("a static member made an instance member gives the graph a clean build gives: no stale call edge", (t) => {
+  const base = temporary(t);
+  const source = path.join(base, "source"),
+    documents = path.join(base, "documents"),
+    out = path.join(base, "out"),
+    clean = path.join(base, "clean");
+  fs.mkdirSync(source, { recursive: true });
+  fs.mkdirSync(documents);
+  fs.writeFileSync(path.join(source, "package.json"), '{"bin":{"tool":"a.ts"}}\n');
+  fs.writeFileSync(path.join(source, "b.ts"), "export class C { static run() { return 1; } }\n");
+  fs.writeFileSync(path.join(source, "a.ts"), 'import { C } from "./b";\nexport function useIt() { return C.run(); }\nuseIt();\n');
+  const options = { sourceRoot: source, documentsDirectory: documents, rulesFile: emptyRules };
+  buildProductGraph({ ...options, outputDirectory: out });
+  const edge = (graph) => graph.edges.some((item) => item.type === "call" && item.from === "a.ts#useIt" && item.to === "b.ts#C.run");
+  assert.equal(edge(JSON.parse(fs.readFileSync(path.join(out, "graph.json"), "utf8"))), true, "the static call resolves");
+  // Same byte length: "static" and "public" are both six letters.
+  fs.writeFileSync(path.join(source, "b.ts"), "export class C { public run() { return 1; } }\n");
+  buildProductGraph({ ...options, outputDirectory: out });
+  buildProductGraph({ ...options, outputDirectory: clean });
+  const again = JSON.parse(fs.readFileSync(path.join(out, "graph.json"), "utf8")),
+    fresh = JSON.parse(fs.readFileSync(path.join(clean, "graph.json"), "utf8"));
+  assert.equal(edge(again), false, "no call edge to an instance method through the class");
+  assert.deepEqual(again.edges, fresh.edges);
+  assert.deepEqual(again.nodes, fresh.nodes);
 });
