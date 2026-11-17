@@ -39,18 +39,18 @@ candidate to check, not a proven unused one.
 
 | Measure | Codes |
 | --- | --- |
-| Listed in `REASON_CODES` | 2,725 |
-| Consumed in shipped code or Go | 359 |
-| — compared directly | 186 |
+| Listed in `REASON_CODES` | 2,727 |
+| Consumed in shipped code or Go | 360 |
+| — compared directly | 187 |
 | — covered by a prefix branch | 20 |
 | — only keyed in a map | 5 |
 | — only listed in an array or `Set` | 147 |
 | — named in Go sources | 17 |
 | Documented in English docs or skills | 34 (10 in skills) |
 | Asserted by tests or verifiers | 841 |
-| **Quiet** | **2,350** (86%) |
-| — quiet but asserted by a test | 621 |
-| — quiet and never asserted | 1,729 |
+| **Quiet** | **2,351** (86%) |
+| — quiet but asserted by a test | 620 |
+| — quiet and never asserted | 1,731 |
 | With a legacy `HEAD_*` spelling still carried | 121 |
 
 **Prefix branches.** Four prefixes branch on a group of codes:
@@ -89,10 +89,10 @@ The area is the code's first word. Areas with at least 20 codes:
 | `REFRESH_*` | 41 | 1 | 1 | 40 | 3 |
 | `CHANGE_*` | 35 | 2 | 0 | 33 | 2 |
 | `CLAUDE_*` | 34 | 1 | 0 | 33 | 6 |
+| `WORK_*` | 34 | 5 | 0 | 29 | 7 |
 | `FEATURE_*` | 33 | 4 | 0 | 29 | 7 |
 | `CONVERSATION_*` | 32 | 7 | 1 | 24 | 7 |
 | `GRAPH_*` | 32 | 2 | 2 | 28 | 10 |
-| `WORK_*` | 32 | 4 | 0 | 28 | 8 |
 | `DISTRIBUTION_*` | 31 | 0 | 0 | 31 | 10 |
 | `DUPLICATE_*` | 30 | 3 | 0 | 27 | 7 |
 | `HISTORICAL_*` | 30 | 0 | 0 | 30 | 2 |
@@ -126,22 +126,25 @@ Quiet codes by last word:
 
 ## Documented codes
 
-These 28 codes are named in English docs or skills, so an agent may branch on
-them:
+These 34 codes are named in English docs or skills (10 in skills), so an agent
+may branch on them:
 - `COMPUTE_OUTPUT_LIMIT`, `CONFORMANCE_RESOLUTION_STALE`,
   `CONVERSATION_ENTRY_BASIS_CHANGED`, `DIVERGENT_DEPLOYMENT_RESULT_REPLAY`
-- `DOCUMENT_PROJECTION_UNREVIEWED_DRIFT`, `GRAPH_PROJECTION_STALE`,
-  `GRAPH_SNAPSHOT_RECEIPT_SELF_REFERENCE`, `INVALID_SESSION_INPUT`
-- `INVALID_SESSION_WORK_EVIDENCE`, `INVALID_SNAPSHOT_COMPOSITION`,
-  `INVALID_TOOL_ARGUMENTS`, `MANAGED_OPERATION_NOT_ON_DEFAULT_SURFACE`
-- `NATIVE_HOOK_DIRECT_INGRESS_REQUIRED`, `NATIVE_HOOK_INGRESS_REQUIRED`,
-  `NATIVE_OPENCODE_BOOTSTRAP_UNQUALIFIED`, `NOT_INITIALIZED`
-- `NO_PENDING_REVIEW`, `PROJECT_NATIVE_RUNTIME_ROOT_NOT_USED`,
-  `PROJECT_NOT_READY`, `PROJECT_RELOCATION_PENDING`
+- `DOCUMENT_CHANGE_PROJECTION_LIMIT`, `DOCUMENT_PROJECTION_UNREVIEWED_DRIFT`,
+  `GRAPH_PROJECTION_STALE`, `GRAPH_SNAPSHOT_RECEIPT_SELF_REFERENCE`
+- `INVALID_SESSION_INPUT`, `INVALID_SESSION_WORK_EVIDENCE`,
+  `INVALID_SNAPSHOT_COMPOSITION`, `INVALID_TOOL_ARGUMENTS`
+- `MANAGED_OPERATION_NOT_ON_DEFAULT_SURFACE`, `NATIVE_HOOK_DIRECT_INGRESS_REQUIRED`,
+  `NATIVE_HOOK_INGRESS_REQUIRED`, `NATIVE_OPENCODE_BOOTSTRAP_UNQUALIFIED`
+- `NOT_INITIALIZED`, `NO_PENDING_REVIEW`,
+  `ONBOARDING_PRODUCT_CANON_DRIFT`, `ONBOARDING_PRODUCT_SUCCESSOR_UNVERIFIABLE`
+- `PROJECT_NATIVE_RUNTIME_ROOT_NOT_USED`, `PROJECT_NOT_READY`,
+  `PROJECT_RELOCATION_AVAILABLE`, `PROJECT_RELOCATION_PENDING`
 - `RECOVERY_BASIS_NOT_HELD`, `REFRESH_WRITER_BUSY`,
   `RUNTIME_ADAPTER_CONTROL_NOT_ENABLED`, `RUN_RESULT_LEGACY_INTEGRATION_PENDING`
-- `SESSION_PATH_ESCAPE`, `SNAPSHOT_GIT_EXECUTABLE_UNAVAILABLE`,
-  `STORAGE_VERSION_MISMATCH`, `WORLD_MODEL_CANON_BASIS_CONFLICT`
+- `SESSION_PATH_ESCAPE`, `SESSION_SELECTION_LOST`,
+  `SINGLE_SESSION_ENTRY_AVAILABLE`, `SNAPSHOT_GIT_EXECUTABLE_UNAVAILABLE`
+- `STORAGE_VERSION_MISMATCH`, `WORLD_MODEL_CANON_BASIS_CONFLICT`
 
 ## Merge candidates
 
@@ -149,14 +152,14 @@ These are proposals for the merge decision, not changes. Every candidate keeps
 the human-readable message. Under design 4.6, the old code is still returned in
 a separate response field for two minor versions.
 
-1. **Keep as is.** Keep all 356 consumed codes and the 28 documented ones. Inside
+1. **Keep as is.** Keep all 360 consumed codes and the 34 documented ones. Inside
    the four prefix-branch groups, keep at least the prefix.
-2. **First candidates.** These are the 1,729 quiet codes that no test asserts.
+2. **First candidates.** These are the 1,731 quiet codes that no test asserts.
    Group each area's codes by their last word into one area code, for example
    `PRODUCT_*_MISMATCH` → `PRODUCT_MISMATCH` and `CODEX_*_INVALID` →
    `CODEX_INVALID`. No test needs to change; only the registry list and the emit
    sites do.
-3. **Second candidates.** These are the 621 quiet codes that tests assert. They
+3. **Second candidates.** These are the 620 quiet codes that tests assert. They
    are the same kind of grouping, but each test assertion has to move to the area
    code or the old-code field.
 4. **`INVALID_*` (576).** This is the largest family and mostly input or record

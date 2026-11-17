@@ -1,0 +1,1141 @@
+{
+  "schemaVersion": 1,
+  "kind": "LodeProductGraph",
+  "generator": {
+    "name": "lode-product-graph",
+    "version": 1
+  },
+  "model": "원본 제품 그래프 정의(Won6314/head-agent-core graph/build/02a-graph-definitions.md)를 그대로 쓴다",
+  "derived": true,
+  "inputs": {
+    "mode": "독립 실행",
+    "documents": [
+      {
+        "path": "기능 뜻.md",
+        "sha256": "99a5aacfcfc68bed012ce8c89771895e0743cafe266022729bb2901a5561d471",
+        "status": "직접 씀"
+      },
+      {
+        "path": "유저플로우 기획서/UA-NOTE-01.md",
+        "sha256": "cf3aa74caf15b4a6f07605facce8964ae44162c0202ac86ab92f870a035211b9",
+        "status": "추정"
+      },
+      {
+        "path": "화면설계서/MAIN-01.md",
+        "sha256": "1ca9ae073237fc92edf6f13dd108abaaa581d0eb842f842f326f45ed5b6a5f78",
+        "status": "추정"
+      }
+    ],
+    "rulesSha256": "c3d2d08daeefcfac8e28985d34e915de0e6b79c3cc802c87feca769adc1129e1",
+    "approvalsRead": false,
+    "sourceFiles": 4,
+    "codeFiles": 3,
+    "sourceExcludes": []
+  },
+  "nodeTypes": [
+    {
+      "type": "제품코어",
+      "count": 0
+    },
+    {
+      "type": "유저저니",
+      "count": 0
+    },
+    {
+      "type": "IA",
+      "count": 0
+    },
+    {
+      "type": "유저 활동",
+      "count": 1
+    },
+    {
+      "type": "화면",
+      "count": 1
+    },
+    {
+      "type": "화면요소",
+      "count": 1
+    },
+    {
+      "type": "정책",
+      "count": 0
+    },
+    {
+      "type": "기능",
+      "count": 1
+    },
+    {
+      "type": "코드",
+      "count": 6
+    },
+    {
+      "type": "데이터",
+      "count": "뽑지 않음"
+    },
+    {
+      "type": "외부 연결",
+      "count": "뽑지 않음"
+    },
+    {
+      "type": "DB",
+      "count": "뽑지 않음"
+    },
+    {
+      "type": "계측 이벤트",
+      "count": "뽑지 않음"
+    }
+  ],
+  "limits": {
+    "title": "이 그래프가 답하지 못하는 것",
+    "codeReading": "코드는 정규식 기반 소스 분석으로 읽었다. 구문 트리가 아니고 타입 정보가 없다.",
+    "calls": {
+      "all": 3,
+      "notProduct": {
+        "builtIn": 0,
+        "keyword": 0,
+        "external": 0
+      },
+      "canBeProduct": 3,
+      "resolved": 3,
+      "keywordPseudoCalls": 0,
+      "callbacks": 0
+    },
+    "callReading": [
+      "멤버 선언: JS·TS 클래스 본문의 메서드와 함수를 담은 클래스 필드(<클래스>.<멤버>), 이름에 묶은 클래스 식(const A = class {)과 이름 없는 default 클래스(default)의 멤버, 모듈 수준 이름에 묶인 객체 리터럴의 함수 멤버(<이름>.<멤버>)가 선언이다. 중첩된 객체 리터럴, 이름에 묶이지 않은 리터럴, 따옴표나 계산한 이름([Symbol.iterator]() {, \"이름\"() {)은 선언이 아니다. 메서드를 정의하는 자리(name(…) {)와 본문 없는 TypeScript 시그니처(abstract run(): void;, 오버로드, interface 멤버)는 호출로 세지 않는다.",
+      "받는 쪽은 글자로만 정한다: 클래스 안(필드 포함)의 this.x(·self.x(, 클래스 이름의 C.x((JS는 static 메서드), 객체 리터럴 이름의 name.x(, 같은 함수나 모듈 수준에서 한 번 new C(…)(Python은 C(…))로 만든 const의 v.x(, Python classmethod 안의 cls(…)(그 클래스). 다시 대입하는 변수는 추론하지 않고, 상속은 따라가지 않으며(상속받았거나 본문 없는 선언만 있는 멤버일 수 있음), 이름이 제품에 하나뿐이라는 이유로 정하지 않는다.",
+      "new C(…)는 C를 부르는 참조로 센다(클래스에 닿으면 생성자에 닿는다). 내장 클래스나 제품 밖 모듈의 클래스면 그 이유로 센다. 타입 인자를 적은 TypeScript 호출(this.format<number>(x), make<T>(x))은 호출로 보지 못한다.",
+      "값 바인딩: 함수식이 아닌 값으로 정한 모듈 수준 이름(const fail = failWith(\"X\"))은 어디선가 함수로 불릴 때만 값 노드가 되고, 그 참조는 초기값 안의 호출이다. 불리지 않는 값 바인딩은 노드가 아니다.",
+      "다시 내보내기: export { a as b } from, export * from, import한 이름을 적은 export 목록, default(export { default } from, export { x as default }, export default 이름)를 선언까지 따라간다(Python은 패키지 모듈이 들여온 이름). 단계 수에 한도가 있고, 고리는 끊고 원래 이유를 둔다. export * as 이름 from은 읽지 않는다.",
+      "내장 호출: 언어·런타임의 전역 이름 표(판단, 프로젝트 규칙의 내장 이름으로 더함)에 있고 파일이 그 이름을 선언·들여오거나 묶지 않을 때만 내장으로 본다. 메서드 이름이 제품 어디에서도 정의되지 않을 때만(선언이 아닌 것까지 넓게 본다: 클래스 필드, 클래스 식, 어느 객체 리터럴의 멤버, 시그니처, 따옴표 이름, x.y = function, prototype 대입, defineProperty) 제품 코드일 수 없다고 본다. 실행 중에 만든 이름(obj[name] = fn, Object.assign, 섞어 넣기)은 보지 못하므로, 그런 메서드는 제품 코드인데도 이 이유에 들 수 있다. 제품이 같은 이름을 정의하면 받는 쪽 타입을 모르는 호출로 둔다."
+    ],
+    "referenceKinds": {
+      "emitted": [
+        "call",
+        "callback"
+      ],
+      "notToldApart": [
+        "framework-invoked",
+        "render",
+        "type reference",
+        "re-render",
+        "response",
+        "enqueue",
+        "navigate",
+        "http",
+        "defines"
+      ]
+    },
+    "notExtracted": {
+      "nodeTypes": [
+        "데이터",
+        "외부 연결",
+        "DB",
+        "계측 이벤트"
+      ],
+      "edges": [
+        "navigate"
+      ],
+      "grouping": "C4 묶음"
+    },
+    "uiBindingScan": [
+      "UI 연결은 패턴을 글자에 맞춰 찾는다. 여러 줄에 걸친 연결, 문자열로 만든 연결, 툴킷이 이름으로 자동으로 잇는 연결, 이벤트 이름을 실행 중에 계산하는 연결은 보지 못한다.",
+      "코드인지는 글자 단위 lexer로 가린다. JS·TS·Python 파일에서는 주석과 문자열(여러 줄 문자열과 템플릿 문자열 포함) 안의 연결을 걸러내고, HTML·Vue·Svelte 파일에서는 <!-- --> 주석만 걸러낸다. JSX의 on<Event>={…} 속성은 주석과 문자열을 가리지 않는다. lexer는 파서가 아니어서 정규식 리터럴을 바로 앞 글자로만 알아본다.",
+      "템플릿의 같은 태그 id는 가장 가까운 < 와 > 사이에서 찾는다. 이벤트 메서드는 이름으로만 찾고 상속은 확인하지 않는다."
+    ],
+    "lineLocalFallback": {
+      "count": 0,
+      "files": []
+    },
+    "tableRows": null,
+    "execution": "아무것도 실행하지 않았다. 문서와 코드를 비교할 뿐이고, 어느 발견도 실행 근거에 기대지 않는다.",
+    "documents": {
+      "approved": 0,
+      "changedAfterApproval": 0,
+      "estimated": 2,
+      "approvalsRead": false,
+      "includeEstimates": true,
+      "used": [
+        "유저플로우 기획서/UA-NOTE-01.md",
+        "화면설계서/MAIN-01.md"
+      ]
+    }
+  },
+  "rules": {
+    "기본과프로젝트": [
+      {
+        "종류": "hook",
+        "처리": "따라간다",
+        "판단": true,
+        "설명": "Claude Code·Codex 플러그인/프로젝트의 hook 설정 JSON(hooks/*.json, .claude/settings*.json, .codex/hooks.json, 플러그인 매니페스트가 가리키는 파일)의 이벤트 하나가 기능 하나다. ID hook:<이벤트 이름>.",
+        "출처": "기본"
+      },
+      {
+        "종류": "command",
+        "처리": "따라간다",
+        "판단": true,
+        "설명": "slash command 파일(commands/*.md, .claude/commands/**/*.md)과 유저가 부를 수 있는 skill(skills/<이름>/SKILL.md, user-invocable: false가 아닌 것) 하나가 기능 하나다. ID command:<이름>.",
+        "출처": "기본"
+      },
+      {
+        "종류": "tool",
+        "처리": "따라간다",
+        "판단": true,
+        "설명": "MCP tool은 정해진 모양이 없어 프로젝트 규칙(파일 + 패턴)으로만 찾는다. ID tool:<이름>.",
+        "출처": "기본"
+      },
+      {
+        "종류": "cli",
+        "처리": "따라간다",
+        "판단": true,
+        "설명": "package.json bin, pyproject.toml [project.scripts]·[project.gui-scripts], 그리고 하위 명령 표는 프로젝트 규칙(파일 + 패턴)으로 찾는다. ID cli:<이름>.",
+        "출처": "기본"
+      },
+      {
+        "종류": "프론트",
+        "처리": "따라간다",
+        "판단": true,
+        "설명": "UI가 유저의 신호를 코드에 잇는 곳 하나가 기능 하나다. 툴킷마다 잇는 모양은 UI 연결 패턴 표의 항목(데이터)이고, 같은 방식 하나가 모든 항목을 읽는다. ID fe/<경로>/<구성요소>@<이벤트>:<대상>.",
+        "출처": "기본"
+      }
+    ],
+    "패턴": [],
+    "UI 연결 패턴": [
+      {
+        "판단": true,
+        "이름": "DOM addEventListener",
+        "확장자": [
+          ".js",
+          ".mjs",
+          ".cjs",
+          ".ts",
+          ".mts",
+          ".jsx",
+          ".tsx"
+        ],
+        "파일 표시": "\\b(?:document\\.(?:getElementById|querySelector(?:All)?|createElement|body|addEventListener)|window\\.(?:addEventListener|location|requestAnimationFrame))\\b",
+        "모양": "(?<emitter>[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*|\\([^()\\n]*\\)|\\[[^\\]\\n]*\\])*)\\.addEventListener\\(\\s*[\"'\\x60](?<event>[\\w:.-]+)[\"'\\x60]\\s*,\\s*(?<target>)",
+        "코드만": true,
+        "대상 읽기": "식",
+        "요소 이름": [
+          "보내는 쪽",
+          "같은 태그 id"
+        ],
+        "유저 조작": [
+          "auxclick",
+          "beforeinput",
+          "change",
+          "click",
+          "contextmenu",
+          "dblclick",
+          "drag",
+          "dragend",
+          "dragenter",
+          "dragleave",
+          "dragover",
+          "dragstart",
+          "drop",
+          "input",
+          "keydown",
+          "keypress",
+          "keyup",
+          "mousedown",
+          "mouseup",
+          "paste",
+          "pointerdown",
+          "pointerup",
+          "reset",
+          "search",
+          "select",
+          "submit",
+          "toggle",
+          "touchend",
+          "touchstart",
+          "wheel"
+        ],
+        "스스로 도는": [
+          "DOMContentLoaded",
+          "load"
+        ],
+        "출처": "기본"
+      },
+      {
+        "판단": true,
+        "이름": "DOM on<event> 속성",
+        "확장자": [
+          ".js",
+          ".mjs",
+          ".cjs",
+          ".ts",
+          ".mts",
+          ".jsx",
+          ".tsx"
+        ],
+        "파일 표시": "\\b(?:document\\.(?:getElementById|querySelector(?:All)?|createElement|body|addEventListener)|window\\.(?:addEventListener|location|requestAnimationFrame))\\b",
+        "모양": "(?<emitter>[A-Za-z_$][\\w$]*(?:\\.[A-Za-z_$][\\w$]*|\\([^()\\n]*\\)|\\[[^\\]\\n]*\\])*)\\.on(?<event>[a-z]+)\\s*=(?![=>])\\s*(?<target>)",
+        "코드만": true,
+        "대상 읽기": "식",
+        "요소 이름": [
+          "보내는 쪽",
+          "같은 태그 id"
+        ],
+        "유저 조작": [
+          "auxclick",
+          "beforeinput",
+          "change",
+          "click",
+          "contextmenu",
+          "dblclick",
+          "drag",
+          "dragend",
+          "dragenter",
+          "dragleave",
+          "dragover",
+          "dragstart",
+          "drop",
+          "input",
+          "keydown",
+          "keypress",
+          "keyup",
+          "mousedown",
+          "mouseup",
+          "paste",
+          "pointerdown",
+          "pointerup",
+          "reset",
+          "search",
+          "select",
+          "submit",
+          "toggle",
+          "touchend",
+          "touchstart",
+          "wheel"
+        ],
+        "스스로 도는": [
+          "load"
+        ],
+        "그 밖의 이벤트": [
+          "abort",
+          "animationend",
+          "beforeunload",
+          "blur",
+          "close",
+          "error",
+          "focus",
+          "hashchange",
+          "message",
+          "mouseenter",
+          "mouseleave",
+          "mousemove",
+          "mouseout",
+          "mouseover",
+          "offline",
+          "online",
+          "open",
+          "pointercancel",
+          "pointermove",
+          "pointerout",
+          "pointerover",
+          "popstate",
+          "resize",
+          "scroll",
+          "storage",
+          "transitionend",
+          "unload",
+          "visibilitychange"
+        ],
+        "출처": "기본"
+      },
+      {
+        "판단": true,
+        "이름": "DOM 타이머",
+        "확장자": [
+          ".js",
+          ".mjs",
+          ".cjs",
+          ".ts",
+          ".mts",
+          ".jsx",
+          ".tsx"
+        ],
+        "파일 표시": "\\b(?:document\\.(?:getElementById|querySelector(?:All)?|createElement|body|addEventListener)|window\\.(?:addEventListener|location|requestAnimationFrame))\\b",
+        "모양": "\\bsetInterval\\(\\s*(?<target>)",
+        "코드만": true,
+        "대상 읽기": "식",
+        "이벤트 고정": "setInterval",
+        "스스로 도는": [
+          "setInterval"
+        ],
+        "출처": "기본"
+      },
+      {
+        "판단": true,
+        "이름": "HTML on<event> 속성",
+        "코드만": true,
+        "확장자": [
+          ".html",
+          ".htm"
+        ],
+        "모양": "\\son(?<event>[a-zA-Z]+)\\s*=\\s*\"(?<target>[^\"]*)\"",
+        "이벤트 바꾸기": [
+          "소문자"
+        ],
+        "요소 이름": [
+          "같은 태그 id"
+        ],
+        "유저 조작": [
+          "auxclick",
+          "beforeinput",
+          "change",
+          "click",
+          "contextmenu",
+          "dblclick",
+          "drag",
+          "dragend",
+          "dragenter",
+          "dragleave",
+          "dragover",
+          "dragstart",
+          "drop",
+          "input",
+          "keydown",
+          "keypress",
+          "keyup",
+          "mousedown",
+          "mouseup",
+          "paste",
+          "pointerdown",
+          "pointerup",
+          "reset",
+          "search",
+          "select",
+          "submit",
+          "toggle",
+          "touchend",
+          "touchstart",
+          "wheel"
+        ],
+        "스스로 도는": [
+          "load"
+        ],
+        "출처": "기본"
+      },
+      {
+        "판단": true,
+        "이름": "JSX on<Event>",
+        "확장자": [
+          ".jsx",
+          ".tsx"
+        ],
+        "모양": "\\son(?<event>[A-Z][A-Za-z]*)=\\{(?<target>)",
+        "대상 읽기": "식",
+        "이벤트 바꾸기": [
+          "첫 글자 소문자"
+        ],
+        "요소 이름": [
+          "같은 태그 id"
+        ],
+        "유저 조작": [
+          "change",
+          "click",
+          "contextMenu",
+          "doubleClick",
+          "drag",
+          "dragEnd",
+          "dragStart",
+          "drop",
+          "input",
+          "keyDown",
+          "keyPress",
+          "keyUp",
+          "mouseDown",
+          "mouseUp",
+          "paste",
+          "pointerDown",
+          "pointerUp",
+          "select",
+          "submit",
+          "touchEnd",
+          "touchStart",
+          "wheel"
+        ],
+        "출처": "기본"
+      },
+      {
+        "판단": true,
+        "이름": "React useEffect",
+        "확장자": [
+          ".jsx",
+          ".tsx",
+          ".js",
+          ".mjs",
+          ".cjs",
+          ".ts",
+          ".mts"
+        ],
+        "모양": "\\buseEffect\\(\\s*(?<target>)",
+        "코드만": true,
+        "대상 읽기": "식",
+        "이벤트 고정": "useEffect",
+        "스스로 도는": [
+          "useEffect"
+        ],
+        "출처": "기본"
+      },
+      {
+        "판단": true,
+        "이름": "Vue @event / v-on:",
+        "코드만": true,
+        "확장자": [
+          ".vue"
+        ],
+        "모양": "\\s(?:@|v-on:)(?<event>[\\w-]+)(?:\\.[\\w-]+)*\\s*=\\s*\"(?<target>[^\"]*)\"",
+        "요소 이름": [
+          "같은 태그 id"
+        ],
+        "유저 조작": [
+          "auxclick",
+          "beforeinput",
+          "change",
+          "click",
+          "contextmenu",
+          "dblclick",
+          "drag",
+          "dragend",
+          "dragenter",
+          "dragleave",
+          "dragover",
+          "dragstart",
+          "drop",
+          "input",
+          "keydown",
+          "keypress",
+          "keyup",
+          "mousedown",
+          "mouseup",
+          "paste",
+          "pointerdown",
+          "pointerup",
+          "reset",
+          "search",
+          "select",
+          "submit",
+          "toggle",
+          "touchend",
+          "touchstart",
+          "wheel"
+        ],
+        "출처": "기본"
+      },
+      {
+        "판단": true,
+        "이름": "Vue onMounted",
+        "코드만": true,
+        "확장자": [
+          ".vue"
+        ],
+        "모양": "\\bonMounted\\(\\s*(?<target>)",
+        "대상 읽기": "식",
+        "이벤트 고정": "onMounted",
+        "스스로 도는": [
+          "onMounted"
+        ],
+        "출처": "기본"
+      },
+      {
+        "판단": true,
+        "이름": "Svelte on:event",
+        "코드만": true,
+        "확장자": [
+          ".svelte"
+        ],
+        "모양": "\\son:(?<event>[\\w-]+)(?:\\|[\\w|]+)?\\s*=\\s*\\{(?<target>)",
+        "대상 읽기": "식",
+        "요소 이름": [
+          "같은 태그 id"
+        ],
+        "유저 조작": [
+          "auxclick",
+          "beforeinput",
+          "change",
+          "click",
+          "contextmenu",
+          "dblclick",
+          "drag",
+          "dragend",
+          "dragenter",
+          "dragleave",
+          "dragover",
+          "dragstart",
+          "drop",
+          "input",
+          "keydown",
+          "keypress",
+          "keyup",
+          "mousedown",
+          "mouseup",
+          "paste",
+          "pointerdown",
+          "pointerup",
+          "reset",
+          "search",
+          "select",
+          "submit",
+          "toggle",
+          "touchend",
+          "touchstart",
+          "wheel"
+        ],
+        "출처": "기본"
+      },
+      {
+        "판단": true,
+        "이름": "Svelte onMount",
+        "코드만": true,
+        "확장자": [
+          ".svelte"
+        ],
+        "모양": "\\bonMount\\(\\s*(?<target>)",
+        "대상 읽기": "식",
+        "이벤트 고정": "onMount",
+        "스스로 도는": [
+          "onMount"
+        ],
+        "출처": "기본"
+      },
+      {
+        "판단": true,
+        "이름": "Qt signal.connect",
+        "확장자": [
+          ".py"
+        ],
+        "파일 표시": "\\b(?:PySide[26]?|PyQt[456])\\b",
+        "모양": "(?<emitter>[A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)*)\\.(?<event>[A-Za-z_]\\w*)(?:\\[[^\\]\\n]*\\])?\\.connect\\s*\\(\\s*(?<target>)",
+        "코드만": true,
+        "대상 읽기": "식",
+        "요소 이름": [
+          "보내는 쪽"
+        ],
+        "유저 조작": [
+          "activated",
+          "cellClicked",
+          "cellDoubleClicked",
+          "clicked",
+          "currentIndexChanged",
+          "currentItemChanged",
+          "currentRowChanged",
+          "currentTextChanged",
+          "doubleClicked",
+          "editingFinished",
+          "itemChanged",
+          "itemClicked",
+          "itemDoubleClicked",
+          "itemSelectionChanged",
+          "pressed",
+          "released",
+          "returnPressed",
+          "sliderMoved",
+          "sliderReleased",
+          "stateChanged",
+          "textChanged",
+          "textEdited",
+          "toggled",
+          "triggered",
+          "valueChanged"
+        ],
+        "스스로 도는": [
+          "timeout"
+        ],
+        "출처": "기본"
+      },
+      {
+        "판단": true,
+        "이름": "Qt <name>Event 메서드",
+        "확장자": [
+          ".py"
+        ],
+        "파일 표시": "\\b(?:PySide[26]?|PyQt[456])\\b",
+        "메서드": "^(?<event>close|contextMenu|dragEnter|drop|hide|keyPress|keyRelease|mouseDoubleClick|mousePress|mouseRelease|show|wheel)Event$",
+        "출처": "기본"
+      },
+      {
+        "판단": true,
+        "이름": "Tk command=",
+        "확장자": [
+          ".py"
+        ],
+        "파일 표시": "\\b(?:tkinter|Tkinter)\\b",
+        "모양": "\\bcommand\\s*=(?!=)\\s*(?<target>)",
+        "코드만": true,
+        "대상 읽기": "식",
+        "이벤트 고정": "command",
+        "요소 이름": [
+          "줄 앞 대입"
+        ],
+        "유저 조작": [
+          "command"
+        ],
+        "출처": "기본"
+      },
+      {
+        "판단": true,
+        "이름": "Tk bind",
+        "확장자": [
+          ".py"
+        ],
+        "파일 표시": "\\b(?:tkinter|Tkinter)\\b",
+        "모양": "(?<emitter>[A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)*)\\.bind(?:_all|_class)?\\(\\s*[\"'](?<event><[^\"'\\n]+>)[\"']\\s*,\\s*(?<target>)",
+        "코드만": true,
+        "대상 읽기": "식",
+        "이벤트 바꾸기": [
+          {
+            "떼기": "^<|>$"
+          }
+        ],
+        "요소 이름": [
+          "보내는 쪽"
+        ],
+        "유저 조작": [
+          "*"
+        ],
+        "유저 조작 아님": [
+          "Configure",
+          "Destroy",
+          "Expose",
+          "Map",
+          "Unmap",
+          "Visibility"
+        ],
+        "출처": "기본"
+      },
+      {
+        "판단": true,
+        "이름": "Tk after",
+        "확장자": [
+          ".py"
+        ],
+        "파일 표시": "\\b(?:tkinter|Tkinter)\\b",
+        "모양": "\\.after\\(\\s*\\d+\\s*,\\s*(?<target>)",
+        "코드만": true,
+        "대상 읽기": "식",
+        "이벤트 고정": "after",
+        "스스로 도는": [
+          "after"
+        ],
+        "출처": "기본"
+      }
+    ],
+    "화면 코드 표시": [
+      {
+        "이름": "Qt",
+        "확장자": [
+          ".py"
+        ],
+        "표시": "\\b(?:PySide[26]?|PyQt[456])\\b"
+      },
+      {
+        "이름": "Tk",
+        "확장자": [
+          ".py"
+        ],
+        "표시": "\\b(?:tkinter|Tkinter)\\b"
+      },
+      {
+        "이름": "GTK",
+        "확장자": [
+          ".py"
+        ],
+        "표시": "\\bgi\\.repository\\b|\\bimport\\s+gtk\\b"
+      },
+      {
+        "이름": "wxPython",
+        "확장자": [
+          ".py"
+        ],
+        "표시": "^\\s*(?:import\\s+wx\\b|from\\s+wx\\b)"
+      },
+      {
+        "이름": "Kivy",
+        "확장자": [
+          ".py"
+        ],
+        "표시": "^\\s*(?:import\\s+kivy\\b|from\\s+kivy\\b)"
+      },
+      {
+        "이름": "DOM",
+        "확장자": [
+          ".js",
+          ".mjs",
+          ".cjs",
+          ".ts",
+          ".mts"
+        ],
+        "표시": "\\bdocument\\.(?:getElementById|querySelector(?:All)?|createElement|addEventListener)\\b"
+      },
+      {
+        "이름": "HTML",
+        "확장자": [
+          ".html",
+          ".htm"
+        ],
+        "표시": "<(?:button|input|form|select|textarea)\\b"
+      },
+      {
+        "이름": "JSX",
+        "확장자": [
+          ".jsx",
+          ".tsx"
+        ],
+        "표시": "<[A-Za-z][\\w.]*[\\s>/]"
+      },
+      {
+        "이름": "Vue",
+        "확장자": [
+          ".vue"
+        ],
+        "표시": "<template\\b"
+      },
+      {
+        "이름": "Svelte",
+        "확장자": [
+          ".svelte"
+        ],
+        "표시": "<[a-z][\\w-]*[\\s>/]"
+      }
+    ],
+    "화면 파일": []
+  },
+  "referenceSummary": {
+    "allCalls": 3,
+    "resolvedCalls": 3,
+    "unresolvedCalls": 0,
+    "unresolvedByReason": [
+      {
+        "reason": "ambiguous",
+        "group": "product",
+        "label": "같은 이름의 선언이 여럿이라 하나로 정하지 못함",
+        "settle": "어느 선언인지 정해 줄 import 경로나 타입 정보",
+        "count": 0,
+        "callees": []
+      },
+      {
+        "reason": "keyword",
+        "group": "keyword",
+        "label": "호출처럼 보이지만 언어 키워드임 (import(, async (, super( 같은 것)",
+        "settle": "정할 것이 없다. 호출이 아니다",
+        "count": 0,
+        "callees": []
+      },
+      {
+        "reason": "builtin-namespace",
+        "group": "built-in",
+        "label": "언어·런타임 내장 네임스페이스의 멤버 (JSON.parse, Math.max 같은 것). 파일이 그 이름을 선언·들여오거나 묶지 않음",
+        "settle": "정할 것이 없다. 제품 코드가 아니다. 내장 이름 표에 없는 전역이면 프로젝트 규칙의 내장 이름에 더한다",
+        "count": 0,
+        "callees": []
+      },
+      {
+        "reason": "builtin-global",
+        "group": "built-in",
+        "label": "언어·런타임 내장 함수나 생성자 (String(, setTimeout(, len( 같은 것). 파일이 그 이름을 선언·들여오거나 묶지 않음",
+        "settle": "정할 것이 없다. 제품 코드가 아니다. 내장 이름 표에 없는 전역이면 프로젝트 규칙의 내장 이름에 더한다",
+        "count": 0,
+        "callees": []
+      },
+      {
+        "reason": "member-nowhere",
+        "group": "built-in",
+        "label": "제품 어디에도 그 이름의 함수·멤버가 없는 메서드 호출. 내장 메서드이거나 제품 밖 객체의 메서드라 제품 코드일 수 없음",
+        "settle": "정할 것이 없다. 제품 코드라면 그 함수가 있는 파일이 스캔 범위(확장자, source.제외)에 드는지 확인",
+        "count": 0,
+        "callees": []
+      },
+      {
+        "reason": "external-import",
+        "group": "external",
+        "label": "제품 밖 모듈(상대 경로가 아닌 import)에서 들여온 이름",
+        "settle": "그 패키지 코드를 스캔 범위에 넣거나, 제품 밖 경계로 둔다는 판단",
+        "count": 0,
+        "callees": []
+      },
+      {
+        "reason": "no-declaration",
+        "group": "product",
+        "label": "스캔한 코드 어디에도 그 이름의 선언이 없음",
+        "settle": "제품 코드라면 그 파일이 스캔 범위(확장자, source.제외)에 드는지 확인. 표에 없는 전역 이름이면 프로젝트 규칙의 내장 이름에 더한다",
+        "count": 0,
+        "callees": []
+      },
+      {
+        "reason": "declared-elsewhere",
+        "group": "product",
+        "label": "이 파일에는 그 이름의 함수·클래스 선언이 없고 다른 파일에만 있으며, 잇는 import도 없음",
+        "settle": "전역 이름이나 star import까지 읽는 해석기 (타입 정보)",
+        "count": 0,
+        "callees": []
+      },
+      {
+        "reason": "unknown-receiver",
+        "group": "product",
+        "label": "받는 쪽(객체)의 타입을 모르는 호출. 그 메서드 이름은 제품에 있음",
+        "settle": "타입 정보(구문 트리와 타입 검사기)",
+        "count": 0,
+        "callees": []
+      },
+      {
+        "reason": "inherited",
+        "group": "product",
+        "label": "상속받은 멤버일 수 있음: 클래스에 그 이름의 메서드가 없고, 클래스가 다른 클래스를 상속하거나 그 이름을 본문 없는 선언(abstract, 시그니처)으로만 가짐 (super.x( 포함)",
+        "settle": "상속을 따라가는 해석기",
+        "count": 0,
+        "callees": []
+      },
+      {
+        "reason": "local-function",
+        "group": "product",
+        "label": "매개변수나 지역 변수에 담긴 함수",
+        "settle": "데이터 흐름 분석 (어떤 함수가 그 변수에 들어오는지)",
+        "count": 0,
+        "callees": []
+      },
+      {
+        "reason": "dynamic-import",
+        "group": "product",
+        "label": "동적 import: 경로가 글자 그대로가 아니거나, 같은 식에서 꺼내는 이름이 없음",
+        "settle": "경로를 글자로 쓰고 같은 식에서 이름을 꺼내기(.then((m) => m.이름) 또는 const { 이름 } = await import(...)), 또는 프로젝트 규칙",
+        "count": 0,
+        "callees": []
+      },
+      {
+        "reason": "rest",
+        "group": "product",
+        "label": "그 밖: 스캔이 이유를 정하지 못함 (들여온 모듈을 찾지 못함, 모듈에 그 이름이 없음, 한 줄에 같은 이름이 메서드와 함수로 함께 쓰임)",
+        "settle": "구문 트리 기반의 더 정밀한 해석기",
+        "count": 0,
+        "callees": []
+      }
+    ]
+  },
+  "unreachedCode": {
+    "declarations": 0,
+    "filesNothingReached": 0,
+    "filesPartlyReached": 0,
+    "files": [],
+    "startedFrom": 1,
+    "extraCodeNodes": 0
+  },
+  "notLookedAt": {
+    "files": 1,
+    "byExtension": [
+      {
+        "extension": ".json",
+        "count": 1
+      }
+    ],
+    "testCodeFiles": 0,
+    "unreadableCodeFiles": 0,
+    "skipped": []
+  },
+  "nodes": [
+    {
+      "id": "UA-NOTE-01",
+      "type": "유저 활동",
+      "oneLine": "메모를 남긴다",
+      "at": {
+        "path": "유저플로우 기획서/UA-NOTE-01.md",
+        "line": 1
+      },
+      "basis": {
+        "path": "유저플로우 기획서/UA-NOTE-01.md",
+        "status": "추정",
+        "estimateKind": "코드만 보고 쓴 추정"
+      }
+    },
+    {
+      "id": "MAIN-01",
+      "type": "화면",
+      "name": "메모 화면",
+      "group": "MAIN",
+      "at": {
+        "path": "화면설계서/MAIN-01.md",
+        "line": 1
+      },
+      "basis": {
+        "path": "화면설계서/MAIN-01.md",
+        "status": "추정",
+        "estimateKind": null
+      }
+    },
+    {
+      "id": "MAIN-01#1",
+      "type": "화면요소",
+      "oneLine": "메모 더하기",
+      "location": "bin/notes.mjs:3",
+      "at": {
+        "path": "화면설계서/MAIN-01.md",
+        "line": 23
+      },
+      "basis": {
+        "path": "화면설계서/MAIN-01.md",
+        "status": "추정",
+        "estimateKind": null
+      }
+    },
+    {
+      "id": "cli:notes",
+      "type": "기능",
+      "kind": "cli",
+      "oneLine": "메모를 더하고 목록을 보여 준다",
+      "handling": "따라간다",
+      "positions": [
+        {
+          "path": "package.json",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "id": "bin/notes.mjs",
+      "type": "코드",
+      "kind": "file",
+      "file": "bin/notes.mjs",
+      "lines": [
+        1,
+        5
+      ]
+    },
+    {
+      "id": "lib/list.mjs",
+      "type": "코드",
+      "kind": "file",
+      "file": "lib/list.mjs",
+      "lines": [
+        1,
+        4
+      ]
+    },
+    {
+      "id": "lib/list.mjs#listNotes",
+      "type": "코드",
+      "kind": "function",
+      "file": "lib/list.mjs",
+      "lines": [
+        1,
+        3
+      ]
+    },
+    {
+      "id": "lib/notes.mjs",
+      "type": "코드",
+      "kind": "file",
+      "file": "lib/notes.mjs",
+      "lines": [
+        1,
+        8
+      ]
+    },
+    {
+      "id": "lib/notes.mjs#addNote",
+      "type": "코드",
+      "kind": "function",
+      "file": "lib/notes.mjs",
+      "lines": [
+        1,
+        3
+      ]
+    },
+    {
+      "id": "lib/notes.mjs#store",
+      "type": "코드",
+      "kind": "function",
+      "file": "lib/notes.mjs",
+      "lines": [
+        5,
+        7
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "type": "call",
+      "from": "bin/notes.mjs",
+      "to": "lib/list.mjs#listNotes",
+      "at": {
+        "path": "bin/notes.mjs",
+        "line": 4
+      },
+      "count": 1
+    },
+    {
+      "type": "call",
+      "from": "bin/notes.mjs",
+      "to": "lib/notes.mjs#addNote",
+      "at": {
+        "path": "bin/notes.mjs",
+        "line": 3
+      },
+      "count": 1
+    },
+    {
+      "type": "call",
+      "from": "lib/notes.mjs#addNote",
+      "to": "lib/notes.mjs#store",
+      "at": {
+        "path": "lib/notes.mjs",
+        "line": 2
+      },
+      "count": 1
+    },
+    {
+      "type": "기능→코드",
+      "from": "cli:notes",
+      "to": "bin/notes.mjs",
+      "at": {
+        "path": "package.json",
+        "line": 1
+      }
+    },
+    {
+      "type": "유저 활동→화면요소",
+      "from": "UA-NOTE-01",
+      "to": "MAIN-01#1",
+      "at": {
+        "path": "유저플로우 기획서/UA-NOTE-01.md",
+        "line": 14
+      },
+      "basis": {
+        "path": "유저플로우 기획서/UA-NOTE-01.md",
+        "status": "추정",
+        "estimateKind": "코드만 보고 쓴 추정"
+      }
+    },
+    {
+      "type": "화면→화면요소",
+      "from": "MAIN-01",
+      "to": "MAIN-01#1",
+      "at": {
+        "path": "화면설계서/MAIN-01.md",
+        "line": 23
+      },
+      "basis": {
+        "path": "화면설계서/MAIN-01.md",
+        "status": "추정",
+        "estimateKind": null
+      }
+    },
+    {
+      "type": "화면요소→기능",
+      "from": "MAIN-01#1",
+      "to": "cli:notes",
+      "at": {
+        "path": "화면설계서/MAIN-01.md",
+        "line": 23
+      },
+      "basis": {
+        "path": "화면설계서/MAIN-01.md",
+        "status": "추정",
+        "estimateKind": null
+      }
+    }
+  ]
+}

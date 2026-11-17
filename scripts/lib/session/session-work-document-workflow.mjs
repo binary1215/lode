@@ -2,7 +2,7 @@ import { recordSessionWorkEvidence } from "./session-work-context.mjs";
 import { workDocumentStore } from "../world/work-document-store.mjs";
 import { prepareWorkDocuments, publishWorkDocuments, readWorkDocumentSelections } from "../world/work-document-publication.mjs";
 import { workDocumentHash } from "../world/work-document-source.mjs";
-import { prepareProjectDocuments, publishProjectDocuments } from "../storage/project-document-publication.mjs";
+import { prepareProjectDocuments, publishProjectDocuments } from "../world/project-document-publication.mjs";
 
 function authoredSelection(selection, record) {
   const allowed = ["title", "evidenceIds", "related", "diffs", "excerpts", "graphAnchors", "featureKeys"];
@@ -160,6 +160,15 @@ export async function recordSessionWorkAndProjectDocuments({ root, input, docume
           todoId: todo?.todoId || null,
           taskEvidenceId: todo ? null : record.evidenceId,
         });
+        // The result is a file in its feature folder; Project documents then
+        // refresh the product, group and feature documents around it.
+        const resultDocuments = await publishWorkDocuments({
+          root,
+          sessionId: record.sessionId,
+          projectionId: pair.projectionId,
+          targetIds: projectTargets.map((target) => target.id),
+          adapters,
+        });
         const prepared = await prepareProjectDocuments({
           root,
           sessionId: record.sessionId,
@@ -175,6 +184,7 @@ export async function recordSessionWorkAndProjectDocuments({ root, input, docume
           targetIds: projectTargets.map((target) => target.id),
           adapters,
         });
+        projectDocuments.resultDocuments = resultDocuments;
         if (projectDocuments.status === "continuation-required")
           projectDocuments.followUp = {
             action: "continue-project-document-publication",

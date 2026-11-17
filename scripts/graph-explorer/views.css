@@ -1,0 +1,86 @@
+/* Frame and the status, product graph and gaps views. Colours come only from the theme variables in style.css. */
+.frame{padding:16px 24px 0;border-bottom:1px solid var(--line);background:var(--panel)}
+.frame-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:8px 20px}
+.frame-name{display:flex;flex-direction:column;gap:2px;min-width:0}
+.frame-title{margin:0;font-size:24px;line-height:1.3;overflow-wrap:anywhere}
+.frame-meta{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted);max-width:100%}
+#view-tabs{display:flex;flex-wrap:wrap;gap:4px;margin-top:12px}
+#view-tabs [role=tab]{border:1px solid transparent;border-bottom:0;border-radius:8px 8px 0 0;background:transparent;padding:8px 14px;color:var(--muted)}
+#view-tabs [role=tab][aria-selected=true]{border-color:var(--line);background:var(--bg);color:var(--text);font-weight:600}
+.view{max-width:1240px;margin:0 auto;padding:20px 24px 44px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.view-map{max-width:none;padding:0;display:block}
+.view-offstage{position:absolute;left:-200vw;top:0;width:100vw;height:0;overflow:hidden;visibility:hidden;pointer-events:none}
+.map-note{padding:8px 24px;margin:0}
+.view h1{font-size:22px;margin:0;overflow-wrap:anywhere}
+.view h2{font-size:16px;margin:0}
+.view h3{font-size:14px;margin:10px 0 4px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0;overflow-wrap:anywhere}
+details.card{display:block}
+.card-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px}
+.notice{margin:0;padding:10px 14px;background:var(--notice-bg);border:1px solid var(--line);border-radius:10px;font-size:13px}
+.goal{font-size:17px;margin:0}
+.direction-parts{display:flex;flex-wrap:wrap;gap:12px 36px}
+.direction-part{flex:1 1 260px;min-width:0}
+.plain-list,.item-list{margin:0;padding-left:18px;list-style:disc}
+.item-list{list-style:none;padding:0;display:flex;flex-direction:column;gap:10px}
+.counts{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.count{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column}
+.count strong{font-size:24px;line-height:1.2}
+.count span{font-size:13px;color:var(--muted)}
+.badge{display:inline-block;font-size:12px;line-height:1.4;border:1px solid var(--line);border-radius:999px;padding:1px 9px;white-space:normal;overflow-wrap:anywhere}
+.badge-user{background:var(--user-bg);color:var(--text)}
+.badge-agent{background:var(--agent-bg);color:var(--text)}
+.badge-pending{color:var(--pending);border-color:var(--pending)}
+.badge-unknown{color:var(--unknown);border-color:var(--unknown)}
+.badge-finished{color:var(--finished);border-color:var(--finished)}
+.badge-historical{color:var(--historical);border-color:var(--historical)}
+.badge-neutral{color:var(--muted)}
+.historical{color:var(--muted);margin:0}
+.rows{display:flex;flex-direction:column;gap:6px}
+.session-row,.record-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;width:100%;text-align:left;background:var(--control-bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;color:var(--text)}
+.session-row:hover,.record-row:hover{background:var(--control-hover)}
+.row-main{display:flex;flex-direction:column;flex:1 1 240px;min-width:0}
+.row-title{font-weight:600;overflow-wrap:anywhere}
+.row-marks{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mark{display:inline-block;width:12px;height:12px;border-radius:50%;flex:0 0 auto;vertical-align:middle}
+.mark-pending{background:var(--pending)}
+.mark-unknown{border:2px solid var(--unknown);background:transparent}
+.mark-none{width:8px;height:8px;background:var(--none)}
+.legend{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.item{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline}
+.item-text{flex:1 1 220px;min-width:0}
+.entrances{display:flex;flex-wrap:wrap;gap:8px}
+.entrance{text-align:left;max-width:100%;overflow-wrap:anywhere}
+.link-button,.tree-link{background:transparent;border:0;padding:0;color:var(--code);text-decoration:underline;text-align:left;max-width:100%;overflow-wrap:anywhere;font:inherit;cursor:pointer}
+.tree-link{display:block;padding:2px 0;text-decoration:none}
+.tree-link:hover,.link-button:hover{background:transparent;text-decoration:underline}
+.primary-button{align-self:flex-start;border-color:var(--code);color:var(--code)}
+.fold-button{align-self:flex-start;font-size:13px}
+.mini-button{font-size:12px;padding:2px 8px}
+.search-label{margin-top:6px}
+.path-line{display:flex;flex-wrap:wrap;align-items:center;gap:2px 4px;font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.path-sep{color:var(--muted)}
+.path-part{color:var(--text)}
+.file-row{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;border-top:1px solid var(--line);padding-top:8px}
+.file-row pre{flex-basis:100%}
+.mono,.view code{font:12px/1.5 ui-monospace,monospace;overflow-wrap:anywhere}
+.board{white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh}
+.board-lines{font-size:13px}
+.guide{border-left:3px solid var(--context);padding-left:10px;flex-basis:100%}
+.tree-node{min-width:0}
+.tree-row{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;padding:4px 6px;border-radius:6px;cursor:pointer;min-width:0}
+.tree-row:hover{background:var(--row-hover)}
+.tree-row:focus-visible{outline:3px solid var(--focus);outline-offset:1px}
+.tree-toggle{flex:0 0 1em;color:var(--muted)}
+.tree-text{flex:1 1 260px;min-width:0;overflow-wrap:anywhere;font-size:13px}
+.tree-actions{display:flex;flex-wrap:wrap;gap:4px}
+.tree-group{font-size:12px;color:var(--muted);padding:6px 0 2px 1.2rem}
+.text-board summary{font-size:13px}
+.outcome{margin:0;display:flex;gap:4px;align-items:baseline;font-weight:600}
+.outcome-unchecked{color:var(--muted);font-style:italic}
+.outcome-found{color:var(--pending)}
+.outcome-none{color:var(--finished)}
+.check{border-top:1px solid var(--line);padding-top:8px}
+.gap-list summary{color:var(--text);font-size:14px}
+.answer{background:var(--bg)}
+@media(max-width:650px){.frame{padding:12px 16px 0}.view{padding:16px 16px 32px}.card{padding:14px}.frame-title{font-size:20px}.map-note{padding:8px 16px}#view-tabs [role=tab]{padding:8px 10px}}

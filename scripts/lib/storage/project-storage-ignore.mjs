@@ -19,6 +19,7 @@ export const GENERATED_STORAGE_IGNORE_RULES = Object.freeze([
   Object.freeze({ pattern: "/.snapshot-gc/", reason: "Transient local snapshot participants and collector attempts, not recovery direction." }),
   Object.freeze({ pattern: "/refresh/writer.lock/", reason: "Active host-local refresh lease, not a retained snapshot." }),
   Object.freeze({ pattern: "/refresh/writer.lock.*.staging/", reason: "Unpublished nonce-owned refresh lease staging." }),
+  Object.freeze({ pattern: "/context/product-graph/build/", reason: "Generated product graph output, rebuilt from the documents and the source tree." }),
 ]);
 // Retained, exact local storage is excluded from new accidental tracking, not
 // discarded. Canonical records and pointers remain outside this list.

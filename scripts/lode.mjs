@@ -21,6 +21,11 @@ export function parse(argv) {
   const options = {};
   for (let index = 0; index < rest.length; index += 1) {
     const item = rest[index];
+    // product-graph-query <project> <question> [<id or text>]
+    if (command === "product-graph-query" && !item.startsWith("--")) {
+      (options._positional ||= []).push(item);
+      continue;
+    }
     if (!item.startsWith("--")) throw new Error(`Unexpected argument: ${item}`);
     const key = item.slice(2);
     if (command === "storage-gc" && ["apply", "diagnostics"].includes(key)) {
@@ -39,6 +44,10 @@ export function parse(argv) {
       const value = rest[index + 1];
       options[key] = value === "false" ? false : true;
       if (value === "true" || value === "false") index += 1;
+      continue;
+    }
+    if (["product-graph-build", "product-graph-check"].includes(command) && key === "include-estimates") {
+      options[key] = true;
       continue;
     }
     if (key === "fresh") {
@@ -64,7 +73,7 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
     `${cliDisplay} doctor <project>`,
     `${cliDisplay} graph-query <project> --query <text> [--view all|work|product] [--paths <path,...>] [--anchors <id,...>] [--depth <n>] [--max-nodes <n>] [--max-edges <n>] [--world-model <id>] [--details] [--inventory-page --inventory-paths <owned-path,...> --inventory-cursor <returned-cursor>]`,
     `${cliDisplay} graph-index <project>`,
-    `${cliDisplay} graph-explorer <project> [--layer project|code] [--query <text-or-source>] [--anchors <id,...>] [--paths <path,...>] [--history] [--share] [--output <new-file.html>]`,
+    `${cliDisplay} graph-explorer <project> [--view status|product|gaps|map] [--lang en|ko] [--layer project|code] [--query <text-or-source>] [--anchors <id,...>] [--paths <path,...>] [--history] [--share] [--output <new-file.html>]`,
     `${cliDisplay} project-export <project> --destination <bundle-folder> [--provenance project-proof-metadata|selected-only] [--sources selected-retained-sources|refs-only] [--session <logical-session>] (default: project-proof-metadata)`,
     `${cliDisplay} project-bundle-inspect <bundle-folder-or-HANDOFF.md> [--expected-bundle <bundle-id>] [--handoff-offset <bytes> --handoff-max-bytes <bytes>]`,
     `${cliDisplay} project-import <target-project> --bundle <bundle-folder> [--expected-bundle <bundle-id>]`,
@@ -112,6 +121,15 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
     `${cliDisplay} feature-mapping-review <project> --input <review.json>`,
     `${cliDisplay} feature-mapping-candidates <project> --candidate-set <feature-mapping-candidate-set-id>`,
     `${cliDisplay} feature-mapping-review-read <project> --review <feature-mapping-review-decision-id>`,
+    `${cliDisplay} product-graph-build <project> [--include-estimates]  # writes only the generated product graph output`,
+    `${cliDisplay} product-graph-build <source-root> --documents <folder> --rules <entry-rules.json> --out <folder> [--include-estimates]  # stand-alone; writes only under --out`,
+    `${cliDisplay} product-graph-check <project> [--include-estimates]`,
+    `${cliDisplay} product-graph-check <source-root> --documents <folder> --rules <entry-rules.json> [--include-estimates]  # stand-alone, read-only`,
+    `${cliDisplay} product-graph-query <project> [overview | node <id> | down <id> | up <id> | reach <id-or-file> | find <text> | gaps | changes | impact] [--list <key>] [--limit <n>] [--cursor <n>] [--depth <n>] [--node-types <types>] [--related-to <ID>] [--edge-types <types>] [--basis-states <states>] [--proposal-base-build <folder>] [--candidate-build <folder>] [--expected-basis-sha256 <hash>]  # read-only; the page's text board`,
+    `${cliDisplay} product-graph-query <source-root> <question> [<id>] --build <folder> [--documents <folder>] [--rules <entry-rules.json>]  # a stand-alone output folder; what is not given stays unknown`,
+    `${cliDisplay} product-graph-baseline <project>  # the only way the comparison baseline moves; refused when the build is stale`,
+    `${cliDisplay} product-graph-baseline <source-root> --documents <folder> --rules <entry-rules.json> --out <folder>  # stand-alone`,
+    `${cliDisplay} product-graph-approve <project> --input <approval.json>  # the user's approval of one document's current content`,
     `${cliDisplay} change-set-record <project> --input <change-set.json>`,
     `${cliDisplay} change-set-status <project>`,
     `${cliDisplay} change-set-read <project> --change-set <change-set-id>`,
@@ -158,7 +176,7 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
     `${cliDisplay} ${continuityName} <project> [--fresh]`,
     `${cliDisplay} world-index <project> [--git-log <host-exported-log-file>] [--runtime-state <host-exported-json-file>] [--parent-snapshot <id,id>] [--revision-parents <json-file>]`,
     `${cliDisplay} world-status <project>`,
-    `${cliDisplay} storage-gc <project> [--apply]  # inspect; explicitly reclaim verified orphan snapshot storage`,
+    `${cliDisplay} storage-gc <project> [--apply] [--keep-count <n>] [--keep-days <n>]  # inspect; --apply deletes unreferenced snapshots; a retention window (policy file or --keep-count/--keep-days) also releases older World history`,
     `${cliDisplay} world-refresh <project> [--expect-changed <path,path>] [--trigger-evidence <id,id>] [--parent-snapshot <id,id>]`,
     `${cliDisplay} world-refresh-status <project>`,
     `${cliDisplay} world-refresh-read <project> --receipt <incremental-refresh-receipt-id>`,

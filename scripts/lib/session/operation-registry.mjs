@@ -73,6 +73,21 @@ function onlyFields(input, allowed, label) {
   return input;
 }
 
+// Product graph CLI: a project root, or a stand-alone run when --documents is
+// given (the positional root is then the source root; --rules and, for build,
+// --out are required and nothing is written outside --out).
+function productGraphCliOptions(root, options, { output }) {
+  const includeEstimates = options["include-estimates"] === true;
+  if (options.documents === undefined && options.rules === undefined && options.out === undefined) return { root, includeEstimates };
+  return {
+    sourceRoot: root,
+    documentsDirectory: options.documents ?? null,
+    rulesFile: options.rules ?? null,
+    outputDirectory: output ? (options.out ?? null) : null,
+    includeEstimates,
+  };
+}
+
 export const OPERATIONS = Object.freeze([
   {
     name: "lode_project_document_prepare",
@@ -93,7 +108,7 @@ export const OPERATIONS = Object.freeze([
       flags: [],
       handle: async (context) => {
         const { root } = context;
-        return (await import("../storage/project-document-publication.mjs")).projectDocumentStatus({ root });
+        return (await import("../world/project-document-publication.mjs")).projectDocumentStatus({ root });
       },
     },
     tool: workDocumentTools.find((tool) => tool.name === "lode_project_document_status"),
@@ -1513,6 +1528,243 @@ export const OPERATIONS = Object.freeze([
       args: ({ root, options, inputJson }) => [{ ...inputJson(options, "Feature mapping ReviewDecision"), root }],
     },
     impl: () => import("../world/feature-mapping.mjs").then((module) => module.reviewFeatureMapping),
+  },
+  {
+    name: "lode_product_graph_build",
+    tool: {
+      name: "lode_product_graph_build",
+      description:
+        "Build the project's product graph (the original 제품 그래프 model, apart from the Product Model): 기능 and 코드 from the source tree by script, the other nodes from the user's documents in the store. Writes only the generated output folder (graph.json, check.json, check.txt, build-context.json; with a new baseline also baseline.json and baseline-content.json, which holds the baseline's own source text for `changes --list content` and never leaves the build folder); documents, policy, meaning lines and approvals are never rewritten. Includes the 정합성 검사 result; its comparison says which nodes' content changed, not their text.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          include_estimates: {
+            type: "boolean",
+            default: false,
+            description: "Also use unapproved (추정) documents in the check; every finding resting on one is labelled.",
+          },
+        },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root, includeEstimates: args.include_estimates === true }] },
+    cli: {
+      command: "product-graph-build",
+      flags: ["documents", "rules", "out", "include-estimates"],
+      args: ({ root, options }) => [productGraphCliOptions(root, options, { output: true })],
+    },
+    impl: () => import("../world/product-graph.mjs").then((module) => module.buildProductGraph),
+  },
+  {
+    name: "lode_product_graph_check",
+    tool: {
+      name: "lode_product_graph_check",
+      description:
+        "Read-only 정합성 검사 of the product graph: the original's six checks, each ending in findings with node IDs and positions, 0건, or 검사 못 함 with its reason, plus missing cited IDs, 기능 no 화면요소 or 화면 points to, unresolved handlers, UI wiring not taken as 기능, files that look like UI code but match no pattern, node counts and approved/estimated documents. Approved documents only unless include_estimates.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          include_estimates: {
+            type: "boolean",
+            default: false,
+            description: "Also use unapproved (추정) documents; every finding resting on one is labelled.",
+          },
+        },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root, includeEstimates: args.include_estimates === true }] },
+    cli: {
+      command: "product-graph-check",
+      flags: ["documents", "rules", "include-estimates"],
+      args: ({ root, options }) => [productGraphCliOptions(root, options, { output: false })],
+    },
+    impl: () => import("../world/product-graph.mjs").then((module) => module.checkProductGraph),
+  },
+  {
+    name: "lode_product_graph_query",
+    tool: {
+      name: "lode_product_graph_query",
+      description:
+        "Ask the existing product graph build one step at a time, read-only (never builds, checks or writes). Helps when you need which code a user action or 기능 reaches (reach), what reaches a file or function (reach on a 코드 node or file path), what points to a node (up), one step down from a node (down), where the gaps are (gaps) or what changed since the baseline (changes); overview lists the starts. find ranks words (BM25) and can be narrowed by node_types, basis_states, or related_to with edge_types. impact compares three existing builds (proposal_base_build, the current build, candidate_build) read-only. changes with list content returns product source text (before and after, bounded and paged); ask it only when the text itself is needed. A page with more items returns page.nextMcpArguments to send as they are. The graph is a text scan without types that follows resolved call and callback references only; every answer starts with whether the build is still the source as it is now and how many calls were resolved. Not a prerequisite of ordinary work. With no build the answer is PRODUCT_GRAPH_NOT_BUILT with the build command.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          question: { type: "string", enum: ["overview", "node", "down", "up", "reach", "find", "gaps", "changes", "impact"], default: "overview" },
+          candidate_build: {
+            type: "string",
+            minLength: 1,
+            description: "Existing generated candidate build folder for read-only impact preview; never applies or approves it.",
+          },
+          proposal_base_build: {
+            type: "string",
+            minLength: 1,
+            description: "Existing build at the proposal's explicit starting point. Omit only to use the recorded baseline hashes with partial coverage.",
+          },
+          node_types: { type: "array", items: { type: "string", minLength: 1 }, description: "Filter node types before full-text ranking and pagination." },
+          related_to: { type: "string", minLength: 1, description: "Restrict find to this exact anchor's recorded edge neighborhood, before ranking." },
+          edge_types: {
+            type: "array",
+            items: { type: "string", minLength: 1 },
+            description: "Connection-kind restriction used with related_to; it does not filter unrelated global searches by itself.",
+          },
+          basis_states: {
+            type: "array",
+            items: { type: "string", minLength: 1 },
+            description: "Optional exact recorded basis-status filter; never changes an approval.",
+          },
+          expected_basis_sha256: {
+            type: "string",
+            pattern: "^[a-f0-9]{64}$",
+            description: "Reuse the returned query basis for a later page; a changed build is reported rather than mixed.",
+          },
+          id: {
+            type: "string",
+            minLength: 1,
+            description: "Node ID for node, down, up and reach (a file path for a file node); a start such as @기능 for down.",
+          },
+          text: { type: "string", minLength: 1, description: "What find looks for in IDs, plain words and paths." },
+          list: { type: "string", minLength: 1, description: "One list for gaps or changes, by its key." },
+          limit: { type: "integer", minimum: 1, maximum: 500, default: 50 },
+          cursor: { type: "integer", minimum: 0, default: 0 },
+          depth: { type: "integer", minimum: 1, maximum: 8, default: 1 },
+        },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+    },
+    mcp: {
+      args: (args) => [
+        {
+          root: args.project_root,
+          question: args.question ?? "overview",
+          id: args.id ?? null,
+          text: args.text ?? null,
+          list: args.list ?? null,
+          limit: args.limit ?? 50,
+          cursor: args.cursor ?? 0,
+          depth: args.depth ?? 1,
+          candidateBuildDirectory: args.candidate_build ?? null,
+          proposalBaseBuildDirectory: args.proposal_base_build ?? null,
+          nodeTypes: args.node_types ?? [],
+          relatedTo: args.related_to ?? null,
+          edgeTypes: args.edge_types ?? [],
+          basisStates: args.basis_states ?? [],
+          expectedBasisSha256: args.expected_basis_sha256 ?? null,
+        },
+      ],
+    },
+    cli: {
+      command: "product-graph-query",
+      flags: [
+        "build",
+        "documents",
+        "rules",
+        "list",
+        "limit",
+        "cursor",
+        "depth",
+        "candidate-build",
+        "proposal-base-build",
+        "node-types",
+        "related-to",
+        "edge-types",
+        "basis-states",
+        "expected-basis-sha256",
+      ],
+      args: ({ root, options }) => {
+        const [question = "overview", argument = null, ...extra] = options._positional || [];
+        if (extra.length) throw new Error(`Unexpected argument: ${extra[0]}`);
+        return [
+          {
+            // With --build the positional root is the source root of that stand-alone
+            // build; --documents and --rules, when given, are compared too (6.3).
+            ...(options.build
+              ? { buildDirectory: options.build, sourceRoot: root, documentsDirectory: options.documents ?? null, rulesFile: options.rules ?? null }
+              : { root }),
+            question,
+            id: ["node", "down", "up", "reach"].includes(question) ? argument : null,
+            text: question === "find" ? argument : null,
+            list: options.list ?? null,
+            limit: options.limit ?? 50,
+            cursor: options.cursor ?? 0,
+            depth: options.depth ?? 1,
+            candidateBuildDirectory: options["candidate-build"] ?? null,
+            proposalBaseBuildDirectory: options["proposal-base-build"] ?? null,
+            nodeTypes: options["node-types"]?.split(",") ?? [],
+            relatedTo: options["related-to"] ?? null,
+            edgeTypes: options["edge-types"]?.split(",") ?? [],
+            basisStates: options["basis-states"]?.split(",") ?? [],
+            expectedBasisSha256: options["expected-basis-sha256"] ?? null,
+          },
+        ];
+      },
+    },
+    impl: () => import("../world/product-graph-query.mjs").then((module) => module.queryProductGraph),
+  },
+  {
+    name: "lode_product_graph_baseline",
+    tool: {
+      name: "lode_product_graph_baseline",
+      description:
+        "Move the product graph's comparison baseline to the existing build. This is the only way the baseline moves; builds, checks, queries and exports never move it. Refused with PRODUCT_GRAPH_BUILD_STALE when the build is not the source as it is now. The result says how many changed items and 다시 볼 것 items leave the list. Writes build/baseline-content.json (the new baseline's source text) and build/baseline.json, nothing else.",
+      inputSchema: {
+        type: "object",
+        properties: { project_root: { type: "string", minLength: 1 } },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root }] },
+    cli: {
+      command: "product-graph-baseline",
+      flags: ["documents", "rules", "out"],
+      args: ({ root, options }) => [productGraphCliOptions(root, options, { output: true })],
+    },
+    impl: () => import("../world/product-graph.mjs").then((module) => module.moveProductGraphBaseline),
+  },
+  {
+    name: "lode_product_graph_approve",
+    tool: {
+      name: "lode_product_graph_approve",
+      description:
+        "Record the user's explicit approval of one product graph document (or the policy file) exactly as it is now. expected_sha256 is the digest of the content the user reviewed, as the check result lists it; a document changed since then is refused. Editing an approved document later makes it unapproved again. Requires explicit confirmation.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          document: { type: "string", minLength: 1, description: "Path inside the product graph folder, for example 화면설계서/CHT-01.md." },
+          expected_sha256: { type: "string", pattern: "^[a-f0-9]{64}$" },
+          rationale: { type: "string", minLength: 1, maxLength: 2000 },
+          confirm_user_review: { type: "boolean" },
+        },
+        required: ["project_root", "document", "expected_sha256", "rationale", "confirm_user_review"],
+        additionalProperties: false,
+      },
+    },
+    mcp: {
+      before: (args) =>
+        requireMcpConfirmation(
+          args.confirm_user_review,
+          "Product graph document approval requires explicit user confirmation.",
+          "PRODUCT_GRAPH_APPROVAL_CONFIRMATION_REQUIRED",
+        ),
+      args: (args) => [{ root: args.project_root, document: args.document, expectedSha256: args.expected_sha256, rationale: args.rationale }],
+    },
+    cli: {
+      command: "product-graph-approve",
+      flags: ["input"],
+      args: ({ root, options, inputJson }) => {
+        const input = onlyFields(inputJson(options, "Product graph approval"), ["document", "expectedSha256", "rationale"], "Product graph approval");
+        return [{ root, document: input.document, expectedSha256: input.expectedSha256, rationale: input.rationale }];
+      },
+    },
+    impl: () => import("../world/product-graph.mjs").then((module) => module.approveProductGraphDocument),
   },
   {
     name: "lode_change_set_status",
@@ -3233,8 +3485,9 @@ export const OPERATIONS = Object.freeze([
         additionalProperties: false,
       },
     },
-    mcp: { args: (args) => [{ root: args.project_root, refreshReceiptId: args.refresh_receipt_id }] },
-    cli: { command: "world-refresh-read", flags: ["receipt"], args: ({ root, options }) => [{ root, refreshReceiptId: options.receipt }] },
+    // The reader of one receipt may be told its World was released by retention; internal callers never are.
+    mcp: { args: (args) => [{ root: args.project_root, refreshReceiptId: args.refresh_receipt_id, allowReleased: true }] },
+    cli: { command: "world-refresh-read", flags: ["receipt"], args: ({ root, options }) => [{ root, refreshReceiptId: options.receipt, allowReleased: true }] },
     impl: () => import("../world/incremental-refresh.mjs").then((module) => module.readIncrementalRefreshReceipt),
   },
   {
@@ -5151,7 +5404,7 @@ export const OPERATIONS = Object.freeze([
     name: "cli:graph-explorer",
     cli: {
       command: "graph-explorer",
-      flags: ["anchors", "history", "layer", "output", "paths", "query", "share"],
+      flags: ["anchors", "history", "lang", "layer", "output", "paths", "query", "share", "view"],
       handle: async (context) => {
         const { root, options } = context;
         return import("../world/graph-explorer.mjs").then(({ exportGraphExplorer }) =>
@@ -5164,6 +5417,8 @@ export const OPERATIONS = Object.freeze([
             history: options.history === true,
             share: options.share === true,
             output: options.output || null,
+            view: options.view || null,
+            lang: options.lang || "en",
           }),
         );
       },
@@ -5502,13 +5757,16 @@ export const OPERATIONS = Object.freeze([
     name: "cli:storage-gc",
     cli: {
       command: "storage-gc",
-      flags: ["apply"],
+      flags: ["apply", "keep-count", "keep-days"],
       handle: async (context) => {
         const { root, options, onProcess, signal } = context;
         const { inspectSnapshotPreservationClosure } = await import("../world/snapshot-preservation-closure.mjs");
         const { inspectSnapshotGarbageCollection, applySnapshotGarbageCollection } = await import("../world/snapshot-gc.mjs");
-        if (options.apply === true || options.apply === "true") return await applySnapshotGarbageCollection({ root, signal, onProcess });
-        const inspection = inspectSnapshotGarbageCollection({ root });
+        const { parseRetentionOptions } = await import("../world/snapshot-retention-policy.mjs");
+        // A value that is not a whole number in range is a usage error, never a silent no-window run.
+        const retention = parseRetentionOptions(options);
+        if (options.apply === true || options.apply === "true") return await applySnapshotGarbageCollection({ root, signal, onProcess, retention });
+        const inspection = inspectSnapshotGarbageCollection({ root, retention });
         try {
           inspection.typedClosure = await inspectSnapshotPreservationClosure({ root });
         } catch (error) {
@@ -5720,7 +5978,7 @@ export const OPERATIONS = Object.freeze([
       flags: ["input"],
       handle: async (context) => {
         const { root, options, command, inputJson } = context;
-        const api = await import("../storage/project-document-publication.mjs");
+        const api = await import("../world/project-document-publication.mjs");
         const input = inputJson(options, "Lode-selected Project documents");
         return api[command === "project-document-prepare" ? "prepareProjectDocuments" : "publishProjectDocuments"]({ ...input, root });
       },
@@ -5873,6 +6131,11 @@ const supplementalReadOnlyHints = {
   lode_continuity_snapshot: true,
   lode_feature_mapping_propose: false,
   lode_feature_mapping_review: false,
+  lode_product_graph_build: false,
+  lode_product_graph_check: true,
+  lode_product_graph_query: true,
+  lode_product_graph_baseline: false,
+  lode_product_graph_approve: false,
   lode_conformance_propose: false,
   lode_conformance_disposition: false,
   lode_conformance_resolution_propose: false,

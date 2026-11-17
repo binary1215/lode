@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "kind": "LodeProductGraphEntryRules",
+  "rules": [
+    {
+      "종류": "cli",
+      "판단": true,
+      "설명": "Rows of the command table.",
+      "파일": [
+        "commands.mjs"
+      ],
+      "패턴": "command: \"([a-z]+)\"",
+      "처리 코드": "항목"
+    },
+    {
+      "종류": "cli",
+      "판단": true,
+      "설명": "Commands registered by a call.",
+      "파일": [
+        "commands.mjs",
+        "wiring.mjs",
+        "templates.mjs",
+        "registered.mjs"
+      ],
+      "패턴": "\\.register\\(\"([a-z]+)\"",
+      "처리 코드": "항목"
+    },
+    {
+      "종류": "cli",
+      "판단": true,
+      "설명": "Commands registered through a chained call.",
+      "파일": [
+        "registered.mjs"
+      ],
+      "패턴": "\\.command\\(\"([a-z]+)\"\\)",
+      "처리 코드": "항목"
+    },
+    {
+      "종류": "cli",
+      "판단": true,
+      "설명": "The name -> handler map.",
+      "파일": [
+        "handlers.py"
+      ],
+      "패턴": "\"([a-z]+)\": ",
+      "처리 코드": "항목"
+    },
+    {
+      "종류": "cli",
+      "판단": true,
+      "설명": "Plugin rows.",
+      "파일": [
+        "wiring.mjs"
+      ],
+      "패턴": "name: \"([a-z]+)\"",
+      "처리 코드": "항목"
+    },
+    {
+      "종류": "tool",
+      "판단": true,
+      "설명": "Rows next to template literals with ${...}.",
+      "파일": [
+        "templates.mjs"
+      ],
+      "패턴": "\\bname:\\s*\"([a-z]+)\"",
+      "처리 코드": "항목"
+    },
+    {
+      "종류": "cli",
+      "판단": true,
+      "설명": "Decorated commands, pattern from the @.",
+      "파일": [
+        "decorated.py"
+      ],
+      "패턴": "@app\\.command\\(\"([a-z]+)\"\\)",
+      "처리 코드": "항목"
+    },
+    {
+      "종류": "cli",
+      "판단": true,
+      "설명": "Decorated commands, pattern after the @.",
+      "파일": [
+        "decorated_after.py",
+        "decorated.ts"
+      ],
+      "패턴": "command\\(\"([a-z]+)\"\\)",
+      "처리 코드": "항목"
+    }
+  ]
+}

@@ -11,6 +11,529 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.130 — publication tracked separately
+
+- Added: the product graph query finds by relevance, shows what changed in
+  the text, and previews a proposal.
+  - `find` ranks by matching words (BM25) and still puts exact ID and path
+    matches first; everything the old substring search found is still found.
+    New filters: `--node-types`, `--related-to <ID>`, `--edge-types`,
+    `--basis-states`. Each hit shows the words that matched and the recorded
+    edges next to it. The score is lexical: it is not approval, currency or
+    cause. The page's search runs when typing pauses.
+  - `changes --list content` shows the text before and after for the nodes
+    that changed since the baseline. The "before" text is kept at baseline
+    time in `build/baseline-content.json`: generated, local, git-ignored, at
+    most 2 MiB, whole contents only (up to 16 KiB each) so every text shown
+    is checked against the baseline's content hash. It is bound to its
+    baseline: after a baseline move the question refuses until the next
+    build, and a build writes the file again when it is missing or belongs
+    to another baseline.
+  - That text goes nowhere else. `check.json`, `check.txt`, the build and
+    check replies and the exported Graph Explorer file hold none of it; they
+    say how many nodes changed in content and how to ask.
+  - `impact` compares three existing builds, read-only: where a proposal
+    started, the current state, and the proposal applied to its start. It
+    tells equal edits from divergent ones, reports delete-versus-update
+    conflicts and references left to deleted UI or code, and says whether
+    its basis is verified or partial. No conflict is not approval, and a
+    static preview is not runtime evidence.
+  - A printed next-page hint repeats the whole question with its filters,
+    build folders and a hash of what the page was answered from; a later
+    page is refused when that changed (`PRODUCT_GRAPH_QUERY_BASIS_CHANGED`).
+    Replies carry the same as arguments in CLI names and, for a Project, in
+    MCP names. A content page holds whole items only and the next page
+    starts at the first one left out.
+- Limits: search is by words, not by meaning; nothing is executed. Builds
+  write two more generated files (`baseline-content.json`,
+  `build-context.json`) and take about a tenth longer on Lode itself (5.3 s
+  against 4.9 s). A baseline taken by an earlier version has no "before"
+  text for nodes that already changed; move the baseline to keep it from
+  then on, and a baseline read by another analysis version says so. A
+  "verified" impact preview needs the three builds made in the same Project,
+  which means building at the proposal's starting commit and with the
+  proposal applied; the docs give the steps. The persistent parse cache the
+  original proposal contained is not included: a cached build could keep a
+  call edge a full build drops.
+
+## 0.3.0-beta.129 — publication tracked separately
+
+- Added: snapshot retention for storage GC, off unless you turn it on.
+  - With no policy, `storage-gc` keeps exactly what it kept before: every
+    World that refresh history names stays. Nothing changes for a project
+    that sets nothing.
+  - A policy file `<store>/refresh/snapshot-retention.json`
+    (`schemaVersion`, `keepCount`, `keepDays`) or `--keep-count` /
+    `--keep-days` for one run turns it on. Refresh history then stops
+    pinning old Worlds, and a window keeps the newest `keepCount` Worlds by
+    write time and everything newer than `keepDays`, whichever keeps more.
+    A value that is not a usable number is a usage error; a policy file that
+    cannot be used keeps everything and the output says the file is
+    unusable.
+  - Always kept, window or not: the current World and Graph, the World the
+    pointer names as previous, the Worlds of the current refresh receipt,
+    every snapshot a Capsule, ChangeSet, lineage record, checkpoint, Session
+    record, knowledge decision or product-graph document names, including
+    the parents such a record lists, anything named only by a hash, and any
+    snapshot without a trustworthy write time (the Git object store).
+  - The dry run reports what the apply would delete, under which rule, and
+    which checks only the apply makes. The output says whether retention is
+    off, from the project file or from this run's options.
+  - A windowed apply writes a release record before it deletes anything:
+    `<store>/refresh/retention-releases/retention-release-<id>.json` with
+    the policy in force, the time, and the released World and Graph ids and
+    hashes. Records are never rewritten or reclaimed, and a default apply or
+    a dry run writes none.
+  - A record that names a snapshot retention released is reported as
+    "released by retention on <date>" and does not block storage GC,
+    whether it is old refresh history or a record written later. A snapshot
+    that is gone and that no valid release record names is still reported as
+    missing, and so is the current World whatever a record says. A release
+    record that cannot be read excuses nothing and is named in the output.
+  - Reading an old refresh receipt whose World was released answers
+    `WORLD_MODEL_SNAPSHOT_RELEASED` with the date instead of "missing".
+- Limits: the release records live under `refresh/` next to the two
+  rebuildable caches; the caches may be deleted, the records may not
+  (without them old history looks damaged again, nothing else). An older
+  Lode does not know the records and reports released history as missing. A
+  copied project folder carries the policy file and the records; its write
+  times are the copy's, so the window there is ordered by copy time until
+  new Worlds are written. "Newest" is by the snapshot file's first write. A
+  moved or re-published World keeps its old time. Not included from the
+  original proposal: retention by default, a new chunked write format, and
+  predicted revision parents; the first two would change what is stored or
+  deleted without anyone choosing it, the third was not proven equal.
+  macOS and Linux behaviour is covered by CI only.
+
+## 0.3.0-beta.128 — publication tracked separately
+
+- Fixed: a store whose pointer was written before `minimumReader` existed
+  (the beta.80 shape: a layout this reader understands, no `minimumReader`
+  or `writer`) is read again instead of `STORAGE_VERSION_MISMATCH`. Refresh
+  records `minimumReader` and `writer` on the pointer only, under its writer
+  lease, and keeps the World pointer's link to the Graph pointer in step.
+  Storage GC reads such a pointer and leaves it as it is. Snapshot files,
+  record ids, hashes and source text are not rewritten. The first refresh
+  of such a store answers from a shorter comparison (sources, git head,
+  product canon) and does not rebuild; the next one compares everything. An
+  explicit null, an unusable or a higher `minimumReader` is still a
+  mismatch, and the message says it is a version mismatch and not corrupted
+  storage, also for a downgrade, and how to recover. Tested against a store
+  written by the beta.80 commit.
+- Fixed: snapshot GC no longer gives up when walking a large store takes
+  more than 30 seconds in total. Each plain Git command keeps its own limit;
+  the pack step has none and stops on cancellation. macOS APFS and HFS
+  volumes qualify for collection; FAT, network and unknown volumes stay
+  preserved. A dry run says when it did not open the typed backends, and it
+  still reports a retained World or Graph snapshot that is neither a file
+  nor a ref of the Git store. A watcher probe file left behind is not in
+  its way.
+- Changed: refresh does less for inputs that did not change.
+  - When everything a refresh reads is as the published World recorded it,
+    refresh answers `unchanged` without rebuilding the World and Graph and
+    without writing a snapshot. After an edit, an untouched file keeps its
+    verified digest and analysis and is not read again.
+  - A file counts as untouched only by a stat (size, modification and change
+    time, inode, device) taken before the read that produced its digest and
+    confirmed after it. A file saved while a refresh runs is read again by
+    the next refresh. A modification time without a sub-second part is not
+    trusted until two seconds have passed.
+  - The other inputs are recorded as they were before the scan and the build
+    read anything: the project store outside snapshots, the local git head
+    and refs (also in a linked worktree), the files of the snapshot stores,
+    the number of files the scan skips per reason, the selected Session, and
+    the analysis and plugin versions. A record saved or a commit made while
+    a refresh runs, a new binary or over-size file, a lost snapshot file or
+    a plugin upgrade each send the next refresh down the full path.
+  - A full refresh that finds nothing changed renews that record. A build
+    given its own store, projection, history, runtime state, scan or
+    in-memory projection writes none and always takes the full path.
+  - A refresh that would publish a World other than the previewed one is
+    still refused before any pointer moves (`REFRESH_PREVIEW_DRIFT`).
+- Fixed: the filesystem refresh watcher reports `ready` once the operating
+  system has delivered an event for its own probe file, because macOS drops
+  changes made before the stream listens. The probe has a bounded number of
+  attempts and reports `not-armed` when no event arrives.
+- Changed: a worker job file whose timestamps move while it is read is
+  accepted only when a second read gives the same bytes and the timestamps
+  have stopped moving. Changed bytes are still a conflict.
+- Limits: the two files under `refresh/` are caches. Deleting them costs one
+  full refresh and nothing else. A real edit still builds and stores a new
+  snapshot. An unchanged answer now also stats every file of the snapshot
+  stores, which costs more on a large store than the first measurements of
+  this change. macOS and Linux behaviour is covered by CI only. Several
+  states of this change before merge answered `unchanged` for a changed
+  input (a file saved during a refresh, a commit in a linked worktree, a
+  record saved during a build); they were found in review and fixed.
+
+## 0.3.0-beta.127 — publication tracked separately
+
+- Added: the Graph Explorer opens on where the work stands, shows the
+  product graph, and an agent can ask the product graph.
+  - One exported file, four views. Status comes first: what the project is
+    for (marked as set by the user), Sessions with something to look at
+    first, and pending work and unknowns collected across Sessions. Then the
+    product graph, its gaps, and the existing map, unchanged, behind its tab
+    and a link.
+  - Pending work is shown as finished only when a later record of the same
+    Session says so for the same item. A Session that ended, a later record
+    with nothing pending, or a pass never closes it. A cancelled item has
+    its own state. A record whose text arrived only in part says so.
+  - The product graph is an indented tree walked one step at a time with
+    the path shown: 유저 활동 → 화면요소 → 기능 → 코드 with documents, 기능 by
+    kind without them. Estimates are marked on every node and edge they
+    touch and never look approved. With no build the view says "없음, 빌드
+    필요" and shows no sample.
+  - The gaps view shows what `check.txt` says, in its order and numbers.
+    "검사 못 함" never looks like "0건".
+  - New options: `--view status|product|gaps|map` and `--lang en|ko`
+    (default `en`). The product graph words are shown as they are in both
+    languages; the map view stays English. A plain click now selects one
+    record, Ctrl/Cmd or Shift adds. Light and dark follow the device.
+  - `product-graph-query` (CLI) and `lode_product_graph_query` (through
+    `lode_tools_call`) answer from the existing build without building:
+    overview, one node, one step down or up, the code a 기능, 화면요소, 유저
+    활동 or 화면 reaches or the 기능 that reach a file, find, gaps, and
+    changes. Every answer starts with whether the build is still the source
+    as it is now, how much of the calls resolved, and what changed since the
+    baseline. Output is paged and says how much remains. The text is also
+    the text board of the page.
+- Added: the product graph build compares with a baseline instead of only
+  replacing its output.
+  - Every node carries a content hash (a declaration by the text of its
+    lines, a 기능 by its kind, handling and handlers plus a second hash over
+    all code it reaches). Hashes are attributes; IDs do not change. Line
+    endings and moving a declaration inside its file change no hash.
+  - `build/baseline.json` is taken by the first build. Later builds compare
+    with it and do not move it, so building again keeps showing everything
+    that changed. Only `product-graph-baseline` moves it; it refuses a build
+    that is not the current source and says what the move drops.
+  - The comparison uses the original's four words per node, 변화 없음 / 변경
+    / 신규 / 사라짐, adds 닿는 코드가 바뀜 for a 기능 whose reached code
+    changed, pairs a vanished and a new node with the same content as
+    "옮겨졌을 수 있음", and names a changed rules file or reader first.
+  - "다시 볼 것" lists the 뜻 lines and document rows that hang on what
+    changed. It reports only: no document, 뜻 line or approval is changed,
+    and an approved document keeps its approval with a mark.
+  - The build still reads all source every time. What is new is the
+    comparison, its result and the baseline. All new values live in the
+    generated `build/` folder; builds made by 0.3.0-beta.124–126 stay
+    readable, and an unknown build shape is answered with
+    `PRODUCT_GRAPH_BUILD_UNREADABLE`.
+- Limits: a moved or renamed file is 사라짐 plus 신규 with a hint, not one
+  identity. A 뜻 line or an approval does not record what it was written
+  from, so "look again" is relative to the baseline. A newly added non-code
+  entry file is not seen as a stale build until the next build. On Lode
+  itself the build takes about 5 seconds and the baseline is 1.7 MB; the
+  exported file grows by the size of the product graph (the author measured
+  20.7 MB to 23.1 MB). Not checked with a screen reader, and the light
+  theme was checked by token contrast, not by eye.
+
+## 0.3.0-beta.126 — publication tracked separately
+
+- Changed: the product graph says what a call is, and resolves the calls a
+  scan can resolve without type information. The source scan it shares
+  with the World model and the project graph reads imports and members it
+  missed before.
+  - Imports are read whatever their layout. A JavaScript `import { … }`
+    list spread over several lines was not read as bindings at all, and
+    neither was a Python `from x import ( … )` list or a backslash
+    continuation. On Lode itself that was about 1,500 import names.
+  - Members are declarations: methods of a JavaScript or TypeScript class
+    (including static, async, generator, getter, setter and `#private`),
+    class fields that hold a function, classes written as expressions, an
+    anonymous default class, and the function members of an object
+    literal bound to a module-level name. A method definition is no longer
+    counted as a call, and neither is a TypeScript signature without a
+    body.
+  - Calls resolved from the text alone: `this.x()` and `self.x()` inside
+    the class, a static method on the class, a member of a module-level
+    object, and `v.x()` where `v` is a constant created once by `new C()`.
+    `new C()` reaches the class and its constructor. A name hidden by a
+    parameter or a local variable is not resolved, inheritance is not
+    followed, and nothing is resolved because a method name happens to be
+    unique.
+  - A module-level value that is called, such as
+    `const fail = failWith("X")`, is a 코드 node of kind 값, and it refers
+    to the calls in its initialiser.
+  - Re-exports are followed to the declaration: `export { a, b as c }
+    from`, `export * from`, `export { default } from`, and an export list
+    that names an import.
+  - Calls that cannot be product code are counted apart: members of
+    built-in namespaces (`JSON.x`), built-in functions and constructors
+    (`String`, `new Map`), and method names that nothing in the product
+    defines. The names are a table per language that a project rule can
+    extend. A call is counted as built-in only when no spelling in the
+    product could define that member; otherwise it stays under "받는 쪽
+    타입을 모름".
+  - A call to a function held in a parameter or a local variable has a
+    reason of its own, and so does a member that may be inherited.
+  - The limits block gives three numbers: all calls; calls that cannot be
+    product code and calls into modules outside the product; and how many
+    of the calls that can be product code resolved. On Lode itself: 65,108
+    calls, 20,196 that cannot be product code, 5,753 into outside modules,
+    and 27,689 of the remaining 39,159 resolved. Before, the text said
+    21,963 of 62,294.
+  - With `"처리 코드": "항목"`, the call that performs a registration
+    (`registry.register("x", run)`) is not read as the handler; its
+    arguments are.
+  - The Go worker's copy of the scan has the same import and member rules.
+    Source analysis version 0.3.3: stored scans of earlier versions stay
+    readable and are analysed again, so the next World build scans every
+    file once. No stored format changes.
+- Limits: there is still no type information, so 10,413 calls on Lode stay
+  under "받는 쪽 타입을 모름" because their method name also exists in the
+  product. Not read: members of nested or unbound object literals,
+  computed and quoted member names, names created at run time, and a
+  TypeScript call with explicit type arguments. Three rare inputs give
+  different results in the Go and JavaScript scans and are listed in the
+  pull request: a file with more than 10,000 declarations, two same-named
+  members on one line, and nested declarations on one line. The shared
+  scan takes about 1.5 times as long as before on Lode's repository and
+  the product graph build about 1.4 times. Measured on Lode and on
+  synthetic class-based code only, not on a real class-based product.
+
+## 0.3.0-beta.125 — publication tracked separately
+
+- Fix: the source scan no longer loses declarations and calls after text it
+  misread. It is the scan behind the World model, the project graph and the
+  product graph's 코드 layer.
+  - Before, a template literal inside another template's `${…}`, or a
+    regular expression containing a quote or a backtick, flipped the scan's
+    idea of what is a string. Everything up to the next matching quote,
+    sometimes hundreds of lines, was skipped. In Lode's own `scripts/`, 207
+    of 3,619 top-level functions were not found, in 27 files; now 6 are not,
+    and those 6 really are inside strings.
+  - JavaScript and TypeScript are now read by one lexer that follows nested
+    `${…}`, regular-expression literals and comments. The product graph
+    already used it, so the two no longer disagree. Code inside a
+    template's `${…}` is read as code. Python is read as before.
+  - Generator declarations (`function* name`) are found.
+  - Text inside a string, a regular expression or a template that only
+    looked like a declaration is no longer reported as one.
+  - When the lexer cannot trust its reading of a file (the file ends inside
+    a template, a block comment or `${…}`), a character counts as code if
+    either the lexer or the earlier quote scan says so, so the rest of the
+    file is not dropped.
+  - The Go worker's copy of the scan has the same change, and the shared
+    corpus has a parity file with CRLF line ends, a non-BMP character and a
+    no-break space.
+  - Source analysis version 0.3.2. Stored scans of 0.3.1 stay readable and
+    are analysed again instead of being reused, so the next World build
+    scans every file once. No stored format changes.
+- Fix (product graph, since 0.3.0-beta.124): with `"처리 코드": "항목"`, a
+  table row containing a template literal with `${…}` made every 기능 of
+  that table take the handlers of the whole table. The `${` that opens a
+  template expression is no longer counted as a bracket.
+- Limits: scanning Lode's own repository takes about 1.2 times as long as
+  before. A file read with reduced confidence is listed by the product
+  graph but is not marked in the World model's stored scan. On Lode itself
+  the product graph now resolves 21,963 of 62,294 calls. The Go change was
+  not compiled or run locally; CI builds and tests it and compares its
+  output with the JavaScript scan.
+
+## 0.3.0-beta.124 — publication tracked separately
+
+- New: 제품 그래프 (product graph), a second description of a product next to
+  the existing Product Model, which is unchanged. It starts from the
+  product's user and goes down to the code: 제품코어 → 유저 활동 → 화면 →
+  기능 → 코드. Definitions are in `docs/product-graph.md`, use in
+  `docs/product-graph-usage.md`.
+  - Store: `.lode/context/product-graph/` holds the documents people write
+    (제품 정의서, 유저 저니맵, 화면설계서, 유저플로우 기획서, `정책.md`,
+    `기능 뜻.md`, `호출 방식 표.json`) and approval records under `승인/`.
+    Generated output goes to `build/` and is rebuilt, never carried.
+  - 기능 and 코드 are read from the code by script. A 기능 is one entry
+    point: a hook, a command, an MCP tool, a CLI command, or a place where
+    a UI wires a user's signal to code. UI toolkits are entries of one
+    pattern table, so a project adds a toolkit, a tool table or a command
+    table with a rule and no change to Lode's code.
+  - A tool or CLI rule can take a 기능's 처리 코드 from its own table row
+    (`"처리 코드": "항목"`): a function named as a value, a call inside an
+    inline function, or a member taken from a dynamic import with a literal
+    path. That form of dynamic import is now followed everywhere calls are
+    read.
+  - The user-side nodes come only from documents. A document counts as 승인
+    only while an approval record exists for its current text; a document
+    changed after approval is shown as 승인 뒤 바뀜 and is not used as
+    approved. The approval digest is taken over the text (one leading BOM
+    dropped, line endings as LF, NFC), so another machine's line endings do
+    not drop approvals; any visible change does. An approval record is the
+    record of the user's word, not a security boundary.
+  - `product-graph-check` prints the six consistency checks. Each ends in
+    findings, `0건`, or `검사 못 함: <이유>`; a check that could not run
+    never prints `0건`. With inputs missing, a short guide says what to
+    write and what each input unlocks.
+  - Build and check start with one block that says what the graph cannot
+    answer: how the code was read, how many calls were resolved, what is
+    not extracted, and how many documents are approved. They also list the
+    code no 기능 reaches, unresolved calls by reason, 기능 whose 처리 코드
+    was not found (with the reason), and wiring that was not taken as a
+    기능.
+  - Node IDs are name structure and never contain a line number. A build
+    never rewrites `기능 뜻.md` or `정책.md`; a line whose 기능 disappeared
+    is listed, not removed. Two builds of the same input are byte-identical.
+  - Commands: `product-graph-build`, `product-graph-check`,
+    `product-graph-approve`; through MCP, the grouped tool
+    `lode_product_graph` via `lode_tools_call`. Build and check also work
+    on a folder that is not a Lode project and then write only to the given
+    output folder.
+  - Portable export, import and folder-copy adoption say what they carried
+    of this folder and name what they left out. Snapshot GC keeps files it
+    does not recognise in this folder and names them; a broken approval
+    record or a link there still stops the collection.
+- Limits: the code is read by a regex scan with no syntax tree and no type
+  information. On Lode itself 19,530 of 55,626 calls resolve to one
+  declaration, and the list of unreached code is bounded by that. 데이터,
+  외부 연결, DB, 계측 이벤트, navigate and the C4 grouping are not
+  extracted. The Graph Explorer does not show this graph yet. JS/TS
+  decorators above class methods are not read. The source scan shared with
+  the World model misses some declarations after a nested template string
+  or a regular expression containing a quote (207 of 3,613 top-level
+  functions in Lode's own scripts); that is not fixed here. Not verified on
+  macOS or Linux; file symbolic links were not exercised on Windows.
+
+## 0.3.0-beta.123 — publication tracked separately
+
+- Windows: every Hook that touches the private prompt reference
+  (UserPromptSubmit, Stop, PreCompact) takes about 0.25 to 0.3 seconds less.
+  - The permission helper now starts with a short command line that never
+    changes. Its request and its script arrive on standard input instead of
+    on the command line. On the measured machine the first child a process
+    starts with a long command line takes about 0.25 to 0.3 seconds longer,
+    and every Hook is a new process, so every such Hook paid that.
+  - Every permission check is the same as before, nothing is remembered from
+    one Hook to the next, and a failed check still stores nothing.
+  - The helper runs its script only when the text it received ends with the
+    script's fixed end marker. A script that arrives cut off is refused
+    before any of it is parsed or run, and the operation stores nothing.
+    Cutting the shipped script at each of its 7,889 incomplete lengths gave
+    the same refusal every time, with no output and nothing created.
+  - Measured with the real Hook process on Windows 11, before and after, on
+    a quiet machine: Claude Code prompt 0.85-1.17 s to 0.63-0.68 s; Codex
+    prompt 0.81-0.94 s to 0.57-0.62 s; Stop with new assistant text
+    0.80-1.15 s to 0.56-0.66 s; Stop with unchanged text 0.76-1.06 s to
+    0.48-0.50 s; PreCompact 0.78-0.92 s to 0.53-0.57 s. A second set on a
+    busier machine was slower on both sides and showed the same difference.
+    The number of helper starts per Hook is unchanged, and so is what is
+    stored.
+  - The Hook times with queued mail in the conversation-messaging document
+    were measured again.
+- Limits: measured on one Windows 11 machine. Why a long command line costs
+  that time there was not established; a machine without that cost is
+  expected to gain nothing and lose nothing, which was not measured. macOS
+  and Linux do not use the helper. Only the Korean console code page was
+  used.
+
+## 0.3.0-beta.122 — publication tracked separately
+
+- Windows: the UserPromptSubmit, Stop and PreCompact Hooks take about half
+  as long.
+  - Each prompt-reference operation (capturing a prompt, capturing the
+    visible assistant text, freezing before compaction) starts the
+    permission helper once instead of twice: the store directory, the
+    existing file and the new temporary file are checked or created in one
+    request. Every check is the same as before, nothing is remembered from
+    one Hook to the next, and a failed check still stores nothing.
+  - A Claude Code prompt no longer waits for its process lookup before the
+    capture starts; the two run at the same time and the stored observation
+    is unchanged.
+  - Measured with the real Hook process on Windows 11, before and after:
+    Claude Code prompt 1.7-2.3 s to 0.9-1.1 s; Codex prompt 1.3-1.7 s to
+    0.8-1.1 s; Stop with new assistant text and PreCompact 1.3-1.7 s to
+    0.8-1.0 s. Stop with unchanged text stays at about 0.8 s. SubagentStop
+    and folders without Lode still start no helper (about 0.15 s). The very
+    first operation in a new state folder needs one extra helper call.
+- Windows: the private prompt reference now works when the state folder
+  path contains non-ASCII characters, for example an account whose profile
+  folder has a Hangul or accented name. Before, the permission helper
+  received a damaged path, refused it, and no prompt reference was ever
+  stored, without any message.
+- Correction to 0.3.0-beta.121: the "2.3 to 2.5 seconds" given there for the
+  Windows prompt Hook with no mail was measured with a substitute user
+  profile, which makes PowerShell start slower. With the real profile it
+  was 1.7 to 2.1 seconds.
+- Limits: timings were measured on one Windows 11 machine. macOS and Linux
+  do not use the helper and were not timed. The non-ASCII fix was checked
+  with a state folder under Hangul, accented and emoji directory names on a
+  Korean-locale console, not with a real non-ASCII account or another
+  console code page.
+
+## 0.3.0-beta.121 — publication tracked separately
+
+- Queued conversation mail no longer waits for the recipient's next prompt.
+  - Claude Code and Codex: when the recipient's main session ends a turn, its
+    Stop Hook hands over mail queued for its own address and the Host
+    continues the same turn with it. `SubagentStop` and subagent Stops never
+    take the parent's mail. Claude Code needs version 2.1.163 or later for
+    the turn to continue; on an older version the mail is recorded as handed
+    over but the turn ends.
+  - Lode sets no limit on how many times in a row a turn continues this way.
+    Two sessions that keep answering each other keep running until a person
+    interrupts them or the Host stops them (Claude Code ends the turn after
+    eight Stop-hook continuations in a row).
+  - A send that finds the recipient's live channel first hands over that
+    recipient's older queued mail, oldest first, then its own message (at
+    most 10 older messages and 3 seconds per send). The result reports
+    `earlier` with `handed`, `unknown` and `queued` counts.
+  - A resumed Claude Code or Codex session registers its own running process,
+    so a live send reaches it instead of the process it replaced.
+  - OpenCode: the plugin scans the inbox once when its watcher starts and
+    delivers a session's queued mail when that session reports idle.
+- One hand-over carries only as many messages, oldest first, as fit the
+  Host's hook text limit (Claude Code 10,000 characters; Codex 10,000 UTF-8
+  bytes, which is about 3,300 Hangul characters). The rest stays queued for
+  the next Stop or prompt, and the last line says how many remain. A single
+  longer message is still handed over, and the Host then shows a preview and
+  a file path.
+- The Stop and UserPromptSubmit Hook timeout is 15 seconds instead of 3. Mail
+  is claimed only within 6 seconds of the Hook process start; later than
+  that it stays queued. On Windows the prompt Hook itself already took 2.3 to
+  2.5 seconds with no mail, which the old timeout barely covered.
+- A mailbox lock left behind by a stopped Hook no longer makes the next
+  pick-up skip its mail once.
+- Limits: a live Host continuing a turn from the Stop Hook was checked
+  against the Hosts' documentation and source and with the real Hook process,
+  not in a live Claude Code or Codex session. Timings were measured on
+  Windows only.
+
+## 0.3.0-beta.120 — publication tracked separately
+
+- Published work documents (Obsidian vault, Notion) are laid out for the person
+  who reads them.
+  - Documents sit in a tree, `Lode/<product>/<feature group>/<feature>/`, with
+    one new file per result inside the feature folder. Folder and file names
+    are readable titles instead of hashes. Product, group and feature folder
+    documents carry the lists; there are no per-task start or notes documents.
+  - Human documents no longer contain management lines (identity lines,
+    markers, basis hashes, internal ids). That information is in a separate
+    evidence document an agent can open, and the human document links to it.
+  - `lode_work_document_prepare` accepts `feature_keys`. A feature the user
+    named wins; otherwise the agent picks among the Product model's features.
+    A result with no known feature goes to `소속 미확인/` and the rejected
+    keys are reported.
+  - Publications made with the earlier layout are not rewritten or moved. The
+    old start document receives one link to the new tree. Renaming or moving a
+    feature in the Product model never moves existing folders.
+  - A document a person edited is not overwritten: only Lode's own lists in it
+    are updated and the edit is reported. A document brought back to exactly
+    Lode's text is Lode's again.
+- A failed write no longer stops later publications.
+  - Obsidian files: a create or update whose outcome is unknown is settled by
+    looking at the file. Absent or still the old text: written again. Lode's
+    text: adopted. Any other content: treated as the person's file or edit
+    and left alone. This replaces "never write again" for vault files only.
+  - Notion keeps the rule that the same unverified change is not sent again.
+    A page update whose outcome is unknown now holds back only its own
+    document, reported as `update-unconfirmed`, while the rest of the
+    publication goes on; the next publication that wants a different text for
+    that document sends a new change made from the page as it is.
+  - Limits: a Notion document whose wanted text never changes again stays
+    `update-unconfirmed` and is reported on every publication. A Notion create
+    whose outcome cannot be confirmed is reported with its recovery limit and
+    has no way out yet. Notion behaviour was exercised against a synthetic
+    server only, not against the live service.
+
 ## 0.3.0-beta.119 — publication tracked separately
 
 - Managed files whose only difference from the recorded bytes is their line

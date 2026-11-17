@@ -9,11 +9,22 @@ import { normalizeProductModelDocument } from "../world/product-model.mjs";
 import { verifyRecoveryCheckpointOriginal } from "../session/compaction-recovery.mjs";
 import { lineageArtifactRelativePath, verifyLineageArtifactOriginal } from "../runtime/execution-lineage.mjs";
 import { sha256Hex } from "../core/digest.mjs";
+import { verifyProductGraphCanonOriginals } from "./product-graph-store.mjs";
 import { failCode as fail } from "../core/errors.mjs";
 
 // Shared source-data verifier. It neither selects a Core owner nor resolves an
 // historical root on disk. read/has/list address an already chosen source.
-export function verifySelectedProjectOriginals({ directory, project, selectedSessionPath, selectedSessionId = null, read, has, list, verifyRunOwner = null }) {
+export function verifySelectedProjectOriginals({
+  directory,
+  project,
+  selectedSessionPath,
+  selectedSessionId = null,
+  read,
+  readBytes,
+  has,
+  list,
+  verifyRunOwner = null,
+}) {
   if (![".lode", ".head"].includes(directory)) fail("PROJECT_COPY_PATH_INVALID");
   const format = { dialect: directory === ".lode" ? "lode" : "head", directory };
   const directionPath = directory + "/project-direction/current.json";
@@ -24,6 +35,10 @@ export function verifySelectedProjectOriginals({ directory, project, selectedSes
   } else if (list(directory + "/project-direction/revisions").some((name) => /^direction-.*\.json$/.test(name))) fail("PROJECT_DIRECTION_UNAVAILABLE");
   validateKnowledge(read(directory + "/context/knowledge.json"));
   normalizeProductModelDocument(read(directory + "/context/product-model.json"), format);
+  // The product graph family is user-owned Canon next to product-model.json:
+  // its documents, policy and meaning lines, entry rules and approvals travel
+  // and are verified with it. Generated build output is not Canon.
+  const productGraph = verifyProductGraphCanonOriginals({ directory, list, readBytes, projectId: project.projectId });
   const sessionRelative = selectedSessionPath;
   if (
     typeof sessionRelative !== "string" ||
@@ -158,6 +173,7 @@ export function verifySelectedProjectOriginals({ directory, project, selectedSes
   return {
     status: "source-originals-verified",
     sessionId: state.sessionId,
+    productGraph,
     ordinaryCoreRestored: false,
     grantsOwnership: false,
   };
@@ -178,6 +194,13 @@ export function inspectCopiedProjectCanon({ root, directory, project, selectedSe
     originals.set(relative, observed);
     return document;
   };
+  const readBytes = (relative) => {
+    const observed = inspectCopiedProjectFile(root, relative),
+      bytes = fs.readFileSync(copiedProjectFile(root, relative));
+    if (sha256Hex(bytes) !== observed.sha256) fail("PROJECT_COPY_SOURCE_CHANGED");
+    originals.set(relative, observed);
+    return bytes;
+  };
   // Retain the existing trace/lost-pointer diagnostics, including tmp records.
   inspectProjectDirectionOriginalFiles({ root, directory, project });
   const selectedSessionPath = selectedSession?.stateFile
@@ -189,6 +212,7 @@ export function inspectCopiedProjectCanon({ root, directory, project, selectedSe
     selectedSessionPath,
     selectedSessionId: selectedSession?.sessionId,
     read,
+    readBytes,
     verifyRunOwner(runId, run) {
       const relative = directory + "/sessions/runs/" + runId + "/run.json";
       const raw = fs.readFileSync(copiedProjectFile(root, relative));

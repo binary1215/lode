@@ -7,10 +7,10 @@ import { initializeProject } from "../scripts/lib/session/lode-core.mjs";
 import { createHeadSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
 import { recordSessionWorkEvidence } from "../scripts/lib/session/session-work-context.mjs";
 import { projectDocumentStore, workDocumentStore } from "../scripts/lib/world/work-document-store.mjs";
-import { readProjectDocumentBasis, renderProjectDocumentPage } from "../scripts/lib/storage/project-document-hierarchy.mjs";
+import { readProjectDocumentBasis } from "../scripts/lib/storage/project-document-hierarchy.mjs";
 import { createNotionWorkDocumentAdapter, documentDestinationIdentity } from "../scripts/lib/world/work-document-destinations.mjs";
-import { configureWorkDocuments, prepareWorkDocuments } from "../scripts/lib/world/work-document-publication.mjs";
-import { prepareProjectDocuments, publishProjectDocuments, projectDocumentStatus } from "../scripts/lib/storage/project-document-publication.mjs";
+import { configureWorkDocuments, prepareWorkDocuments, publishWorkDocuments } from "../scripts/lib/world/work-document-publication.mjs";
+import { prepareProjectDocuments, publishProjectDocuments, projectDocumentStatus } from "../scripts/lib/world/project-document-publication.mjs";
 import { recordSessionWorkAndProjectDocuments } from "../scripts/lib/session/session-work-document-workflow.mjs";
 import { createDocumentEffectWriter } from "../scripts/lib/world/work-document-effect-writer.mjs";
 import { workDocumentHash } from "../scripts/lib/world/work-document-source.mjs";
@@ -117,24 +117,9 @@ test("actual Canon DAG, shared decision and multi-feature Session remain linked 
   const unclassified = find("Work", `${second.sessionId}/${second.evidenceId}`);
   assert.deepEqual(unclassified.data.unresolvedFeatureKeys, ["unknown-feature"]);
   assert.ok(find("unclassified", "unclassified").children.includes(unclassified.id));
-  for (const audience of ["human", "agent"]) {
-    const view = renderProjectDocumentPage(basis, { nodeId: workNode.id, audience });
-    assert.match(view.markdown, /모바일 검증과 외부 배포는 실행하지 않았습니다/);
-    assert.match(view.markdown, /중복 요청 가능성을 남겨둡니다/);
-    assert.match(view.markdown, /사용자 승인 원문이 아닙니다/);
-    const featureView = renderProjectDocumentPage(basis, { nodeId: find("Feature", "fa").id, audience });
-    assert.match(featureView.markdown, /계정을 입력한 뒤 로그인합니다/);
-    assert.match(featureView.markdown, /모바일 검증·배포는 미실행입니다/);
-    for (const page of basis.nodes)
-      for (const match of renderProjectDocumentPage(basis, { nodeId: page.id, audience }).markdown.matchAll(/lode-doc:(human|agent):([a-f0-9]{64})/g)) {
-        assert.ok(
-          basis.nodes.some((node) => node.id === match[2]),
-          "every generated navigation target exists",
-        );
-      }
-  }
-  const human = renderProjectDocumentPage(basis, { nodeId: find("Feature", "fa").id, audience: "human" }).markdown;
-  assert.doesNotMatch(human.slice(0, 300), /HEAD|Canon|constraints|Logical page:/);
+  // How these facts read once published is covered by the publication tests below.
+  assert.equal(workNode.data.content.pending[0], "모바일 검증과 외부 배포는 실행하지 않았습니다.");
+  assert.equal(find("Feature", "fa").narrative.useFlow, "계정을 입력한 뒤 로그인합니다.");
   assert.equal(basis.authority.recoveryAuthority, false);
 });
 
@@ -152,7 +137,6 @@ test("renaming does not change logical page identity; current ownership changes 
   assert.equal(fresh.title, "새 로그인 이름");
   assert.equal(fresh.parents.length, 1);
   assert.equal(after.nodes.find((n) => n.id === fresh.parents[0]).key, "g2");
-  assert.notEqual(renderProjectDocumentPage(before, { nodeId: old.id }).viewId, renderProjectDocumentPage(after, { nodeId: fresh.id }).viewId);
 });
 
 test("actual absence allows unclassified work; malformed Canon and permission denial preserve primary failure", (t) => {
@@ -243,12 +227,25 @@ async function finish(f, prepared, sessionId = f.a, targetId = "docs", extra = {
   }
   assert.fail("Bounded continuation made no terminal progress");
 }
+async function publishResult(f, projectionId, targetIds = ["docs"], sessionId = f.a, adapters) {
+  for (let i = 0; i < 8; i++) {
+    const result = await publishWorkDocuments({ root: f.root, sessionId, projectionId, targetIds, adapters });
+    if (result.status !== "continuation-required") return result;
+  }
+  assert.fail("Result publication made no terminal progress");
+}
 function vaultFiles(directory) {
   return fs
     .readdirSync(directory, { withFileTypes: true })
     .flatMap((entry) => (entry.isDirectory() ? vaultFiles(path.join(directory, entry.name)) : [path.join(directory, entry.name)]));
 }
-test("project scope is explicit; real vault navigation, rich reading, notes and same-basis replay remain separate", async (t) => {
+const assertVaultLinks = (vault) => {
+  for (const file of vaultFiles(vault))
+    for (const match of fs.readFileSync(file, "utf8").matchAll(/\]\(([^)]+\.md)\)/g))
+      assert.ok(fs.existsSync(path.resolve(path.dirname(file), decodeURIComponent(match[1]))), "real relative link exists: " + file + " -> " + match[1]);
+};
+const productDir = (f, title = "same-name") => path.join(f.vault, "Lode", title);
+test("project scope is explicit; the tree navigates; a reading's result is linked from 작업 기록; same-basis replay changes nothing", async (t) => {
   const f = fixture(t),
     record = f.save(f.a, "로그인 동작을 설명했습니다.");
   const pair = await prepareWorkDocuments({
@@ -257,6 +254,7 @@ test("project scope is explicit; real vault navigation, rich reading, notes and 
     title: "로그인 근거",
     taskEvidenceId: record.evidenceId,
     evidenceIds: [record.evidenceId],
+    featureKeys: ["fa"],
   });
   connect(f, f.a, "docs", false);
   const prepared = await prepareProjectDocuments({
@@ -276,80 +274,75 @@ test("project scope is explicit; real vault navigation, rich reading, notes and 
     expectedConfigurationDigest: current.configurationDigest,
     targets: [{ id: "docs", kind: "obsidian", vaultRoot: f.vault, automatic: false, todoIds: [], projectDocuments: true }],
   });
+  assert.equal((await publishResult(f, pair.projectionId)).status, "published");
   await finish(f, prepared);
   const files = vaultFiles(f.vault),
     project = projectDocumentStatus({ root: f.root, sessionId: f.a }).destinations[0].current;
-  assert.ok(files.length > 20);
   assert.equal(project.remoteCAS, false);
-  for (const file of files)
-    for (const match of fs.readFileSync(file, "utf8").matchAll(/\]\(([^)]+\.md)\)/g)) {
-      assert.ok(fs.existsSync(path.resolve(path.dirname(file), decodeURIComponent(match[1]))), "real relative link exists: " + file + " -> " + match[1]);
-    }
+  assert.equal(project.layoutVersion, 2);
+  assert.ok(
+    files.every((file) => file.startsWith(productDir(f, "같은 제품") + path.sep)),
+    "everything lives in the product folder",
+  );
+  assertVaultLinks(f.vault);
+  assert.ok(!files.some((file) => /^(Start|Notes)\.md$/.test(path.basename(file))));
+  const records = fs.readFileSync(path.join(productDir(f, "같은 제품"), "작업 기록", "작업 기록.md"), "utf8");
+  assert.match(records, /### 로그인 동작을 설명했습니다\./);
+  assert.match(records, /\[로그인 근거 결과 1\]\(\.\.\/계정|\[로그인 근거 결과 1\]\(\.\.\/%EA%B3%84%EC%A0%95/);
   assert.ok(files.some((file) => fs.readFileSync(file, "utf8").includes("정확한 변경 전후 비교는 선택하지 않았습니다")));
-  const notes = files.find((file) => path.basename(file) === "Notes.md");
-  fs.appendFileSync(notes, "\nUser personal notes\n");
+  const conditions = fs.readFileSync(path.join(productDir(f, "같은 제품"), "결정과 조건", "결정과 조건.md"), "utf8");
+  assert.match(conditions, /- \[네트워크 재시도는 사용자가 선택합니다\.\]\([^)]+\) — 결정/);
   const before = new Map(files.map((file) => [file, fs.readFileSync(file)]));
   await finish(f, prepared);
   assert.equal(vaultFiles(f.vault).length, files.length, "same-basis publish creates no new artifacts");
   for (const [file, bytes] of before) assert.deepEqual(fs.readFileSync(file), bytes);
 });
 
-test("unchanged exact view retains its history chain across unrelated work; source and common-direction revisions still make history", async (t) => {
+test("folder documents change in place while unchanged by people; a person's edit is kept and reported; no history copies", async (t) => {
   const f = fixture(t);
   connect(f);
   let prepared = await prepareProjectDocuments({ root: f.root, sessionId: f.a });
   await finish(f, prepared);
-  // Two source changes establish a real multi-step history chain.
+  const feature = path.join(productDir(f), "계정", "보안", "만료 안내", "만료 안내.md");
+  const count = vaultFiles(f.vault).length;
   for (const text of ["First change", "Second change"]) {
-    f.model.features[0].description = text;
+    f.model.features[1].description = text;
     f.write();
     prepared = await prepareProjectDocuments({ root: f.root, sessionId: f.a });
     await finish(f, prepared);
+    assert.match(fs.readFileSync(feature, "utf8"), new RegExp("> " + text));
   }
-  const target = readProjectDocumentBasis({ root: f.root, sessionId: f.a }).nodes.find((node) => node.kind === "Feature" && node.key === "fb").id;
-  const files = () => vaultFiles(f.vault),
-    current = () => files().find((file) => file.endsWith(path.sep + "human" + path.sep + target + ".md"));
-  const history = () => files().filter((file) => path.basename(file).startsWith("history-") && fs.readFileSync(file, "utf8").includes("Feature:fb"));
-  const before = history().length,
-    body = fs.readFileSync(current()),
-    mtime = fs.statSync(current()).mtimeMs;
-  assert.ok(before >= 4, "two real changes have both audience histories");
-  for (const summary of ["A-only evidence one", "A-only evidence two"]) {
-    const record = f.save(f.a, summary);
-    prepared = await prepareProjectDocuments({ root: f.root, sessionId: f.a, workEvidence: [select(record, ["fa"])] });
-    await finish(f, prepared);
-    assert.equal(history().length, before);
-    assert.deepEqual(fs.readFileSync(current()), body);
-    assert.equal(fs.statSync(current()).mtimeMs, mtime, "no write to the unchanged current page");
-  }
-  const original = fs.readFileSync(current(), "utf8");
-  fs.appendFileSync(current(), "\nUser change\n");
-  const extra = f.save(f.a, "A-only evidence three");
-  prepared = await prepareProjectDocuments({ root: f.root, sessionId: f.a, workEvidence: [select(extra, ["fa"])] });
-  const result = await (async () => {
-    for (let i = 0; i < 100; i++) {
-      const outcome = await publishProjectDocuments({ root: f.root, sessionId: f.a, projectionId: prepared.projectionId, targetIds: ["docs"] });
-      if (outcome.status !== "continuation-required") return outcome;
-    }
-    throw Error("No result");
-  })();
-  assert.equal(result.destinations[0].reasonCode, "WORK_DOCUMENT_REMOTE_DRIFT");
-  // Restoring the exact same owned file bytes permits a new observation; no
-  // replacement object or same-title rebind is introduced.
-  fs.writeFileSync(current(), original);
+  assert.equal(vaultFiles(f.vault).length, count, "updates are in place: no history documents");
+  const body = fs.readFileSync(feature),
+    mtime = fs.statSync(feature).mtimeMs;
+  const record = f.save(f.a, "A-only evidence one");
+  prepared = await prepareProjectDocuments({ root: f.root, sessionId: f.a, workEvidence: [select(record, ["fa"])] });
   await finish(f, prepared);
-  const dir = updateProjectDirection({
+  assert.deepEqual(fs.readFileSync(feature), body);
+  assert.equal(fs.statSync(feature).mtimeMs, mtime, "no write to an unchanged document");
+  fs.appendFileSync(feature, "\n사람이 덧붙인 메모\n");
+  f.model.features[1].description = "Third change";
+  f.write();
+  prepared = await prepareProjectDocuments({ root: f.root, sessionId: f.a });
+  const result = await finish(f, prepared);
+  assert.deepEqual(
+    result.destinations[0].personEdited.map((value) => value.document),
+    ["만료 안내"],
+  );
+  const kept = fs.readFileSync(feature, "utf8");
+  assert.ok(kept.endsWith("사람이 덧붙인 메모\n"));
+  assert.ok(!kept.includes("Third change"), "a person's document is not rewritten");
+  updateProjectDirection({
     root: f.root,
     input: { goal: "Synthetic work direction, not Product purpose", constraints: ["Keep the quoted source conditions"], decisions: [], cancelledActions: [] },
   });
-  assert.ok(dir.direction.directionId);
   prepared = await prepareProjectDocuments({ root: f.root, sessionId: f.a });
   await finish(f, prepared);
-  assert.ok(history().length > before, "a different quoted direction original is not deduplicated");
-  assert.match(fs.readFileSync(current(), "utf8"), /공통 조건 원문: direction-/);
+  for (const file of vaultFiles(f.vault).filter((name) => !name.split(path.sep).includes("근거")))
+    assert.doesNotMatch(fs.readFileSync(file, "utf8"), /direction-|[a-f0-9]{64}/, file);
 });
 
-test("shared canonical destination retains A/B contributions; rename keeps page IDs and history and removed membership", async (t) => {
+test("a shared destination keeps A/B contributions; renaming keeps folders, follows titles, and keeps listing the folder where it stays", async (t) => {
   const f = fixture(t),
     a = f.save(f.a, "A 기록"),
     b = f.save(f.b, "B 기록");
@@ -361,39 +354,26 @@ test("shared canonical destination retains A/B contributions; rename keeps page 
   await finish(f, second, f.b, "alias");
   const sa = projectDocumentStatus({ root: f.root, sessionId: f.a }).destinations[0].current;
   const sb = projectDocumentStatus({ root: f.root, sessionId: f.b }).destinations[0].current;
-  assert.equal(sa.homeId, sb.homeId);
-  assert.equal(sa.projectionId, sb.projectionId);
+  assert.equal(sa.productDocument, sb.productDocument);
+  assert.equal(sb.projectionId, second.projectionId);
   f.model.features[0].name = "새 로그인";
   f.model.features[0].featureGroupKeys = ["g2"];
   f.write();
   const third = await prepareProjectDocuments({ root: f.root, sessionId: f.a, workEvidence: [select(a, ["fa"])] });
-  const inProgress = await publishProjectDocuments({ root: f.root, sessionId: f.a, projectionId: third.projectionId, targetIds: ["docs"] });
-  assert.equal(inProgress.status, "continuation-required");
-  const pendingHome = vaultFiles(f.vault).find((file) => path.basename(file) === "Start.md");
-  assert.match(fs.readFileSync(pendingHome, "utf8"), /^# 문서 갱신 중/);
-  assert.equal(projectDocumentStatus({ root: f.root, sessionId: f.a }).destinations[0].current.projectionId, second.projectionId);
   await finish(f, third);
-  assert.doesNotMatch(fs.readFileSync(pendingHome, "utf8"), /^# 문서 갱신 중/);
-  const files = vaultFiles(f.vault),
-    content = files.map((file) => fs.readFileSync(file, "utf8"));
-  assert.ok(
-    content.some((body) => body.includes("B 기록")),
-    "unselected B is retained",
+  const records = fs.readFileSync(path.join(productDir(f), "작업 기록", "작업 기록.md"), "utf8");
+  assert.ok(records.includes("A 기록") && records.includes("B 기록"), "unselected B is retained");
+  const login = path.join(productDir(f), "계정", "로그인", "로그인.md");
+  assert.ok(fs.existsSync(login), "the folder is not moved or renamed");
+  assert.ok(!fs.existsSync(path.join(productDir(f), "계정", "보안", "새 로그인")));
+  const text = fs.readFileSync(login, "utf8");
+  assert.match(text, /^# 새 로그인\n/);
+  assert.match(text, /상위: \[보안\]\([^)]+\)\n/, "parents follow the current model");
+  assert.match(
+    fs.readFileSync(path.join(productDir(f), "계정", "보안", "보안.md"), "utf8"),
+    /- \[새 로그인\]\(\.\.\/%EB%A1%9C%EA%B7%B8%EC%9D%B8\/[^)]+\) — 기능/,
   );
-  assert.ok(files.some((file) => path.basename(file).startsWith("history-")));
-  assert.equal(projectDocumentStatus({ root: f.root, sessionId: f.a }).destinations[0].current.homeId, sa.homeId);
-  const stable = readProjectDocumentBasis({ root: f.root, sessionId: f.a }).nodes.find((n) => n.kind === "Feature" && n.key === "fa").id;
-  assert.equal(files.filter((file) => path.basename(file) === stable + ".md").length, 2, "one stable Feature page per audience");
-  const feature = fs.readFileSync(
-    files.find((file) => file.endsWith(path.sep + "human" + path.sep + stable + ".md")),
-    "utf8",
-  );
-  assert.match(feature, /새 로그인/);
-  assert.doesNotMatch(feature, /lode-doc:/);
-  const currentGroupIds = readProjectDocumentBasis({ root: f.root, sessionId: f.a })
-    .nodes.filter((node) => node.kind === "FeatureGroup" && node.key !== "g2")
-    .map((node) => node.id);
-  for (const id of currentGroupIds) assert.ok(!feature.includes(id + ".md"), "removed memberships are absent from the current Feature page");
+  assertVaultLinks(f.vault);
   const beforeUnknown = projectDocumentStatus({ root: f.root, sessionId: f.a }).destinations[0].current;
   const bOwner = projectDocumentStore({ root: f.root, sessionId: f.b }).caller,
     bPath = path.join(f.root, bOwner.workDirectory, b.evidenceId + ".json"),
@@ -408,7 +388,7 @@ test("shared canonical destination retains A/B contributions; rename keeps page 
   assert.deepEqual(projectDocumentStatus({ root: f.root, sessionId: f.a }).destinations[0].current, beforeUnknown);
 });
 
-test("same-title Projects share one parent and vault without sharing homes, nodes or updates", async (t) => {
+test("same-title Projects share one vault and one Notion parent with separate product folders and pages", async (t) => {
   const a = fixture(t),
     b = fixture(t),
     fake = notionFixture();
@@ -439,44 +419,54 @@ test("same-title Projects share one parent and vault without sharing homes, node
     await finish(f, p);
     await finish(f, p, f.a, "notion", { adapters: { notion: fake.adapter } });
   }
-  const aHome = projectDocumentStatus({ root: a.root, sessionId: a.a }).destinations.find((item) => item.id === "notion").current.homeId;
-  const bHome = projectDocumentStatus({ root: b.root, sessionId: b.a }).destinations.find((item) => item.id === "notion").current.homeId;
-  assert.notEqual(aHome, bHome);
-  assert.equal([...fake.pages.values()].filter((page) => page.parent.page_id === fake.parent).length, 2);
-  const oldB = fake.pages.get(bHome).markdown;
+  const roots = [...fake.pages.values()].filter((page) => page.parent.page_id === fake.parent);
+  assert.equal(roots.length, 2);
+  assert.equal(new Set(roots.map((page) => page.title)).size, 2, "titles under one parent never repeat");
+  assert.deepEqual(
+    fs
+      .readdirSync(path.join(a.vault, "Lode"))
+      .map((name) => name.replace(/ \([a-f0-9]{4,}\)$/, ""))
+      .sort(),
+    ["Same title", "Same title"],
+  );
+  const bPage = roots.find((page) => page.title !== "Same title") || roots[1];
+  const oldB = bPage.markdown;
   a.model.features[0].description = "Only Project A changed";
   a.write();
   const next = await prepareProjectDocuments({ root: a.root, sessionId: a.a, projectTitle: "Same title" });
   await finish(a, next, a.a, "notion", { adapters: { notion: fake.adapter } });
-  assert.equal(fake.pages.get(bHome).markdown, oldB);
-  assert.ok(fs.existsSync(path.join(a.vault, "Lode", pa.projectId, "ProjectDocuments", "Start.md")));
-  assert.ok(fs.existsSync(path.join(a.vault, "Lode", pb.projectId, "ProjectDocuments", "Start.md")));
+  assert.equal(fake.pages.get(bPage.id).markdown, oldB);
+  assert.ok([...fake.pages.values()].some((page) => page.markdown.includes("Only Project A changed")));
 });
 
-test("more than 65 pages progress without prefix restart; stale basis and remote edit preserve prior current", async (t) => {
+test("many documents progress without restarting; a stale basis is refused; a person's edit is reported, not overwritten", async (t) => {
   const f = fixture(t);
   connect(f);
   for (let i = 0; i < 35; i++) f.model.features.push({ key: "extra" + i, name: "항목 " + i, featureGroupKeys: ["g1"], capabilityKeys: [], governedBy: [] });
   f.write();
   const prepared = await prepareProjectDocuments({ root: f.root, sessionId: f.a });
-  assert.ok(prepared.pageCount > 65);
   const initial = await publishProjectDocuments({ root: f.root, sessionId: f.a, projectionId: prepared.projectionId, targetIds: ["docs"] });
   assert.equal(initial.status, "continuation-required");
+  assert.ok(initial.destinations[0].documentCount > 40);
+  const progressed = await publishProjectDocuments({ root: f.root, sessionId: f.a, projectionId: prepared.projectionId, targetIds: ["docs"] });
+  assert.equal(progressed.destinations[0].processed, initial.destinations[0].processed + 3, "no prefix restart");
   f.model.features[0].name = "새 제목";
   f.write();
   const stale = await publishProjectDocuments({ root: f.root, sessionId: f.a, projectionId: prepared.projectionId, targetIds: ["docs"] });
   assert.equal(stale.destinations[0].reasonCode, "PROJECT_DOCUMENT_SOURCE_CHANGED");
   const fresh = await prepareProjectDocuments({ root: f.root, sessionId: f.a });
   await finish(f, fresh);
-  const before = projectDocumentStatus({ root: f.root, sessionId: f.a }).destinations[0].current;
-  const home = vaultFiles(f.vault).find((file) => path.basename(file) === "Start.md");
+  assert.equal(vaultFiles(path.join(productDir(f), "계정")).filter((file) => /항목 \d+\.md$/.test(file)).length, 35);
+  const home = path.join(productDir(f), "same-name.md");
   fs.appendFileSync(home, "\nUser edit\n");
-  const edited = await publishProjectDocuments({ root: f.root, sessionId: f.a, projectionId: fresh.projectionId, targetIds: ["docs"] });
-  assert.equal(edited.destinations[0].reasonCode, "WORK_DOCUMENT_REMOTE_DRIFT");
-  assert.deepEqual(projectDocumentStatus({ root: f.root, sessionId: f.a }).destinations[0].current, before);
+  // A list change reaches an edited document; a title change is withheld and reported.
+  const next = await prepareProjectDocuments({ root: f.root, sessionId: f.a, projectTitle: "새 제품 이름" });
+  const edited = await finish(f, next);
+  assert.ok(edited.destinations[0].personEdited.some((value) => value.document === "same-name"));
+  assert.ok(fs.readFileSync(home, "utf8").endsWith("User edit\n"));
 });
 
-test("automatic project publication follows a saved analysis without Todo or flat task pages; retained narrative does not rebind new Canon", async (t) => {
+test("automatic publication files a saved analysis under its feature without a Todo; a retained narrative is marked as about an earlier original", async (t) => {
   const f = fixture(t);
   configureWorkDocuments({
     root: f.root,
@@ -491,24 +481,28 @@ test("automatic project publication follows a saved analysis without Todo or fla
     }),
   );
   assert.equal(saved.status, "session_work_evidence_recorded");
+  assert.equal(saved.documentProjection.projectDocuments.resultDocuments.status, "published");
   assert.equal(saved.documentProjection.projectDocuments.status, "continuation-required");
   const follow = saved.documentProjection.projectDocuments.followUp;
   await finish(f, { projectionId: follow.projectionId });
-  assert.equal(vaultFiles(f.vault).filter((file) => path.basename(file) === "Start.md").length, 1, "new project scope does not make flat task roots");
+  const results = vaultFiles(path.join(productDir(f), "계정", "로그인")).filter((file) => / 결과 1\.md$/.test(file));
+  assert.equal(results.length, 1, "the result file sits in the chosen feature folder");
+  assert.ok(!vaultFiles(f.vault).some((file) => /^(Start|Notes)\.md$/.test(path.basename(file))), "no per-task Start or Notes documents");
   const first = await prepareProjectDocuments({
     root: f.root,
     sessionId: f.a,
     narratives: [{ kind: "Feature", key: "fa", sourceKeys: ["Feature:fa"], currentBehavior: "로그인 설명 원문을 읽었습니다." }],
   });
   await finish(f, first);
+  const login = path.join(productDir(f), "계정", "로그인", "로그인.md");
+  assert.match(fs.readFileSync(login, "utf8"), /## 현재 동작에 대한 설명\n\n로그인 설명 원문을 읽었습니다\./);
   f.model.features[0].description = "이전과 달라진 원문";
   f.write();
   const next = await prepareProjectDocuments({ root: f.root, sessionId: f.a });
   await finish(f, next);
-  const docs = vaultFiles(f.vault)
-    .filter((file) => !path.basename(file).startsWith("history-"))
-    .map((file) => fs.readFileSync(file, "utf8"));
-  assert.ok(docs.some((body) => body.includes("이전에 선택한 원문") && body.includes("로그인 설명 원문을 읽었습니다")));
+  const text = fs.readFileSync(login, "utf8");
+  assert.ok(text.includes("이전에 선택한 원문") && text.includes("로그인 설명 원문을 읽었습니다"));
+  assert.match(text, /## 이 기능의 결과\n\n- \[/, "the results list survives whole-document updates");
 });
 
 test("damaged optional publication configuration cannot hide or fail an already saved P3 result", async (t) => {
@@ -538,13 +532,18 @@ function notionFixture() {
     if (call.method === "POST") {
       if (fault.reject) return { status: 403, body: { object: "error", status: 403, code: "restricted_resource", message: "Synthetic bounded refusal" } };
       const id = "10000000-0000-4000-8000-" + String(sequence++).padStart(12, "0"),
-        page = { id, parent: { page_id: call.body.parent.page_id }, markdown: call.body.markdown };
+        page = {
+          id,
+          parent: { page_id: call.body.parent.page_id },
+          title: call.body.properties.title.title.map((part) => part.text.content).join(""),
+          markdown: call.body.markdown,
+        };
       pages.set(id, page);
       if (fault.lose) {
         fault.lose = false;
         throw Object.assign(new Error("Synthetic response loss"), { code: "ECONNRESET" });
       }
-      return { status: 200, body: page };
+      return { status: 200, body: { object: "page", id, parent: page.parent } };
     }
     if (url.pathname.includes("/blocks/")) {
       const id = url.pathname.split("/")[3],
@@ -554,7 +553,7 @@ function notionFixture() {
       return {
         status: 200,
         body: {
-          results: chunk.map((page) => ({ id: page.id, type: "child_page" })),
+          results: chunk.map((page) => ({ id: page.id, type: "child_page", child_page: { title: page.title ?? "" } })),
           has_more: offset + 100 < children.length,
           next_cursor: String(offset + 100),
         },
@@ -589,28 +588,28 @@ function notionFixture() {
         return { status: 202, body: { id: "task_fixture", status: "queued", poll_after_seconds: 1 } };
       }
     }
-    return { status: 200, body: match[2] ? { object: "page_markdown", id: page.id, markdown: page.markdown, truncated: false, unknown_block_ids: [] } : page };
+    return {
+      status: 200,
+      body: match[2]
+        ? { object: "page_markdown", id: page.id, markdown: page.markdown, truncated: false, unknown_block_ids: [] }
+        : { object: "page", id: page.id, parent: page.parent, properties: { title: { title: [{ plain_text: page.title ?? "" }] } } },
+    };
   };
   return { parent, pages, calls, fault, adapter: createNotionWorkDocumentAdapter({ parentPageId: parent, request }), request };
 }
-test("actual Notion parent scopes, lost root create after rename, exact refusal retry and no foreign retry effects", async (t) => {
+const notionTarget = (fake) => ({
+  id: "notion",
+  kind: "notion",
+  parentPageId: fake.parent,
+  tokenEnvironment: "LODE_SYNTHETIC_UNUSED",
+  automatic: false,
+  todoIds: [],
+  projectDocuments: true,
+});
+test("Notion: a lost product create after a title change binds the one page; titles follow; foreign and refused retries stay exact", async (t) => {
   const f = fixture(t),
     fake = notionFixture();
-  configureWorkDocuments({
-    root: f.root,
-    sessionId: f.a,
-    targets: [
-      {
-        id: "notion",
-        kind: "notion",
-        parentPageId: fake.parent,
-        tokenEnvironment: "LODE_SYNTHETIC_UNUSED",
-        automatic: false,
-        todoIds: [],
-        projectDocuments: true,
-      },
-    ],
-  });
+  configureWorkDocuments({ root: f.root, sessionId: f.a, targets: [notionTarget(fake)] });
   const first = await prepareProjectDocuments({ root: f.root, sessionId: f.a, projectTitle: "Old name" });
   fake.fault.lose = true;
   const lost = await publishProjectDocuments({
@@ -625,7 +624,8 @@ test("actual Notion parent scopes, lost root create after rename, exact refusal 
   await finish(f, fresh, f.a, "notion", { adapters: { notion: fake.adapter } });
   const roots = [...fake.pages.values()].filter((page) => page.parent.page_id === fake.parent);
   assert.equal(roots.length, 1, "renaming cannot replay the unresolved old create");
-  assert.match(roots[0].markdown, /New name/);
+  assert.equal(roots[0].title, "Old name", "the page keeps the name it was created with");
+  assert.match(roots[0].markdown, /^# New name\n/, "the document title follows the current title");
   for (const page of fake.pages.values())
     for (const link of page.markdown.matchAll(/https:\/\/www\.notion\.so\/([a-f0-9]{32})/g)) {
       assert.ok([...fake.pages.keys()].some((id) => id.replaceAll("-", "") === link[1]));
@@ -644,21 +644,7 @@ test("actual Notion parent scopes, lost root create after rename, exact refusal 
   const another = fixture(t),
     refusal = notionFixture();
   refusal.fault.reject = true;
-  configureWorkDocuments({
-    root: another.root,
-    sessionId: another.a,
-    targets: [
-      {
-        id: "notion",
-        kind: "notion",
-        parentPageId: refusal.parent,
-        tokenEnvironment: "LODE_SYNTHETIC_UNUSED",
-        automatic: false,
-        todoIds: [],
-        projectDocuments: true,
-      },
-    ],
-  });
+  configureWorkDocuments({ root: another.root, sessionId: another.a, targets: [notionTarget(refusal)] });
   const p = await prepareProjectDocuments({ root: another.root, sessionId: another.a });
   const options = { root: another.root, sessionId: another.a, projectionId: p.projectionId, targetIds: ["notion"], adapters: { notion: refusal.adapter } };
   const rejected = await publishProjectDocuments(options);
@@ -673,43 +659,24 @@ test("actual Notion parent scopes, lost root create after rename, exact refusal 
   await finish(another, p, another.a, "notion", { adapters: { notion: refusal.adapter } });
 });
 
-test("Project async updates require terminal success even when the new body is visible; failed task cannot publish or replay", async (t) => {
+test("Project async updates require terminal success even when the new body is visible; a failed task cannot publish or replay", async (t) => {
   for (const disposition of ["succeeded", "failed"])
     await t.test(disposition, async (t) => {
       let clock = Date.now();
       t.mock.method(Date, "now", () => clock);
       const f = fixture(t),
         fake = notionFixture();
-      configureWorkDocuments({
-        root: f.root,
-        sessionId: f.a,
-        targets: [
-          {
-            id: "notion",
-            kind: "notion",
-            parentPageId: fake.parent,
-            tokenEnvironment: "LODE_SYNTHETIC_UNUSED",
-            automatic: false,
-            todoIds: [],
-            projectDocuments: true,
-          },
-        ],
-      });
+      configureWorkDocuments({ root: f.root, sessionId: f.a, targets: [notionTarget(fake)] });
       const prepared = await prepareProjectDocuments({ root: f.root, sessionId: f.a }),
         options = { root: f.root, sessionId: f.a, projectionId: prepared.projectionId, targetIds: ["notion"], adapters: { notion: fake.adapter } };
-      let allocated;
-      for (let i = 0; i < 30; i++) {
-        allocated = await publishProjectDocuments(options);
-        if (allocated.destinations[0].phase === "render") break;
-        assert.equal(allocated.status, "continuation-required");
-      }
-      assert.equal(allocated.destinations[0].phase, "render");
       fake.fault.asyncPatch = true;
       const pending = await publishProjectDocuments(options);
       assert.equal(pending.destinations[0].reasonCode, "WORK_DOCUMENT_ASYNC_PENDING");
+      const posts = fake.calls.filter((call) => call.method === "POST").length;
       clock += 2000;
       const still = await publishProjectDocuments(options);
       assert.equal(still.destinations[0].reasonCode, "WORK_DOCUMENT_ASYNC_PENDING");
+      assert.equal(fake.calls.filter((call) => call.method === "POST").length, posts, "nothing else is written while a change is pending");
       assert.equal(projectDocumentStatus({ root: f.root, sessionId: f.a }).destinations[0].current, null);
       fake.fault.taskStatus = disposition;
       clock += 2000;
@@ -720,32 +687,20 @@ test("Project async updates require terminal success even when the new body is v
         const again = await publishProjectDocuments(options);
         assert.equal(again.destinations[0].reasonCode, "WORK_DOCUMENT_ASYNC_FAILED");
         assert.equal(projectDocumentStatus({ root: f.root, sessionId: f.a }).destinations[0].current, null);
+        assert.equal(fake.calls.filter((call) => call.method === "POST").length, posts);
       }
-      assert.equal(
-        fake.calls.filter((call) => call.method === "PATCH" && new URL(call.url).pathname === "/v1/pages/" + fake.fault.taskPageId + "/markdown").length,
-        1,
+      // The async change itself was sent once; later list updates of the same page are new changes.
+      const asyncBody = JSON.stringify(
+        fake.calls.find((call) => call.method === "PATCH" && new URL(call.url).pathname === "/v1/pages/" + fake.fault.taskPageId + "/markdown").body,
       );
+      assert.equal(fake.calls.filter((call) => call.method === "PATCH" && JSON.stringify(call.body) === asyncBody).length, 1);
     });
 });
 
-test("successor progress marker refusal stops child changes and cannot auto-retry or replace the prior current receipt", async (t) => {
+test("a refused change stops the publication, is never retried automatically and keeps the prior current receipt", async (t) => {
   const f = fixture(t),
     fake = notionFixture();
-  configureWorkDocuments({
-    root: f.root,
-    sessionId: f.a,
-    targets: [
-      {
-        id: "notion",
-        kind: "notion",
-        parentPageId: fake.parent,
-        tokenEnvironment: "LODE_SYNTHETIC_UNUSED",
-        automatic: false,
-        todoIds: [],
-        projectDocuments: true,
-      },
-    ],
-  });
+  configureWorkDocuments({ root: f.root, sessionId: f.a, targets: [notionTarget(fake)] });
   const first = await prepareProjectDocuments({ root: f.root, sessionId: f.a });
   await finish(f, first, f.a, "notion", { adapters: { notion: fake.adapter } });
   const old = projectDocumentStatus({ root: f.root, sessionId: f.a }).destinations[0].current;
@@ -754,12 +709,12 @@ test("successor progress marker refusal stops child changes and cannot auto-retr
   const next = await prepareProjectDocuments({ root: f.root, sessionId: f.a }),
     options = { root: f.root, sessionId: f.a, projectionId: next.projectionId, targetIds: ["notion"], adapters: { notion: fake.adapter } };
   fake.fault.rejectPatch = true;
-  const start = fake.calls.length,
+  let refused;
+  for (let i = 0; i < 40; i++) {
     refused = await publishProjectDocuments(options);
+    if (refused.status !== "continuation-required") break;
+  }
   assert.equal(refused.destinations[0].status, "request-rejected-no-write");
-  const writes = fake.calls.slice(start).filter((call) => call.method !== "GET");
-  assert.equal(writes.length, 1);
-  assert.equal(new URL(writes[0].url).pathname, "/v1/pages/" + old.homeId + "/markdown");
   assert.deepEqual(projectDocumentStatus({ root: f.root, sessionId: f.a }).destinations[0].current, old);
   fake.fault.rejectPatch = false;
   const before = fake.calls.length,
@@ -767,10 +722,9 @@ test("successor progress marker refusal stops child changes and cannot auto-retr
   assert.equal(notRetried.destinations[0].status, "request-rejected-no-write");
   assert.equal(fake.calls.slice(before).filter((call) => call.method !== "GET").length, 0);
   const allowed = await publishProjectDocuments({ ...options, retryRejectedWrites: [refused.destinations[0].retry] });
-  assert.equal(allowed.status, "continuation-required");
-  assert.match(fake.pages.get(old.homeId).markdown, /^# 문서 갱신 중/);
+  assert.notEqual(allowed.destinations[0].status, "request-rejected-no-write");
   await finish(f, next, f.a, "notion", { adapters: { notion: fake.adapter } });
-  assert.doesNotMatch(fake.pages.get(old.homeId).markdown, /^# 문서 갱신 중/);
+  assert.ok([...fake.pages.values()].some((page) => page.markdown.startsWith("# Successor title\n")));
 });
 
 test("unknown creation beyond 65 siblings reaches candidate evidence without claiming current uniqueness or another POST", async (t) => {
@@ -818,39 +772,19 @@ test("unknown creation beyond 65 siblings reaches candidate evidence without cla
   assert.equal(fs.existsSync(store.file("recovered")), false);
 });
 
-test("lost-update readback restores or invalidates pending view identity before exact-view reuse", async (t) => {
+test("a lost update is settled from readback before anything else; restoring the source restores the document", async (t) => {
   const f = fixture(t),
-    fake = notionFixture(),
-    store = projectDocumentStore({ root: f.root, sessionId: f.a });
-  configureWorkDocuments({
-    root: f.root,
-    sessionId: f.a,
-    targets: [
-      {
-        id: "notion",
-        kind: "notion",
-        parentPageId: fake.parent,
-        tokenEnvironment: "LODE_SYNTHETIC_UNUSED",
-        automatic: false,
-        todoIds: [],
-        projectDocuments: true,
-      },
-    ],
-  });
+    fake = notionFixture();
+  configureWorkDocuments({ root: f.root, sessionId: f.a, targets: [notionTarget(fake)] });
   const originalBytes = fs.readFileSync(f.canon),
     first = await prepareProjectDocuments({ root: f.root, sessionId: f.a });
   await finish(f, first, f.a, "notion", { adapters: { notion: fake.adapter } });
-  const node = readProjectDocumentBasis({ root: f.root, sessionId: f.a }).nodes.find((item) => item.kind === "Feature" && item.key === "fa");
-  const readEntry = () =>
-    fs
-      .readdirSync(store.file("entries"))
-      .map((file) => store.read("entries", file))
-      .find((entry) => entry.logical === "human/" + node.id);
-  const original = readEntry();
+  const login = [...fake.pages.values()].find((page) => page.title === "로그인");
+  const original = login.markdown;
   f.model.features[0].description = "Uncertain successor body must not survive source restoration";
   f.write();
   const successor = await prepareProjectDocuments({ root: f.root, sessionId: f.a });
-  fake.fault.losePatchId = original.id;
+  fake.fault.losePatchId = login.id;
   let lost;
   for (let i = 0; i < 100; i++) {
     const result = await publishProjectDocuments({
@@ -866,14 +800,12 @@ test("lost-update readback restores or invalidates pending view identity before 
     }
   }
   assert.equal(lost.destinations[0].reasonCode, "ECONNRESET");
-  assert.equal(readEntry().viewId, original.viewId);
-  assert.match(fake.pages.get(original.id).markdown, /Uncertain successor body/);
+  assert.match(fake.pages.get(login.id).markdown, /Uncertain successor body/);
   fs.writeFileSync(f.canon, originalBytes);
   const restored = await prepareProjectDocuments({ root: f.root, sessionId: f.a });
-  await finish(f, restored, f.a, "notion", { adapters: { notion: fake.adapter } });
-  assert.equal(readEntry().viewId, original.viewId);
-  assert.doesNotMatch(fake.pages.get(original.id).markdown, /Uncertain successor body/);
-  assert.match(fake.pages.get(original.id).markdown, /입력한 계정으로 로그인합니다/);
+  const result = await finish(f, restored, f.a, "notion", { adapters: { notion: fake.adapter } });
+  assert.equal(result.destinations[0].personEdited, undefined, "a lost update is not mistaken for a person's edit");
+  assert.equal(fake.pages.get(login.id).markdown, original);
 });
 
 test("paged prefix body drift and changed/deleted prior candidates never establish binding across restart or new basis", async (t) => {
@@ -895,6 +827,7 @@ test("paged prefix body drift and changed/deleted prior candidates never establi
           configurationDigest: "a".repeat(64),
           prepared: { projectionId },
           previous: null,
+          stableContainerIds: ["Start.md"],
         });
       let writer = make("b".repeat(64));
       fake.fault.lose = true;
@@ -937,7 +870,7 @@ test("paged prefix body drift and changed/deleted prior candidates never establi
     });
 });
 
-test("typed MCP and CLI share Project identity; real retained before/after reading is navigable without Product inference", async (t) => {
+test("typed MCP and CLI share Project identity; a retained before/after reading is published as a result and linked", async (t) => {
   const f = fixture(t),
     owner = f.store.caller;
   connect(f);
@@ -981,47 +914,49 @@ test("typed MCP and CLI share Project identity; real retained before/after readi
   };
   const before = retain("export function login() { return false; }\n");
   const after = retain("export function login() { return true; }\n");
-  const pair = await prepareWorkDocuments({
-    root: f.root,
-    sessionId: f.a,
+  const call = async (name, args) => {
+    const response = await dispatch({
+      jsonrpc: "2.0",
+      id: name,
+      method: "tools/call",
+      params: { name, arguments: { project_root: f.root, session_id: f.a, ...args } },
+    });
+    assert.equal(response.result?.isError, undefined, JSON.stringify(response));
+    return response.result.structuredContent;
+  };
+  const pair = await call("lode_work_document_prepare", {
     title: "Actual before/after",
-    taskEvidenceId: before.evidenceId,
-    evidenceIds: [before.evidenceId],
+    task_evidence_id: before.evidenceId,
+    evidence_ids: [before.evidenceId],
+    feature_keys: ["fa", "not-a-feature"],
     related: [{ sessionId: f.a, evidenceId: after.evidenceId, evidenceDigest: after.evidenceDigest }],
     diffs: [{ before: { evidenceId: before.evidenceId, referenceIndex: 0 }, after: { evidenceId: after.evidenceId, referenceIndex: 0 } }],
     excerpts: [{ evidenceId: after.evidenceId, referenceIndex: 0, startLine: 1, endLine: 1 }],
   });
-  const response = await dispatch({
-    jsonrpc: "2.0",
-    id: "hierarchy",
-    method: "tools/call",
-    params: {
-      name: "lode_project_document_prepare",
-      arguments: {
-        project_root: f.root,
-        session_id: f.a,
-        work_evidence: [select(before, ["fa"]), select(after, ["fa"])],
-        readings: [{ sessionId: f.a, projectionId: pair.projectionId }],
-      },
-    },
+  assert.deepEqual(pair.rejectedFeatureKeys, ["not-a-feature"]);
+  let published;
+  for (let i = 0; i < 8; i++) {
+    published = await call("lode_work_document_publish", { projection_id: pair.projectionId, target_ids: ["docs"] });
+    if (published.status !== "continuation-required") break;
+  }
+  assert.equal(published.status, "published", JSON.stringify(published));
+  assert.deepEqual(published.destinations[0].rejectedFeatureKeys, ["not-a-feature"]);
+  const prepared = await call("lode_project_document_prepare", {
+    work_evidence: [select(before, ["fa"]), select(after, ["fa"])],
+    readings: [{ sessionId: f.a, projectionId: pair.projectionId }],
   });
-  assert.equal(response.result.isError, undefined, JSON.stringify(response));
-  const prepared = response.result.structuredContent;
-  assert.ok(prepared?.projectionId, JSON.stringify(response.result).slice(0, 300));
+  assert.ok(prepared?.projectionId);
   await finish(f, prepared);
   const cli = await withSessionRoute(f.root, f.a, () => runCommand(["project-document-status", f.root]));
   assert.equal(cli.projectId, owner.projectId);
-  const bodies = vaultFiles(f.vault)
-    .filter((file) => !path.basename(file).startsWith("history-"))
-    .map((file) => fs.readFileSync(file, "utf8"));
-  assert.ok(bodies.some((body) => body.includes("return false") && body.includes("return true") && body.includes("바이트 비교는 승인")));
-  for (const body of bodies) assert.doesNotMatch(body, /undefined/);
-  const detail = bodies.find((body) => body.includes("원문 선택 근거") && body.includes("return false"));
-  assert.ok(detail);
-  assert.match(detail, /상세 읽기에서 선택한 작업 원문/);
-  assert.doesNotMatch(detail, /제품 모델에서 확인한 연결/);
-  assert.match(detail, /프로젝트 게시 상태/);
-  assert.match(detail, /문서끼리 갱신 시점이 다를 수 있습니다/);
+  const resultDir = path.join(productDir(f), "계정", "로그인");
+  const evidence = fs.readFileSync(path.join(resultDir, "근거", "Actual before after 결과 1 근거.md"), "utf8");
+  assert.ok(evidence.includes("return false") && evidence.includes("return true") && evidence.includes("바이트 비교는 승인"));
+  const human = fs.readFileSync(path.join(resultDir, "Actual before after 결과 1.md"), "utf8");
+  assert.doesNotMatch(human, /return false|[a-f0-9]{64}/, "exact bytes and digests stay in the evidence document");
+  for (const file of vaultFiles(f.vault)) assert.doesNotMatch(fs.readFileSync(file, "utf8"), /undefined/, file);
+  assert.match(fs.readFileSync(path.join(productDir(f), "작업 기록", "작업 기록.md"), "utf8"), /\[Actual before after 결과 1\]/);
+  assertVaultLinks(f.vault);
   if (process.env.LODE_PROJECT_DOCUMENT_QA_OUTPUT) {
     const output = process.env.LODE_PROJECT_DOCUMENT_QA_OUTPUT;
     fs.mkdirSync(output);

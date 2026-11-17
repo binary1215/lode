@@ -5,6 +5,8 @@ node_modules/
 test/*
 !test/work-document-source.test.mjs
 !test/work-document-publication.test.mjs
+!test/work-document-tree.test.mjs
+!test/conversation-queued-pickup.test.mjs
 !test/native-session-observations.test.mjs
 !test/native-session-process.test.mjs
 !test/opencode-native-observations.test.mjs
@@ -20,6 +22,9 @@ test/*
 !test/startup-current-priority.test.mjs
 !test/observation-query-consolidation.test.mjs
 !test/legacy-integration-read.test.mjs
+!test/legacy-reader-and-incremental-refresh.test.mjs
+!test/snapshot-retention-and-edit-refresh.test.mjs
+!test/snapshot-retention-gc.test.mjs
 !test/authority-plane-contract.test.mjs
 !test/arcadedb-native-bridge.test.mjs
 !test/context-compiler.test.mjs
@@ -93,12 +98,18 @@ test/*
 !test/worker-integration-result.test.mjs
 !test/worker-integration-native.test.mjs
 !test/worker-integration-surface.test.mjs
+!test/product-graph.test.mjs
+!test/product-graph-flow.test.mjs
+!test/source-scan-lexer.test.mjs
+!test/call-precision.test.mjs
+!test/viewer-bundle2.test.mjs
 !test/helpers/
 test/helpers/*
 !test/fixtures/
 test/fixtures/*
 !test/fixtures/dispatch-recordings.json
 !test/fixtures/lib-layer-baseline.json
+!test/fixtures/product-graph/
 !test/helpers/session-work-linkage-fixture.mjs
 !test/helpers/session-work-reentry-flow.mjs
 !test/helpers/worker-integration-fixture.mjs

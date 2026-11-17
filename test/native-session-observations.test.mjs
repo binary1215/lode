@@ -1476,3 +1476,53 @@ test("two actual overlapping processes merge under one lock without lost updates
     await Promise.allSettled(children.map((c) => c.done));
   }
 });
+
+test("Claude prompt: the capture runs while the process lookup works, and the stored observation is what the old order stores", async (t) => {
+  const prompt = (f) => ({ hook_event_name: "UserPromptSubmit", cwd: f.root, session_id: "claude-overlap", prompt: "overlap prompt" });
+  const claudeCaller = { runtime: "claude", nativeSessionId: "claude-overlap", agentId: null };
+  const referenceExists = (f) => prepareUserPromptReference({ root: f.root, ...claudeCaller, environment: f.environment, force: true }) !== null;
+  // Old order, for comparison: the observation alone, then the capture.
+  const old = fixture(t);
+  await observeNativeHook({ runtime: "claude", event: prompt(old), environment: old.environment, processObserver: async () => clearInstance() });
+  captureUserPrompt({ root: old.root, ...claudeCaller, text: "overlap prompt", environment: old.environment });
+  // The hook: the lookup reports its input written, then answers only after the capture.
+  const f = fixture(t);
+  let capturedBeforeAnswer = null;
+  await runSessionHostHook({
+    runtime: "claude",
+    event: prompt(f),
+    environment: f.environment,
+    observeOnly: true,
+    processObserver: async (options) => {
+      options.onProcess({ event: "input-written" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      capturedBeforeAnswer = referenceExists(f);
+      return clearInstance();
+    },
+  });
+  assert.equal(capturedBeforeAnswer, true, "the capture ran before the lookup answered");
+  const rows = (fixtureState) =>
+    createNativeObservationStore({ environment: fixtureState.environment })
+      .read({ root: fixtureState.root, caller: claudeCaller })
+      .rows.map(({ receivedAt, ...row }) => row);
+  const stored = rows(f);
+  assert.equal(stored.length, 1);
+  assert.deepEqual(stored[0].observation.instance, clearInstance());
+  assert.deepEqual(stored, rows(old));
+  assert.equal(referenceExists(f), true);
+  // A lookup that never reports its input still finishes first: the old order.
+  const sequential = fixture(t);
+  let capturedBefore = null;
+  await runSessionHostHook({
+    runtime: "claude",
+    event: prompt(sequential),
+    environment: sequential.environment,
+    observeOnly: true,
+    processObserver: async () => {
+      capturedBefore = referenceExists(sequential);
+      return clearInstance();
+    },
+  });
+  assert.equal(capturedBefore, false);
+  assert.deepEqual(rows(sequential), rows(old));
+});

@@ -1,7 +1,6 @@
-import fs from "node:fs";
 import vm from "node:vm";
 import { performance } from "node:perf_hooks";
-import { renderGraphExplorer } from "../../scripts/lib/world/graph-explorer-html.mjs";
+import { graphExplorerScript, renderGraphExplorer } from "../../scripts/lib/world/graph-explorer-html.mjs";
 
 // Visibility only: no CSS layout, clipping, real accessibility tree or browser proof.
 export function visibleText(element) {
@@ -62,11 +61,8 @@ export function explorerDom(snapshot, { devicePixelRatio = 1, narrow = false, ca
     ...(cardMeasure ? { getComputedStyle: () => ({ fontSize: `${modeledFontSize}px`, fontFamily: "system-ui" }) } : {}),
     addEventListener: (name, callback) => { if (!windowListeners.has(name)) windowListeners.set(name, []); windowListeners.get(name).push(callback); },
     requestAnimationFrame: callback => { frames.push(callback); return frames.length; }, matchMedia: () => ({ matches: narrow }) });
-  const source = fs.readFileSync(new URL("../../scripts/graph-explorer/codec.js", import.meta.url), "utf8").replace(/^export const explorerCodec =/m, "const explorerCodec =") + "\n"
-    + fs.readFileSync(new URL("../../scripts/graph-explorer/cards.js", import.meta.url), "utf8") + "\n"
-    + fs.readFileSync(new URL("../../scripts/graph-explorer/exploration.js", import.meta.url), "utf8") + "\n"
-    + fs.readFileSync(new URL("../../scripts/graph-explorer/product-perspectives.js", import.meta.url), "utf8") + "\n"
-    + fs.readFileSync(new URL("../../scripts/graph-explorer/browser.js", import.meta.url), "utf8");
+  // The same script, in the same order, as the exported page.
+  const source = graphExplorerScript();
   const start = performance.now(); new vm.Script(source).runInContext(runtime, { timeout: 10000 });
   return { ids, stats, document, initialMs: performance.now() - start, html,
     windowEvent(name, event = {}) { for (const callback of windowListeners.get(name) || []) callback(event); },

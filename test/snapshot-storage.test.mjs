@@ -258,7 +258,12 @@ test("storage inspection traces retained history and reports unreferenced bytes 
   const report = inspectSnapshotGarbageCollection({ root: f.root });
   assert.equal(report.status, "gc_dry_run");
   assert.equal(report.deletedCount, 0);
-  assert.equal(report.applyAvailable, false);
+  assert.equal(report.applyAvailable, true);
+  assert.match(report.nextAction, /storage-gc --apply/);
+  assert.equal(
+    report.coverage.issues.every((issue) => issue.reasonCode === "TYPED_BACKEND_OBSERVATION_REQUIRED"),
+    true,
+  );
   assert(report.observedUnreferencedBytes > 0);
   assert(report.snapshots.some((row) => row.id === first.snapshot.worldModelId && row.reasonCode === "RETAINED_REFERENCE_CLOSURE"));
   assert(report.snapshots.some((row) => row.id === currentId && row.reasonCode === "RETAINED_REFERENCE_CLOSURE"));
@@ -275,15 +280,7 @@ test("storage inspection traces retained history and reports unreferenced bytes 
   };
   const beforeBytes = size(path.join(f.root, f.storage.directory));
   const requested = await runCommand(["storage-gc", f.root, "--apply"]);
-  if (process.platform === "darwin") {
-    assert.equal(requested.status, "gc_preserved");
-    assert.equal(requested.code, "UNSUPPORTED_GC_PLATFORM");
-    assert.equal(requested.deletedCount, 0);
-    assert.equal(requested.reclaimedBytes, 0);
-    assert.equal(requested.applyPerformed, false);
-    assert.deepEqual(tree(f.root), before);
-    assert.equal(size(path.join(f.root, f.storage.directory)), beforeBytes);
-  } else {
+  {
     assert.equal(requested.status, "gc_applied", JSON.stringify(requested));
     assert(requested.reclaimedBytes > 0);
     assert(size(path.join(f.root, f.storage.directory)) < beforeBytes);
@@ -555,11 +552,11 @@ test("CLI distinguishes successful inspection from unavailable requested apply a
   assert.equal(apply.signal, null);
   assert.equal(apply.stderr, "", "normal cleanup output stays quiet; process details require diagnostics");
   const report = JSON.parse(apply.stdout);
-  assert.equal(report.code, process.platform === "darwin" ? "UNSUPPORTED_GC_PLATFORM" : "SNAPSHOT_GC_REFERENCE_COVERAGE_INCOMPLETE");
+  assert.equal(report.code, "SNAPSHOT_GC_REFERENCE_COVERAGE_INCOMPLETE");
   assert.equal(report.deletedCount, 0);
   assert.equal(report.reclaimedBytes, 0);
   assert.equal(report.applyPerformed, false);
-  if (process.platform !== "darwin") assert(report.coverage.issues.length);
+  assert(report.coverage.issues.length);
   assert.deepEqual(tree(f.root), before);
 });
 

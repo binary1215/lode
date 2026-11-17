@@ -12,7 +12,7 @@ import {
   WINDOWS_PROCESS_QUERY_WIRE,
 } from "../scripts/lib/runtime/windows-process-query-wire.mjs";
 import test from "node:test";
-import { observeClaudeProcess, probeClaudeProcesses, probeNativeProcesses } from "../scripts/lib/session/native-session-process.mjs";
+import { observeClaudeProcess, probeClaudeProcesses, probeNativeProcesses, WINDOWS_QUERY_END } from "../scripts/lib/session/native-session-process.mjs";
 
 const envToken = "a".repeat(64),
   nativeSessionId = "claude-synthetic-only";
@@ -174,12 +174,18 @@ test("actual local OS probe uses owned synthetic registry only, returns birth; h
     }
     if (process.platform === "win32") {
       for (const [index, planned] of records.filter((x) => x.event === "planned").entries()) {
-        assert.deepEqual(planned.arguments, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "& ([scriptblock]::Create([Console]::In.ReadToEnd()))"]);
+        assert.deepEqual(planned.arguments.slice(0, 4), ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]);
+        assert(planned.arguments[4].startsWith("$taskIn=[Console]::In;"));
+        assert(planned.arguments[4].endsWith("& ([scriptblock]::Create($taskText.ToString()))"));
+        assert(planned.arguments[4].includes("'" + WINDOWS_QUERY_END + "'"));
         assert(Number.isSafeInteger(planned.inputBytes) && planned.inputBytes > 0);
         assert.match(planned.inputDigest, /^[a-f0-9]{64}$/u);
         const bytes = inputs[index];
-        assert.equal(bytes.length, planned.inputBytes + 2);
+        assert.equal(bytes.length, planned.inputBytes + 2 + Buffer.byteLength(WINDOWS_QUERY_END) + 1);
         const script = bytes.subarray(0, planned.inputBytes);
+        assert.equal(bytes.subarray(planned.inputBytes).toString("utf8"), "\n\n" + WINDOWS_QUERY_END + "\n");
+        // The end line is never part of the query itself.
+        assert.equal(script.toString("utf8").split(/\r?\n/u).includes(WINDOWS_QUERY_END), false);
         assert.equal(crypto.createHash("sha256").update(script).digest("hex"), planned.inputDigest);
         assert.doesNotMatch(
           script.toString("utf8"),
@@ -194,6 +200,38 @@ test("actual local OS probe uses owned synthetic registry only, returns birth; h
     syncBuiltinESMExports();
   }
 });
+
+test(
+  "Windows: the process lookup finishes while this thread is blocked past its timer, and keeps its result",
+  { skip: process.platform !== "win32" },
+  async (t) => {
+    const f = fixture(t);
+    fs.writeFileSync(path.join(f.sessions, process.pid + ".json"), JSON.stringify({ pid: process.pid, sessionId: nativeSessionId }));
+    const records = [];
+    let blockedMs = null;
+    const lookup = observeClaudeProcess({
+      nativeSessionId,
+      environment: f.environment,
+      onProcess(record) {
+        records.push(record);
+        // A synchronous capture holds the thread longer than the lookup's own
+        // 1.5 s limit; the lookup has its whole input and runs meanwhile.
+        if (record.event === "input-written") {
+          const started = performance.now();
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2500);
+          blockedMs = performance.now() - started;
+        }
+      },
+    });
+    const got = await lookup;
+    t.diagnostic(JSON.stringify({ blockedMs, events: records.map((record) => record.event) }));
+    assert(blockedMs >= 2400);
+    assert.ok(got, "a lookup that exited within its limit keeps its result even when the timer ran late");
+    assert.equal(got.pid, process.pid);
+    assert.match(got.birth, /^windows-filetime-\d+$/u);
+    for (const started of records.filter((x) => x.event === "started")) assert.throws(() => process.kill(started.pid, 0), { code: "ESRCH" });
+  },
+);
 
 test("actual owned child birth then normal exit verifies old-instance disappearance, not work completion", async (t) => {
   if (!["win32", "linux"].includes(process.platform)) {

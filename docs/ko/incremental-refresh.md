@@ -17,13 +17,20 @@ manual request or verified RefreshTriggerBatch
   -> exclusive project World Model writer lease
   -> verified current World Model
   -> content-derived IncrementalRefreshRequest
-  -> rediscover and byte-hash every eligible file
+  -> rediscover every eligible file
+  -> re-read and byte-hash a file unless the stat taken before the read still matches the stat taken after it and that agreed stat matches the last verified scan; only that agreed pair reuses the verified digest and analysis
+  -> re-read a file whose modification time has no sub-second part until two seconds have passed since that time (a filesystem that keeps whole seconds can hide a second write inside one tick)
+  -> when those agreed stats and the non-snapshot inputs are unchanged, keep the published World and Graph instead of rebuilding them
+  -> the non-snapshot inputs are the project store outside snapshots and the local git head and refs, as they were before the scan and the build read anything: a record saved or a commit made while a refresh runs is seen by the next refresh
+  -> a full refresh that finds nothing changed renews that record; a different plugin or analysis version takes the full path once
+  -> a caller that supplies its own store, projection, history, runtime-state or scan source always takes the full path
+  -> the fast path also requires the snapshot files (whole files, bundles, the git snapshot store) to be as they were when the current World was last written or verified, and the files the scan skips (links, unsupported types, over-size files, excluded folders) to match the World's skipped counters; otherwise the full path reads the snapshot and reports what it finds
+  -> the first refresh of a store whose pointers predate minimumReader upgrades the pointers and keeps the published World when only these still match: the recorded source file paths and digests, the git head (status, commit, ref) and the Product Model canon hash. It does not compare other store records (Sessions, work records, direction, runs, observations), other git refs or history, the skipped-file counters, the source scope or runtime state; it writes no fast-path record, so the next refresh takes the full path and sees a change there
   -> reuse analysis only for digest-identical verified files
   -> validate one complete RepositoryScanResult
-  -> preview a child SourceSnapshot and GraphSnapshot
-  -> persist and verify graph materialization
-  -> atomically advance the World Model pointer
-  -> persist an immutable IncrementalRefreshReceipt
+  -> preview a child SourceSnapshot and GraphSnapshot and build the refresh receipt from that preview
+  -> persist the refresh request, then publish the World only when its id is the preview id
+  -> persist an immutable IncrementalRefreshReceipt after the published World matches that receipt
   -> advance the refresh receipt pointer
   -> evaluate a separate PostRefreshProjectionPolicy
   -> persist an immutable PostRefreshProjectionReceipt
@@ -131,6 +138,8 @@ pending ResultPacket도 마찬가지로 Fresh Lode review를 위해 동결된 �
 ```
 
 request와 receipt는 콘텐츠에서 파생되는 불변 아티팩트입니다. current file은 다이제스트가 검증된 교체 가능 pointer입니다. 이후의 full index 또는 refresh로 최신 receipt가 stale 상태가 될 수 있지만 그 역사적 증거가 무효화되지는 않습니다.
+
+`refresh/`에는 다른 두 종류의 파일도 있습니다. `refresh/file-stat-cache.json`과 `refresh/input-generation.json`은 캐시입니다. 지우면 다음 refresh가 한 번 full path를 탈 뿐입니다. `refresh/retention-releases/retention-release-*.json`은 보존 창을 쓴 storage GC가 남긴 release 기록입니다([snapshot storage](snapshot-storage.md) 참고). 캐시가 아니며 지우면 안 됩니다. 하나를 지워도 저장된 것은 바뀌지 않지만, 그 기록이 다루던 역사가 다시 손상된 것처럼 보입니다. 예전 receipt를 `world-refresh-read`로 읽으면 World가 release된 것이 아니라 없는 것으로 나오고, 보존 창 없는 storage GC는 참조 범위가 불완전하다고 보고하며 역사가 정리될 때까지 아무것도 지우지 않습니다.
 
 ## CLI 및 MCP
 

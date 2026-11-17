@@ -1,0 +1,6 @@
+[project]
+name = "sample-station"
+version = "0.1.0"
+
+[project.scripts]
+sample-station = "station.app:main"

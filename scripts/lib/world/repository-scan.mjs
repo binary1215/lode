@@ -15,6 +15,7 @@ import { GoWorkerComputeAdapter } from "../worker/go-worker-adapter.mjs";
 import { familyFormatForOriginal, formatForVerifiedOwner } from "../storage/project-storage-format.mjs";
 import { buildRepositorySourceScope, pathWithinRepositorySourceScope, verifyRepositorySourceScope } from "./repository-source-scope.mjs";
 import { sha256Hex as digest } from "../core/digest.mjs";
+import { fileIdentity, loadFileStatCache, rememberFileStat, statMatchesCached } from "./refresh-input-generation.mjs";
 import { canonicalJson, canonicalValue as canonical } from "../core/canonical-json.mjs";
 import { failWith } from "../core/errors.mjs";
 
@@ -264,7 +265,7 @@ function scanResultPayload(input, files, skipped, totalBytes) {
   };
 }
 
-function scanPayload(input, limits, { previousResult = null, reuseDiagnostics = null } = {}) {
+function scanPayload(input, limits, { previousResult = null, reuseDiagnostics = null, statCache = null, verifiedFiles = null } = {}) {
   validateRepositoryScanInput(input);
   const normalizedLimits = normalizeComputeLimits(limits);
   const root = input.projectRoot;
@@ -317,6 +318,31 @@ function scanPayload(input, limits, { previousResult = null, reuseDiagnostics = 
         skipped.tooLarge += 1;
         continue;
       }
+      const previous = previousFiles.get(relative);
+      const matched = previousAnalysisReusable && statCache ? statMatchesCached(previous, statCache.get(relative), absolute) : null;
+      if (matched) {
+        const metadata = {
+          path: relative,
+          digest: previous.digest,
+          bytes: previous.bytes,
+          classification: previous.classification,
+          language: previous.language,
+        };
+        if (files.length >= normalizedLimits.maxFiles) fail(`Repository scan exceeds ${normalizedLimits.maxFiles} files.`, "REPOSITORY_SCAN_FILE_LIMIT");
+        if (totalBytes + previous.bytes > normalizedLimits.maxTotalBytes)
+          fail(`Repository scan exceeds ${normalizedLimits.maxTotalBytes} total bytes.`, "REPOSITORY_SCAN_TOTAL_BYTES_LIMIT");
+        files.push(sourceFileRecord(metadata, null, base, previous));
+        verifiedFiles?.set(relative, { ...matched, digest: previous.digest, bytes: previous.bytes });
+        if (reuseDiagnostics) reuseDiagnostics.reusedPaths.push(relative);
+        totalBytes += previous.bytes;
+        continue;
+      }
+      let before = null;
+      try {
+        before = fileIdentity(absolute);
+      } catch {
+        before = null;
+      }
       const raw = fs.readFileSync(absolute);
       if (raw.length > normalizedLimits.maxFileBytes) {
         skipped.tooLarge += 1;
@@ -328,8 +354,10 @@ function scanPayload(input, limits, { previousResult = null, reuseDiagnostics = 
       const language = languageForSource(extension, base);
       const classification = classifySourcePath(relative, extension);
       const contentDigest = digest(raw);
-      const previous = previousFiles.get(relative);
       const metadata = { path: relative, digest: contentDigest, bytes: raw.length, classification, language };
+      const agreed = rememberFileStat(statCache, relative, absolute, contentDigest, raw.length, before);
+      if (agreed) verifiedFiles?.set(relative, agreed);
+      else verifiedFiles?.delete(relative);
       const reusable = previousAnalysisReusable && sameObservedFile(previous, metadata);
       files.push(sourceFileRecord(metadata, raw, base, reusable ? previous : null));
       if (reuseDiagnostics) (reusable ? reuseDiagnostics.reusedPaths : reuseDiagnostics.analyzedPaths).push(relative);
@@ -558,6 +586,8 @@ export async function executeIncrementalRepositoryScan({
 } = {}) {
   const previousResult = repositoryScanResultFromWorldModel(previousSnapshot);
   const input = buildRepositoryScanInput({ projectRoot, managedRootFiles, sourceScope, storage });
+  const statCache = storage ? loadFileStatCache(projectRoot, storage) : null;
+  const verifiedFiles = new Map();
   let request = buildComputeRequest({
     operation: REPOSITORY_SCAN_OPERATION,
     input,
@@ -570,6 +600,8 @@ export async function executeIncrementalRepositoryScan({
     scanPayload(input, request.limits, {
       previousResult,
       reuseDiagnostics: reuse,
+      statCache,
+      verifiedFiles,
     }),
   );
   const completed = completeComputeResult(request, result, { limits });
@@ -600,6 +632,7 @@ export async function executeIncrementalRepositoryScan({
       removedPaths: reuse.removedPaths,
       changes,
     },
+    verifiedFiles,
   };
 }
 
@@ -651,7 +684,7 @@ export function validateRepositoryScanResult(result) {
     !format ||
     (!currentProtocol && !legacyProtocol) ||
     (currentProtocol
-      ? !["0.3.0", SOURCE_ANALYSIS_VERSION].includes(result.sourceAnalysisVersion)
+      ? !["0.3.0", "0.3.1", "0.3.2", SOURCE_ANALYSIS_VERSION].includes(result.sourceAnalysisVersion)
       : !["0.1.0", "0.2.0"].includes(result.sourceAnalysisVersion)) ||
     result.authority !== "derived-evidence-only" ||
     result.instructionAuthority !== false ||
@@ -794,6 +827,91 @@ export function createRepositoryScanComputeAdapter({ pluginRoot = path.resolve(i
     storage,
     fallbackAdapter: createRepositoryScanReferenceAdapter(),
   });
+}
+
+// Walks the source tree as scanPayload does, without reading file bytes: every
+// file the World holds must still have the stat it had when its digest was
+// verified, no other text file may exist, and the files the scan would skip
+// must be the same in number per reason as the World's skipped counters
+// (`skipped`), so a new link, binary or over-size file is not answered with
+// stale counters. Returns the number of files covered, or 0 when anything
+// differs.
+export function sourceTreeMatchesPublishedFiles({
+  projectRoot,
+  managedRootFiles = [],
+  storage,
+  sourceScope = buildRepositorySourceScope({ storage }),
+  files = null,
+  skipped: expectedSkipped = null,
+  limits = {},
+} = {}) {
+  if (!files || typeof files !== "object" || !expectedSkipped || typeof expectedSkipped !== "object") return 0;
+  const expected = new Map(Object.entries(files));
+  if (!expected.size) return 0;
+  const maxFileBytes = normalizeComputeLimits(limits).maxFileBytes;
+  const input = buildRepositoryScanInput({ projectRoot, managedRootFiles, sourceScope, storage });
+  const managed = new Set(input.managedRootFiles);
+  const seen = new Set();
+  const skipped = Object.fromEntries(SKIPPED_FIELDS.map((field) => [field, 0]));
+  const stack = [input.projectRoot];
+  while (stack.length) {
+    const directory = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return 0;
+    }
+    for (const entry of entries) {
+      const absolute = path.join(directory, entry.name);
+      const relative = normalizePath(input.projectRoot, absolute);
+      if (entry.isSymbolicLink()) {
+        skipped.symlink += 1;
+        continue;
+      }
+      if (entry.isDirectory()) {
+        if (EXCLUDED_DIRECTORIES.has(entry.name.toLowerCase()) || excludesManagedRootDirectory(relative, input)) skipped.excludedDirectory += 1;
+        else if (!pathWithinRepositorySourceScope(relative, input.sourceScope, { directory: true })) skipped.outsideSourceScope += 1;
+        else stack.push(absolute);
+        continue;
+      }
+      if (!entry.isFile()) {
+        skipped.unsupportedType += 1;
+        continue;
+      }
+      if (!pathWithinRepositorySourceScope(relative, input.sourceScope)) {
+        skipped.outsideSourceScope += 1;
+        continue;
+      }
+      if (managed.has(relative)) {
+        skipped.managedProjection += 1;
+        continue;
+      }
+      const extension = path.extname(entry.name).toLowerCase();
+      if (!TEXT_EXTENSIONS.has(extension) && entry.name !== "Dockerfile") {
+        skipped.unsupportedType += 1;
+        continue;
+      }
+      let size;
+      try {
+        size = fs.statSync(absolute).size;
+      } catch {
+        return 0;
+      }
+      if (size > maxFileBytes) {
+        skipped.tooLarge += 1;
+        continue;
+      }
+      const published = expected.get(relative);
+      const previous = published ? { digest: published.digest, bytes: published.bytes } : null;
+      if (!statMatchesCached(previous, published, absolute)) return 0;
+      seen.add(relative);
+    }
+  }
+  if (seen.size !== expected.size) return 0;
+  // A counter the World does not have (an older World) is compared as zero.
+  for (const field of SKIPPED_FIELDS) if ((expectedSkipped[field] ?? 0) !== skipped[field]) return 0;
+  return seen.size;
 }
 
 export async function executeRepositoryScan({

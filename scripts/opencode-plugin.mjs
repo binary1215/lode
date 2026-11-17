@@ -146,6 +146,8 @@ export default {
           deliverQueuedOpenCode({ root: lodeRoot(), client, directory, environment, skipSessionIds: [...activeSessionIds] }).catch(() => {});
         });
         watcher.unref?.();
+        // Mail queued before this watcher existed raises no file event: scan once.
+        deliverQueuedOpenCode({ root: lodeRoot(), client, directory, environment, skipSessionIds: [...activeSessionIds] }).catch(() => {});
       } catch {
         watcher = null;
       }
@@ -357,6 +359,12 @@ export default {
           const session = eventType === "session.deleted" ? null : await exactSession(id);
           if (eventType === "session.deleted" ? !sessionScope(deletedInfo, id) : !session) return;
           if (session) registerIfMailbox(session);
+          // An idle session takes its own queued mail now. A session whose
+          // transform is running is never prompted from inside that transform.
+          if (eventType === "session.idle" && session && !activeSessionIds.has(id))
+            void deliverQueuedOpenCode({ root: lodeRoot(), client, directory, environment, sessionId: id, skipSessionIds: [...activeSessionIds] }).catch(
+              () => {},
+            );
           const observation = {
             kind: "event",
             event: eventType,

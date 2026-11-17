@@ -2,16 +2,36 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { explorerCodec } from "../../graph-explorer/codec.js";
+import { explorerText } from "../../graph-explorer/i18n.js";
+
+const assets = path.resolve(import.meta.dirname, "../../graph-explorer");
+// The page's script, in order. Modules shared with Node keep one source; their
+// "export const" becomes a plain const in the page.
+export const GRAPH_EXPLORER_SCRIPTS = Object.freeze([
+  "codec.js",
+  "cards.js",
+  "exploration.js",
+  "product-perspectives.js",
+  "browser.js",
+  "product-graph-walk.js",
+  "status-model.js",
+  "i18n.js",
+  "views.js",
+]);
+export function graphExplorerScript() {
+  return GRAPH_EXPLORER_SCRIPTS.map((file) => fs.readFileSync(path.join(assets, file), "utf8").replace(/^export const (\w+) =/m, "const $1 =")).join("\n");
+}
+export function graphExplorerStyle() {
+  return ["style.css", "views.css"].map((file) => fs.readFileSync(path.join(assets, file), "utf8")).join("\n");
+}
 
 export function renderGraphExplorer(snapshot) {
   const nonce = crypto.randomBytes(24).toString("base64");
-  const assets = path.resolve(import.meta.dirname, "../../graph-explorer");
-  const css = fs.readFileSync(path.join(assets, "style.css"), "utf8");
-  const codec = fs.readFileSync(path.join(assets, "codec.js"), "utf8").replace(/^export const explorerCodec =/m, "const explorerCodec =");
-  const script =
-    codec +
-    "\n" +
-    ["cards.js", "exploration.js", "product-perspectives.js", "browser.js"].map((file) => fs.readFileSync(path.join(assets, file), "utf8")).join("\n");
+  const css = graphExplorerStyle();
+  const script = graphExplorerScript();
+  const lang = snapshot.lang === "ko" ? "ko" : "en";
+  const text = explorerText[lang];
+  const tab = (name) => `<button type="button" role="tab" id="tab-${name}" aria-controls="view-${name}" aria-selected="false" tabindex="-1"></button>`;
   const json = JSON.stringify(explorerCodec.encode(snapshot))
     .replaceAll("<", "\\u003c")
     .replaceAll(">", "\\u003e")
@@ -19,9 +39,15 @@ export function renderGraphExplorer(snapshot) {
     .replaceAll("\u2028", "\\u2028")
     .replaceAll("\u2029", "\\u2029");
   const html = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'none'; img-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
-<title>Lode Graph Explorer</title><style nonce="${nonce}">${css}</style></head><body>
+<title>${text.htmlTitle}</title><style nonce="${nonce}">${css}</style></head><body>
+<div class="frame" id="frame"><div class="frame-head"><div class="frame-name"><span id="frame-eyebrow" class="eyebrow"></span><h1 id="frame-title" class="frame-title"></h1></div><div class="frame-meta"><span id="frame-saved"></span><span id="frame-time-note"></span></div></div>
+<nav id="view-tabs" role="tablist">${["status", "product", "gaps", "map"].map(tab).join("")}</nav></div>
+<section id="view-status" class="view" role="tabpanel" aria-labelledby="tab-status" hidden></section>
+<section id="view-product" class="view" role="tabpanel" aria-labelledby="tab-product" hidden></section>
+<section id="view-gaps" class="view" role="tabpanel" aria-labelledby="tab-gaps" hidden></section>
+<div id="view-map" class="view view-map" role="tabpanel" aria-labelledby="tab-map"><p id="map-language-note" class="hint map-note" hidden></p>
 <header><div><span class="eyebrow">LODE / LOCAL EVIDENCE</span><h1>Graph Explorer</h1><p id="project"></p></div><div class="snapshot"><strong>Read-only snapshot</strong><span id="generated"></span><span id="coverage"></span></div></header>
 <details class="report-disclosure"><summary>Read-only local report · originals may contain sensitive content</summary><p class="hint" id="report-notice">HTML size: __LODE_REPORT_BYTE_COUNT__ bytes. Large reports can take substantial browser memory and time; no node/edge cutoff is applied. ${snapshot.metadataPolicy?.mode === "share-generated-metadata" ? "Shared-report mode omits generated local execution/project paths only. " : "Local report includes generated machine paths. "}Original evidence may contain sensitive paths or content. This is not anonymization.</p></details>
 <main><aside class="controls" aria-label="Graph controls"><label for="search">Search all exported metadata</label><input id="search" type="search" placeholder="Name, exact ID, source, decision…">
@@ -57,7 +83,7 @@ export function renderGraphExplorer(snapshot) {
 <p class="hint">Recorded pairs only; bounded excerpts, not a full Git or semantic diff. Export-observed current is not live. Unknowns and exact source provenance stay with each comparison.</p>
 <nav class="reading-actions"><button id="file-prev">Previous file</button><button id="file-next">Next file</button><button id="change-prev">Previous changed region</button><button id="change-next">Next changed region</button></nav><p id="comparison-position" role="status" class="hint"></p><ul id="comparison-files"></ul><div id="context-lineage-body"></div></details>
 <details><summary>Snapshot basis &amp; omissions (diagnostics)</summary><pre id="basis"></pre></details><details id="history"><summary>Retained graph structure (diagnostics)</summary><div id="history-body"></div></details></section></main>
-<footer>Double-click a map title, press Shift+Enter on its card, or use Open direct connections for exact one-hop exploration. Read alone keeps the camera. This file has no runtime fetch, server or action controls. Selecting a historical Session changes this display only. New work and recovery remain in your normal Lode conversation.</footer>
+<footer>Double-click a map title, press Shift+Enter on its card, or use Open direct connections for exact one-hop exploration. Read alone keeps the camera. This file has no runtime fetch, server or action controls. Selecting a historical Session changes this display only. New work and recovery remain in your normal Lode conversation.</footer></div>
 <script nonce="${nonce}" id="snapshot" type="application/json">${json}</script><script nonce="${nonce}">${script}</script></body></html>\n`;
   // Include the exact UTF-8 file size, including this decimal field. It is an
   // advisory, never an export limit; convergence only depends on digit count.

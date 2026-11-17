@@ -12,7 +12,7 @@ import { prepareWorkDocuments, publishWorkDocuments, configureWorkDocuments, wor
 import { createNotionWorkDocumentAdapter, createBoundedNotionRequest } from "../scripts/lib/world/work-document-destinations.mjs";
 import { workDocumentHash } from "../scripts/lib/world/work-document-source.mjs";
 import { recordSessionWorkAndProjectDocuments } from "../scripts/lib/session/session-work-document-workflow.mjs";
-import { workDocumentStore } from "../scripts/lib/world/work-document-store.mjs";
+import { workDocumentStore, projectDocumentStore } from "../scripts/lib/world/work-document-store.mjs";
 import { dispatch, operationCatalogTools as catalogTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { formatCliResult } from "../scripts/lib/session/cli-presentation.mjs";
@@ -89,15 +89,30 @@ function fakeNotion() {
       };
     if (call.method === "POST") {
       const id = `10000000-0000-4000-8000-${String(sequence++).padStart(12, "0")}`;
-      pages.set(id, { id, parent: { page_id: parent }, markdown: call.body.markdown });
+      pages.set(id, {
+        id,
+        parent: { page_id: call.body.parent.page_id },
+        title: call.body.properties.title.title.map((part) => part.text.content).join(""),
+        markdown: call.body.markdown,
+      });
       if (fault.lostCreate) {
         fault.lostCreate = false;
         throw Object.assign(new Error("Synthetic lost response"), { code: "ECONNRESET" });
       }
-      return { status: 200, body: { object: "page", id, parent: { page_id: parent } } };
+      return { status: 200, body: { object: "page", id, parent: { page_id: call.body.parent.page_id } } };
     }
-    if (/\/blocks\//.test(url.pathname))
-      return { status: 200, body: { results: [...pages.keys()].map((id) => ({ id, type: "child_page" })), has_more: false } };
+    if (/\/blocks\//.test(url.pathname)) {
+      const of = url.pathname.split("/")[3];
+      return {
+        status: 200,
+        body: {
+          results: [...pages.values()]
+            .filter((page) => page.parent.page_id === of)
+            .map((page) => ({ id: page.id, type: "child_page", child_page: { title: page.title } })),
+          has_more: false,
+        },
+      };
+    }
     const page = pages.get(match?.[1]);
     if (!page) return { status: 404, body: { object: "error" } };
     if (call.method === "PATCH") {
@@ -126,12 +141,30 @@ function fakeNotion() {
             truncated: false,
             unknown_block_ids: [],
           }
-        : { object: "page", id: page.id, parent: page.parent },
+        : { object: "page", id: page.id, parent: page.parent, properties: { title: { title: [{ plain_text: page.title }] } } },
     };
   };
   return { parent, pages, calls, fault, request, adapter: createNotionWorkDocumentAdapter({ parentPageId: parent, request }) };
 }
-test("four real read paths, stable current links, zero duplicate replay; preserve notes and unowned vault files", async (t) => {
+// Layout v2 without a Product model: product page, 소속 미확인 page, the result
+// and its evidence document (Notion adds one 근거 container page per folder).
+const FIRST_RESULT_PAGES = 8;
+// Notion link fixes after each 근거 page exists, plus the two list updates.
+const FIRST_RESULT_CHANGES = 5;
+const vaultFiles = (vault) => {
+  const out = [];
+  const walk = (dir) => {
+    for (const name of fs.readdirSync(dir)) {
+      const file = path.join(dir, name);
+      if (fs.statSync(file).isDirectory()) walk(file);
+      else out.push(file);
+    }
+  };
+  walk(vault);
+  return out.sort();
+};
+const resultFile = (vault, projection, number = 1) => path.join(vault, "Lode", "project", "소속 미확인", `${projection.views[0].title} 결과 ${number}.md`);
+test("both destinations publish the readable tree; re-running creates nothing; unowned vault files and links stay intact", async (t) => {
   const { root, vault, sessionId, save, prepare } = setup(t),
     fake = fakeNotion();
   fs.writeFileSync(path.join(vault, "Personal.md"), "Unowned notes");
@@ -145,28 +178,28 @@ test("four real read paths, stable current links, zero duplicate replay; preserv
   const first = await publishWorkDocuments(options);
   assert.equal(first.status, "published", JSON.stringify(first));
   const count = fake.calls.filter((call) => call.method === "POST").length;
-  assert.equal(count, 4);
-  const directory = path.join(vault, "Lode", projection.basis.projectId, sessionId, projection.basis.logicalKey);
-  fs.appendFileSync(path.join(directory, "Notes.md"), "\nUser notes retained.");
-  const start = fs.readFileSync(path.join(directory, "Start.md"), "utf8");
-  fs.appendFileSync(path.join(directory, "Start.md"), "\nOutside managed area.");
+  assert.equal(count, FIRST_RESULT_PAGES);
+  const files = vaultFiles(vault);
   const second = await publishWorkDocuments(options);
   assert.equal(second.status, "published", JSON.stringify(second));
   assert.equal(fake.calls.filter((call) => call.method === "POST").length, count);
+  assert.deepEqual(vaultFiles(vault), files, "re-running creates no file");
   assert.equal(fs.readFileSync(path.join(vault, "Personal.md"), "utf8"), "Unowned notes");
-  assert.ok(fs.readFileSync(path.join(directory, "Notes.md"), "utf8").includes("User notes retained"));
-  assert.ok(fs.readFileSync(path.join(directory, "Start.md"), "utf8").startsWith(start));
-  for (const name of fs.readdirSync(directory).filter((name) => /^(human|agent)-/.test(name))) {
-    const text = fs.readFileSync(path.join(directory, name), "utf8");
-    assert.ok(text.includes("Mobile verification and deployment not executed"));
-    for (const link of [...text.matchAll(/\]\(([^)]+\.md)\)/g)]) assert.ok(fs.existsSync(path.join(directory, decodeURIComponent(link[1]))));
+  assert.ok(!files.some((file) => /Start\.md$|Notes\.md$/.test(file)));
+  const human = fs.readFileSync(resultFile(vault, projection), "utf8");
+  assert.ok(human.includes("Mobile verification and deployment not executed"));
+  for (const file of files.filter((name) => name.includes(path.join(vault, "Lode")))) {
+    const text = fs.readFileSync(file, "utf8");
+    for (const link of [...text.matchAll(/\]\(([^)]+\.md)\)/g)])
+      assert.ok(fs.existsSync(path.join(path.dirname(file), ...decodeURIComponent(link[1]).split("/"))), `${file} -> ${link[1]}`);
   }
-  for (const page of [...fake.pages.values()].filter((value) => /Source basis:/.test(value.markdown))) {
-    assert.ok(page.markdown.includes("Duplicate requests are possible"));
+  for (const page of fake.pages.values())
     for (const ref of [...page.markdown.matchAll(/https:\/\/www.notion.so\/([a-f0-9]{32})/g)])
       assert.ok([...fake.pages.keys()].some((id) => id.replaceAll("-", "") === ref[1]));
-  }
-  assert.equal(workDocumentStatus({ root, sessionId, logicalKey: projection.basis.logicalKey }).destinations.length, 2);
+  const status = workDocumentStatus({ root, sessionId, logicalKey: projection.basis.logicalKey });
+  assert.equal(status.destinations.length, 2);
+  assert.equal(status.destinations[0].current.layoutVersion, 2);
+  assert.equal(status.destinations[0].current.result.name, `${projection.views[0].title} 결과 1`);
 });
 
 test("POST/PATCH rejected writes require explicit exact retry; repeated denial preserves attempts and concurrent clicks cannot duplicate", async (t) => {
@@ -181,7 +214,7 @@ test("POST/PATCH rejected writes require explicit exact retry; repeated denial p
       });
       const projection = await prepare(save()),
         options = { root, sessionId, projectionId: projection.projectionId, targetIds: ["notion"], adapters: { notion: fake.adapter } };
-      const store = workDocumentStore({ root, sessionId });
+      const store = projectDocumentStore({ root, sessionId });
       fake.fault.deniedMethod = method;
       const first = (await publishWorkDocuments(options)).destinations[0];
       assert.equal(first.status, "request-rejected-no-write", JSON.stringify(first));
@@ -203,8 +236,8 @@ test("POST/PATCH rejected writes require explicit exact retry; repeated denial p
         concurrent.some((result) => result.status === "published"),
         JSON.stringify(concurrent),
       );
-      assert.equal(fake.pages.size, 4);
-      assert.equal(fake.calls.filter((call) => call.method === "POST").length, method === "POST" ? 6 : 4);
+      assert.equal(fake.pages.size, FIRST_RESULT_PAGES);
+      assert.equal(fake.calls.filter((call) => call.method === "POST").length, method === "POST" ? FIRST_RESULT_PAGES + 2 : FIRST_RESULT_PAGES);
       const count = fake.calls.filter((call) => call.method === "POST" || call.method === "PATCH").length;
       assert.equal((await publishWorkDocuments(options)).status, "published");
       assert.equal(
@@ -215,10 +248,13 @@ test("POST/PATCH rejected writes require explicit exact retry; repeated denial p
       assert.equal(fake.calls.filter((call) => call.method === "POST" || call.method === "PATCH").length, count);
       assert.deepEqual(fs.readFileSync(store.file("attempts", `${first.retry.attemptId}.json`)), original);
       assert.deepEqual(fs.readFileSync(store.file("outcomes", `${first.retry.attemptId}.json`)), rejection);
-      const attempt = store.read("attempts", `${first.retry.attemptId}.json`);
-      store.write(["attempts", `${first.retry.attemptId}.json`], { ...attempt, attemptId: "0".repeat(64) }, true);
+      // A re-run reads the integrity-sealed tree record, not old attempts.
+      const treeFile = fs.readdirSync(store.file("tree"))[0];
+      const sealed = JSON.parse(fs.readFileSync(store.file("tree", treeFile)));
+      sealed.value.productName = "tampered";
+      fs.writeFileSync(store.file("tree", treeFile), JSON.stringify(sealed));
       const tampered = (await publishWorkDocuments(options)).destinations[0];
-      assert.equal(tampered.reasonCode, "WORK_DOCUMENT_RECORD_TAMPER", "valid envelope cannot excuse divergent attempt coordinates");
+      assert.equal(tampered.reasonCode, "WORK_DOCUMENT_RECORD_TAMPER", "an unsealed layout record is never used");
       assert.equal(fake.calls.filter((call) => call.method === "POST" || call.method === "PATCH").length, count);
     });
 });
@@ -241,9 +277,9 @@ test("a repaired rejected write with lost retry response becomes unknown then re
       fake.fault[method === "POST" ? "lostCreate" : "lostPatch"] = true;
       assert.equal((await publishWorkDocuments({ ...options, retryRejectedWrites: [denied.retry] })).destinations[0].status, "publication-unconfirmed");
       assert.equal((await publishWorkDocuments({ ...options, retryRejectedWrites: [denied.retry] })).status, "published");
-      assert.equal(fake.pages.size, 4);
-      assert.equal(fake.calls.filter((call) => call.method === "POST").length, method === "POST" ? 5 : 4);
-      assert.equal(fake.calls.filter((call) => call.method === "PATCH").length, method === "PATCH" ? 4 : 3);
+      assert.equal(fake.pages.size, FIRST_RESULT_PAGES);
+      assert.equal(fake.calls.filter((call) => call.method === "POST").length, method === "POST" ? FIRST_RESULT_PAGES + 1 : FIRST_RESULT_PAGES);
+      assert.equal(fake.calls.filter((call) => call.method === "PATCH").length, method === "PATCH" ? FIRST_RESULT_CHANGES + 1 : FIRST_RESULT_CHANGES);
     });
 });
 
@@ -279,23 +315,32 @@ test("explicit retry rechecks projection/configuration and exact PATCH text befo
   fake.fault.deniedMethod = null;
   const mutations = () => fake.calls.filter((call) => ["POST", "PATCH"].includes(call.method)).length;
   const before = mutations(),
-    store = workDocumentStore({ root, sessionId });
+    store = projectDocumentStore({ root, sessionId });
   const attempt = store.read("attempts", `${denied.retry.attemptId}.json`);
   const page = fake.pages.get(attempt.id),
     old = page.markdown;
   page.markdown = "User edited this managed body.";
-  assert.equal((await publishWorkDocuments({ ...options, retryRejectedWrites: [denied.retry] })).destinations[0].reasonCode, "WORK_DOCUMENT_REMOTE_DRIFT");
-  assert.equal(mutations(), before);
+  const callsBefore = fake.calls.length;
+  // The page no longer holds the text the refused change was made from: a
+  // person's edit, kept and reported, while the rest still publishes.
+  const edited = (await publishWorkDocuments({ ...options, retryRejectedWrites: [denied.retry] })).destinations[0];
+  assert.ok(
+    edited.personEdited?.some((value) => value.status === "person-edited-not-overwritten"),
+    JSON.stringify(edited),
+  );
+  assert.equal(page.markdown, "User edited this managed body.");
+  assert.ok(!fake.calls.slice(callsBefore).some((call) => call.method === "PATCH" && call.url.includes(attempt.id)), "the edited page is not changed");
   page.markdown = old;
+  const settled = mutations();
   configureWorkDocuments({ root, sessionId, targets: [{ ...target, automatic: true }], expectedConfigurationDigest: config.configurationDigest });
   assert.equal(
     (await publishWorkDocuments({ ...options, retryRejectedWrites: [denied.retry] })).destinations[0].reasonCode,
     "WORK_DOCUMENT_RETRY_SCOPE_CHANGED",
   );
-  assert.equal(mutations(), before);
+  assert.equal(mutations(), settled);
   await prepare(save("partial", evidence));
   assert.equal((await publishWorkDocuments({ ...options, retryRejectedWrites: [denied.retry] })).status, "source-basis-changed");
-  assert.equal(mutations(), before);
+  assert.equal(mutations(), settled);
 });
 
 test("failure to persist rejection leaves an unknown attempt, preserves primary error and cannot enable retry", async (t) => {
@@ -308,7 +353,7 @@ test("failure to persist rejection leaves an unknown attempt, preserves primary 
   });
   const projection = await prepare(save()),
     options = { root, sessionId, projectionId: projection.projectionId, targetIds: ["notion"], adapters: { notion: fake.adapter } };
-  const store = workDocumentStore({ root, sessionId });
+  const store = projectDocumentStore({ root, sessionId });
   const mkdir = fs.mkdirSync;
   t.mock.method(fs, "mkdirSync", function (directory, ...args) {
     if (String(directory) === store.file("outcomes")) throw Object.assign(new Error("Synthetic rejection persistence failure"), { code: "EACCES" });
@@ -409,13 +454,11 @@ test("source change rejects the stale pair but a fresh basis can explicitly retr
   assert.equal((await publishWorkDocuments({ ...options, projectionId: fresh.projectionId })).destinations[0].status, "request-rejected-no-write");
   assert.equal(fake.calls.filter((call) => call.method === "POST").length, 1);
   assert.equal((await publishWorkDocuments({ ...options, projectionId: fresh.projectionId, retryRejectedWrites: [denied.retry] })).status, "published");
-  assert.deepEqual(
-    fake.calls
-      .filter((call) => call.method === "POST")
-      .slice(0, 2)
-      .map((call) => call.body),
-    [fake.calls[0].body, fake.calls[0].body],
-  );
+  const [deniedBody, retriedBody] = fake.calls
+    .filter((call) => call.method === "POST")
+    .slice(0, 2)
+    .map((call) => call.body);
+  assert.deepEqual(retriedBody, deniedBody, "the identical request is retried, never a different one");
   const current = workDocumentStatus({ root, sessionId, logicalKey: fresh.basis.logicalKey }).destinations[0].current;
   assert.equal(current.projectionId, fresh.projectionId);
 });
@@ -437,36 +480,55 @@ test("lost create response recovers bounded parent content; permission failure p
   assert.equal(failed.destinations[0].status, "publication-unconfirmed");
   assert.equal(failed.destinations[1].status, "current");
   assert.equal((await publishWorkDocuments(options)).status, "published");
-  assert.equal(fake.calls.filter((call) => call.method === "POST").length, 4);
+  assert.equal(fake.calls.filter((call) => call.method === "POST").length, FIRST_RESULT_PAGES);
   fake.fault.denied = true;
   const denied = await publishWorkDocuments(options);
   assert.equal(denied.destinations[0].status, "permission-denied");
   assert.equal(denied.destinations[1].status, "current");
 });
-test("new partial result updates related current docs; stale completion cannot rewind; remote edits preserved", async (t) => {
+test("a new result is a new file; the earlier result stays byte-identical; stale completion cannot rewind; person edits are reported, not overwritten", async (t) => {
   const { root, vault, sessionId, save, prepare } = setup(t);
   configureWorkDocuments({ root, sessionId, targets: [{ id: "vault", kind: "obsidian", vaultRoot: vault, automatic: true, todoIds: ["todo-expiry"] }] });
   const original = save(),
     first = await prepare(original);
   const publish = (projection) => publishWorkDocuments({ root, sessionId, projectionId: projection.projectionId, targetIds: ["vault"] });
   assert.equal((await publish(first)).status, "published");
+  const firstFile = resultFile(vault, first),
+    firstBytes = fs.readFileSync(firstFile),
+    before = vaultFiles(vault);
   const revision = save("partial", original),
     second = await prepare(revision);
   assert.equal((await publish(second)).status, "published");
   assert.equal((await publish(first)).status, "source-basis-changed");
-  const directory = path.join(vault, "Lode", first.basis.projectId, sessionId, first.basis.logicalKey);
-  assert.ok(fs.readFileSync(path.join(directory, "Start.md"), "utf8").includes("partial"));
-  const human = path.join(directory, `human-${second.views[0].viewId}.md`);
+  assert.deepEqual(fs.readFileSync(firstFile), firstBytes, "a published result is never rewritten");
+  assert.equal(vaultFiles(vault).length, before.length + 2, "one human document and one evidence document");
+  const human = resultFile(vault, second, 2);
+  const text = fs.readFileSync(human, "utf8");
+  assert.match(text, /^# Expiry wording — 결과 2\n\n상태: 진행 중 \(A later correction is needed\)/);
+  assert.match(text, /\[이전 결과\]\(Expiry%20wording%20%EA%B2%B0%EA%B3%BC%201\.md\)/);
+  const list = fs.readFileSync(path.join(vault, "Lode", "project", "소속 미확인", "소속 미확인.md"), "utf8");
+  assert.ok(list.indexOf("Expiry wording 결과 2") < list.indexOf("Expiry wording 결과 1"), "newest first");
   fs.appendFileSync(human, "\nUser edits must survive.");
-  assert.equal((await publish(second)).status, "partial-or-unconfirmed");
+  const edited = await publish(second);
+  assert.equal(edited.status, "published");
+  assert.deepEqual(
+    edited.destinations[0].personEdited.map((value) => value.document),
+    ["Expiry wording 결과 2"],
+  );
   assert.ok(fs.readFileSync(human, "utf8").endsWith("User edits must survive."));
   const oldBytes = fs.readFileSync(human),
-    copy = path.join(directory, "Copied.md");
+    copy = path.join(path.dirname(human), "Copied.md");
   fs.writeFileSync(copy, oldBytes);
   fs.unlinkSync(human);
   fs.renameSync(copy, human);
   const replaced = await publish(second);
-  assert.equal(replaced.destinations[0].reasonCode, "WORK_DOCUMENT_RESOURCE_REPLACED");
+  // An editor or sync tool saving through a temporary file changes the file,
+  // not the text: documents are judged by content, the edit is still reported.
+  assert.equal(replaced.destinations[0].status, "current", JSON.stringify(replaced.destinations[0]));
+  assert.deepEqual(
+    replaced.destinations[0].personEdited.map((value) => value.document),
+    ["Expiry wording 결과 2"],
+  );
   assert.deepEqual(fs.readFileSync(human), oldBytes);
 });
 test("stream bound cancels chunked/no-length responses during receipt; parent recovery shares one finite request budget", async () => {
@@ -571,7 +633,8 @@ test("202 requires terminal success even with full body already visible; failure
       fake.fault.taskMissing = disposition === "expired";
       const result = await publishWorkDocuments(options);
       assert.equal(result.status, disposition === "succeeded" ? "published" : "partial-or-unconfirmed", JSON.stringify(result));
-      assert.equal(fake.calls.filter((call) => call.method === "POST").length, creates);
+      // Later pages are created only after the pending change succeeded.
+      assert.equal(fake.calls.filter((call) => call.method === "POST").length, disposition === "succeeded" ? FIRST_RESULT_PAGES : creates);
       if (disposition !== "succeeded") assert.equal(fake.calls.filter((call) => call.method === "PATCH").length, writes);
     });
 });
@@ -867,7 +930,10 @@ test("valid P3 survives missing referenced file; failed exact diff/quote remain 
   assert.equal(projection.basis.comparisons[0].status, "unknown");
   assert.equal(projection.basis.comparisons[0].sourceAvailability.before.reasonCode, "ENOENT");
   assert.equal(projection.basis.quotations[0].status, "unavailable");
-  for (const view of projection.views) assert.ok(view.markdown.includes("ENOENT"));
+  // Internal codes stay in the evidence view; the person reads plain words.
+  assert.ok(projection.views[1].markdown.includes("ENOENT"));
+  assert.ok(!projection.views[0].markdown.includes("ENOENT"));
+  assert.match(projection.views[0].markdown, /현재 원문을 확인하지 못했습니다/);
   const result = await withSessionRoute(root, sessionId, () => recordSessionWorkAndProjectDocuments({ root, input }));
   assert.equal(result.writes, 0);
   assert.equal(result.documentProjection.status, "published");
@@ -906,5 +972,6 @@ test("source permission denial is preserved and never retried through a differen
   assert.equal(deniedReads, 1, "all dependent source expansion reuses the existing denial instead of another read/fallback");
   assert.equal(projection.basis.comparisons[0].sourceAvailability.before.reasonCode, "EACCES");
   assert.equal(projection.basis.quotations[0].reasonCode, "EACCES");
-  for (const view of projection.views) assert.ok(view.markdown.includes("EACCES"));
+  assert.ok(projection.views[1].markdown.includes("EACCES"));
+  assert.ok(!projection.views[0].markdown.includes("EACCES"));
 });
