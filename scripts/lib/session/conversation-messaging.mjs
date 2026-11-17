@@ -1538,6 +1538,17 @@ async function handOverEarlier({ project, message, presence, environment, platfo
       });
     } catch (error) {
       // Nothing was handed over for this message; it is never handed over here.
+      // When the claim step itself returned, its claim is known and goes back
+      // to the queue if the slot can be taken; the mailbox decides otherwise.
+      const cleanup = mutationCleanupFailure(error);
+      const claimed = cleanup?.operationReturned === true ? cleanup.result : null;
+      if (claimed?.claim?.token) {
+        summary.cleanup = cleanup.diagnostic;
+        stopped = true;
+        if (releaseClaimAfterCleanup(project, claimed)) summary.queued += 1;
+        else summary[readBackAfterCleanup(project, address, id, claimed).state] += 1;
+        continue;
+      }
       if (afterCleanup(error, id, null)) continue;
       throw error;
     }
@@ -1563,15 +1574,25 @@ async function handOverEarlier({ project, message, presence, environment, platfo
     } catch (error) {
       if (afterCleanup(error, id, owned)) continue;
       try {
-        preserveUnknown(project, owned, error.code || "delivery-outcome-unknown", error.conversationTargetRefused ? "refused" : "unknown");
+        preserveUnknown(project, owned, error?.code || "delivery-outcome-unknown", error?.conversationTargetRefused ? "refused" : "unknown");
       } catch {
         /* The claim stays held; recovery keeps it unknown. */
       }
       summary.unknown += 1;
-      if (error.code === "CONVERSATION_TARGET_CHANGED" || error.conversationTargetRefused) stopped = true;
+      if (error?.code === "CONVERSATION_TARGET_CHANGED" || error?.conversationTargetRefused) stopped = true;
     }
   }
   return summary;
+}
+
+// Returns a claim that was never offered to the Host to the queue. Any
+// failure (including another cleanup failure) leaves it to the mailbox.
+function releaseClaimAfterCleanup(project, claimed) {
+  try {
+    return releaseClaim(project, claimed) === true;
+  } catch {
+    return false;
+  }
 }
 
 // A lock cleanup failure (a slot's lock could not be confirmed released) is
@@ -1588,9 +1609,16 @@ function cleanupConversationResult(observation, cleanup, error) {
     ...(earlier ? { earlier } : {}),
   };
   if (!message) {
-    // Before the message was written nothing about it can be known or sent.
-    return { ...resultOf({ from, to: target }, operationFailed && error?.conversationTargetRefused === true ? "refused" : "unknown", "lock-cleanup-before-enqueue"), persisted: false, ...extra };
+    // Before the message was written nothing about it exists and nothing was
+    // sent: the step's own failure stands, otherwise a plain "not sent" error
+    // the caller may answer by sending again.
+    if (operationFailed) throw error;
+    fail("CONVERSATION_NOT_SENT", "Nothing was sent: a mailbox lock could not be confirmed released before the message was written. Sending again is safe.");
   }
+  // Claimed but never offered to the Host: back to the queue when the slot
+  // can be taken (the delivery step had not started).
+  if (owned?.claim?.token && !observation.handing && !operationFailed && releaseClaimAfterCleanup(project, owned))
+    return { ...resultOf(message, "queued", "inbox"), ...extra };
   const read = readBackAfterCleanup(project, message.to.address, message.id, owned, message);
   if (read.state === "handed") return { ...resultOf(read.record, read.record.state, read.record.evidence), ...extra };
   if (read.state === "queued") return { ...resultOf(message, "queued", "inbox"), ...extra };
@@ -1710,8 +1738,13 @@ async function sendProjectConversationObserved(
       if (releaseClaim(project, owned)) return done(resultOf(message, "queued", "inbox"));
       const read = readBackAfterCleanup(project, target.address, message.id, owned, message);
       if (read.state === "queued") return done(resultOf(message, "queued", "inbox"));
-      return done({ ...resultOf(message, "unknown", "lock-cleanup-outcome-unconfirmed"), persisted: read.persisted, reasonCode: "LOCAL_MUTATION_CLEANUP_FAILED" });
+      return done({
+        ...resultOf(message, "unknown", "lock-cleanup-outcome-unconfirmed"),
+        persisted: read.persisted,
+        reasonCode: "LOCAL_MUTATION_CLEANUP_FAILED",
+      });
     }
+    observation.handing = true;
     const attempt = await (deliver || defaultDeliver)({ message: owned, presence, environment, platform, signal, assertTarget });
     project.io.assertCurrent();
     presenceProject(project, environment).io.assertCurrent();

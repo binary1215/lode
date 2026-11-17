@@ -16,12 +16,15 @@ const READ_ATTEMPTS = 6;
 const READ_RETRY_MS = 10;
 const HOST = sha256Hex(os.hostname()).slice(0, 16);
 const OWNER = /^owner-([a-f0-9]{16})-([1-9][0-9]*)-([a-f0-9]{32})\.json$/;
+// Three cleanup attempts in all: two short pauses, at most 40 ms in total.
+const CLEANUP_RETRY_MS = [10, 30];
 const cleanupFailures = new WeakMap();
 const sameEntry = (left, right) => left.dev === right.dev && left.ino === right.ino && left.isFile() && !left.isSymbolicLink();
 
 // Cleanup classification and returned values stay in private process memory.
-// They are never attached to errors (which an MCP host may serialize), and a
-// returned value is never proof that an operation persisted its effect.
+// A returned value is never attached to an error (which an MCP host may
+// serialize); the thrown failure carries only its code and the cleanup
+// diagnostic. A returned value is never proof that an operation persisted.
 export function mutationCleanupFailure(error) {
   return error !== null && (typeof error === "object" || typeof error === "function") ? (cleanupFailures.get(error) ?? null) : null;
 }
@@ -34,7 +37,7 @@ function releaseCompletedOwner(owner) {
     }
   };
   let first;
-  for (let index = 0; index < 3; index += 1) {
+  for (let index = 0; index <= CLEANUP_RETRY_MS.length; index += 1) {
     // Revalidate the namespace and the exact inode before every cleanup attempt.
     // A changed/unreadable namespace is never permission to remove anything.
     try {
@@ -57,19 +60,19 @@ function releaseCompletedOwner(owner) {
       first ??= error;
       // Readback distinguishes a retained nonce from a completed unlink. Do not
       // retry rmdir or unlink after ownership has already been released.
-      try {
-        validateNamespace();
-        const directory = fs.lstatSync(owner.directory, { throwIfNoEntry: false });
-        if (!directory) throw Object.assign(new Error("Lock cleanup failed after owner release."), { code: first.code, ownerReleased: true });
-        safeDirectory(owner.directory);
-        if (directory.dev !== owner.directoryIdentity.dev || directory.ino !== owner.directoryIdentity.ino) throw first;
-        const current = fs.lstatSync(owner.file, { throwIfNoEntry: false });
-        if (!current) throw Object.assign(new Error("Lock cleanup failed after owner release."), { code: first.code, ownerReleased: true });
-        if (!sameEntry(current, owner.identity)) throw first;
-      } catch (readback) {
-        throw readback;
-      }
-      if (!new Set(["UNKNOWN", "EPERM", "EACCES", "EBUSY"]).has(error.code) || index === 2) throw first;
+      validateNamespace();
+      const directory = fs.lstatSync(owner.directory, { throwIfNoEntry: false });
+      if (!directory) throw Object.assign(new Error("Lock cleanup failed after owner release."), { code: first.code, ownerReleased: true });
+      safeDirectory(owner.directory);
+      if (directory.dev !== owner.directoryIdentity.dev || directory.ino !== owner.directoryIdentity.ino) throw first;
+      const current = fs.lstatSync(owner.file, { throwIfNoEntry: false });
+      if (!current) throw Object.assign(new Error("Lock cleanup failed after owner release."), { code: first.code, ownerReleased: true });
+      if (!sameEntry(current, owner.identity)) throw first;
+      if (!new Set(["UNKNOWN", "EPERM", "EACCES", "EBUSY"]).has(error.code) || index === CLEANUP_RETRY_MS.length) throw first;
+      // A Windows scanner or indexer can hold the file open for a few
+      // milliseconds; an immediate retry would usually meet the same handle.
+      // The pauses are short and fixed so a committed operation is not held.
+      Atomics.wait(pause, 0, 0, CLEANUP_RETRY_MS[index]);
     }
   }
 }
@@ -84,7 +87,9 @@ export function finishMutation(owner, failed, error, result) {
     });
     if (failed) {
       // Frozen errors and primitive throws must survive with their identity.
-      if (error !== null && (typeof error === "object" || typeof error === "function")) cleanupFailures.set(error, { diagnostic, operationReturned: false });
+      // An inner lock's own cleanup failure keeps its entry (its step returned).
+      if (error !== null && (typeof error === "object" || typeof error === "function") && !cleanupFailures.has(error))
+        cleanupFailures.set(error, { diagnostic, operationReturned: false });
     } else {
       const failure = Object.assign(new Error("The operation returned, but its local lock cleanup could not be confirmed. Do not repeat the operation."), {
         code: "LOCAL_MUTATION_CLEANUP_FAILED",
@@ -166,7 +171,7 @@ export function release(owner) {
     // Ownership is already released by the exact nonce unlink. A succeeding
     // writer (or a Windows enumeration handle) may prevent directory removal;
     // never turn a committed operation into failure for this empty-shell cleanup.
-    if (!new Set(["ENOENT", "ENOTEMPTY", "EEXIST", "EPERM", "EACCES"]).has(error.code)) throw error;
+    if (!new Set(["ENOENT", "ENOTEMPTY", "EEXIST", "EPERM", "EACCES", "EBUSY"]).has(error.code)) throw error;
   }
   // The parent is a shared namespace, not this owner's lease. Keep its single
   // empty directory: another process may already be creating a sibling lock.
@@ -194,7 +199,7 @@ export function attempt(directory) {
       try {
         fs.rmdirSync(directory);
       } catch (error) {
-        if (!new Set(["ENOENT", "ENOTEMPTY", "EEXIST", "EPERM", "EACCES"]).has(error.code)) throw error;
+        if (!new Set(["ENOENT", "ENOTEMPTY", "EEXIST", "EPERM", "EACCES", "EBUSY"]).has(error.code)) throw error;
       }
       return null;
     } catch (error) {

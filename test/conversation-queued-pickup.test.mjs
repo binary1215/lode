@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -688,3 +689,90 @@ test("a mailbox lock left by a stopped hook does not make the next Stop skip the
   assert.match(output.hookSpecificOutput.additionalContext, /after a killed hook/);
   assert.equal(archived(root, sent.id).handedToHost, true);
 });
+
+// A lock cleanup failure inside the earlier pass ends it. The message it touched
+// is counted from what the mailbox shows; nothing is handed over again, and the
+// new message is not handed over while the slot's lock is unconfirmed.
+for (const stage of ["claim", "handed"]) {
+  for (const owner of ["retained", "released"]) {
+    test(`B: a lock cleanup failure at the earlier ${stage} step (${owner} owner) never repeats a hand-over`, async (t) => {
+      const { root, environment } = isolated(t);
+      liveCodex(t, root, environment);
+      const older = await queue(root, environment, "codex:receiver", "older message");
+      const locks = path.join(root, ".lode", "messaging", ".delivery-locks");
+      const directory = path.join(locks, crypto.createHash("sha256").update("codex:receiver").digest("hex") + ".lock");
+      const delivered = [];
+      const olderAt = (kind) => mailbox(root)[kind].some((message) => message.id === older.id);
+      const armed = () => (stage === "claim" ? delivered.length === 0 && olderAt("inflight") : delivered.length === 1 && olderAt("archive"));
+      const originalUnlink = fs.unlinkSync;
+      let failures = 0;
+      t.mock.method(fs, "unlinkSync", (file, ...rest) => {
+        if (path.dirname(String(file)) !== directory || failures >= 3 || !armed()) return originalUnlink(file, ...rest);
+        failures += 1;
+        if (owner === "released") {
+          originalUnlink(file, ...rest);
+          failures = 3;
+        }
+        throw Object.assign(new Error("fixture lock cleanup failure"), { code: "UNKNOWN" });
+      });
+      const deliver = async ({ message }) => {
+        delivered.push(message.body);
+        return { outcome: "delivered", evidence: "test-live" };
+      };
+      const result = await sendProjectConversation({
+        root,
+        caller: caller("claude", "sender"),
+        environment,
+        to: "codex:receiver",
+        body: "newer message",
+        now: nextNow,
+        waitMs: 0,
+        deliver,
+      });
+      t.mock.restoreAll();
+      assert.ok(failures > 0);
+      // The new message is never handed over after the failure.
+      assert.deepEqual(delivered, stage === "claim" ? [] : ["older message"]);
+      const handed = stage === "handed" ? 1 : 0;
+      // A claim that was never offered goes back to the queue when the slot can
+      // be taken again; only a claim it cannot release stays unknown.
+      const requeued = stage === "claim" && owner === "released" ? 1 : 0;
+      assert.deepEqual(result.earlier, {
+        handed,
+        unknown: 1 - handed - requeued,
+        queued: requeued,
+        cleanup: { code: "UNKNOWN", ownerReleased: owner === "released" },
+      });
+      if (stage === "handed") assert.equal(archived(root, older.id).state, "delivered");
+      if (owner === "released") {
+        // The slot could be taken again, so the new message went back to the queue.
+        assert.equal(result.state, "queued");
+        assert.deepEqual(queuedIds(root).sort(), (requeued ? [older.id, result.id] : [result.id]).sort());
+      } else {
+        assert.equal(result.state, "unknown");
+        assert.equal(result.reasonCode, "LOCAL_MUTATION_CLEANUP_FAILED");
+        assert.equal(result.persisted, true);
+        assert.ok(result.id);
+      }
+      // The retained owner belongs to this process; a later process would find
+      // it stale. Remove it here, then send again: nothing is handed over twice.
+      fs.rmSync(directory, { recursive: true, force: true });
+      const later = await sendProjectConversation({
+        root,
+        caller: caller("claude", "sender"),
+        environment,
+        to: "codex:receiver",
+        body: "later message",
+        now: nextNow,
+        waitMs: 0,
+        deliver,
+      });
+      assert.equal(later.state, "delivered");
+      // Each message is handed over at most once; a re-queued older message
+      // is handed over for the first time by the later pass.
+      const count = (body) => delivered.filter((item) => item === body).length;
+      assert.equal(count("older message"), handed + requeued);
+      assert.equal(count("newer message"), owner === "released" ? 1 : 0);
+    });
+  }
+}

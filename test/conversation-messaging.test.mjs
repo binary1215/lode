@@ -142,10 +142,12 @@ for (const phase of ["retention", "claim"]) {
             return { outcome: "delivered" };
           },
         });
-      if (kind === "primitive") {
+      // Before the message is written the step's own failure is thrown as it
+      // was (nothing about the message exists); after, the mailbox decides.
+      if (kind === "primitive" || phase === "retention") {
         try {
           await send();
-          assert.fail("expected original primitive");
+          assert.fail("expected the original failure");
         } catch (error) {
           assert.equal(error, original);
         }
@@ -233,14 +235,31 @@ for (const phase of [
         if (injected && String(file).includes(path.join("archive", slot))) throw Object.assign(new Error("fixture read denied"), { code: "EACCES" });
         return originalOpen(file, ...rest);
       });
-    const result = await sendProjectConversation({
-      ...args,
-      body: "private fixture body",
-      deliver: async () => {
-        deliveries++;
-        return { outcome: "delivered", evidence: "fixture-receipt", receipt: { turnId: "fixture-turn" } };
-      },
-    });
+    const sending = () =>
+      sendProjectConversation({
+        ...args,
+        body: "private fixture body",
+        deliver: async () => {
+          deliveries++;
+          return { outcome: "delivered", evidence: "fixture-receipt", receipt: { turnId: "fixture-turn" } };
+        },
+      });
+    if (phase === "before-enqueue") {
+      // Nothing was written or sent: a plain failure the caller may answer by
+      // sending again, never an unknown hand-over.
+      await assert.rejects(sending, (error) => error.code === "CONVERSATION_NOT_SENT" && !/private fixture body/.test(error.message));
+      assert.ok(injected);
+      assert.equal(deliveries, 0);
+      assert.equal(
+        fs
+          .readdirSync(path.join(messaging, "inbox", slot))
+          .some((name) => originalRead(path.join(messaging, "inbox", slot, name), "utf8").includes("private fixture body")),
+        false,
+      );
+      t.mock.restoreAll();
+      return;
+    }
+    const result = await sending();
     assert.ok(injected);
     assert.equal(deliveries, ["before-enqueue", "before-delivery"].includes(phase) ? 0 : 1);
     assert.equal(result.state, phase === "terminal" ? "delivered" : "unknown");
@@ -259,6 +278,48 @@ for (const phase of [
     t.mock.restoreAll();
   });
 }
+
+test("a claim whose lock owner was released before cleanup failed goes back to the queue, never unknown", async (t) => {
+  const { root, environment } = isolated(t);
+  const address = "codex:requeue-recipient";
+  const slot = crypto.createHash("sha256").update(address).digest("hex");
+  register(root, environment, caller("codex", "requeue-recipient"), { kind: "codex-next-prompt" });
+  const messaging = path.join(root, ".lode", "messaging");
+  const directory = path.join(messaging, ".delivery-locks", slot + ".lock");
+  const originalUnlink = fs.unlinkSync;
+  let releases = 0,
+    deliveries = 0;
+  t.mock.method(fs, "unlinkSync", (file, ...rest) => {
+    if (path.dirname(String(file)) !== directory) return originalUnlink(file, ...rest);
+    releases++;
+    if (releases !== 1) return originalUnlink(file, ...rest);
+    // The owner file is gone, but the call reports a failure.
+    originalUnlink(file, ...rest);
+    throw Object.assign(new Error("fixture release failure"), { code: "UNKNOWN" });
+  });
+  const result = await sendProjectConversation({
+    root,
+    environment,
+    caller: caller("claude", "requeue-sender"),
+    to: address,
+    now: fixedNow,
+    waitMs: 0,
+    body: "requeued fixture body",
+    deliver: async () => {
+      deliveries++;
+      return { outcome: "delivered", evidence: "fixture-receipt" };
+    },
+  });
+  t.mock.restoreAll();
+  assert.equal(deliveries, 0);
+  assert.equal(result.state, "queued");
+  assert.equal(result.reasonCode, "LOCAL_MUTATION_CLEANUP_FAILED");
+  assert.equal(result.cleanup.ownerReleased, true);
+  const queued = JSON.parse(fs.readFileSync(path.join(messaging, "inbox", slot, result.id + ".json"), "utf8"));
+  assert.equal(queued.handedToHost, false);
+  assert.equal(queued.externalAttempt, undefined);
+  assert.equal(fs.existsSync(path.join(messaging, "inflight", slot, result.id + ".json")), false);
+});
 
 test("three clients are listed with addresses and current reachability inside isolated homes", (t) => {
   const { root, environment, home } = isolated(t);
