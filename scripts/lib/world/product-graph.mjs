@@ -16,6 +16,8 @@ import {
   PRODUCT_GRAPH_APPROVAL_DIRECTORY,
   PRODUCT_GRAPH_BUILD_DIRECTORY,
   PRODUCT_GRAPH_CHECK_DIRECTORY,
+  PRODUCT_GRAPH_CHECK_MAX_BYTES,
+  PRODUCT_GRAPH_CHECK_MAX_RECORDS,
   PRODUCT_GRAPH_DIRECTORY,
   PRODUCT_GRAPH_MAX_FILE_BYTES,
   PRODUCT_GRAPH_MAX_FILES,
@@ -171,6 +173,7 @@ function assertNoLinkedComponents(projectRoot, target) {
 function readDocumentFiles(directory) {
   const files = [],
     unrecognized = [];
+  let checks = 0;
   const visit = (prefix, absolute) => {
     for (const entry of listDirectory(absolute)) {
       const name = nfc(entry.name);
@@ -186,7 +189,10 @@ function readDocumentFiles(directory) {
         unrecognized.push(relative);
         continue;
       }
-      if (files.length >= PRODUCT_GRAPH_MAX_FILES) fail("PRODUCT_GRAPH_TOO_MANY_FILES");
+      // Confirmation records are counted apart from the documents, so they
+      // never push a Project over the document limit.
+      if (target.role === "check" ? ++checks > PRODUCT_GRAPH_CHECK_MAX_RECORDS : files.length - checks >= PRODUCT_GRAPH_MAX_FILES)
+        fail("PRODUCT_GRAPH_TOO_MANY_FILES");
       const bytes = readBounded(path.join(absolute, entry.name));
       files.push({ path: relative, ...target, bytes, sha256: sha256Hex(bytes) });
     }
@@ -1538,11 +1544,16 @@ function currentBuildGraph(root) {
   if (read.freshness.state !== "fresh")
     return { ok: false, code: "PRODUCT_GRAPH_BUILD_STALE", reason: `${read.freshness.text}. 다시 빌드한다: ${read.buildCommand}` };
   const ran = run({ root }, { requireOutput: false });
-  if (sha256Hex(json(ran.graph)) !== read.graphFileSha256)
+  // What a record stores: every node's content and reach hash and the way code
+  // is read. An approval since the build changes a document's status, not
+  // these, so a second approval in a row still records its code basis.
+  const hashes = (graph) =>
+    JSON.stringify(graph.nodes.map((node) => [node.id, node.contentSha256 ?? null, node.reachSha256 ?? null]).sort((a, b) => compare(a[0], b[0])));
+  if (hashes(ran.graph) !== hashes(read.graph) || readerKey(ran.graph.inputs?.reader) !== readerKey(read.graph.inputs?.reader))
     return {
       ok: false,
       code: "PRODUCT_GRAPH_BUILD_STALE",
-      reason: `빌드가 지금 문서·승인·소스로 만든 그래프와 다르다(빌드 뒤 승인했거나 Lode가 바뀌었다). 다시 빌드한다: ${read.buildCommand}`,
+      reason: `빌드의 노드 내용이 지금 소스로 다시 읽은 것과 다르다(Lode가 코드를 읽는 방식이 바뀌었을 수 있다). 다시 빌드한다: ${read.buildCommand}`,
     };
   return { ok: true, ran };
 }
@@ -1553,6 +1564,15 @@ function writeCheckRecord({ projectRoot, family, record }) {
   const directory = path.join(family, PRODUCT_GRAPH_CHECK_DIRECTORY);
   const destination = path.join(directory, `${record.checkId}.json`);
   assertNoLinkedComponents(projectRoot, destination);
+  // Never write what a build could not read back, nor past the record count.
+  const text = json(record);
+  if (Buffer.byteLength(text) > PRODUCT_GRAPH_CHECK_MAX_BYTES)
+    fail("PRODUCT_GRAPH_CHECK_LIMIT", `확인 기록 하나가 ${PRODUCT_GRAPH_CHECK_MAX_BYTES}바이트를 넘는다. 나눠서 확인한다.`);
+  const existing = fs.existsSync(directory)
+    ? listDirectory(directory).filter((entry) => classifyProductGraphPath(`${PRODUCT_GRAPH_CHECK_DIRECTORY}/${nfc(entry.name)}`)?.role === "check")
+    : [];
+  if (existing.length >= PRODUCT_GRAPH_CHECK_MAX_RECORDS && !fs.existsSync(destination))
+    fail("PRODUCT_GRAPH_CHECK_LIMIT", `확인 기록이 ${PRODUCT_GRAPH_CHECK_MAX_RECORDS}개로 한도에 닿아 더 쓰지 않는다.`);
   if (fs.existsSync(destination)) {
     const existing = verifyProductGraphCheck(JSON.parse(decodeProductGraphText(readBounded(destination))), {
       projectId: record.projectId,
@@ -1562,7 +1582,7 @@ function writeCheckRecord({ projectRoot, family, record }) {
     return "existing";
   }
   fs.mkdirSync(directory, { recursive: true });
-  atomicCreateArtifact(destination, json(record));
+  atomicCreateArtifact(destination, text);
   return "recorded";
 }
 
@@ -1696,9 +1716,14 @@ export function approveProductGraphDocument({ root = ".", document, expectedSha2
       fs.mkdirSync(directory, { recursive: true });
       atomicCreateArtifact(destination, json(record));
     }
-    const codeBasis = basis.record
-      ? { status: writeCheckRecord({ projectRoot, family, record: basis.record }), checkId: basis.record.checkId, rows: basis.rows }
-      : basis.result;
+    // The approval is written; the code basis never turns it into a failure.
+    let codeBasis = basis.result;
+    if (basis.record)
+      try {
+        codeBasis = { status: writeCheckRecord({ projectRoot, family, record: basis.record }), checkId: basis.record.checkId, rows: basis.rows };
+      } catch (error) {
+        codeBasis = { status: "not-recorded", code: error.code || "PRODUCT_GRAPH_CHECK_LIMIT", reason: "코드 근거 기록을 쓰지 못했다(문서 승인은 됐다)" };
+      }
     return {
       status,
       document: relative,

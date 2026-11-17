@@ -179,7 +179,15 @@ export function verifyProductGraphApproval(document, { projectId = null, approva
 // snapshot. It grants nothing: it says what was looked at.
 export const PRODUCT_GRAPH_CHECK_PROTOCOL = "lode-product-graph-confirmation";
 export const PRODUCT_GRAPH_CHECK_VERSION = 1;
-export const PRODUCT_GRAPH_CHECK_MAX_ITEMS = 2000;
+// Bounds that keep the records from ever stopping a build: a record is at most
+// PRODUCT_GRAPH_CHECK_MAX_BYTES (well under the 1 MiB file limit) and the
+// records are counted apart from the documents (PRODUCT_GRAPH_MAX_FILES).
+// Lode refuses to write past either bound.
+export const PRODUCT_GRAPH_CHECK_MAX_ITEMS = 500;
+export const PRODUCT_GRAPH_CHECK_MAX_BYTES = 256 * 1024;
+export const PRODUCT_GRAPH_CHECK_MAX_RECORDS = 2000;
+const ISO_TIME = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{3})?Z$/;
+const readerValue = (value) => value === null || (typeof value === "string" && value.length <= 256) || (typeof value === "number" && Number.isFinite(value));
 const CHECK_BY = Object.freeze({
   "agent-checked": "agent-check-of-code-not-user-approval",
   "user-approved": "explicit-user-product-graph-approval",
@@ -214,14 +222,23 @@ function checkItem(item) {
   if (!item || typeof item !== "object" || Array.isArray(item)) fail("PRODUCT_GRAPH_CHECK_INVALID");
   const keys = Object.keys(item).sort().join(",");
   if (item.kind === "meaning") {
-    if (keys !== "basis,id,kind,textSha256" || !isText(item.id) || !HEX64.test(item.textSha256)) fail("PRODUCT_GRAPH_CHECK_INVALID");
-    return { kind: "meaning", id: item.id, textSha256: item.textSha256, basis: checkBasis(item.basis) };
+    if (keys !== "basis,id,kind,textSha256" || !isText(item.id) || nfc(item.id) !== item.id || !HEX64.test(item.textSha256))
+      fail("PRODUCT_GRAPH_CHECK_INVALID");
+    const basis = checkBasis(item.basis);
+    // The basis names the 기능 the line describes.
+    if (!basis.some((node) => node.id === item.id)) fail("PRODUCT_GRAPH_CHECK_INVALID");
+    return { kind: "meaning", id: item.id, textSha256: item.textSha256, basis };
   }
   if (item.kind === "documentRow") {
     if (keys !== "basis,document,documentTextSha256,from,kind,to,type") fail("PRODUCT_GRAPH_CHECK_INVALID");
     const target = classifyProductGraphPath(item.document);
     if (!target?.approvable || target.role !== "document" || nfc(item.document) !== item.document) fail("PRODUCT_GRAPH_CHECK_INVALID");
     if (!ROW_TYPES.includes(item.type) || !isText(item.from) || !isText(item.to) || !HEX64.test(item.documentTextSha256)) fail("PRODUCT_GRAPH_CHECK_INVALID");
+    if (nfc(item.from) !== item.from || nfc(item.to) !== item.to) fail("PRODUCT_GRAPH_CHECK_INVALID");
+    const basis = checkBasis(item.basis);
+    // The basis names the node the row says something about.
+    const rowTarget = item.type === "기능→화면요소" ? item.from : item.to;
+    if (!basis.some((node) => node.id === rowTarget)) fail("PRODUCT_GRAPH_CHECK_INVALID");
     return {
       kind: "documentRow",
       document: item.document,
@@ -229,7 +246,7 @@ function checkItem(item) {
       from: item.from,
       to: item.to,
       documentTextSha256: item.documentTextSha256,
-      basis: checkBasis(item.basis),
+      basis,
     };
   }
   fail("PRODUCT_GRAPH_CHECK_INVALID");
@@ -238,12 +255,14 @@ function checkItem(item) {
 function checkPayload(record) {
   if (typeof record.projectId !== "string" || !record.projectId) fail("PRODUCT_GRAPH_CHECK_INVALID");
   if (!Object.hasOwn(CHECK_BY, record.by)) fail("PRODUCT_GRAPH_CHECK_INVALID");
-  if (typeof record.checkedAt !== "string" || !Number.isFinite(Date.parse(record.checkedAt))) fail("PRODUCT_GRAPH_CHECK_INVALID");
+  if (typeof record.checkedAt !== "string" || !ISO_TIME.test(record.checkedAt) || !Number.isFinite(Date.parse(record.checkedAt)))
+    fail("PRODUCT_GRAPH_CHECK_INVALID");
   if (record.rationale !== null && (typeof record.rationale !== "string" || !record.rationale.trim() || record.rationale.length > 2000))
     fail("PRODUCT_GRAPH_CHECK_INVALID");
   const reader = record.reader;
   if (!reader || typeof reader !== "object" || Array.isArray(reader) || Object.keys(reader).sort().join(",") !== "generator,graphVersion,sourceAnalysis")
     fail("PRODUCT_GRAPH_CHECK_INVALID");
+  if (![reader.generator, reader.graphVersion, reader.sourceAnalysis].every(readerValue)) fail("PRODUCT_GRAPH_CHECK_INVALID");
   if (!Array.isArray(record.items) || !record.items.length || record.items.length > PRODUCT_GRAPH_CHECK_MAX_ITEMS) fail("PRODUCT_GRAPH_CHECK_INVALID");
   const items = sortedBy(record.items.map(checkItem), productGraphCheckItemKey);
   if (new Set(items.map(productGraphCheckItemKey)).size !== items.length) fail("PRODUCT_GRAPH_CHECK_INVALID");
@@ -506,6 +525,7 @@ export function verifyProductGraphCanonOriginals({ directory, list, readBytes, p
   const base = `${directory}/${PRODUCT_GRAPH_DIRECTORY}`;
   const verified = [],
     unrecognized = [];
+  let checks = 0;
   const top = list(base);
   if (!top.length) return { verified, unrecognized };
   const visit = (prefix, names) => {
@@ -521,7 +541,9 @@ export function verifyProductGraphCanonOriginals({ directory, list, readBytes, p
         unrecognized.push(within);
         continue;
       }
-      if (verified.length >= PRODUCT_GRAPH_MAX_FILES) fail("PRODUCT_GRAPH_TOO_MANY_FILES");
+      // Confirmation records are counted apart from the documents.
+      if (target.role === "check" ? ++checks > PRODUCT_GRAPH_CHECK_MAX_RECORDS : verified.length - checks >= PRODUCT_GRAPH_MAX_FILES)
+        fail("PRODUCT_GRAPH_TOO_MANY_FILES");
       verifyProductGraphCanonFile(within, readBytes(`${base}/${within}`), { projectId });
       verified.push(`${base}/${within}`);
     }

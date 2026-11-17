@@ -15,7 +15,14 @@ import {
   readProductGraphBuild,
 } from "../scripts/lib/world/product-graph.mjs";
 import { queryProductGraph } from "../scripts/lib/world/product-graph-query.mjs";
-import { productGraphCheckRecord, verifyProductGraphCheck } from "../scripts/lib/storage/product-graph-store.mjs";
+import {
+  PRODUCT_GRAPH_CHECK_MAX_BYTES,
+  PRODUCT_GRAPH_CHECK_MAX_ITEMS,
+  PRODUCT_GRAPH_CHECK_MAX_RECORDS,
+  PRODUCT_GRAPH_MAX_FILE_BYTES,
+  productGraphCheckRecord,
+  verifyProductGraphCheck,
+} from "../scripts/lib/storage/product-graph-store.mjs";
 import { exportProjectBundle, importProjectBundle, inspectProjectBundle } from "../scripts/lib/storage/project-portability.mjs";
 import { adoptVerifiedProjectCopy } from "../scripts/lib/storage/project-copy-adoption.mjs";
 import { buildSnapshotDeletionClosure } from "../scripts/lib/world/snapshot-deletion-closure.mjs";
@@ -187,10 +194,10 @@ test("confirm refuses what is not there and never writes a partial record; stand
   const rows = confirmProductGraph({ root: f.root, documents: [MAIN] });
   assert.equal(rows.documentRows, 5);
   assert.equal(rows.meanings, 0);
-  // An approval after the build changes the graph (the document's status): the build is not current.
+  // An approval after the build changes a document's status, not the code a record stores: confirm still works.
   const digest = checkProductGraph({ root: f.root }).documents.list.find((item) => item.path === "정책.md").approvalDigest;
   approveProductGraphDocument({ root: f.root, document: "정책.md", expectedSha256: digest, rationale: "ok" });
-  assert.throws(() => confirmProductGraph({ root: f.root, features: [SAVE] }), { code: "PRODUCT_GRAPH_BUILD_STALE" });
+  assert.equal(confirmProductGraph({ root: f.root, features: [SAVE] }).status, "recorded");
   const standalone = checkProductGraph({
     sourceRoot: path.join(fixtures, "ui-signal"),
     documentsDirectory: path.join(fixtures, "ui-signal-documents"),
@@ -301,6 +308,8 @@ test("B2: a source page has line numbers, 80 lines, the recorded span marked and
 
 test("B3: controls and bidi marks are shown escaped; the page bundles the reader and renders text only", () => {
   assert.equal(explorerReading.displayText("a\u202Eb\u2066c\u0007d\te\nf\u200F"), "a\\u202eb\\u2066c\\u0007d\te\nf\\u200f");
+  // Line ends written on Windows stay line ends.
+  assert.equal(explorerReading.displayText("one\r\ntwo\rthree"), "one\ntwo\nthree");
   const views = fs.readFileSync(path.join(pluginRoot, "scripts", "graph-explorer", "views.js"), "utf8");
   assert.match(views, /node\.textContent = explorerReading\.displayText\(options\.text\)/);
   assert(GRAPH_EXPLORER_SCRIPTS.indexOf("reading.js") >= 0 && GRAPH_EXPLORER_SCRIPTS.indexOf("reading.js") < GRAPH_EXPLORER_SCRIPTS.indexOf("views.js"));
@@ -309,4 +318,73 @@ test("B3: controls and bidi marks are shown escaped; the page bundles the reader
   assert.doesNotMatch(reading, /\bfetch\(|XMLHttpRequest|WebSocket|localStorage|sessionStorage|innerHTML|document\./);
   for (const key of ["reasonHeading", "recordedSpan", "noRecordedSpan", "sourceLines", "sourcePrevious", "sourceNext"])
     assert.match(fs.readFileSync(path.join(pluginRoot, "scripts", "graph-explorer", "i18n.js"), "utf8").split(key).length - 1 === 2 ? "ok" : "", /ok/, key);
+});
+
+test("records never stop a build or fail an approval: count and size bounds, a failed record write, two approvals in a row", (t) => {
+  const f = project(t);
+  let built = buildProductGraph({ root: f.root });
+  const digest = (relative) => built.documents.list.find((item) => item.path === relative).approvalDigest;
+  // Two approvals in a row: the second still records its code basis.
+  const first = approveProductGraphDocument({ root: f.root, document: MAIN, expectedSha256: digest(MAIN), rationale: "ok" });
+  const second = approveProductGraphDocument({ root: f.root, document: "화면설계서/DLG-01.md", expectedSha256: digest("화면설계서/DLG-01.md"), rationale: "ok" });
+  assert.equal(first.codeBasis.status, "recorded");
+  assert.equal(second.codeBasis.status, "recorded");
+  // A record write that fails after the approval is written leaves the approval standing.
+  const other = project(t);
+  built = buildProductGraph({ root: other.root });
+  fs.writeFileSync(other.checks, "not a folder\n");
+  const approved = approveProductGraphDocument({
+    root: other.root,
+    document: MAIN,
+    expectedSha256: built.documents.list.find((item) => item.path === MAIN).approvalDigest,
+    rationale: "ok",
+  });
+  assert.equal(approved.status, "recorded");
+  assert.equal(approved.codeBasis.status, "not-recorded");
+  assert.equal(checkProductGraph({ root: other.root }).documents.approved, 1);
+  // At the record limit confirm refuses and writes nothing; builds keep working.
+  const records = fs.readdirSync(f.checks).length;
+  const current = buildProductGraph({ root: f.root }).confirmations.counts.current;
+  assert(current > 0);
+  for (let index = records; index < PRODUCT_GRAPH_CHECK_MAX_RECORDS; index++)
+    fs.writeFileSync(path.join(f.checks, `product-graph-check-${index.toString(16).padStart(24, "0")}.json`), "{}");
+  buildProductGraph({ root: f.root });
+  assert.throws(() => confirmProductGraph({ root: f.root, features: [SAVE] }), { code: "PRODUCT_GRAPH_CHECK_LIMIT" });
+  assert.equal(fs.readdirSync(f.checks).length, PRODUCT_GRAPH_CHECK_MAX_RECORDS);
+  built = buildProductGraph({ root: f.root });
+  assert.equal(built.confirmations.issues.length, PRODUCT_GRAPH_CHECK_MAX_RECORDS - records);
+  assert.equal(built.confirmations.counts.current, current, "broken files excuse nothing and take nothing away");
+});
+
+test("a record is closed: item count, ISO time, reader values, and a basis that names what the item describes", () => {
+  const base = {
+    projectId: "p",
+    by: "agent-checked",
+    checkedAt: "2026-11-18T00:00:00.000Z",
+    rationale: null,
+    reader: { generator: "lode-product-graph", graphVersion: 1, sourceAnalysis: 1 },
+  };
+  const hash = "a".repeat(64);
+  const meaning = (id, basisId = id) => ({ kind: "meaning", id, textSha256: hash, basis: [{ id: basisId, contentSha256: hash }] });
+  assert.ok(productGraphCheckRecord({ ...base, items: [meaning("F1")] }).checkId);
+  assert.throws(() => productGraphCheckRecord({ ...base, items: [meaning("F1", "OTHER")] }), { code: "PRODUCT_GRAPH_CHECK_INVALID" });
+  assert.throws(() => productGraphCheckRecord({ ...base, checkedAt: "2026", items: [meaning("F1")] }), { code: "PRODUCT_GRAPH_CHECK_INVALID" });
+  assert.throws(() => productGraphCheckRecord({ ...base, reader: { ...base.reader, generator: { nested: true } }, items: [meaning("F1")] }), {
+    code: "PRODUCT_GRAPH_CHECK_INVALID",
+  });
+  const many = Array.from({ length: PRODUCT_GRAPH_CHECK_MAX_ITEMS + 1 }, (_, index) => meaning(`F${index}`));
+  assert.throws(() => productGraphCheckRecord({ ...base, items: many }), { code: "PRODUCT_GRAPH_CHECK_INVALID" });
+  const row = (type, from, to, basisId) => ({
+    kind: "documentRow",
+    document: MAIN,
+    type,
+    from,
+    to,
+    documentTextSha256: hash,
+    basis: [{ id: basisId, contentSha256: hash }],
+  });
+  assert.ok(productGraphCheckRecord({ ...base, items: [row("기능→화면요소", "F1", "E1", "F1")] }));
+  assert.throws(() => productGraphCheckRecord({ ...base, items: [row("기능→화면요소", "F1", "E1", "E1")] }), { code: "PRODUCT_GRAPH_CHECK_INVALID" });
+  // The largest record Lode may write stays well under the file limit a build reads.
+  assert(PRODUCT_GRAPH_CHECK_MAX_BYTES < PRODUCT_GRAPH_MAX_FILE_BYTES);
 });

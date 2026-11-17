@@ -43,7 +43,8 @@ The file opens on **Status**. Tabs next to it switch, without loading anything, 
   what `product-graph-query` prints for the same question. With no build the view
   says "없음, 빌드 필요" and the command.
 - **Gaps** shows `check.json` in the order of `check.txt`: what the graph cannot
-  answer, the comparison with the baseline and 다시 볼 것, the first-run guide, the six
+  answer, the comparison with the baseline and 다시 볼 것, the confirmation records
+  (확인 기록: counts, then each status as a folded list), the first-run guide, the six
   정합성 검사 lines (each ends in findings, 0건 or 검사 못 함 with its reason, marked
   differently) and every list with its count. An item that names a node opens it in
   the product graph view.
