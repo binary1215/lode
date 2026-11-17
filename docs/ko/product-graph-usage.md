@@ -29,7 +29,7 @@ lode-agent product-graph-check <project> --include-estimates
 
 검사는 읽기만 합니다. 정합성 검사 여섯 줄과 그 뒤의 목록을 한국어로 냅니다. 기본으로는 승인된 문서만 쓰고, 빼 둔 추정 문서가 몇 개인지 알려 줍니다. `--include-estimates`를 주면 추정 문서도 쓰고, 그것에 기댄 발견마다 `[추정: 코드만 보고 쓴 추정]` 같은 표시를 붙입니다.
 
-MCP에서는 같은 연산이 묶음 tool `lode_product_graph`의 action `build`, `check`, `query`, `baseline`, `approve`이고, `lode_tools_call`(읽기만 하는 검사와 질의는 `lode_tools_read`도 됨)로 부릅니다. 기본 tool 목록에는 없습니다.
+MCP에서는 같은 연산이 묶음 tool `lode_product_graph`의 action `build`, `check`, `query`, `baseline`, `confirm`, `approve`이고, `lode_tools_call`(읽기만 하는 검사와 질의는 `lode_tools_read`도 됨)로 부릅니다. 기본 tool 목록에는 없습니다.
 
 ## 승인
 
@@ -89,6 +89,18 @@ lode-agent product-graph-baseline <project>
 ```
 
 기준은 이 명령으로만 옮겨집니다. 이미 있는 빌드를 기준으로 삼고, 그 빌드가 지금 소스 그대로가 아니면 `PRODUCT_GRAPH_BUILD_STALE`로 거절하며, 바뀐 것과 다시 볼 것 몇 개가 목록에서 빠지는지 말합니다. `build/baseline-content.json`(새 기준의 소스 본문)을 쓰고 이어서 `build/baseline.json`을 쓰며, 그 밖에는 쓰지 않습니다. `build/`를 지우면 그 목록과 전후 본문 표시만 잃습니다. 빌드가 지금 소스 그대로인지는 빌드가 읽은 모든 파일과 새로 생긴 코드 파일로 확인합니다. 코드가 아닌 새 파일(예: hook JSON이나 플러그인 매니페스트)은 다음 빌드에서야 보입니다. 같은 읽는 방식에서 기준과 글이 같은 파일의 노드가 해시나 줄 범위가 다르면 빌드는 `PRODUCT_GRAPH_NOT_REPRODUCIBLE`로 멈추고 아무것도 쓰지 않습니다.
+
+## 확인 기록
+
+"다시 볼 것"은 기준에 따라 정해집니다. 기준을 옮기면 아무도 보지 않았어도 사라지고, 기준보다 앞선 변경 뒤에 쓴 뜻 줄은 끝내 잡히지 않습니다. 확인 기록은 기준과 따로, 실제로 무엇을 확인했는지 남깁니다. 기록 하나(`.lode/context/product-graph/확인/product-graph-check-<id>.json`)는 확인한 뜻 줄(기능 ID와 그 줄 글의 해시)이나 문서 줄(화면요소→기능, 기능→화면요소, 화면→코드와 문서 글의 확인 값)을 적고, 그것이 가리키는 노드마다 그때의 내용 해시(기능이면 닿는 코드 전체의 해시도)와 코드를 읽은 방식을 적습니다. 한 번 쓰면 Lode가 고치거나 지우지 않습니다. 승인 기록처럼 내보내기·가져오기·폴더 복사로 함께 옮겨지고 GC가 남겨 둡니다.
+
+```
+lode-agent product-graph-confirm <project> --input confirm.json
+```
+
+입력은 `{"features": ["<기능 ID>"], "documents": ["화면설계서/MAIN-01.md"], "rationale": "what was re-read"}`입니다(MCP: `lode_product_graph`의 action `confirm`). 각 줄이 설명하는 코드를 다시 읽은 뒤에만 씁니다. 에이전트의 확인(`agent-checked`)을 남길 뿐 사용자의 승인이 아니며 아무 권한도 주지 않습니다. 문서 이름을 주면 그 문서의 코드와 잇는 행을 모두 확인한 것으로 남깁니다. 이미 있는 빌드를 읽고, 지금 다시 빌드하면 다른 그래프가 나올 때(빌드 뒤 소스·문서·승인이 바뀜) `PRODUCT_GRAPH_BUILD_STALE`로, 기능에 그래프 안의 뜻 줄이 없거나 문서에 그런 행이 없으면 `PRODUCT_GRAPH_CHECK_TARGET_MISSING`으로 거절하고 아무것도 쓰지 않습니다. `product-graph-approve`도 지금 빌드로 승인한 문서의 행에 대한 기록(`user-approved`)을 함께 씁니다. 빌드가 지금 것이 아니면 글은 전처럼 승인하고, 코드 근거는 기록하지 않았다고 말합니다.
+
+빌드는 (프로젝트에서만 — 독립 실행은 읽지 않고 그렇다고 말합니다) 기록을 읽어 기준과의 비교 다음에 **확인 기록**을 덧붙입니다. 확인할 수 있는 항목마다 그것을 적은 가장 최근의 올바른 기록이 정합니다: 확인한 적 없음, 확인 뒤 코드가 바뀜(가리키던 노드가 바뀌었거나 사라졌거나 닿는 코드가 바뀜 — 무엇이, 누가 언제 확인했는지와 함께), 확인 뒤 글이 바뀜(뜻 줄이나 문서 글이 바뀜), 다른 방식으로 읽은 때 확인함(코드를 다른 방식으로 읽던 때의 확인이라 다시 봄), 또는 그대로(수만 셈). 항목을 보여 주는 곳마다 에이전트 확인과 사용자 승인을 나눠 적습니다. 모양·내용 주소·프로젝트가 맞지 않는 기록은 파일 이름과 함께 "읽지 못한 확인 기록"에 나오고 아무것도 확인한 것으로 치지 않습니다. 기준을 옮겨도 이것은 바뀌지 않습니다. 빌드 뒤에 쓴 기록은 다음 빌드까지 `check.json`에 없고, 빌드를 읽을 때 현재성 옆에 그렇다고 말합니다. `product-graph-query <project> changes`가 이 블록을 보여 주고, `--list neverChecked`, `changedSinceCheck`, `textChanged`, `otherReader`, `issues`로 상태 하나를 나열합니다. 뜻 줄을 다시 볼 기능은 노드 줄에 `{뜻: …}`가 붙습니다. Graph Explorer의 빈 곳 보기도 같은 블록을 보여 주고 항목마다 그 노드로 잇습니다.
 
 ## 다른 폴더를 건드리지 않고 비교하기
 

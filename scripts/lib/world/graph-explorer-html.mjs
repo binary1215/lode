@@ -16,6 +16,7 @@ export const GRAPH_EXPLORER_SCRIPTS = Object.freeze([
   "product-graph-walk.js",
   "status-model.js",
   "i18n.js",
+  "reading.js",
   "views.js",
 ]);
 export function graphExplorerScript() {

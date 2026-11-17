@@ -15,6 +15,7 @@ import { withProjectMutation } from "../storage/project-mutation-lock.mjs";
 import {
   PRODUCT_GRAPH_APPROVAL_DIRECTORY,
   PRODUCT_GRAPH_BUILD_DIRECTORY,
+  PRODUCT_GRAPH_CHECK_DIRECTORY,
   PRODUCT_GRAPH_DIRECTORY,
   PRODUCT_GRAPH_MAX_FILE_BYTES,
   PRODUCT_GRAPH_MAX_FILES,
@@ -25,8 +26,10 @@ import {
   productGraphApprovalRecord,
   productGraphSubdirectories,
   verifyProductGraphApproval,
+  verifyProductGraphCheck,
   verifyProductGraphRules,
 } from "../storage/product-graph-store.mjs";
+import { checkableItems, confirmationRecord, confirmationStatus } from "./product-graph-confirmations.mjs";
 import {
   CORE_HEADINGS,
   parseActivityDocument,
@@ -302,6 +305,28 @@ function loadDocuments(inputs) {
       });
     }
   }
+  // Confirmation records (project mode only, like approvals). One that does
+  // not verify is an issue naming its file and excuses nothing.
+  const checkRecords = [];
+  const checkIssues = [];
+  for (const file of read.files.filter((item) => item.role === "check")) {
+    if (!inputs.approvals) continue;
+    try {
+      checkRecords.push(verifyProductGraphCheck(JSON.parse(decodeProductGraphText(file.bytes)), { projectId: inputs.projectId, checkId: file.checkId }));
+    } catch (error) {
+      const code = error.code || "PRODUCT_GRAPH_CHECK_INVALID";
+      checkIssues.push({
+        path: file.path,
+        code,
+        reason:
+          code === "PRODUCT_GRAPH_CHECK_PROJECT_MISMATCH"
+            ? "다른 프로젝트의 확인 기록이다"
+            : code === "PRODUCT_GRAPH_CHECK_INVALID"
+              ? "확인 기록의 모양이나 내용 주소가 맞지 않는다"
+              : "확인 기록으로 읽지 못했다",
+      });
+    }
+  }
   const documents = [];
   for (const file of read.files) {
     if (!["document", "policy", "meaning"].includes(file.role)) continue;
@@ -332,7 +357,7 @@ function loadDocuments(inputs) {
       parsed,
     });
   }
-  return { documents, unrecognized: read.unrecognized, twins: read.twins, approvalIssues, approvalsRead: inputs.approvals };
+  return { documents, unrecognized: read.unrecognized, twins: read.twins, approvalIssues, approvalsRead: inputs.approvals, checkRecords, checkIssues };
 }
 
 // A document is used as the product description only while 승인. One whose
@@ -889,6 +914,7 @@ export function renderProductGraphText(result) {
       ...walk.renderLimits(result.limits),
       "",
       ...walk.renderChanges(result.changes),
+      ...walk.renderConfirmations(result.confirmations),
       ...walk.renderGuide(result.guide),
       ...walk.renderChecks(result.checks),
       ...walk.renderGapLists(walk.gapLists(result, nodeTypes)),
@@ -1006,11 +1032,31 @@ function run(options, { requireOutput }) {
   const graph = graphDocument({ extraction, loaded, computed, inputs, rules, result });
   const baseline = compareToBaseline({ inputs, graph, computed, readFiles: extraction.readFiles, takeIfMissing: requireOutput });
   result.changes = baseline.changes;
+  result.confirmations = confirmationsOf({ graph, computed, loaded });
   result.text = renderProductGraphText(result);
   return { inputs, rules, extraction, loaded, computed, result, graph, baseline };
 }
 
 const baselineFile = (inputs) => path.join(inputs.outputDirectory, PRODUCT_GRAPH_BASELINE_FILE);
+
+// What was checked and whether it still holds, independent of the baseline.
+function confirmationsOf({ graph, computed, loaded }) {
+  const status = confirmationStatus({
+    graph,
+    meaningDocument: computed.meaningDocument,
+    documents: loaded.documents,
+    records: loaded.checkRecords,
+    issues: loaded.checkIssues,
+    read: loaded.approvalsRead,
+  });
+  if (status.status !== "compared") return status;
+  return { ...status, recordFiles: confirmationFileNames(loaded) };
+}
+
+const confirmationFileNames = (loaded) =>
+  [...loaded.checkRecords.map((record) => `${PRODUCT_GRAPH_CHECK_DIRECTORY}/${record.checkId}.json`), ...loaded.checkIssues.map((issue) => issue.path)].sort(
+    compare,
+  );
 
 // The comparison with the baseline (8A.3). A missing baseline is taken from
 // this build by a build (never by a check); an unreadable one is reported and
@@ -1286,6 +1332,28 @@ function freshnessOf(inputs, graph) {
   return result;
 }
 
+// Confirmation records written after the build (product-graph-confirm,
+// product-graph-approve) are not in check.json until the next build. That is
+// said next to the freshness; it does not make the build stale (the graph is
+// still the source as it is) and blocks nothing.
+function withConfirmationFiles(freshness, inputs, check) {
+  const recorded = check?.confirmations?.recordFiles;
+  if (inputs?.mode !== "project" || !Array.isArray(recorded)) return freshness;
+  let now;
+  try {
+    now = readDocumentFiles(inputs.documentsDirectory)
+      .files.filter((file) => file.role === "check")
+      .map((file) => file.path)
+      .sort(compare);
+  } catch {
+    return freshness;
+  }
+  const changed = now.length !== recorded.length || now.some((name, index) => name !== recorded[index]);
+  if (!changed) return { ...freshness, confirmations: { changed: false } };
+  const note = "확인 기록이 빌드 뒤 바뀜 — 다시 빌드하면 확인 상태에 반영된다";
+  return { ...freshness, confirmations: { changed: true, text: note }, text: `${freshness.text} · ${note}` };
+}
+
 // Reads the existing build: graph.json, check.json, the time of graph.json
 // and the baseline's time. Never builds, checks or writes. Project mode reads
 // the Project's build folder; { buildDirectory } reads a stand-alone output
@@ -1363,7 +1431,7 @@ export function readProductGraphBuild(options = {}) {
       return (checkFileSha256 ??= sha256Hex(checkBytes));
     },
     check,
-    freshness: freshnessOf(inputs, graph),
+    freshness: withConfirmationFiles(freshnessOf(inputs, graph), inputs, check),
     baselineNow: baseline.baseline ? { setAt: baseline.baseline.setAt } : null,
     baselineEvidence: baseline.baseline || null,
     buildCommand,
@@ -1456,6 +1524,109 @@ export function moveProductGraphBaseline(options = {}) {
   };
 }
 
+// The current graph, recomputed read-only, when it is exactly the build on
+// disk: the build is fresh and rebuilding now would write the same graph.json
+// (an approval or a Lode update since the build makes it differ). Otherwise a
+// reason.
+function currentBuildGraph(root) {
+  const read = readProductGraphBuild({ root });
+  if (read.status === "not-built")
+    return { ok: false, code: "PRODUCT_GRAPH_NOT_BUILT", reason: `제품 그래프 빌드가 없다. 먼저 빌드한다: ${read.buildCommand}` };
+  if (read.status !== "built") return { ok: false, code: read.code || "PRODUCT_GRAPH_BUILD_UNREADABLE", reason: read.reason };
+  if (read.graph.nodes.some((node) => !Object.hasOwn(node, "contentSha256")))
+    return { ok: false, code: "PRODUCT_GRAPH_BUILD_STALE", reason: `이 빌드에는 내용 해시가 없다(이전 버전의 빌드). 다시 빌드한다: ${read.buildCommand}` };
+  if (read.freshness.state !== "fresh")
+    return { ok: false, code: "PRODUCT_GRAPH_BUILD_STALE", reason: `${read.freshness.text}. 다시 빌드한다: ${read.buildCommand}` };
+  const ran = run({ root }, { requireOutput: false });
+  if (sha256Hex(json(ran.graph)) !== read.graphFileSha256)
+    return {
+      ok: false,
+      code: "PRODUCT_GRAPH_BUILD_STALE",
+      reason: `빌드가 지금 문서·승인·소스로 만든 그래프와 다르다(빌드 뒤 승인했거나 Lode가 바뀌었다). 다시 빌드한다: ${read.buildCommand}`,
+    };
+  return { ok: true, ran };
+}
+
+const checkableOf = (ran) => checkableItems({ graph: ran.graph, meaningDocument: ran.computed.meaningDocument, documents: ran.loaded.documents });
+
+function writeCheckRecord({ projectRoot, family, record }) {
+  const directory = path.join(family, PRODUCT_GRAPH_CHECK_DIRECTORY);
+  const destination = path.join(directory, `${record.checkId}.json`);
+  assertNoLinkedComponents(projectRoot, destination);
+  if (fs.existsSync(destination)) {
+    const existing = verifyProductGraphCheck(JSON.parse(decodeProductGraphText(readBounded(destination))), {
+      projectId: record.projectId,
+      checkId: record.checkId,
+    });
+    if (existing.checkHash !== record.checkHash) fail("PRODUCT_GRAPH_CHECK_COLLISION");
+    return "existing";
+  }
+  fs.mkdirSync(directory, { recursive: true });
+  atomicCreateArtifact(destination, json(record));
+  return "recorded";
+}
+
+const PRODUCT_GRAPH_CHECK_NOTE =
+  "에이전트가 코드를 다시 읽고 남긴 확인이다. 사용자의 승인이 아니며 아무 권한도 주지 않는다. 확인한 코드가 바뀌면 '확인 뒤 코드가 바뀜'으로 다시 나온다.";
+
+// Records an agent's check of 뜻 lines (by 기능 id) and of every row of the
+// named documents against the code as the current build has it. Only after
+// re-reading that code; it is not the user's approval.
+export function confirmProductGraph({ root = ".", features = [], documents = [], rationale = null } = {}) {
+  const inspected = readProject(root);
+  if (!inspected.project) fail("NOT_INITIALIZED", "확인 기록은 Lode 프로젝트에서만 쓴다. 이 폴더는 Lode 프로젝트가 아니다.");
+  const list = (value) => (Array.isArray(value) && value.every((item) => typeof item === "string" && item.length > 0 && item.length <= 2048) ? value : null);
+  const featureIds = list(features);
+  const documentPaths = list(documents)?.map((item) => nfc(item.replaceAll("\\", "/")));
+  if (!featureIds || !documentPaths || featureIds.length + documentPaths.length === 0)
+    fail("PRODUCT_GRAPH_CHECK_TARGET_INVALID", "확인할 기능 ID나 문서 경로를 하나 이상 준다.");
+  if (rationale !== null && (typeof rationale !== "string" || !rationale.trim() || rationale.length > 2000))
+    fail("PRODUCT_GRAPH_CHECK_TARGET_INVALID", "근거는 비어 있지 않은 2000자 이하 글이다.");
+  const projectRoot = inspected.project.projectRoot;
+  const family = path.join(projectRoot, inspected.storage.directory, ...PRODUCT_GRAPH_DIRECTORY.split("/"));
+  return withProjectMutation({ root: projectRoot, storage: inspected.storage, scope: "product-graph-check", timeoutMs: 0 }, () => {
+    const current = currentBuildGraph(projectRoot);
+    if (!current.ok) fail(current.code, current.reason);
+    const checkable = checkableOf(current.ran);
+    const missing = [];
+    const items = [];
+    for (const id of new Set(featureIds)) {
+      const item = checkable.find((entry) => entry.kind === "meaning" && entry.id === id);
+      if (item) items.push(item);
+      else missing.push(`기능 ${id}: 그래프에 있는 기능의 뜻 줄이 없다`);
+    }
+    for (const document of new Set(documentPaths)) {
+      const rows = checkable.filter((entry) => entry.kind === "documentRow" && entry.document === document);
+      if (rows.length) items.push(...rows);
+      else missing.push(`${document}: 코드와 잇는 행(기능→화면요소, 화면요소→기능, 화면→코드)이 없는 문서다`);
+    }
+    if (missing.length) fail("PRODUCT_GRAPH_CHECK_TARGET_MISSING", `확인할 것이 없다: ${missing.join(" / ")}`);
+    const record = confirmationRecord({ projectId: inspected.project.projectId, by: "agent-checked", rationale, graph: current.ran.graph, items });
+    if (!record) fail("PRODUCT_GRAPH_CHECK_TARGET_INVALID", "한 번에 확인할 수 있는 것보다 많거나, 내용 해시가 없는 노드를 가리킨다.");
+    const status = writeCheckRecord({ projectRoot, family, record });
+    const records = status === "existing" ? current.ran.loaded.checkRecords : [...current.ran.loaded.checkRecords, record];
+    const confirmations = confirmationsOf({
+      graph: current.ran.graph,
+      computed: current.ran.computed,
+      loaded: { ...current.ran.loaded, checkRecords: records },
+    });
+    return {
+      status,
+      checkId: record.checkId,
+      by: record.by,
+      checkedAt: record.checkedAt,
+      items: record.items.length,
+      meanings: record.items.filter((item) => item.kind === "meaning").length,
+      documentRows: record.items.filter((item) => item.kind === "documentRow").length,
+      confirmations: { status: confirmations.status, counts: confirmations.counts },
+      note: `${PRODUCT_GRAPH_CHECK_NOTE} check.txt에는 다음 빌드부터 보인다.`,
+      authority: record.authority,
+      instructionAuthority: false,
+      executionAuthority: false,
+    };
+  });
+}
+
 function physicalFile(base, relative) {
   let current = base;
   for (const part of relative.split("/")) {
@@ -1465,6 +1636,27 @@ function physicalFile(base, relative) {
     current = path.join(current, matches[0].name);
   }
   return current;
+}
+
+// With an approval, the code basis of the approved document's rows as the
+// current build has it ("user-approved"). A build that is not current, or a
+// document without such rows, approves the text as before and says the code
+// basis was not recorded; this never blocks the approval. Computed against
+// the graph from before this approval was written (the build's own).
+function approvedCodeBasisRecord({ projectRoot, projectId, document, digest, rationale }) {
+  let current;
+  try {
+    current = currentBuildGraph(projectRoot);
+  } catch (error) {
+    current = { ok: false, code: error.code || "PRODUCT_GRAPH_BUILD_UNREADABLE", reason: "지금 그래프를 다시 계산하지 못했다" };
+  }
+  if (!current.ok)
+    return { result: { status: "not-recorded", code: current.code, reason: `코드 근거는 기록하지 않았다(문서 승인은 됐다): ${current.reason}` } };
+  const items = checkableOf(current.ran).filter((item) => item.kind === "documentRow" && item.document === document && item.documentTextSha256 === digest);
+  if (!items.length) return { result: { status: "not-recorded", reason: "이 문서에는 코드와 잇는 행이 없어 코드 근거를 기록하지 않았다" } };
+  const record = confirmationRecord({ projectId, by: "user-approved", rationale, graph: current.ran.graph, items });
+  if (!record) return { result: { status: "not-recorded", reason: "행이 너무 많거나 내용 해시가 없는 노드를 가리켜 코드 근거를 기록하지 않았다" } };
+  return { record, rows: items.length };
 }
 
 // Records the user's approval of one document's exact current bytes. The
@@ -1488,6 +1680,7 @@ export function approveProductGraphDocument({ root = ".", document, expectedSha2
     if (current !== expectedSha256)
       fail("PRODUCT_GRAPH_APPROVAL_STALE", `${relative}가 사용자가 본 내용과 다르다. 지금 내용을 다시 보여 주고 다시 승인받아야 한다.`);
     const record = productGraphApprovalRecord({ projectId: inspected.project.projectId, document: relative, documentTextSha256: current, rationale });
+    const basis = approvedCodeBasisRecord({ projectRoot, projectId: inspected.project.projectId, document: relative, digest: current, rationale });
     const directory = path.join(family, PRODUCT_GRAPH_APPROVAL_DIRECTORY);
     const destination = path.join(directory, `${record.approvalId}.json`);
     assertNoLinkedComponents(projectRoot, destination);
@@ -1503,9 +1696,13 @@ export function approveProductGraphDocument({ root = ".", document, expectedSha2
       fs.mkdirSync(directory, { recursive: true });
       atomicCreateArtifact(destination, json(record));
     }
+    const codeBasis = basis.record
+      ? { status: writeCheckRecord({ projectRoot, family, record: basis.record }), checkId: basis.record.checkId, rows: basis.rows }
+      : basis.result;
     return {
       status,
       document: relative,
+      codeBasis,
       documentTextSha256: current,
       digestBasis: record.digestBasis,
       approved: true,

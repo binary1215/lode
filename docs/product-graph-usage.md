@@ -27,7 +27,7 @@ lode-agent product-graph-check <project> --include-estimates
 
 The check is read-only. It prints the six rows of the 정합성 검사 and the lists that follow them, in Korean. By default it uses approved documents only and says how many estimates it left out. With `--include-estimates` it also uses estimates and labels every finding that rests on one, for example `[추정: 코드만 보고 쓴 추정]`.
 
-Through MCP the same operations are the grouped tool `lode_product_graph` with action `build`, `check`, `query`, `baseline` or `approve`, routed through `lode_tools_call` (or `lode_tools_read` for the read-only check and query). They are not on the default tool list.
+Through MCP the same operations are the grouped tool `lode_product_graph` with action `build`, `check`, `query`, `baseline`, `confirm` or `approve`, routed through `lode_tools_call` (or `lode_tools_read` for the read-only check and query). They are not on the default tool list.
 
 ## Approve
 
@@ -87,6 +87,18 @@ lode-agent product-graph-baseline <project>
 ```
 
 Moving the baseline is the only way it moves. It takes the existing build, refuses with `PRODUCT_GRAPH_BUILD_STALE` when that build is not the source as it is now, and says how many changed items and 다시 볼 것 items leave the list. It writes `build/baseline-content.json` (the new baseline's source text) and then `build/baseline.json`, and nothing else. Deleting `build/` loses only that list and the before/after display. Whether a build is still the source as it is now is checked against every file it read and against code files that are new; a new file that is not code (a hook JSON or a plugin manifest, for example) is seen only by the next build. If a build finds a node in a file whose text equals the baseline's but whose hash or lines differ under the same reader, it stops with `PRODUCT_GRAPH_NOT_REPRODUCIBLE` and writes nothing.
+
+## Confirmation records
+
+"다시 볼 것" is relative to the baseline: moving the baseline clears it although nobody looked, and a 뜻 line written after a change that predates the baseline is never flagged. Confirmation records say what was actually checked, apart from the baseline. Each record, `.lode/context/product-graph/확인/product-graph-check-<id>.json`, names the 뜻 lines (by 기능 ID and the hash of the line's text) or document rows (화면요소→기능, 기능→화면요소, 화면→코드, with the document's text digest) that were checked, and for every node they point to its content hash (and, for a 기능, the hash of all code it reaches) at that moment, with the way the code was read. It is written once and never rewritten or removed by Lode; it travels with export, import and folder copies like approval records, and GC keeps it.
+
+```
+lode-agent product-graph-confirm <project> --input confirm.json
+```
+
+with `{"features": ["<기능 ID>"], "documents": ["화면설계서/MAIN-01.md"], "rationale": "what was re-read"}` (MCP: `lode_product_graph` action `confirm`). Use it only after re-reading the code each line describes: it records an agent's check (`agent-checked`), not the user's approval, and grants nothing. A document name confirms every code-linked row of that document. It reads the existing build and refuses with `PRODUCT_GRAPH_BUILD_STALE` when rebuilding now would give another graph (the source, a document or an approval changed since the build), and with `PRODUCT_GRAPH_CHECK_TARGET_MISSING` when a 기능 has no 뜻 line in the graph or a document has no such rows; nothing is written then. `product-graph-approve` also writes a record (`user-approved`) for the approved document's rows from the current build; when the build is not current it approves the text as before and says the code basis was not recorded.
+
+The build reads the records (in a Project; a stand-alone run reads none and says so) and adds, after the comparison with the baseline, **확인 기록**: per checkable item, the latest valid record that names it decides: 확인한 적 없음 (never checked), 확인 뒤 코드가 바뀜 (a node it pointed to changed, is gone or its reached code changed, with which and who checked when), 확인 뒤 글이 바뀜 (the 뜻 line or the document's text changed), 다른 방식으로 읽은 때 확인함 (checked when the code was read another way; look again), or still current (counted, not listed). Agent checks and user approvals are named apart (에이전트 확인, 사용자 승인) wherever an item is listed. A record that does not verify (shape, content address, another Project) is listed with its file under 읽지 못한 확인 기록 and counts for nothing. Moving the baseline changes none of this. A record written after the build is not in `check.json` until the next build; reading the build says so next to its freshness. `product-graph-query <project> changes` shows the block, and `--list neverChecked`, `changedSinceCheck`, `textChanged`, `otherReader` or `issues` lists one status; a 기능 whose 뜻 line needs a look carries `{뜻: …}` on its node line. The Gaps view of the Graph Explorer shows the same block with each item linked to its node.
 
 ## Comparing another directory without touching it
 

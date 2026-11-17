@@ -23,7 +23,8 @@
   const el = (tag, options = {}, ...children) => {
     const node = document.createElement(tag);
     if (options.className) node.className = options.className;
-    if (options.text !== undefined) node.textContent = options.text;
+    // Controls and bidi marks are shown as \uXXXX, never applied (B3).
+    if (options.text !== undefined) node.textContent = explorerReading.displayText(options.text);
     for (const [name, value] of Object.entries(options.attrs || {})) node.setAttribute(name, value);
     if (options.onClick) node.addEventListener("click", options.onClick);
     for (const child of children) if (child) node.append(child);
@@ -36,6 +37,62 @@
   };
   const button = (text, onClick, className = "link-button", attrs = {}) => el("button", { text, onClick, className, attrs: { type: "button", ...attrs } });
   const badge = (text, kind) => el("span", { text, className: `badge badge-${kind}` });
+  // Authored text with headings, lists and code fences as blocks; inline
+  // Markdown stays literal. Rendered through textContent only.
+  const richText = (text) => {
+    const box = el("div", { className: "rich-text" });
+    for (const block of explorerReading.blocks(text)) {
+      if (block.kind === "heading") box.append(el("p", { className: `rich-heading rich-h${block.level}`, text: block.text }));
+      else if (block.kind === "list") box.append(el(block.ordered ? "ol" : "ul", {}, ...block.items.map((item) => el("li", { text: item }))));
+      else if (block.kind === "code") box.append(el("pre", { className: "rich-code", text: block.text }));
+      else box.append(el("p", { text: block.text }));
+    }
+    return box;
+  };
+  // One line stays a line; text with line breaks becomes blocks.
+  const authored = (text, className = "") =>
+    /\n/.test(String(text ?? "")) ? el("div", { className: `${className} rich`.trim() }, richText(text)) : el("span", { className, text });
+  const reasonLine = (reason) =>
+    /\n/.test(String(reason ?? "")) ? el("div", {}, el("div", { text: t("reasonHeading") }), richText(reason)) : el("div", { text: t("reason", reason || t("noReason")) });
+
+  // A bounded reader of an exported original: line numbers, the recorded
+  // line range marked when the reference has one, PAGE_LINES lines a page.
+  function sourceReader(text, span) {
+    const box = el("div", { className: "source-reader" });
+    let page = null;
+    const draw = (focus = null) => {
+      const view = explorerReading.sourcePage(text, { page, span });
+      page = view.page;
+      const nav = el(
+        "div",
+        { className: "source-nav" },
+        el("span", { className: "hint", text: view.span ? t("recordedSpan", view.span.startLine, view.span.endLine) : t("noRecordedSpan") }),
+        el("span", { className: "hint", text: t("sourceLines", view.from, view.to, view.total) }),
+      );
+      const previous = view.page > 0 ? button(t("sourcePrevious", view.pageLines), () => ((page -= 1), draw("previous"))) : null;
+      const next = view.page < view.pages - 1 ? button(t("sourceNext", view.pageLines), () => ((page += 1), draw("next"))) : null;
+      if (previous) nav.append(previous);
+      if (next) nav.append(next);
+      const lines = el(
+        "div",
+        { className: "source-lines" },
+        ...view.lines.map((line) =>
+          el(
+            "div",
+            { className: line.inSpan ? "source-line in-span" : "source-line" },
+            el("span", { className: "source-no", text: String(line.number), attrs: { "aria-hidden": "true" } }),
+            el("span", { className: "source-text", text: line.text || " " }),
+          ),
+        ),
+      );
+      box.replaceChildren(nav, lines);
+      // Paging keeps the keyboard where it was.
+      const target = focus === "previous" ? previous || next : focus === "next" ? next || previous : null;
+      if (target) target.focus();
+    };
+    draw();
+    return box;
+  }
   const localTime = (iso) => {
     if (!iso) return t("timeUnknown");
     const date = new Date(iso);
@@ -222,7 +279,7 @@
   function itemRow(item) {
     const group = sessionOf(item.sessionId);
     const kind = item.type === "pending" ? "pending" : "unknown";
-    const row = el("div", { className: "item" }, badge(item.type === "pending" ? t("pending") : t("unknown"), kind), el("span", { className: "item-text", text: item.text }));
+    const row = el("div", { className: "item" }, badge(item.type === "pending" ? t("pending") : t("unknown"), kind), authored(item.text, "item-text"));
     const where = el("div", { className: "hint" }, button(t("fromRecord", sessionTitle(group), localTime(item.recordedAt)), () => openRecord(item.recordId)));
     const state = itemState(item);
     if (state) where.append(el("span", { text: " · " }), state);
@@ -312,7 +369,7 @@
             "div",
             {},
             el("strong", { text: judgment.assessment }),
-            el("div", { text: t("reason", judgment.reason || t("noReason")) }),
+            reasonLine(judgment.reason),
             judgment.alternatives?.length ? el("div", { className: "hint", text: t("alternatives", judgment.alternatives.join(" / ")) }) : null,
             el("div", { className: "hint" }, recordLink(judgment.recordId, judgment.recordedAt, judgment.sessionId)),
           ),
@@ -383,7 +440,7 @@
     if (group.pending) marks.append(badge(t("pendingCount", group.pending), "pending"));
     if (group.unknowns) marks.append(badge(t("unknownCount", group.unknowns), "unknown"));
     head.append(marks);
-    if (group.purpose) head.append(el("div", { className: "card-head" }, el("h2", { text: t("sessionPurpose") }), badge(t("purposeRecorded"), "neutral")), el("p", { text: group.purpose }));
+    if (group.purpose) head.append(el("div", { className: "card-head" }, el("h2", { text: t("sessionPurpose") }), badge(t("purposeRecorded"), "neutral")), richText(group.purpose));
     root.append(head);
     const rows = el("div", { className: "rows" });
     for (const record of group.records) {
@@ -431,7 +488,7 @@
               "div",
               {},
               el("strong", { text: judgment.assessment }),
-              el("div", { text: t("reason", judgment.reason || t("noReason")) }),
+              reasonLine(judgment.reason),
               judgment.alternatives?.length ? el("div", { className: "hint", text: t("alternatives", judgment.alternatives.join(" / ")) }) : null,
             ),
           ),
@@ -441,26 +498,38 @@
       el(
         "div",
         { className: "item" },
-        el("span", { className: "item-text", text: item.text }),
+        authored(item.text, "item-text"),
         itemState(item) || badge(t("notFinished"), "neutral"),
         item.nextAction ? el("div", { className: "hint", text: t("nextAction", item.nextAction) }) : null,
       ),
     );
     root.append(marked(t("pending"), t("agentWrote"), "agent", pendingRows.length ? el("div", {}, ...pendingRows) : el("p", { text: t("none") })));
-    root.append(marked(t("unknowns"), t("agentWrote"), "agent", record.unknowns.length ? list(record.unknowns, (item) => el("span", { text: item.text })) : el("p", { text: t("none") })));
+    root.append(marked(t("unknowns"), t("agentWrote"), "agent", record.unknowns.length ? list(record.unknowns, (item) => authored(item.text)) : el("p", { text: t("none") })));
     const files = record.references.map((ref) => {
       const original = data.originals?.[JSON.stringify([ref.path || null, ref.digest || null])];
       const row = el("div", { className: "file-row" }, el("code", { text: ref.path }));
       if (ref.currentness && ref.currentness !== "current")
         row.append(badge(T[`currentness_${ref.currentness}`] ? t(`currentness_${ref.currentness}`) : t("currentness_other", ref.currentness), "historical"));
       if (original?.status === "verified-exact-bytes") {
-        const pre = el("pre", { text: original.text });
-        hide(pre, true);
-        const toggle = button(t("showContent"), () => {
-          hide(pre, !pre.hidden);
-          toggle.setAttribute("aria-expanded", pre.hidden ? "false" : "true");
-        }, "link-button", { "aria-expanded": "false" });
-        row.append(toggle, pre);
+        // Built when first opened; a reference without a recorded line range
+        // opens on its first page.
+        const span = Number.isInteger(ref.startLine) ? { startLine: ref.startLine, endLine: Number.isInteger(ref.endLine) ? ref.endLine : ref.startLine } : null;
+        let reader = null;
+        const toggle = button(
+          t("showContent"),
+          () => {
+            if (!reader) {
+              reader = sourceReader(original.text, span);
+              hide(reader, true);
+              row.append(reader);
+            }
+            hide(reader, !reader.hidden);
+            toggle.setAttribute("aria-expanded", reader.hidden ? "false" : "true");
+          },
+          "link-button",
+          { "aria-expanded": "false" },
+        );
+        row.append(toggle);
       } else row.append(el("span", { className: "hint", text: t("bodyNotIncluded") }));
       return row;
     });
@@ -735,6 +804,20 @@
     root.append(el("section", { className: "card" }, el("h2", { text: productGraphWalk.LIMITS_TITLE }), textLines(productGraphWalk.renderLimits(check.limits).slice(1))));
     const W = productGraphWalk.WORDS;
     root.append(el("section", { className: "card" }, el("h2", { text: W.comparison }), textLines(productGraphWalk.renderChanges(check.changes || { status: "none", reason: W.noComparison }).slice(1))));
+    // What was checked against the code, independent of the baseline. Each
+    // item opens its node; a build from before this has no block.
+    if (check.confirmations) {
+      const block = el("section", { className: "card" }, el("h2", { text: W.confirmations }));
+      block.append(textLines(productGraphWalk.confirmationHead(check.confirmations)));
+      for (const entry of productGraphWalk.CONFIRMATION_LISTS) {
+        const items = productGraphWalk.confirmationItems(check.confirmations, entry.key);
+        if (!items.length) continue;
+        const details = el("details", { className: "gap-list" }, el("summary", { text: `${entry.title}: ${items.length}` }));
+        whenOpened(details, () => answerBlock(t("gapItems", items.length), items, (item) => nodeLink(item.text, item.nodeId)));
+        block.append(details);
+      }
+      root.append(block);
+    }
     if (check.guide?.length) root.append(el("section", { className: "card" }, el("h2", { text: W.guide }), textLines(productGraphWalk.renderGuide(check.guide).slice(1))));
     const checks = el("section", { className: "card" }, el("h2", { text: W.checks }));
     check.checks.forEach((item, index) => {

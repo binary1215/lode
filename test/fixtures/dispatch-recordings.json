@@ -5739,6 +5739,89 @@
   },
   {
    "surface": "mcp",
+   "tool": "lode_product_graph_confirm",
+   "input": {
+    "project_root": "<root>"
+   },
+   "calls": [
+    {
+     "fn": "product-graph#confirmProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "features": [],
+       "documents": [],
+       "rationale": null
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_confirm",
+   "input": {
+    "project_root": "<root>",
+    "features": [
+     "sample-features"
+    ],
+    "documents": [
+     "sample-documents"
+    ],
+    "rationale": "sample-rationale"
+   },
+   "calls": [
+    {
+     "fn": "product-graph#confirmProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "features": [
+        "sample-features"
+       ],
+       "documents": [
+        "sample-documents"
+       ],
+       "rationale": "sample-rationale"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_confirm",
+   "input": {
+    "project_root": "<root>",
+    "features": [],
+    "documents": [],
+    "rationale": ""
+   },
+   "calls": [
+    {
+     "fn": "product-graph#confirmProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "features": [],
+       "documents": [],
+       "rationale": ""
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
    "tool": "lode_product_graph_query",
    "input": {
     "project_root": "<root>"
@@ -16140,6 +16223,60 @@
    "outcome": {
     "error": "Error",
     "message": "Unexpected argument: sample-include-estimates"
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-confirm",
+   "argv": [
+    "product-graph-confirm",
+    "<root>"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Product graph confirmation requires --input <json-file>."
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-confirm",
+   "argv": [
+    "product-graph-confirm",
+    "<root>",
+    "--input",
+    "<cwd>/input.json"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph#confirmProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "features": [],
+       "documents": [],
+       "rationale": null
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-confirm",
+   "argv": [
+    "product-graph-confirm",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Product graph confirmation contains unsupported fields: lodeRecordingUnsupportedField"
    }
   },
   {
