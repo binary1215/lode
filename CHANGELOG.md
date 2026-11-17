@@ -11,6 +11,29 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.131 — publication tracked separately
+
+- Fixed: a lock entry that cannot be removed no longer replaces what the
+  operation did.
+  - The local lock coordinators keep the operation's own result or its own
+    thrown value (frozen errors and non-error throws included). When the
+    entry cannot be removed after three attempts (pauses of 10 and 30 ms),
+    a completed operation fails with `LOCAL_MUTATION_CLEANUP_FAILED`, which
+    says not to repeat it. An empty lock folder left after the entry is
+    gone (`EPERM`, `EACCES` or `EBUSY`) is not a failure.
+  - Conversation send answers such a failure from the mailbox instead of a
+    bare file-system error: `delivered`/`sent` only when the archive holds
+    exactly one record handed over under this send's claim and attempt;
+    `queued` when the message is back in the queue (a claim never offered
+    to the Host is put back when the lock can be taken); otherwise
+    `unknown` with the message ID. Nothing is ever handed over again.
+  - Before the message is written, the send fails with the step's own error,
+    or `CONVERSATION_NOT_SENT` when the step completed; nothing was sent and
+    sending again is safe.
+  - The pass that hands older queued mail over first stops at such a
+    failure and reports it in `earlier`; the new message is not handed over
+    in that send.
+
 ## 0.3.0-beta.130 — publication tracked separately
 
 - Added: the product graph query finds by relevance, shows what changed in
