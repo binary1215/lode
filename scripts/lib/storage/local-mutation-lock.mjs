@@ -26,11 +26,13 @@ const cleanupFailures = new WeakMap();
 // two short timers. Each removal revalidates the exact entry first.
 const retainedOwners = new Map();
 const RECLAIM_AFTER_MS = [1_000, 10_000];
-// Each coordinator invocation takes a sequence number when it starts. A cleanup
-// tag set by an earlier invocation on an error object thrown again later is
-// stale: the later invocation's healthy cleanup clears it. A tag set by an
-// inner (later-started) lock on the same throw is kept.
-let invocations = 0;
+// One sequence orders invocation starts and cleanup tags. A tag set before an
+// invocation started cannot come from anything that invocation awaited: when
+// that invocation's own cleanup is healthy, such a tag on the error it rethrows
+// is stale (an error object reused from an earlier failure) and is cleared. A
+// tag set after it started (an inner or awaited lock, whenever that lock began)
+// is kept.
+let sequence = 0;
 const sameEntry = (left, right) => left.dev === right.dev && left.ino === right.ino && left.isFile() && !left.isSymbolicLink();
 
 // Cleanup classification and returned values stay in private process memory.
@@ -39,6 +41,15 @@ const sameEntry = (left, right) => left.dev === right.dev && left.ino === right.
 // diagnostic. A returned value is never proof that an operation persisted.
 export function mutationCleanupFailure(error) {
   return error !== null && (typeof error === "object" || typeof error === "function") ? (cleanupFailures.get(error) ?? null) : null;
+}
+
+// The same, for the one caller that answers for the failure: the tag is
+// removed as it is read, so the same error object thrown again later (outside
+// any lock) is not taken for this cleanup failure a second time.
+export function takeMutationCleanupFailure(error) {
+  const tag = mutationCleanupFailure(error);
+  if (tag) cleanupFailures.delete(error);
+  return tag;
 }
 
 function releaseCompletedOwner(owner) {
@@ -98,7 +109,8 @@ function releaseCompletedOwner(owner) {
   }
 }
 
-function reclaimRetained(directory) {
+// Called once per coordinator call, before its wait loop, and by the timers.
+export function reclaimRetained(directory) {
   const owner = retainedOwners.get(directory);
   if (!owner) return;
   try {
@@ -120,18 +132,23 @@ function retain(owner) {
   }
 }
 
+// "Running" is a state of this process's invocation, never read from the
+// file system: an entry retained after a failed cleanup is not running, so a
+// callback that re-enters later is not nested in it.
 export function startMutation(owner) {
-  owner.invocation = ++invocations;
+  owner.startedAt = ++sequence;
+  owner.running = true;
   return owner;
 }
 
 export function finishMutation(owner, failed, error, result) {
+  owner.running = false;
   try {
     releaseCompletedOwner(owner);
-    // A tag left on this error object by an earlier invocation is stale.
+    // A tag set before this invocation started is stale.
     if (failed && error !== null && (typeof error === "object" || typeof error === "function")) {
       const tag = cleanupFailures.get(error);
-      if (tag && tag.invocation < (owner.invocation ?? 0)) cleanupFailures.delete(error);
+      if (tag && tag.seq < (owner.startedAt ?? 0)) cleanupFailures.delete(error);
     }
   } catch (cleanup) {
     if (cleanup.ownerRetained === true) retain(owner);
@@ -144,8 +161,8 @@ export function finishMutation(owner, failed, error, result) {
       // An inner lock's own cleanup failure keeps its entry (its step returned).
       if (error !== null && (typeof error === "object" || typeof error === "function")) {
         const tag = cleanupFailures.get(error);
-        if (!tag || tag.invocation < (owner.invocation ?? 0))
-          cleanupFailures.set(error, { diagnostic, operationReturned: false, invocation: owner.invocation ?? 0 });
+        if (!tag || tag.seq < (owner.startedAt ?? 0))
+          cleanupFailures.set(error, { diagnostic, operationReturned: false, directory: owner.directory, seq: ++sequence });
       }
     } else {
       const failure = Object.assign(new Error("The operation returned, but its local lock cleanup could not be confirmed. Do not repeat the operation."), {
@@ -153,7 +170,7 @@ export function finishMutation(owner, failed, error, result) {
         cleanup: diagnostic,
         operationReturned: true,
       });
-      cleanupFailures.set(failure, { diagnostic, operationReturned: true, result, invocation: owner.invocation ?? 0 });
+      cleanupFailures.set(failure, { diagnostic, operationReturned: true, result, directory: owner.directory, seq: ++sequence });
       throw failure;
     }
   }
@@ -235,9 +252,6 @@ export function release(owner) {
 }
 
 export function attempt(directory) {
-  // This process's own entry left by a failed cleanup is removed first, so a
-  // healthy file system does not keep the lock busy for the process lifetime.
-  reclaimRetained(directory);
   fs.mkdirSync(path.dirname(directory), { recursive: true });
   try {
     readLockPath(directory, path.dirname(directory), () => {});
@@ -335,7 +349,7 @@ export function cleanInterruptedStaging(directory) {
 
 export function nestedOwner(directory) {
   const owner = context.getStore()?.get(directory);
-  if (owner && fs.existsSync(owner.file)) return owner;
+  if (owner?.running === true && fs.existsSync(owner.file)) return owner;
   return null;
 }
 
@@ -346,6 +360,9 @@ export function withLocalMutation({ directory, timeoutMs = WAIT_MS }, operation)
     fail("Invalid local mutation lock.", "INVALID_PROJECT_MUTATION_SCOPE");
   if (nestedOwner(directory)) return operation();
   cleanInterruptedStaging(directory);
+  // This process's own entry left by a failed cleanup is removed first (once
+  // per call), so a healthy file system does not keep the lock busy.
+  reclaimRetained(directory);
   const deadline = Date.now() + timeoutMs;
   let owner;
   while (!(owner = attempt(directory))) {
@@ -390,6 +407,9 @@ export async function withLocalMutationAsync({ directory, timeoutMs = WAIT_MS },
     fail("Invalid local mutation lock.", "INVALID_PROJECT_MUTATION_SCOPE");
   if (nestedOwner(directory)) return operation();
   cleanInterruptedStaging(directory);
+  // This process's own entry left by a failed cleanup is removed first (once
+  // per call), so a healthy file system does not keep the lock busy.
+  reclaimRetained(directory);
   const deadline = Date.now() + timeoutMs;
   let owner;
   while (!(owner = attempt(directory))) {

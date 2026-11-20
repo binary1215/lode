@@ -130,7 +130,9 @@ export function currentChecks(records) {
     const heads = list.filter(({ record }) => !replaced.has(record.checkId));
     const pool = heads.length ? heads : list;
     pool.sort((a, b) => instant(b.record.checkedAt) - instant(a.record.checkedAt) || compare(b.record.checkId, a.record.checkId));
-    current.set(key, pool[0]);
+    // Every head is kept: a new record replaces them all, so it is the one head
+    // whatever the other records' times are.
+    current.set(key, { ...pool[0], heads: pool.map(({ record }) => record.checkId) });
   }
   return current;
 }
@@ -144,8 +146,8 @@ const sameStored = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 // The records a command writes for checkable items: items whose current
 // record is already of the same kind (by) with the same text and code basis,
 // read the same way, are left out (nothing new to say). The rest go into as
-// many records as the bounds need; each names the current records of its
-// items as replaced. Returns { records, unchanged } or { missingBasis }.
+// many records as the bounds need; each names every head (current or tied
+// record) of its items as replaced. Returns { records, unchanged } or { missingBasis }.
 export function confirmationRecords({ projectId, by, rationale = null, graph, items, records = [], checkedAt = new Date().toISOString() }) {
   const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
   const reader = readerOf(graph);
@@ -160,7 +162,7 @@ export function confirmationRecords({ projectId, by, rationale = null, graph, it
       unchanged += 1;
       continue;
     }
-    pending.push({ stored, replaces: head ? [head.record.checkId] : [] });
+    pending.push({ stored, replaces: head ? head.heads : [] });
   }
   const build = (chunk) =>
     productGraphCheckRecord({
@@ -181,18 +183,22 @@ export function confirmationRecords({ projectId, by, rationale = null, graph, it
   };
   // Halve until every part fits; a single item always fits (its basis is
   // bounded by the record's own shape).
+  let oversized = null;
   const split = (chunk) => {
     if (!chunk.length) return [];
     const record = fits(chunk);
     if (record) return [record];
-    if (chunk.length === 1) return null;
+    if (chunk.length === 1) {
+      oversized = chunk[0].stored;
+      return null;
+    }
     const middle = Math.ceil(chunk.length / 2);
     const left = split(chunk.slice(0, middle));
     const right = left && split(chunk.slice(middle));
     return left && right ? [...left, ...right] : null;
   };
   const written = split(pending);
-  if (!written) return { tooLarge: true };
+  if (!written) return { tooLarge: true, item: oversized };
   return { records: written, unchanged };
 }
 

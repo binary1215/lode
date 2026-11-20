@@ -9,7 +9,7 @@ import {
   assertConversationTarget,
 } from "./conversation-mailbox-storage.mjs";
 import { withLocalMutation } from "../storage/project-mutation-lock.mjs";
-import { mutationCleanupFailure } from "../storage/local-mutation-lock.mjs";
+import { mutationCleanupFailure, takeMutationCleanupFailure } from "../storage/local-mutation-lock.mjs";
 import { resolveProjectStorage } from "../storage/project-storage-format.mjs";
 import { recordedRootSpelling } from "../storage/project-root-spelling.mjs";
 import { claudeChannel, claudeDeliver, claudeLive } from "./conversation-messaging-claude.mjs";
@@ -1508,7 +1508,7 @@ async function handOverEarlier({ project, message, presence, environment, platfo
   const started = Date.now();
   let stopped = false;
   const afterCleanup = (error, id, owned) => {
-    const cleanup = mutationCleanupFailure(error);
+    const cleanup = takeMutationCleanupFailure(error);
     if (!cleanup) return false;
     const read = readBackAfterCleanup(project, address, id, owned);
     summary[read.state] += 1;
@@ -1541,7 +1541,8 @@ async function handOverEarlier({ project, message, presence, environment, platfo
       // When the claim step itself returned, its claim is known and goes back
       // to the queue if the slot can be taken; the mailbox decides otherwise.
       const cleanup = mutationCleanupFailure(error);
-      const claimed = cleanup?.operationReturned === true ? cleanup.result : null;
+      // Only this slot's own claim step gives a claim; a tag from another lock does not.
+      const claimed = cleanup?.operationReturned === true && cleanup.directory === slotLockDirectory(project, address) ? cleanup.result : null;
       if (claimed?.claim?.token) {
         summary.cleanup = cleanup.diagnostic;
         stopped = true;
@@ -1632,7 +1633,7 @@ export async function sendProjectConversation(args = {}) {
   try {
     return await sendProjectConversationObserved(args, observation);
   } catch (error) {
-    const cleanup = mutationCleanupFailure(error);
+    const cleanup = takeMutationCleanupFailure(error);
     if (!cleanup) throw error;
     return cleanupConversationResult(observation, cleanup, error);
   }
@@ -1768,7 +1769,7 @@ async function sendProjectConversationObserved(
       let preservationError = null;
       try {
         // Preservation that completed with only its lock cleanup failing is not an error.
-        completedStep(() => preserveUnknown(project, owned, error?.code || "delivery-outcome-unknown", state));
+        completedStep(() => preserveUnknown(project, owned, error?.code || "delivery-outcome-unknown", state), project, owned.to.address);
       } catch (cleanup) {
         preservationError = { code: cleanup?.code ?? null };
       }
@@ -1879,19 +1880,26 @@ export function registerHookPresence({ runtime, event, environment = process.env
 // A pick-up step whose own work completed but whose lock cleanup failed: the
 // step's result is used (its claims and attempts are written), never redone.
 // What counts as handed over is still decided only by markHanded.
-function completedStep(step) {
+// Only the step's own slot lock counts: a tag from another lock the step took
+// inside (a sender's slot for an expiry notice) is not this step's result.
+function completedStep(step, project, address) {
   try {
     return step();
   } catch (error) {
     const cleanup = mutationCleanupFailure(error);
-    if (cleanup?.operationReturned === true) return cleanup.result;
+    if (cleanup?.operationReturned === true && cleanup.directory === slotLockDirectory(project, address)) return takeMutationCleanupFailure(error).result;
     throw error;
   }
 }
+const slotLockDirectory = (project, address) => path.join(project.messaging, ".delivery-locks", slot(address) + ".lock");
 
 function prepareAddressInjection(project, address, evidence, now, options = {}) {
   if (!hasAddressMessages(project, address)) return null;
-  return completedStep(() => withMailboxSlot(project, slot(address), () => prepareAddressInjectionLocked(project, address, evidence, now, options)));
+  return completedStep(
+    () => withMailboxSlot(project, slot(address), () => prepareAddressInjectionLocked(project, address, evidence, now, options)),
+    project,
+    address,
+  );
 }
 function prepareAddressInjectionLocked(project, address, evidence, now, { deadlineAt = null, limit = null, prefix = "" } = {}) {
   const fits = limit ? (messages, remaining) => textFits(limit, prefix + renderInjection(messages, remaining)) : null;
@@ -1909,10 +1917,10 @@ function prepareAddressInjectionLocked(project, address, evidence, now, { deadli
   return {
     text: prefix + renderInjection(attempts, remaining + returned),
     commit() {
-      for (const message of attempts) completedStep(() => markHanded(project, message, "sent", evidence));
+      for (const message of attempts) completedStep(() => markHanded(project, message, "sent", evidence), project, address);
     },
     release() {
-      for (const message of attempts) completedStep(() => preserveUnknown(project, message, "prompt-handoff-unconfirmed"));
+      for (const message of attempts) completedStep(() => preserveUnknown(project, message, "prompt-handoff-unconfirmed"), project, address);
     },
   };
 }
@@ -1995,17 +2003,21 @@ export async function deliverQueuedOpenCode({
     if (record.runtime !== "opencode") continue;
     if (sessionId && record.nativeSessionId !== sessionId) continue;
     if (skip.has(record.nativeSessionId)) continue;
-    const { claimed } = completedStep(() => claimAddress(project, record.address, Date.now));
+    const step = (run) => completedStep(run, project, record.address);
+    const { claimed } = step(() => claimAddress(project, record.address, Date.now)) || { claimed: [] };
     for (const claimedMessage of claimed) {
       project.io.assertCurrent();
       const currentPresence = readPresence(project, record.address, environment);
-      const message = completedStep(() => beginAttempt(project, claimedMessage));
+      const message = step(() => beginAttempt(project, claimedMessage));
+      // The slot could not be taken: nothing was attempted, so nothing is
+      // handed over; recovery returns the claim to the queue.
+      if (!message?.externalAttempt) continue;
       if (
         !verifiedPresence(project, currentPresence, path.basename(presenceFile(project, record.address)), environment) ||
         currentPresence.registrationGeneration !== record.registrationGeneration ||
         JSON.stringify(currentPresence.channel) !== JSON.stringify(record.channel)
       ) {
-        const refused = completedStep(() => preserveUnknown(project, message, "CONVERSATION_TARGET_CHANGED", "refused"));
+        const refused = step(() => preserveUnknown(project, message, "CONVERSATION_TARGET_CHANGED", "refused"));
         if (refused) results.push(refused);
         continue;
       }
@@ -2016,11 +2028,11 @@ export async function deliverQueuedOpenCode({
         text: renderInjection([message], 0),
       });
       if (attempt.outcome === "delivered" || attempt.outcome === "sent") {
-        const handed = completedStep(() => markHanded(project, message, attempt.outcome, attempt.evidence, attempt.receipt ?? null));
+        const handed = step(() => markHanded(project, message, attempt.outcome, attempt.evidence, attempt.receipt ?? null));
         if (handed) results.push(handed);
-      } else if (attempt.outcome === "unavailable") completedStep(() => releaseClaim(project, message));
+      } else if (attempt.outcome === "unavailable") step(() => releaseClaim(project, message));
       else {
-        const unknown = completedStep(() => preserveUnknown(project, message, attempt.evidence || "opencode-delivery-unknown"));
+        const unknown = step(() => preserveUnknown(project, message, attempt.evidence || "opencode-delivery-unknown"));
         if (unknown) results.push(unknown);
       }
     }

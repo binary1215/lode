@@ -901,3 +901,81 @@ test("a preservation that completed with only its lock removal failing is not re
   assert.equal(kept.state, "unknown");
   assert.equal(kept.replayAllowed, false);
 });
+
+// ---- Review round 2: a slot that stays stuck (K4) ----
+
+function failSlotAlways(t, directory) {
+  const originalUnlink = fs.unlinkSync;
+  const state = { armed: false, failures: 0 };
+  t.mock.method(fs, "unlinkSync", (file, ...rest) => {
+    if (state.armed && path.dirname(String(file)) === directory) {
+      state.failures += 1;
+      throw Object.assign(new Error("fixture lock cleanup failure"), { code: "EBUSY" });
+    }
+    return originalUnlink(file, ...rest);
+  });
+  return state;
+}
+
+test("K4: OpenCode pick-up with a slot that stays stuck hands nothing over and throws no TypeError", async (t) => {
+  const { root, environment } = isolated(t);
+  register(root, environment, "opencode", "ses_one", { kind: "opencode-async" });
+  const sent = await queue(root, environment, "opencode:ses_one", "mail behind a stuck slot");
+  const prompts = [];
+  const client = {
+    session: {
+      async prompt(input) {
+        prompts.push(input);
+        return { data: { id: "msg_accepted" } };
+      },
+    },
+  };
+  const state = failSlotAlways(t, slotLock(root, "opencode:ses_one"));
+  state.armed = true;
+  const results = await deliverQueuedOpenCode({ root, client, directory: root, environment, sessionId: "ses_one" });
+  t.mock.restoreAll();
+  assert(state.failures >= 3);
+  assert.deepEqual(results, []);
+  assert.equal(prompts.length, 0);
+  assert.equal(archived(root, sent.id), undefined, "nothing is recorded as handed over");
+});
+
+test("K4: when the slot still cannot be taken after an earlier-pass failure, the new message is reported unknown", async (t) => {
+  const { root, environment } = isolated(t);
+  liveCodex(t, root, environment);
+  const older = await queue(root, environment, "codex:receiver", "older message");
+  const directory = slotLock(root, "codex:receiver");
+  const state = failSlotAlways(t, directory);
+  const delivered = [];
+  const olderInFlight = () => mailbox(root).inflight.some((message) => message.id === older.id);
+  // Armed once the older message is claimed (its claim step's cleanup fails), and stays failing.
+  const originalUnlink = fs.unlinkSync;
+  t.mock.restoreAll();
+  t.mock.method(fs, "unlinkSync", (file, ...rest) => {
+    if (path.dirname(String(file)) === directory && (state.armed || (delivered.length === 0 && olderInFlight()))) {
+      state.armed = true;
+      state.failures += 1;
+      throw Object.assign(new Error("fixture lock cleanup failure"), { code: "EBUSY" });
+    }
+    return originalUnlink(file, ...rest);
+  });
+  const result = await sendProjectConversation({
+    root,
+    caller: caller("claude", "sender"),
+    environment,
+    to: "codex:receiver",
+    body: "newer message",
+    now: nextNow,
+    waitMs: 0,
+    deliver: async ({ message }) => {
+      delivered.push(message.body);
+      return { outcome: "delivered", evidence: "test-live" };
+    },
+  });
+  t.mock.restoreAll();
+  assert.deepEqual(delivered, []);
+  assert.equal(result.state, "unknown");
+  assert.equal(result.reasonCode, "LOCAL_MUTATION_CLEANUP_FAILED");
+  assert.equal(result.persisted, true);
+  assert.equal(result.earlier.cleanup.code, "EBUSY");
+});

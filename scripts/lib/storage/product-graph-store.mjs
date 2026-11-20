@@ -201,6 +201,8 @@ const CHECK_BY = Object.freeze({
 });
 const HEX64 = /^[a-f0-9]{64}$/;
 const ROW_TYPES = Object.freeze(["기능→화면요소", "화면요소→기능", "화면→코드"]);
+// An id is whatever the graph produced: any non-empty string.
+const isId = (value) => typeof value === "string" && value.length > 0;
 const isText = (value, max = 2048) => typeof value === "string" && value.length > 0 && value.length <= max && !/[\x00-\x1f]/.test(value);
 const sortedBy = (items, key) => [...items].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
 
@@ -210,7 +212,7 @@ function checkBasis(basis) {
     if (!node || typeof node !== "object" || Array.isArray(node)) fail("PRODUCT_GRAPH_CHECK_INVALID");
     const keys = Object.keys(node).sort().join(",");
     if (!["contentSha256,id", "contentSha256,id,reachSha256"].includes(keys)) fail("PRODUCT_GRAPH_CHECK_INVALID");
-    if (!isText(node.id) || !HEX64.test(node.contentSha256) || (Object.hasOwn(node, "reachSha256") && !HEX64.test(node.reachSha256)))
+    if (!isId(node.id) || !HEX64.test(node.contentSha256) || (Object.hasOwn(node, "reachSha256") && !HEX64.test(node.reachSha256)))
       fail("PRODUCT_GRAPH_CHECK_INVALID");
     return Object.hasOwn(node, "reachSha256")
       ? { id: node.id, contentSha256: node.contentSha256, reachSha256: node.reachSha256 }
@@ -231,7 +233,7 @@ function checkItem(item) {
   if (item.kind === "meaning") {
     // Ids are stored exactly as the graph has them (a decomposed file name
     // gives a decomposed id): never normalised, never rejected for it.
-    if (keys !== "basis,id,kind,textSha256" || !isText(item.id) || !HEX64.test(item.textSha256)) fail("PRODUCT_GRAPH_CHECK_INVALID");
+    if (keys !== "basis,id,kind,textSha256" || !isId(item.id) || !HEX64.test(item.textSha256)) fail("PRODUCT_GRAPH_CHECK_INVALID");
     const basis = checkBasis(item.basis);
     // The basis names the 기능 the line describes.
     if (!basis.some((node) => node.id === item.id)) fail("PRODUCT_GRAPH_CHECK_INVALID");
@@ -241,7 +243,7 @@ function checkItem(item) {
     if (keys !== "basis,document,documentTextSha256,from,kind,to,type") fail("PRODUCT_GRAPH_CHECK_INVALID");
     const target = classifyProductGraphPath(item.document);
     if (!target?.approvable || target.role !== "document" || nfc(item.document) !== item.document) fail("PRODUCT_GRAPH_CHECK_INVALID");
-    if (!ROW_TYPES.includes(item.type) || !isText(item.from) || !isText(item.to) || !HEX64.test(item.documentTextSha256)) fail("PRODUCT_GRAPH_CHECK_INVALID");
+    if (!ROW_TYPES.includes(item.type) || !isId(item.from) || !isId(item.to) || !HEX64.test(item.documentTextSha256)) fail("PRODUCT_GRAPH_CHECK_INVALID");
     const basis = checkBasis(item.basis);
     // The basis names the node the row says something about.
     const rowTarget = item.type === "기능→화면요소" ? item.from : item.to;

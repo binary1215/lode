@@ -742,3 +742,223 @@ test("C8: the new page parts wrap within a narrow screen (CSS rules; no browser 
   for (const selector of [".source-reader", ".source-nav", ".source-lines", ".source-line", ".source-text", ".rich-code", ".rich-text>*"])
     assert.doesNotMatch(rule(selector), /(?:^|;)(?:min-)?width:\s*(?:[4-9][0-9]{2}|[0-9]{4,})px/, selector);
 });
+
+// ---------- review round 2: D1–D9 ----------
+
+const bigDocument = (f, count = 1001) => {
+  const main = path.join(f.family, MAIN);
+  const rows = Array.from({ length: count }, (_, index) => `| MAIN-01#${index + 10} | 버튼 ${index} | \`station/ui/main_window.py:18\` | \`${SAVE}\` | |`).join("\n");
+  fs.writeFileSync(main, fs.readFileSync(main, "utf8").replace("| MAIN-01#5 |", `${rows}\n| MAIN-01#5 |`));
+};
+const staleCopy = (record, checkedAt) =>
+  productGraphCheckRecord({
+    projectId: record.projectId,
+    by: "agent-checked",
+    checkedAt,
+    rationale: null,
+    reader: record.reader,
+    items: record.items.map((item) => ({ ...item, basis: item.basis.map((node) => ({ ...node, contentSha256: "0".repeat(64) })) })),
+  });
+
+test("D1: a confirm counts at once even when the item has two unrelated current records dated ahead", (t) => {
+  const f = project(t);
+  buildProductGraph({ root: f.root });
+  const first = confirmProductGraph({ root: f.root, features: [SAVE] });
+  const good = JSON.parse(fs.readFileSync(path.join(f.checks, `${first.records[0]}.json`), "utf8"));
+  fs.rmSync(path.join(f.checks, `${first.records[0]}.json`));
+  // Two stores merged: two stale records nobody replaced, both dated ahead.
+  const a = staleCopy(good, "2099-01-01T00:00:00.000Z");
+  const b = staleCopy({ ...good, reader: good.reader }, "2098-01-01T00:00:00.000Z");
+  writeRecord(f, a);
+  writeRecord(f, { ...b });
+  assert.notEqual(a.checkId, b.checkId);
+  let built = buildProductGraph({ root: f.root });
+  assert(ids(built.confirmations.changedSinceCheck).includes(SAVE));
+  const now = confirmProductGraph({ root: f.root, features: [SAVE] });
+  assert.equal(now.status, "recorded");
+  const written = JSON.parse(fs.readFileSync(path.join(f.checks, `${now.records[0]}.json`), "utf8"));
+  assert.deepEqual(written.supersedes, [a.checkId, b.checkId].sort());
+  built = buildProductGraph({ root: f.root });
+  assert.equal(built.confirmations.counts.current, 1, "one confirm is enough");
+  assert(!ids(built.confirmations.changedSinceCheck).includes(SAVE));
+});
+
+test("D2: a 확인 folder that cannot be listed, and one record that cannot be read, are issues; nothing else stops", (t) => {
+  const f = project(t);
+  let built = buildProductGraph({ root: f.root });
+  const confirmed = confirmProductGraph({ root: f.root, features: [SAVE] });
+  const record = path.join(f.checks, `${confirmed.records[0]}.json`);
+  // One record that cannot be read.
+  const originalRead = fs.readFileSync;
+  t.mock.method(fs, "readFileSync", (file, ...rest) => {
+    if (String(file) === record) throw Object.assign(new Error("fixture denied"), { code: "EACCES" });
+    return originalRead(file, ...rest);
+  });
+  built = buildProductGraph({ root: f.root });
+  t.mock.restoreAll();
+  assert.deepEqual(
+    built.confirmations.issues.map((issue) => [issue.path, issue.code]),
+    [[`확인/${confirmed.records[0]}.json`, "PRODUCT_GRAPH_CHECK_UNREADABLE"]],
+  );
+  assert(ids(built.confirmations.neverChecked).includes(SAVE), "an unreadable record excuses nothing");
+  // A folder that cannot be listed.
+  const originalList = fs.readdirSync;
+  t.mock.method(fs, "readdirSync", (directory, ...rest) => {
+    if (String(directory) === f.checks) throw Object.assign(new Error("fixture denied"), { code: "EPERM" });
+    return originalList(directory, ...rest);
+  });
+  built = buildProductGraph({ root: f.root });
+  assert.deepEqual(
+    built.confirmations.issues.map((issue) => [issue.path, issue.code]),
+    [["확인/", "PRODUCT_GRAPH_CHECK_UNREADABLE"]],
+  );
+  assert.equal(checkProductGraph({ root: f.root }).confirmations.issues.length, 1);
+  assert.equal(readProductGraphBuild({ root: f.root }).freshness.state, "fresh");
+  assert.equal(queryProductGraph({ root: f.root, question: "changes" }).title, "기준과 비교");
+  moveProductGraphBaseline({ root: f.root });
+  const digest = built.documents.list.find((item) => item.path === MAIN).approvalDigest;
+  const approved = approveProductGraphDocument({ root: f.root, document: MAIN, expectedSha256: digest, rationale: "ok" });
+  assert.equal(approved.status, "recorded");
+  assert.equal(approved.codeBasis.status, "not-recorded");
+  assert.throws(() => confirmProductGraph({ root: f.root, features: [SAVE] }), { code: "PRODUCT_GRAPH_CHECK_UNREADABLE" });
+  t.mock.restoreAll();
+});
+
+test("D3: reading the build and every query read no record body; a size change is noticed, a same-size change waits for the build", (t) => {
+  const f = project(t);
+  buildProductGraph({ root: f.root });
+  const confirmed = confirmProductGraph({ root: f.root, features: [SAVE] });
+  buildProductGraph({ root: f.root });
+  const originalRead = fs.readFileSync;
+  let reads = 0;
+  t.mock.method(fs, "readFileSync", (file, ...rest) => {
+    if (String(file).includes(`${path.sep}확인${path.sep}`)) reads += 1;
+    return originalRead(file, ...rest);
+  });
+  readProductGraphBuild({ root: f.root });
+  for (const question of [{ question: "changes" }, { question: "node", id: SAVE }, { question: "overview" }]) queryProductGraph({ root: f.root, ...question });
+  t.mock.restoreAll();
+  assert.equal(reads, 0);
+  const file = path.join(f.checks, `${confirmed.records[0]}.json`);
+  const text = fs.readFileSync(file, "utf8");
+  fs.writeFileSync(file, text.replace(/"rationale": null/, '"rationale": "x"'));
+  assert.equal(readProductGraphBuild({ root: f.root }).freshness.confirmations.changed, true, "size changed");
+  fs.writeFileSync(file, text.replace("agent-checked", "agent-checkeX"));
+  assert.equal(readProductGraphBuild({ root: f.root }).freshness.confirmations.changed, false, "same size: noticed at the next build");
+  assert.equal(buildProductGraph({ root: f.root }).confirmations.issues.length, 1);
+});
+
+test("D4: surplus records past the count are named up to 100, then counted", (t) => {
+  const f = project(t);
+  buildProductGraph({ root: f.root });
+  fs.mkdirSync(f.checks, { recursive: true });
+  for (let index = 0; index < PRODUCT_GRAPH_CHECK_MAX_RECORDS + 350; index++)
+    fs.writeFileSync(path.join(f.checks, `product-graph-check-${index.toString(16).padStart(24, "0")}.json`), "{}");
+  const built = buildProductGraph({ root: f.root });
+  const surplus = built.confirmations.issues.filter((issue) => issue.code === "PRODUCT_GRAPH_CHECK_LIMIT");
+  assert.equal(surplus.length, 101);
+  assert.deepEqual(surplus.find((issue) => issue.path === "확인/"), {
+    path: "확인/",
+    code: "PRODUCT_GRAPH_CHECK_LIMIT",
+    reason: "그 밖에 확인 기록 250개를 더 읽지 않았다(이름은 앞의 100개만 적는다)",
+    count: 250,
+  });
+  assert.equal(built.confirmations.recordLimit.present, PRODUCT_GRAPH_CHECK_MAX_RECORDS + 350);
+});
+
+test("D5: a record write that fails part way: confirm and approve name what was written and what was not", (t) => {
+  const f = project(t);
+  bigDocument(f);
+  let built = buildProductGraph({ root: f.root });
+  const link = fs.linkSync;
+  let calls = 0;
+  t.mock.method(fs, "linkSync", (from, to) => {
+    if (String(to).includes("product-graph-check-") && ++calls === 2) throw Object.assign(new Error("disk full"), { code: "ENOSPC" });
+    return link(from, to);
+  });
+  const confirmed = confirmProductGraph({ root: f.root, documents: [MAIN] });
+  t.mock.restoreAll();
+  assert.equal(confirmed.status, "partial");
+  assert.equal(confirmed.writeError, "ENOSPC");
+  assert.equal(confirmed.records.length, 1);
+  assert(confirmed.notWritten.length >= 2);
+  assert.deepEqual(
+    fs.readdirSync(f.checks).filter((name) => name.endsWith(".json")),
+    confirmed.records.map((id) => `${id}.json`),
+  );
+  // Nothing written at all: a named failure.
+  fs.rmSync(f.checks, { recursive: true });
+  t.mock.method(fs, "linkSync", (from, to) => {
+    if (String(to).includes("product-graph-check-")) throw Object.assign(new Error("disk full"), { code: "ENOSPC" });
+    return link(from, to);
+  });
+  assert.throws(() => confirmProductGraph({ root: f.root, documents: [MAIN] }), { code: "PRODUCT_GRAPH_CHECK_WRITE_FAILED" });
+  t.mock.restoreAll();
+  // Approve: the approval stands, the code basis is partial.
+  built = buildProductGraph({ root: f.root });
+  calls = 0;
+  t.mock.method(fs, "linkSync", (from, to) => {
+    if (String(to).includes("product-graph-check-") && ++calls === 2) throw Object.assign(new Error("disk full"), { code: "ENOSPC" });
+    return link(from, to);
+  });
+  const digest = built.documents.list.find((item) => item.path === MAIN).approvalDigest;
+  const approved = approveProductGraphDocument({ root: f.root, document: MAIN, expectedSha256: digest, rationale: "ok" });
+  t.mock.restoreAll();
+  assert.equal(approved.status, "recorded");
+  assert.equal(approved.codeBasis.status, "partial");
+  assert.equal(approved.codeBasis.code, "ENOSPC");
+  assert.equal(approved.codeBasis.records.length, 1);
+  assert(approved.codeBasis.notWritten.length >= 2);
+});
+
+test("D6: a 기능 id longer than 2048 characters can be confirmed and approved with its code basis", (t) => {
+  const f = project(t);
+  const long = `_save${"x".repeat(2100)}`;
+  for (const file of [f.window, path.join(f.family, MAIN), path.join(f.family, "기능 뜻.md")])
+    fs.writeFileSync(file, fs.readFileSync(file, "utf8").replaceAll("_save", long));
+  const built = buildProductGraph({ root: f.root });
+  const id = SAVE.replace("_save", long);
+  assert(id.length > 2048);
+  assert.equal(confirmProductGraph({ root: f.root, features: [id] }).status, "recorded");
+  assert.equal(confirmProductGraph({ root: f.root, documents: [MAIN] }).status, "recorded");
+  const digest = built.documents.list.find((item) => item.path === "화면설계서/DLG-01.md").approvalDigest;
+  assert.equal(approveProductGraphDocument({ root: f.root, document: "화면설계서/DLG-01.md", expectedSha256: digest, rationale: "ok" }).codeBasis.status, "recorded");
+  const after = buildProductGraph({ root: f.root });
+  assert.deepEqual(after.confirmations.issues, []);
+  assert(!ids(after.confirmations.neverChecked).includes(id));
+});
+
+test("D7: a 확인 or 승인 folder stored decomposed is used as it is: one folder, freshness settles", (t) => {
+  const f = project(t);
+  let built = buildProductGraph({ root: f.root });
+  confirmProductGraph({ root: f.root, features: [SAVE] });
+  const decomposed = path.join(f.family, "확인".normalize("NFD"));
+  fs.renameSync(f.checks, decomposed);
+  built = buildProductGraph({ root: f.root });
+  assert.equal(built.confirmations.counts.current, 1);
+  assert.equal(readProductGraphBuild({ root: f.root }).freshness.confirmations.changed, false);
+  confirmProductGraph({ root: f.root, documents: [MAIN] });
+  const folders = fs.readdirSync(f.family).filter((name) => name.normalize("NFC") === "확인");
+  assert.deepEqual(folders, ["확인".normalize("NFD")]);
+  assert.equal(fs.readdirSync(decomposed).length, 2);
+  // 승인 the same way.
+  fs.mkdirSync(path.join(f.family, "승인".normalize("NFD")));
+  const digest = built.documents.list.find((item) => item.path === "화면설계서/DLG-01.md").approvalDigest;
+  approveProductGraphDocument({ root: f.root, document: "화면설계서/DLG-01.md", expectedSha256: digest, rationale: "ok" });
+  assert.deepEqual(
+    fs.readdirSync(f.family).filter((name) => name.normalize("NFC") === "승인"),
+    ["승인".normalize("NFD")],
+  );
+  assert.equal(checkProductGraph({ root: f.root }).documents.approved, 1);
+});
+
+test("D8: a 확인 that is a file: confirm is refused by name, approve still approves", (t) => {
+  const f = project(t);
+  const built = buildProductGraph({ root: f.root });
+  fs.writeFileSync(f.checks, "not a folder\n");
+  assert.throws(() => confirmProductGraph({ root: f.root, features: [SAVE] }), { code: "PRODUCT_GRAPH_CHECK_FOLDER_INVALID" });
+  const digest = built.documents.list.find((item) => item.path === MAIN).approvalDigest;
+  const approved = approveProductGraphDocument({ root: f.root, document: MAIN, expectedSha256: digest, rationale: "ok" });
+  assert.equal(approved.status, "recorded");
+  assert.equal(approved.codeBasis.code, "PRODUCT_GRAPH_CHECK_FOLDER_INVALID");
+});

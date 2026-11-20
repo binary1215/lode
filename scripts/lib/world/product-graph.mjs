@@ -169,13 +169,30 @@ function assertNoLinkedComponents(projectRoot, target) {
 }
 
 // Reads the documents directory in the family layout. Unknown names are
-// listed, never parsed.
-function readDocumentFiles(directory) {
+// listed, never parsed. Confirmation records are only listed here (name,
+// physical path); readCheckFiles reads them, and only when asked: freshness
+// reads none.
+function readDocumentFiles(directory, { readChecks = true } = {}) {
   const files = [],
     unrecognized = [],
-    checks = [];
+    checks = [],
+    checkFolderIssues = [];
   const visit = (prefix, absolute) => {
-    for (const entry of listDirectory(absolute)) {
+    let entries;
+    try {
+      entries = listDirectory(absolute);
+    } catch (error) {
+      // A 확인/ folder that cannot be listed is an issue, never a failure.
+      if (prefix !== PRODUCT_GRAPH_CHECK_DIRECTORY) throw error;
+      checkFolderIssues.push({
+        path: `${PRODUCT_GRAPH_CHECK_DIRECTORY}/`,
+        code: "PRODUCT_GRAPH_CHECK_UNREADABLE",
+        reason: "확인 기록 폴더를 읽지 못했다",
+        errno: error.code || null,
+      });
+      return;
+    }
+    for (const entry of entries) {
       const name = nfc(entry.name);
       const relative = prefix ? `${prefix}/${name}` : name;
       if (!prefix && name === PRODUCT_GRAPH_BUILD_DIRECTORY) continue;
@@ -208,39 +225,53 @@ function readDocumentFiles(directory) {
     files: files.filter((file) => !twins.includes(file.path)).sort((a, b) => compare(a.path, b.path)),
     unrecognized: unrecognized.sort(),
     twins: twins.sort(),
-    ...readCheckFiles(checks),
+    ...(readChecks ? readCheckFiles(checks, checkFolderIssues) : {}),
   };
 }
+
+// At most this many surplus names are listed one by one; the rest are counted.
+const CHECK_SURPLUS_LISTED = 100;
 
 // Confirmation records, in file-name order: the first
 // PRODUCT_GRAPH_CHECK_MAX_RECORDS are read, each up to
 // PRODUCT_GRAPH_CHECK_MAX_BYTES. A record over the size, one that cannot be
-// read, and every record past the count is an issue naming its file; an issue
-// excuses nothing and never fails the build.
-function readCheckFiles(entries) {
+// read, and records past the count are issues naming their file (the first
+// CHECK_SURPLUS_LISTED surplus names, then one count); an issue excuses
+// nothing and never fails the build.
+function readCheckFiles(entries, folderIssues = []) {
   const checkFiles = [],
-    checkIssues = [];
+    checkIssues = [...folderIssues];
   const ordered = [...entries].sort((a, b) => compare(a.path, b.path));
   const seen = new Set();
+  const listing = [];
+  let surplus = 0;
   for (const [index, entry] of ordered.entries()) {
     const issue = ({ code }, reason, extra = {}) => checkIssues.push({ path: entry.path, code, reason, ...extra });
+    // Sizes only for the records that are read; surplus names are names only.
+    let stat = null;
+    if (index < PRODUCT_GRAPH_CHECK_MAX_RECORDS)
+      try {
+        stat = fs.lstatSync(entry.absolute);
+      } catch {
+        /* Reported below. */
+      }
+    listing.push([entry.path, stat?.size ?? null]);
     if (seen.has(entry.path)) {
       issue({ code: "PRODUCT_GRAPH_CHECK_INVALID" }, "같은 이름(정규화 뒤)의 확인 기록이 둘 이상이다");
       continue;
     }
     seen.add(entry.path);
     if (index >= PRODUCT_GRAPH_CHECK_MAX_RECORDS) {
-      issue(
-        { code: "PRODUCT_GRAPH_CHECK_LIMIT" },
-        `확인 기록이 ${PRODUCT_GRAPH_CHECK_MAX_RECORDS}개를 넘어 읽지 않았다(파일 이름 순으로 앞의 ${PRODUCT_GRAPH_CHECK_MAX_RECORDS}개만 읽는다)`,
-      );
+      surplus += 1;
+      if (surplus <= CHECK_SURPLUS_LISTED)
+        issue(
+          { code: "PRODUCT_GRAPH_CHECK_LIMIT" },
+          `확인 기록이 ${PRODUCT_GRAPH_CHECK_MAX_RECORDS}개를 넘어 읽지 않았다(파일 이름 순으로 앞의 ${PRODUCT_GRAPH_CHECK_MAX_RECORDS}개만 읽는다)`,
+        );
       continue;
     }
-    let stat;
-    try {
-      stat = fs.lstatSync(entry.absolute);
-    } catch (error) {
-      issue({ code: "PRODUCT_GRAPH_CHECK_UNREADABLE" }, "확인 기록을 읽지 못했다", { errno: error.code || null });
+    if (!stat) {
+      issue({ code: "PRODUCT_GRAPH_CHECK_UNREADABLE" }, "확인 기록을 읽지 못했다");
       continue;
     }
     if (!stat.isFile() || stat.isSymbolicLink()) {
@@ -264,16 +295,22 @@ function readCheckFiles(entries) {
     }
     checkFiles.push({ path: entry.path, role: entry.role, checkId: entry.checkId, bytes, sha256: sha256Hex(bytes) });
   }
+  if (surplus > CHECK_SURPLUS_LISTED)
+    checkIssues.push({
+      path: `${PRODUCT_GRAPH_CHECK_DIRECTORY}/`,
+      code: "PRODUCT_GRAPH_CHECK_LIMIT",
+      reason: `그 밖에 확인 기록 ${surplus - CHECK_SURPLUS_LISTED}개를 더 읽지 않았다(이름은 앞의 ${CHECK_SURPLUS_LISTED}개만 적는다)`,
+      count: surplus - CHECK_SURPLUS_LISTED,
+    });
   const recordLimit = ordered.length > PRODUCT_GRAPH_CHECK_MAX_RECORDS ? { present: ordered.length, read: PRODUCT_GRAPH_CHECK_MAX_RECORDS } : null;
-  return { checkFiles, checkIssues, recordLimit, checkRecordsSha256: checkRecordsDigest(ordered, checkFiles) };
+  return { checkFiles, checkIssues, recordLimit, checkListingSha256: checkListingDigest(listing, folderIssues) };
 }
 
-// What the build read from 확인/: every name with its content hash (or that
-// it was not read). Freshness compares it, so a record changed in place is
-// noticed before the next build.
-function checkRecordsDigest(ordered, checkFiles) {
-  const read = new Map(checkFiles.map((file) => [file.path, file.sha256]));
-  return sha256Hex(JSON.stringify(ordered.map((entry) => [entry.path, read.get(entry.path) ?? null])));
+// What freshness compares: every record name with its size, and whether the
+// folder could be listed. No record is read for it, so a change in place that
+// keeps the size is noticed at the next build.
+function checkListingDigest(listing, folderIssues = []) {
+  return sha256Hex(JSON.stringify({ listing, unlisted: folderIssues.map((issue) => issue.path) }));
 }
 
 function resolveInputs(options) {
@@ -440,7 +477,7 @@ function loadDocuments(inputs) {
     approvalsRead: inputs.approvals,
     checkRecords,
     checkIssues,
-    checkRecordsSha256: read.checkRecordsSha256,
+    checkListingSha256: read.checkListingSha256,
     checkRecordLimit: read.recordLimit,
   };
 }
@@ -1135,20 +1172,41 @@ function confirmationsOf({ graph, computed, loaded }) {
     read: loaded.approvalsRead,
   });
   if (status.status !== "compared") return status;
-  return { ...status, ...(loaded.checkRecordLimit ? { recordLimit: loaded.checkRecordLimit } : {}), recordsSha256: loaded.checkRecordsSha256 };
+  return { ...status, ...(loaded.checkRecordLimit ? { recordLimit: loaded.checkRecordLimit } : {}), recordsListingSha256: loaded.checkListingSha256 };
 }
 
-// The records in 확인/ as they are now (names and contents), read the way a
-// build reads them.
-function checkRecordsNow(documentsDirectory) {
-  const directory = path.join(documentsDirectory, PRODUCT_GRAPH_CHECK_DIRECTORY);
-  const entries = [];
-  for (const entry of listDirectory(directory)) {
-    const relative = `${PRODUCT_GRAPH_CHECK_DIRECTORY}/${nfc(entry.name)}`;
-    const target = classifyProductGraphPath(relative);
-    if (entry.isFile() && target?.role === "check") entries.push({ path: relative, ...target, absolute: path.join(directory, entry.name) });
+// The records in 확인/ as they are now: names and sizes only, from every
+// folder named 확인 (after normalisation), as a build finds them.
+function checkListingNow(documentsDirectory) {
+  const listing = [],
+    folderIssues = [];
+  for (const folder of listDirectory(documentsDirectory).filter((entry) => entry.isDirectory() && nfc(entry.name) === PRODUCT_GRAPH_CHECK_DIRECTORY)) {
+    let entries;
+    try {
+      entries = listDirectory(path.join(documentsDirectory, folder.name));
+    } catch {
+      folderIssues.push({ path: `${PRODUCT_GRAPH_CHECK_DIRECTORY}/` });
+      continue;
+    }
+    for (const entry of entries) {
+      const relative = `${PRODUCT_GRAPH_CHECK_DIRECTORY}/${nfc(entry.name)}`;
+      if (!entry.isFile() || classifyProductGraphPath(relative)?.role !== "check") continue;
+      listing.push([relative, path.join(documentsDirectory, folder.name, entry.name)]);
+    }
   }
-  return readCheckFiles(entries);
+  listing.sort((a, b) => compare(a[0], b[0]));
+  // As a build: sizes for the first PRODUCT_GRAPH_CHECK_MAX_RECORDS, names for the rest.
+  listing.forEach((row, index) => {
+    let size = null;
+    if (index < PRODUCT_GRAPH_CHECK_MAX_RECORDS)
+      try {
+        size = fs.lstatSync(row[1]).size;
+      } catch {
+        /* An unreadable entry has no size. */
+      }
+    row[1] = size;
+  });
+  return checkListingDigest(listing, folderIssues);
 }
 
 // The comparison with the baseline (8A.3). A missing baseline is taken from
@@ -1365,7 +1423,7 @@ function freshnessOf(inputs, graph) {
   else
     try {
       const now = new Map(
-        readDocumentFiles(inputs.documentsDirectory)
+        readDocumentFiles(inputs.documentsDirectory, { readChecks: false })
           .files.filter((file) => ["document", "policy", "meaning"].includes(file.role))
           .map((file) => [file.path, file.sha256]),
       );
@@ -1430,11 +1488,11 @@ function freshnessOf(inputs, graph) {
 // said next to the freshness; it does not make the build stale (the graph is
 // still the source as it is) and blocks nothing.
 function withConfirmationFiles(freshness, inputs, check) {
-  const recorded = check?.confirmations?.recordsSha256;
+  const recorded = check?.confirmations?.recordsListingSha256;
   if (inputs?.mode !== "project" || typeof recorded !== "string") return freshness;
   let now;
   try {
-    now = checkRecordsNow(inputs.documentsDirectory).checkRecordsSha256;
+    now = checkListingNow(inputs.documentsDirectory);
   } catch {
     return freshness;
   }
@@ -1644,10 +1702,24 @@ function currentBuildGraph(root) {
 
 const checkableOf = (ran) => checkableItems({ graph: ran.graph, meaningDocument: ran.computed.meaningDocument, documents: ran.loaded.documents });
 
-// Writes the records of one command. Everything is checked first: a refusal
-// (too many records, a linked path, a colliding name) writes nothing.
+// The folder of the family named `name` as it is on disk: a name stored
+// decomposed (NFD) is the same folder, never a second one.
+function familyFolder(family, name) {
+  const matches = listDirectory(family).filter((entry) => nfc(entry.name) === name);
+  if (matches.length > 1) fail("PRODUCT_GRAPH_NAME_TWIN", `같은 이름이 유니코드 정규화만 다르게 두 번 있다: ${name}/`);
+  if (!matches.length) return { path: path.join(family, name), exists: false };
+  return { path: path.join(family, matches[0].name), exists: true, folder: matches[0].isDirectory() };
+}
+
+// Writes the records of one command. Everything that can be checked is checked
+// first: a refusal (a linked path, a 확인 that is not a folder or cannot be
+// listed, too many records, a colliding name) writes nothing. A write that
+// fails part way stops there; the reply names what was written and what was not.
 function writeCheckRecords({ projectRoot, family, records }) {
-  const directory = path.join(family, PRODUCT_GRAPH_CHECK_DIRECTORY);
+  const folder = familyFolder(family, PRODUCT_GRAPH_CHECK_DIRECTORY);
+  if (folder.exists && !folder.folder)
+    fail("PRODUCT_GRAPH_CHECK_FOLDER_INVALID", `${PRODUCT_GRAPH_CHECK_DIRECTORY}가 폴더가 아니라서 확인 기록을 쓰지 않는다.`);
+  const directory = folder.path;
   const planned = records.map((record) => {
     const destination = path.join(directory, `${record.checkId}.json`);
     assertNoLinkedComponents(projectRoot, destination);
@@ -1664,21 +1736,46 @@ function writeCheckRecords({ projectRoot, family, records }) {
       if (stored.checkHash !== record.checkHash) fail("PRODUCT_GRAPH_CHECK_COLLISION");
       existing = true;
     }
-    return { destination, text, existing };
+    return { checkId: record.checkId, destination, text, existing };
   });
-  const present = fs.existsSync(directory)
-    ? listDirectory(directory).filter((entry) => classifyProductGraphPath(`${PRODUCT_GRAPH_CHECK_DIRECTORY}/${nfc(entry.name)}`)?.role === "check").length
-    : 0;
+  let present = 0;
+  try {
+    present = listDirectory(directory).filter(
+      (entry) => classifyProductGraphPath(`${PRODUCT_GRAPH_CHECK_DIRECTORY}/${nfc(entry.name)}`)?.role === "check",
+    ).length;
+  } catch (error) {
+    fail("PRODUCT_GRAPH_CHECK_UNREADABLE", `확인 기록 폴더를 읽지 못해 쓰지 않는다(${error.code || "오류"}).`);
+  }
   const added = planned.filter((entry) => !entry.existing).length;
   if (present + added > PRODUCT_GRAPH_CHECK_MAX_RECORDS)
     fail(
       "PRODUCT_GRAPH_CHECK_LIMIT",
       `확인 기록이 ${present}개 있어, ${added}개를 더 쓰면 한도 ${PRODUCT_GRAPH_CHECK_MAX_RECORDS}개를 넘는다. 아무것도 쓰지 않았다.`,
     );
-  if (added) fs.mkdirSync(directory, { recursive: true });
-  for (const entry of planned) if (!entry.existing) atomicCreateArtifact(entry.destination, entry.text);
-  return { recorded: added, existing: planned.length - added };
+  const result = { written: [], existing: planned.filter((entry) => entry.existing).map((entry) => entry.checkId), notWritten: [], error: null };
+  for (const entry of planned) {
+    if (entry.existing) continue;
+    if (result.error) {
+      result.notWritten.push(entry.checkId);
+      continue;
+    }
+    try {
+      if (!result.written.length) fs.mkdirSync(directory, { recursive: true });
+      atomicCreateArtifact(entry.destination, entry.text);
+      result.written.push(entry.checkId);
+    } catch (error) {
+      result.error = /^[A-Z][A-Z0-9_]{0,63}$/.test(error?.code) ? error.code : "UNKNOWN";
+      result.notWritten.push(entry.checkId);
+    }
+  }
+  return result;
 }
+
+const PRODUCT_GRAPH_CHECK_MAX_ID = 65536;
+const describeItem = (item) =>
+  item?.kind === "meaning"
+    ? `기능 ${String(item.id).slice(0, 120)}`
+    : `${item?.document} ${item?.type} ${String(item?.from).slice(0, 60)} → ${String(item?.to).slice(0, 60)}`;
 
 const PRODUCT_GRAPH_CHECK_NOTE =
   "에이전트가 코드를 다시 읽고 남긴 확인이다. 사용자의 승인이 아니며 아무 권한도 주지 않는다. 확인한 코드가 바뀌면 '확인 뒤 코드가 바뀜'으로 다시 나온다.";
@@ -1689,11 +1786,17 @@ const PRODUCT_GRAPH_CHECK_NOTE =
 export function confirmProductGraph({ root = ".", features = [], documents = [], rationale = null } = {}) {
   const inspected = readProject(root);
   if (!inspected.project) fail("NOT_INITIALIZED", "확인 기록은 Lode 프로젝트에서만 쓴다. 이 폴더는 Lode 프로젝트가 아니다.");
-  const list = (value) => (Array.isArray(value) && value.every((item) => typeof item === "string" && item.length > 0 && item.length <= 2048) ? value : null);
-  const featureIds = list(features);
-  const documentPaths = list(documents)?.map((item) => nfc(item.replaceAll("\\", "/")));
-  if (!featureIds || !documentPaths || featureIds.length + documentPaths.length === 0)
-    fail("PRODUCT_GRAPH_CHECK_TARGET_INVALID", "확인할 기능 ID나 문서 경로를 하나 이상 준다.");
+  // Any id the graph produced can be named; the bound only keeps one input sane.
+  const list = (value, what) => {
+    if (!Array.isArray(value) || !value.every((item) => typeof item === "string" && item.length > 0))
+      fail("PRODUCT_GRAPH_CHECK_TARGET_INVALID", `${what}는 비어 있지 않은 글의 목록이다.`);
+    const long = value.find((item) => item.length > PRODUCT_GRAPH_CHECK_MAX_ID);
+    if (long) fail("PRODUCT_GRAPH_CHECK_TARGET_INVALID", `${what}의 한 항목이 ${PRODUCT_GRAPH_CHECK_MAX_ID}자를 넘는다: ${long.slice(0, 80)}…`);
+    return value;
+  };
+  const featureIds = list(features, "기능 ID");
+  const documentPaths = list(documents, "문서 경로").map((item) => nfc(item.replaceAll("\\", "/")));
+  if (featureIds.length + documentPaths.length === 0) fail("PRODUCT_GRAPH_CHECK_TARGET_INVALID", "확인할 기능 ID나 문서 경로를 하나 이상 준다.");
   if (rationale !== null && (typeof rationale !== "string" || !rationale.trim() || rationale.length > 2000))
     fail("PRODUCT_GRAPH_CHECK_TARGET_INVALID", "근거는 비어 있지 않은 2000자 이하 글이다.");
   const projectRoot = inspected.project.projectRoot;
@@ -1724,19 +1827,36 @@ export function confirmProductGraph({ root = ".", features = [], documents = [],
       records: current.ran.loaded.checkRecords,
     });
     if (made.missingBasis) fail("PRODUCT_GRAPH_CHECK_TARGET_INVALID", "내용 해시가 없는 노드를 가리킨다. 다시 빌드한다.");
-    if (made.tooLarge) fail("PRODUCT_GRAPH_CHECK_LIMIT", "한 항목의 코드 근거가 확인 기록 하나에 들어가지 않는다.");
-    const written = made.records.length ? writeCheckRecords({ projectRoot, family, records: made.records }) : { recorded: 0, existing: 0 };
+    if (made.tooLarge)
+      fail(
+        "PRODUCT_GRAPH_CHECK_LIMIT",
+        `이 항목의 코드 근거가 확인 기록 하나(${PRODUCT_GRAPH_CHECK_MAX_BYTES}바이트)에 들어가지 않는다: ${describeItem(made.item)}`,
+      );
+    const written = made.records.length
+      ? writeCheckRecords({ projectRoot, family, records: made.records })
+      : { written: [], existing: [], notWritten: [], error: null };
+    if (written.error && !written.written.length && !written.existing.length)
+      fail("PRODUCT_GRAPH_CHECK_WRITE_FAILED", `확인 기록을 쓰지 못했다(${written.error}). 아무것도 쓰지 않았다.`);
+    const kept = new Set([...written.written, ...written.existing]);
+    const counted = made.records.filter((record) => kept.has(record.checkId));
     const confirmations = confirmationsOf({
       graph: current.ran.graph,
       computed: current.ran.computed,
-      loaded: { ...current.ran.loaded, checkRecords: [...current.ran.loaded.checkRecords, ...made.records] },
+      loaded: { ...current.ran.loaded, checkRecords: [...current.ran.loaded.checkRecords, ...counted] },
     });
-    const stored = made.records.flatMap((record) => record.items);
+    const stored = counted.flatMap((record) => record.items);
     return {
-      status: made.records.length ? "recorded" : "unchanged",
+      status: !made.records.length ? "unchanged" : written.error ? "partial" : "recorded",
       ...(made.records.length ? {} : { reason: "고른 항목마다 같은 코드 근거의 에이전트 확인이 이미 지금 기록이다. 새로 쓰지 않았다." }),
-      records: made.records.map((record) => record.checkId),
-      recordsWritten: written.recorded,
+      ...(written.error
+        ? {
+            reason: `확인 기록 ${made.records.length}개 가운데 ${kept.size}개만 썼다(${written.error}). 쓰지 못한 기록의 항목은 확인으로 치지 않는다.`,
+            notWritten: written.notWritten,
+            writeError: written.error,
+          }
+        : {}),
+      records: [...kept],
+      recordsWritten: written.written.length,
       by: "agent-checked",
       checkedAt: made.records[0]?.checkedAt ?? null,
       items: items.length,
@@ -1778,12 +1898,16 @@ function approvedCodeBasisRecord({ projectRoot, projectId, document, digest, rat
     const items = checkableOf(current.ran).filter((item) => item.kind === "documentRow" && item.document === document && item.documentTextSha256 === digest);
     if (!items.length) return { result: { status: "not-recorded", reason: "이 문서에는 코드와 잇는 행이 없어 코드 근거를 기록하지 않았다" } };
     const made = confirmationRecords({ projectId, by: "user-approved", rationale, graph: current.ran.graph, items, records: current.ran.loaded.checkRecords });
-    if (made.missingBasis || made.tooLarge)
+    if (made.missingBasis)
+      return {
+        result: { status: "not-recorded", code: "PRODUCT_GRAPH_CHECK_TARGET_INVALID", reason: "내용 해시가 없는 노드를 가리켜 코드 근거를 기록하지 않았다" },
+      };
+    if (made.tooLarge)
       return {
         result: {
           status: "not-recorded",
           code: "PRODUCT_GRAPH_CHECK_LIMIT",
-          reason: "내용 해시가 없는 노드를 가리키거나 한 행의 근거가 너무 커서 코드 근거를 기록하지 않았다",
+          reason: `이 행의 코드 근거가 확인 기록 하나에 들어가지 않아 코드 근거를 기록하지 않았다: ${describeItem(made.item)}`,
         },
       };
     return { records: made.records, rows: items.length, unchanged: made.unchanged };
@@ -1820,7 +1944,8 @@ export function approveProductGraphDocument({ root = ".", document, expectedSha2
       fail("PRODUCT_GRAPH_APPROVAL_STALE", `${relative}가 사용자가 본 내용과 다르다. 지금 내용을 다시 보여 주고 다시 승인받아야 한다.`);
     const record = productGraphApprovalRecord({ projectId: inspected.project.projectId, document: relative, documentTextSha256: current, rationale });
     const basis = approvedCodeBasisRecord({ projectRoot, projectId: inspected.project.projectId, document: relative, digest: current, rationale });
-    const directory = path.join(family, PRODUCT_GRAPH_APPROVAL_DIRECTORY);
+    // A 승인 folder stored decomposed is the same folder, never a second one.
+    const directory = familyFolder(family, PRODUCT_GRAPH_APPROVAL_DIRECTORY).path;
     const destination = path.join(directory, `${record.approvalId}.json`);
     assertNoLinkedComponents(projectRoot, destination);
     let status = "recorded";
@@ -1839,11 +1964,23 @@ export function approveProductGraphDocument({ root = ".", document, expectedSha2
     let codeBasis = basis.result;
     if (basis.records)
       try {
-        const written = basis.records.length ? writeCheckRecords({ projectRoot, family, records: basis.records }) : { recorded: 0 };
+        const written = basis.records.length
+          ? writeCheckRecords({ projectRoot, family, records: basis.records })
+          : { written: [], existing: [], notWritten: [], error: null };
+        const kept = [...written.written, ...written.existing];
         codeBasis = {
-          status: basis.records.length ? "recorded" : "unchanged",
-          records: basis.records.map((item) => item.checkId),
-          recordsWritten: written.recorded,
+          status: !basis.records.length ? "unchanged" : !written.error ? "recorded" : kept.length ? "partial" : "not-recorded",
+          ...(written.error
+            ? {
+                code: written.error,
+                reason: kept.length
+                  ? `코드 근거 기록 ${basis.records.length}개 가운데 ${kept.length}개만 썼다(문서 승인은 됐다). 쓰지 못한 기록의 행은 확인으로 치지 않는다.`
+                  : "코드 근거 기록을 쓰지 못했다(문서 승인은 됐다)",
+                notWritten: written.notWritten,
+              }
+            : {}),
+          records: kept,
+          recordsWritten: written.written.length,
           rows: basis.rows,
           rowsAlreadyCurrent: basis.unchanged,
           ...(basis.records.length ? {} : { reason: "행마다 같은 코드 근거의 사용자 승인 기록이 이미 지금 기록이다. 새로 쓰지 않았다." }),

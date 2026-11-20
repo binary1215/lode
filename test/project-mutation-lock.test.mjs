@@ -548,3 +548,135 @@ test("an operation that removes its own lock namespace returns its value", (t) =
   });
   assert.equal(value, "completed");
 });
+
+// ---------- review round 2: K1–K3, K5, K6 ----------
+
+const { takeMutationCleanupFailure } = await import("../scripts/lib/storage/local-mutation-lock.mjs");
+const lifetime = await import("../scripts/lib/world/snapshot-reference-lifetime.mjs");
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("K1: a callback that re-enters a lock after its operation ended (entry retained) is not nested: one body inside the lock at a time", async (t) => {
+  const { parent } = fixture(t);
+  const directory = path.join(parent, "x.lock");
+  failCleanup(t, directory, 3);
+  let open;
+  const gate = new Promise((resolve) => (open = resolve));
+  let inside = 0,
+    maxInside = 0,
+    detached;
+  const body = async (label) => {
+    inside += 1;
+    maxInside = Math.max(maxInside, inside);
+    await pause(100);
+    inside -= 1;
+    return label;
+  };
+  await assert.rejects(
+    withLocalMutationAsync({ directory }, async () => {
+      detached = (async () => {
+        await gate;
+        return withLocalMutationAsync({ directory }, () => body("detached"));
+      })();
+      return "outer";
+    }),
+    { code: "LOCAL_MUTATION_CLEANUP_FAILED" },
+  );
+  t.mock.restoreAll();
+  open();
+  await pause(20);
+  const second = withLocalMutationAsync({ directory, timeoutMs: 2000 }, () => body("second"));
+  const outcome = await Promise.allSettled([detached, second]);
+  assert.deepEqual(
+    outcome.map((item) => item.value),
+    ["detached", "second"],
+  );
+  assert.equal(maxInside, 1);
+});
+
+test("K2: a waiter tries to remove this process's retained entry once per call, not on every wait step", async (t) => {
+  const { parent } = fixture(t);
+  const directory = path.join(parent, "x.lock");
+  const state = failCleanup(t, directory, Infinity);
+  await assert.rejects(
+    withLocalMutationAsync({ directory }, async () => "done"),
+    { code: "LOCAL_MUTATION_CLEANUP_FAILED" },
+  );
+  const before = state.failures;
+  await assert.rejects(
+    withLocalMutationAsync({ directory, timeoutMs: 500 }, async () => "again"),
+    { code: "PROJECT_MUTATION_BUSY" },
+  );
+  t.mock.restoreAll();
+  assert(state.failures - before <= 3, `removal attempts while waiting: ${state.failures - before}`);
+});
+
+test("K3: a cleanup failure awaited inside a later-started healthy lock keeps its tag; the answering caller takes it once", async (t) => {
+  const { parent } = fixture(t);
+  const inner = path.join(parent, "b.lock");
+  failCleanup(t, inner, 3);
+  const step = withLocalMutationAsync({ directory: inner }, async () => "b-result");
+  step.catch(() => {});
+  let observed;
+  try {
+    await withLocalMutationAsync({ directory: path.join(parent, "a.lock") }, async () => {
+      await step;
+    });
+  } catch (error) {
+    observed = error;
+  }
+  t.mock.restoreAll();
+  assert.equal(observed?.code, "LOCAL_MUTATION_CLEANUP_FAILED");
+  assert.equal(mutationCleanupFailure(observed)?.result, "b-result");
+  assert.equal(takeMutationCleanupFailure(observed)?.result, "b-result");
+  // Thrown again later (outside any lock), it is no longer this failure.
+  assert.equal(mutationCleanupFailure(observed), null);
+});
+
+test("K5: a registration that could not be withdrawn is withdrawn at this process's next admission", (t) => {
+  const project = initialized(t);
+  const before = entries(project.participants);
+  const originalUnlink = fs.unlinkSync;
+  let failures = 0;
+  t.mock.method(fs, "unlinkSync", (file, ...rest) => {
+    const directory = path.dirname(String(file));
+    if ((directory === project.admission && failures < 3) || (directory === project.participants && failures >= 3 && failures < 4)) {
+      failures += 1;
+      throw Object.assign(new Error("fixture cleanup failure"), { code: "EBUSY" });
+    }
+    return originalUnlink(file, ...rest);
+  });
+  let observed;
+  try {
+    runners.sync(project.root, () => "ran");
+  } catch (error) {
+    observed = error;
+  }
+  t.mock.restoreAll();
+  assert.equal(observed?.participantWithdrawn, false);
+  assert.match(observed.message, /next snapshot admission or when it exits/);
+  assert.equal(entries(project.participants).length, before.length + 1);
+  assert.equal(
+    runners.sync(project.root, () => "ran"),
+    "ran",
+  );
+  assert.deepEqual(entries(project.participants), before, "withdrawn at the next admission");
+  const collection = lifetime.beginSnapshotCollection({ root: project.root });
+  assert.equal(collection.status, "active");
+  lifetime.finishSnapshotCollection(collection);
+});
+
+test("K6: a collector attempt whose admission cleanup fails is withdrawn; the next collection is not held", (t) => {
+  const project = initialized(t);
+  const gc = path.dirname(project.participants);
+  failCleanup(t, project.admission, 3);
+  const attempt = lifetime.beginSnapshotCollection({ root: project.root });
+  t.mock.restoreAll();
+  assert.deepEqual(attempt, { status: "preserved", reasonCode: "LOCAL_MUTATION_CLEANUP_FAILED" });
+  assert.deepEqual(
+    entries(gc).filter((name) => name.startsWith("attempt-")),
+    [],
+  );
+  const next = lifetime.beginSnapshotCollection({ root: project.root });
+  assert.equal(next.status, "active");
+  lifetime.finishSnapshotCollection(next);
+});
