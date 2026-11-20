@@ -954,7 +954,7 @@ export function serveMcp({
         return;
       }
       let controller;
-      if (request.method === "tools/call" && ["lode_source_context", READ_CHAIN_TOOL_NAME].includes(requestedToolName(request))) {
+      if (request.method === "tools/call" && (requestedToolName(request) === "lode_source_context" || requestedToolName(request) === READ_CHAIN_TOOL_NAME)) {
         sourceRequestId = request.id;
         if (sourceRequests.has(sourceRequestId)) throw new Error("Duplicate active source request id.");
         controller = new AbortController();

@@ -40,7 +40,7 @@ const hasItemKey = (value) =>
 export const READ_CHAIN_TOOL = Object.freeze({
   name: READ_CHAIN_TOOL_NAME,
   description:
-    "Run several read-only Lode tool calls as one declarative step list inside the server and return only the rows asked for, with Lode-counted totals and one everythingSeen verdict. Steps: read (one call), each+read (one call per earlier row), where, pick, sort, limit, unique, count. Only tools that declare their completeness can be inner calls (lode_product_graph_query, lode_project_graph). Grants nothing and writes nothing. Full step reference: lode_tools_discover with name lode_tools_read_chain.",
+    "Run several read-only Lode tool calls as one declarative step list inside the server and return only the rows asked for, with Lode-counted totals and one everythingSeen verdict. Steps: read (one call), each+read (one call per earlier row), where, pick, sort, limit, unique, count. Only tools that declare their completeness can be inner calls (lode_product_graph with action query, lode_project_graph). Grants nothing and writes nothing. Full step reference: lode_tools_discover with name lode_tools_read_chain.",
   inputSchema: {
     type: "object",
     properties: {
@@ -114,20 +114,20 @@ export const READ_CHAIN_REFERENCE = Object.freeze({
   everythingSeen:
     "Lode's verdict: true only when the status is completed, no inner call failed or was refused, every notSeen count is 0, no rows were cut and every returned step was reached. notSeenBecause names the reasons when it is false.",
   innerTools:
-    "Only tools that declare their completeness (how they say no answer, more pages and cut) can be inner calls: lode_product_graph_query and lode_project_graph (not with inventory_page). Every other tool is refused with CHAIN_TOOL_NOT_CHAINABLE before any call. Neither keeps any per-caller state, so a chain changes nothing a later call may do or is given.",
+    "Only tools that declare their completeness (how they say no answer, more pages and cut) can be inner calls: lode_product_graph with action query and lode_project_graph (not with inventory_page). Every other tool is refused with CHAIN_TOOL_NOT_CHAINABLE before any call. Neither keeps any per-caller state, so a chain changes nothing a later call may do or is given.",
   pinning:
-    "A chain never returns rows from two product graph builds. This is detected after each call, not prevented: every answer of lode_product_graph_query carries buildSha256 (the build files and the baseline it read), and when a later one differs from the first the chain stops with CHAIN_BUILD_CHANGED and returns no rows. Pages carry expected_basis_sha256 as the tool returns them; a basis-changed page stops the chain the same way. Other tools are not pinned (basis[].pinned false).",
+    "A chain never returns rows from two product graph builds. This is detected after each call, not prevented: every product graph query answer carries buildSha256 (the build files and the baseline it read), and when a later one differs from the first the chain stops with CHAIN_BUILD_CHANGED and returns no rows. Pages carry expected_basis_sha256 as the tool returns them; a basis-changed page stops the chain the same way. Other tools are not pinned (basis[].pinned false).",
   authority: "A chain grants nothing and writes nothing; each inner call keeps every check of lode_tools_read.",
   example: {
     project_root: "<project>",
     steps: [
-      { id: "todo", read: { name: "lode_product_graph_query", arguments: { question: "changes", list: "reviewAgain" } }, pages: 3 },
+      { id: "todo", read: { name: "lode_product_graph", arguments: { action: "query", question: "changes", list: "reviewAgain" } }, pages: 3 },
       { id: "nodes", from: "todo", where: { field: "kind", eq: "node" } },
       { id: "one", from: "nodes", unique: { by: "id" } },
       {
         id: "callers",
         each: { from: "one", value: "id", max: 20 },
-        read: { name: "lode_product_graph_query", arguments: { question: "up", id: { $item: true } } },
+        read: { name: "lode_product_graph", arguments: { action: "query", question: "up", id: { $item: true } } },
       },
       {
         id: "pointing",
