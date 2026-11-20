@@ -9,6 +9,7 @@ import {
   assertConversationTarget,
 } from "./conversation-mailbox-storage.mjs";
 import { withLocalMutation } from "../storage/project-mutation-lock.mjs";
+import { mutationCleanupFailure } from "../storage/local-mutation-lock.mjs";
 import { resolveProjectStorage } from "../storage/project-storage-format.mjs";
 import { recordedRootSpelling } from "../storage/project-root-spelling.mjs";
 import { claudeChannel, claudeDeliver, claudeLive } from "./conversation-messaging-claude.mjs";
@@ -1439,10 +1440,65 @@ function resultOf(message, state, evidence) {
   };
 }
 
+// After a lock cleanup failure nothing is written and nothing is handed over
+// again: the mailbox is only read. Exactly one record for the message must
+// exist. "handed" needs the archive record markHandedLocked writes, with the
+// claim and attempt of this send; "queued" needs the record back in the inbox
+// with no claim or attempt. Anything else (no record, two copies, an
+// unreadable or mismatched one, a claim still in flight) is "unknown".
+function readBackAfterCleanup(project, address, id, owned, expected = null) {
+  const found = [];
+  try {
+    project.io.assertCurrent();
+    for (const kind of ["archive", "inbox", "inflight"]) {
+      const file = messageFile(project, kind, address, id);
+      for (const candidate of kind === "inflight" ? [file, file + ".owned"] : [file]) {
+        let text;
+        try {
+          text = project.io.readFileSync(candidate, "utf8");
+        } catch (error) {
+          if (error.code === "ENOENT") continue;
+          throw error;
+        }
+        if (text.length > CONVERSATION_LIMITS.maxJsonBytes) return { state: "unknown", persisted: false };
+        const record = JSON.parse(text);
+        const same =
+          record?.schemaVersion === 1 &&
+          record.projectRoot === project.root &&
+          record.id === id &&
+          record.to?.address === address &&
+          (!expected ||
+            (record.body === expected.body &&
+              record.createdAt === expected.createdAt &&
+              record.replyTo === expected.replyTo &&
+              JSON.stringify(record.from) === JSON.stringify(expected.from) &&
+              JSON.stringify(record.to) === JSON.stringify(expected.to)));
+        if (!same) return { state: "unknown", persisted: false };
+        found.push({ kind, record });
+      }
+    }
+  } catch {
+    return { state: "unknown", persisted: false };
+  }
+  if (found.length !== 1) return { state: "unknown", persisted: false };
+  const [{ kind, record }] = found;
+  if (kind === "inbox" && !record.claim && !record.externalAttempt && record.handedToHost !== true) return { state: "queued", persisted: true, record };
+  if (owned) {
+    // A record carrying another claim or attempt is not this send's record.
+    if (JSON.stringify(record.claim) !== JSON.stringify(owned.claim) || JSON.stringify(record.externalAttempt) !== JSON.stringify(owned.externalAttempt))
+      return { state: "unknown", persisted: false };
+    if (kind === "archive" && owned.externalAttempt && record.handedToHost === true && ["delivered", "sent"].includes(record.state))
+      return { state: "handed", persisted: true, record };
+  }
+  return { state: "unknown", persisted: true };
+}
+
 // Older mail queued for the recipient goes through the live channel first,
 // oldest first, each under its own claim, within a count and time bound.
 // The first "unavailable" ends the pass and returns that message to the queue.
 // An unknown outcome is preserved and never retried; the pass moves on.
+// A lock cleanup failure ends the pass: the message it touched is counted from
+// what the mailbox shows, and the rest stay queued.
 async function handOverEarlier({ project, message, presence, environment, platform, signal, assertTarget, deliver, now }) {
   const address = message.to.address;
   const created = Date.parse(message.createdAt);
@@ -1451,22 +1507,51 @@ async function handOverEarlier({ project, message, presence, environment, platfo
   if (!ids.length) return null;
   const started = Date.now();
   let stopped = false;
+  const afterCleanup = (error, id, owned) => {
+    const cleanup = mutationCleanupFailure(error);
+    if (!cleanup) return false;
+    const read = readBackAfterCleanup(project, address, id, owned);
+    summary[read.state] += 1;
+    summary.cleanup = cleanup.diagnostic;
+    // The step's own failure stays visible next to the cleanup failure.
+    if (cleanup.operationReturned === false) summary.reasonCode = /^[A-Z][A-Z0-9_]{0,63}$/.test(error?.code) ? error.code : "UNKNOWN";
+    stopped = true;
+    return true;
+  };
   for (const [index, id] of ids.entries()) {
     if (stopped || signal?.aborted || index >= CONVERSATION_LIMITS.earlierMax || Date.now() - started > CONVERSATION_LIMITS.earlierMs) {
       summary.queued += 1;
       continue;
     }
-    const owned = withMailboxSlot(project, slot(address), () => {
-      const claimed = takeInboxFile(project, messageFile(project, "inbox", address, id), messageFile(project, "inflight", address, id), now, address);
-      if (claimed?.id !== id || !claimed.claim?.token) return null;
-      // A message stamped after this one stays for the next pass.
-      const stamped = Date.parse(claimed.createdAt);
-      if (Number.isFinite(created) && Number.isFinite(stamped) && stamped > created) {
-        releaseClaimLocked(project, claimed);
-        return null;
+    let owned;
+    try {
+      owned = withMailboxSlot(project, slot(address), () => {
+        const claimed = takeInboxFile(project, messageFile(project, "inbox", address, id), messageFile(project, "inflight", address, id), now, address);
+        if (claimed?.id !== id || !claimed.claim?.token) return null;
+        // A message stamped after this one stays for the next pass.
+        const stamped = Date.parse(claimed.createdAt);
+        if (Number.isFinite(created) && Number.isFinite(stamped) && stamped > created) {
+          releaseClaimLocked(project, claimed);
+          return null;
+        }
+        return beginAttempt(project, claimed, now);
+      });
+    } catch (error) {
+      // Nothing was handed over for this message; it is never handed over here.
+      // When the claim step itself returned, its claim is known and goes back
+      // to the queue if the slot can be taken; the mailbox decides otherwise.
+      const cleanup = mutationCleanupFailure(error);
+      const claimed = cleanup?.operationReturned === true ? cleanup.result : null;
+      if (claimed?.claim?.token) {
+        summary.cleanup = cleanup.diagnostic;
+        stopped = true;
+        if (releaseClaimAfterCleanup(project, claimed)) summary.queued += 1;
+        else summary[readBackAfterCleanup(project, address, id, claimed).state] += 1;
+        continue;
       }
-      return beginAttempt(project, claimed, now);
-    });
+      if (afterCleanup(error, id, null)) continue;
+      throw error;
+    }
     if (!owned?.claim?.token) {
       summary.queued += 1;
       continue;
@@ -1487,33 +1572,89 @@ async function handOverEarlier({ project, message, presence, environment, platfo
         summary.unknown += 1;
       }
     } catch (error) {
+      if (afterCleanup(error, id, owned)) continue;
       try {
-        preserveUnknown(project, owned, error.code || "delivery-outcome-unknown", error.conversationTargetRefused ? "refused" : "unknown");
+        preserveUnknown(project, owned, error?.code || "delivery-outcome-unknown", error?.conversationTargetRefused ? "refused" : "unknown");
       } catch {
         /* The claim stays held; recovery keeps it unknown. */
       }
       summary.unknown += 1;
-      if (error.code === "CONVERSATION_TARGET_CHANGED" || error.conversationTargetRefused) stopped = true;
+      if (error?.code === "CONVERSATION_TARGET_CHANGED" || error?.conversationTargetRefused) stopped = true;
     }
   }
   return summary;
 }
 
-export async function sendProjectConversation({
-  root,
-  caller = null,
-  environment = process.env,
-  to,
-  body,
-  replyTo = null,
-  hostTicket = null,
-  now = Date.now,
-  waitClock = Date.now,
-  platform = process.platform,
-  deliver = null,
-  waitMs = 0,
-  signal,
-} = {}) {
+// Returns a claim that was never offered to the Host to the queue. Any
+// failure (including another cleanup failure) leaves it to the mailbox.
+function releaseClaimAfterCleanup(project, claimed) {
+  try {
+    return releaseClaim(project, claimed) === true;
+  } catch {
+    return false;
+  }
+}
+
+// A lock cleanup failure (a slot's lock could not be confirmed released) is
+// answered from what the mailbox shows, never by repeating a step. It is
+// handled before the ordinary delivery catch can write anything more.
+function cleanupConversationResult(observation, cleanup, error) {
+  const { project, message, from, target, owned, earlier } = observation;
+  const operationFailed = cleanup.operationReturned === false;
+  const reasonCode = operationFailed ? (/^[A-Z][A-Z0-9_]{0,63}$/.test(error?.code) ? error.code : "UNKNOWN") : "LOCAL_MUTATION_CLEANUP_FAILED";
+  const extra = {
+    reasonCode,
+    cleanup: cleanup.diagnostic,
+    ...(operationFailed ? { originalOperationFailed: true } : {}),
+    ...(earlier ? { earlier } : {}),
+  };
+  if (!message) {
+    // Before the message was written nothing about it exists and nothing was
+    // sent: the step's own failure stands, otherwise a plain "not sent" error
+    // the caller may answer by sending again.
+    if (operationFailed) throw error;
+    fail("CONVERSATION_NOT_SENT", "Nothing was sent: a mailbox lock could not be confirmed released before the message was written. Sending again is safe.");
+  }
+  // Claimed but never offered to the Host: back to the queue when the slot
+  // can be taken (the delivery step had not started).
+  if (owned?.claim?.token && !observation.handing && !operationFailed && releaseClaimAfterCleanup(project, owned))
+    return { ...resultOf(message, "queued", "inbox"), ...extra };
+  const read = readBackAfterCleanup(project, message.to.address, message.id, owned, message);
+  if (read.state === "handed") return { ...resultOf(read.record, read.record.state, read.record.evidence), ...extra };
+  if (read.state === "queued") return { ...resultOf(message, "queued", "inbox"), ...extra };
+  const state = operationFailed && error?.conversationTargetRefused === true ? "refused" : "unknown";
+  return { ...resultOf(message, state, "lock-cleanup-outcome-unconfirmed"), persisted: read.persisted, ...extra };
+}
+
+export async function sendProjectConversation(args = {}) {
+  const observation = {};
+  try {
+    return await sendProjectConversationObserved(args, observation);
+  } catch (error) {
+    const cleanup = mutationCleanupFailure(error);
+    if (!cleanup) throw error;
+    return cleanupConversationResult(observation, cleanup, error);
+  }
+}
+
+async function sendProjectConversationObserved(
+  {
+    root,
+    caller = null,
+    environment = process.env,
+    to,
+    body,
+    replyTo = null,
+    hostTicket = null,
+    now = Date.now,
+    waitClock = Date.now,
+    platform = process.platform,
+    deliver = null,
+    waitMs = 0,
+    signal,
+  } = {},
+  observation,
+) {
   if (signal?.aborted) fail("CONVERSATION_DELIVERY_CANCELLED");
   const project = openProject(root);
   const args = { project_root: root, to, body, reply_to: replyTo };
@@ -1522,6 +1663,7 @@ export async function sendProjectConversation({
   if (!validBody(body)) fail("CONVERSATION_BODY", "The message must be text of at most 6000 characters.");
   const target = parseAddress(to);
   if (!target) fail("CONVERSATION_ADDRESS", "Use runtime:id or runtime:id/agent.");
+  Object.assign(observation, { project, from, target });
   let original = null;
   if (replyTo != null) {
     original = findMessage(project, replyTo);
@@ -1561,9 +1703,12 @@ export async function sendProjectConversation({
     handedToHost: false,
   };
   enqueue(project, message);
+  observation.message = message;
   let owned = withMailboxSlot(project, slot(target.address), () => {
     const claimed = claimMessage(project, message, now);
-    return claimed?.claim?.token ? beginAttempt(project, claimed, now) : null;
+    const attempted = claimed?.claim?.token ? beginAttempt(project, claimed, now) : null;
+    observation.owned = attempted;
+    return attempted;
   });
   if (!owned?.claim?.token) return resultOf(message, "queued", "inbox");
   let earlier = null;
@@ -1582,8 +1727,24 @@ export async function sendProjectConversation({
       });
     assertTarget();
     // A live channel takes the older queued mail for this recipient first.
-    if (channelLive(presence, environment, now, platform).delivery === "immediate")
+    if (channelLive(presence, environment, now, platform).delivery === "immediate") {
       earlier = await handOverEarlier({ project, message, presence, environment, platform, signal, assertTarget, deliver, now });
+      observation.earlier = earlier;
+    }
+    if (earlier?.cleanup) {
+      // The slot's lock is not confirmed released, so this message is not
+      // handed over now. It goes back to the queue if the slot can be taken;
+      // otherwise the mailbox decides what is reported.
+      if (releaseClaim(project, owned)) return done(resultOf(message, "queued", "inbox"));
+      const read = readBackAfterCleanup(project, target.address, message.id, owned, message);
+      if (read.state === "queued") return done(resultOf(message, "queued", "inbox"));
+      return done({
+        ...resultOf(message, "unknown", "lock-cleanup-outcome-unconfirmed"),
+        persisted: read.persisted,
+        reasonCode: "LOCAL_MUTATION_CLEANUP_FAILED",
+      });
+    }
+    observation.handing = true;
     const attempt = await (deliver || defaultDeliver)({ message: owned, presence, environment, platform, signal, assertTarget });
     project.io.assertCurrent();
     presenceProject(project, environment).io.assertCurrent();
@@ -1598,18 +1759,22 @@ export async function sendProjectConversation({
     }
     if (!releaseClaim(project, owned)) return done(resultOf(owned, "unknown", "queue-handback-not-confirmed"));
   } catch (error) {
+    // Answered by the caller from the mailbox, before any write here.
+    if (mutationCleanupFailure(error)) throw error;
     if (owned.externalAttempt) {
-      const state = error.conversationTargetRefused ? "refused" : "unknown";
+      const state = error?.conversationTargetRefused ? "refused" : "unknown";
+      // A frozen error cannot take a property; keep the preservation result apart.
+      let preservationError = null;
       try {
-        preserveUnknown(project, owned, error.code || "delivery-outcome-unknown", state);
+        preserveUnknown(project, owned, error?.code || "delivery-outcome-unknown", state);
       } catch (cleanup) {
-        error.mailboxPreservation = { code: cleanup.code };
+        preservationError = { code: cleanup?.code ?? null };
       }
       return done({
-        ...resultOf(owned, state, error.code || "delivery-outcome-unknown"),
-        reasonCode: error.code ?? null,
-        preservationError: error.mailboxPreservation ?? null,
-        cleanup: error.proxyCleanup ?? null,
+        ...resultOf(owned, state, error?.code || "delivery-outcome-unknown"),
+        reasonCode: error?.code ?? null,
+        preservationError,
+        cleanup: error?.proxyCleanup ?? null,
       });
     }
     releaseClaim(project, owned);
