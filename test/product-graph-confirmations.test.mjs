@@ -630,11 +630,11 @@ test("C9: the 뜻 mark appears only when a check no longer holds; with no record
     { question: "up", id: SAVE },
     { question: "reach", id: SAVE },
   ];
-  // The build identity follows check.json's bytes, and node rows name the
+  // The build identity follows check.json's bytes, the answer says whether it compared confirmations, and node rows name the
   // confirmation lists they are in (R2); everything else is the same.
   const raw = () => questions.map((question) => queryProductGraph({ root: f.root, ...question }));
   const answers = () =>
-    raw().map(({ buildSha256: _build, ...answer }) => JSON.stringify({ ...answer, rows: answer.rows?.map(({ confirmation: _list, ...row }) => row) }));
+    raw().map(({ buildSha256: _build, confirmationComparison: _comparison, ...answer }) => JSON.stringify({ ...answer, rows: answer.rows?.map(({ confirmation: _list, ...row }) => row) }));
   assert.deepEqual(raw()[0].rows[0].confirmation, ["neverChecked"]);
   const withRecordsBlock = answers();
   assert(withRecordsBlock.every((answer) => !answer.includes("{뜻:")), "never checked: no mark");

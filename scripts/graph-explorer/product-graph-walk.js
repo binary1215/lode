@@ -1030,6 +1030,14 @@ export const productGraphWalk = (() => {
     return `${label} (${side.format}${side.status === "partial" ? ", 앞부분만" : ""}${left}):\n${shown.join("\n")}${lines.length > 40 ? `\n… ${lines.length - 40}줄 더 — --json의 rows[].detail에 이 페이지 한도 안의 전체가 있다` : ""}`;
   }
 
+  // The whole text of one content item, from its detail alone: the answer's
+  // structured part carries the detail, and this text is a rendering of it.
+  function contentItemText(detail) {
+    const head = `${detail.type} ${detail.id} (${CHANGE_WORDS[detail.change] || detail.change})`;
+    const headline = contentHeadline(detail);
+    return `${head}${headline ? `\n${headline}` : ""}\n${contentSide("이전", detail.before)}\n${contentSide("현재", detail.after)}`;
+  }
+
   function contentHeadline(item) {
     const read = (side) => { try { return side?.status === "available" && side.format === "stated-fields" ? JSON.parse(side.text) : null; } catch { return null; } };
     const before = read(item.before), after = read(item.after);
@@ -1048,8 +1056,7 @@ export const productGraphWalk = (() => {
       const head = `${item.type} ${item.id} (${CHANGE_WORDS[item.change] || item.change})`;
       if (!sides) return { text: `${head} — 이전 본문 ${item.beforeRetained ? "보관됨" : "없음"}. 본문은 product-graph-query <project> changes --list content 로만 본다.`, nodeId: item.change === "removed" ? null : item.id };
       const detail = { ...item, before: sides.before, after: sides.after };
-      const headline = contentHeadline(detail);
-      return { text: `${head}${headline ? `\n${headline}` : ""}\n${contentSide("이전", sides.before)}\n${contentSide("현재", sides.after)}`, nodeId: sides.after.status === "absent" ? null : item.id, detail };
+      return { text: contentItemText(detail), nodeId: sides.after.status === "absent" ? null : item.id, detail };
     });
     const flat = (field) => (changes.byType || []).flatMap((group) => (group[field] || []).map((id) => ({ text: `${group.type} ${id}`, nodeId: field === "removed" ? null : id })));
     if (key === "changed" || key === "added" || key === "removed") return flat(key);
@@ -1307,6 +1314,7 @@ export const productGraphWalk = (() => {
     confirmationItems,
     changeItems,
     contentHeadline,
+    contentItemText,
     changeCount,
   });
 })();

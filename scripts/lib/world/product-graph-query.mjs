@@ -7,6 +7,7 @@ import { productGraphWalk as walk } from "../../graph-explorer/product-graph-wal
 import { graphSourceReader, nodeContent, readerKey, textPrefix } from "./product-graph-compare.mjs";
 import { sha256Hex } from "../core/digest.mjs";
 import { canonicalJson } from "../core/canonical-json.mjs";
+import { markTextFromStructure } from "./product-graph-answer.mjs";
 
 export const PRODUCT_GRAPH_QUESTIONS = Object.freeze(["overview", "node", "down", "up", "reach", "find", "gaps", "changes", "impact"]);
 const MAX_LIMIT = 500;
@@ -65,16 +66,18 @@ export function queryProductGraph(options = {}) {
         : `제품 그래프 빌드를 읽지 못했다: ${read.reason}. 다시 만들려면: ${read.buildCommand}`;
     return { status: read.status, code: read.code, message, buildCommand: read.buildCommand, text: `${message}\n`, ...common };
   }
-  const refuse = (code, message) => ({ status: "refused", code, message, question, text: `${message}\n`, ...common });
+  let proposalFreshness = null,
+    candidateRead = null,
+    baseRead = null;
+  // Whenever a build was read, the answer names it (and every other build it read).
+  const identity = () => buildIdentity(read, { candidateRead, baseRead });
+  const refuse = (code, message) => ({ status: "refused", code, message, question, buildSha256: identity(), text: `${message}\n`, ...common });
   // An exact anchor that is not in the graph is said, not answered with nothing.
   if (relatedTo !== null && relatedTo !== undefined && relatedTo !== "") {
     const anchor = walk.resolveId(productGraphQueryContext(read), String(relatedTo));
     if (!read.graph.nodes.some((node) => node.id === anchor))
       return refuse("PRODUCT_GRAPH_NODE_NOT_FOUND", `--related-to ${relatedTo}라는 노드가 이 그래프에 없다. 이웃 범위가 없어 찾지 않았다.`);
   }
-  let proposalFreshness = null,
-    candidateRead = null,
-    baseRead = null;
   if (question === "impact") {
     // A build folder that was given but cannot be read is said as such, never
     // treated as not given.
@@ -133,6 +136,7 @@ export function queryProductGraph(options = {}) {
     return {
       status: "basis-changed",
       code: "PRODUCT_GRAPH_QUERY_BASIS_CHANGED",
+      buildSha256: identity(),
       text: "조회 기준이 바뀌었다(빌드·기준·후보 또는 질문). 이전 페이지와 섞지 않았다. 현재 기준에서 처음부터 다시 조회한다.\n",
       basisSha256,
       ...common,
@@ -164,7 +168,15 @@ export function queryProductGraph(options = {}) {
     answer = walk.ask(ctx, request);
   } catch {
     const message = `이 빌드(${read.directory})는 이 질문에 답할 모양이 아니다: 알려진 어느 버전의 빌드와도 모양이 다르다. 다시 만들려면: ${read.buildCommand}`;
-    return { status: "unreadable", code: "PRODUCT_GRAPH_BUILD_UNREADABLE", message, buildCommand: read.buildCommand, text: `${message}\n`, ...common };
+    return {
+      status: "unreadable",
+      code: "PRODUCT_GRAPH_BUILD_UNREADABLE",
+      message,
+      buildCommand: read.buildCommand,
+      buildSha256: identity(),
+      text: `${message}\n`,
+      ...common,
+    };
   }
   const { text: answerText, ok, code, message, ...structured } = answer;
   // A printed next-page hint repeats the question exactly: its filters, its
@@ -237,12 +249,13 @@ export function queryProductGraph(options = {}) {
   if (Array.isArray(rows)) rows = rows.map((row) => (row.detail?.before || row.detail?.after ? { ...row, text: row.text.split("\n")[0] } : row));
   // Filter fields on node rows, from what the build already holds (the text stays as it was).
   if (Array.isArray(rows)) rows = rows.map(nodeRowFields(ctx));
-  return {
+  const answered = {
     status: ok ? "answered" : "refused",
     ...(ok ? {} : { code, message }),
     question,
     builtAt: read.builtAt,
-    buildSha256: buildIdentity(read),
+    buildSha256: identity(),
+    confirmationComparison: ctx.confirmations ? (ctx.confirmations.status === "compared" ? "compared" : "not-read") : "absent",
     ...(basisSha256 ? { basisSha256 } : {}),
     freshness: { state: read.freshness.state, text: read.freshness.text },
     ...(proposalFreshness ? { proposalFreshness } : {}),
@@ -252,19 +265,34 @@ export function queryProductGraph(options = {}) {
     ...common,
     note: "글자 스캔으로 만든 그래프다. 타입이 없고, 풀린 call·callback만 따라간다.",
   };
+  // MCP leaves the text out of structuredContent only when the header, the
+  // title and the rows (a content item from its detail) give it back exactly.
+  return markTextFromStructure(answered, (value) =>
+    Array.isArray(value.rows) && Array.isArray(value.header) && typeof value.title === "string"
+      ? [
+          ...value.header,
+          value.title,
+          ...value.rows.map((row) => `${"  ".repeat(row.depth)}${row.detail?.before || row.detail?.after ? walk.contentItemText(row.detail) : row.text}`),
+        ].join("\n") + "\n"
+      : null,
+  );
 }
 
-// Which build an answer was read from: the bytes of graph.json and check.json
-// as this answer read them, and the baseline it was read against (a baseline
-// move changes answers without changing check.json; basisOf names it the same
-// way). Not stored; a read chain compares it between calls.
-function buildIdentity(read) {
-  return sha256Hex(canonicalJson({ graph: read.graphFileSha256, check: read.checkFileSha256, baseline: read.baselineEvidence?.setAt ?? null }));
+// What an answer was read from: the bytes of graph.json and check.json of
+// every build it read (the Project's, and for impact the candidate and the
+// proposal base), and the baseline (a baseline move changes answers without
+// changing check.json; basisOf names it the same way). Hashing the two files
+// costs each answer one pass over their bytes (graph.json and check.json are
+// read whole anyway). Not stored; a read chain compares it between calls.
+function buildIdentity(read, { candidateRead = null, baseRead = null } = {}) {
+  const files = (built) => (built?.status === "built" ? { graph: built.graphFileSha256, check: built.checkFileSha256 } : null);
+  return sha256Hex(canonicalJson({ ...files(read), baseline: read.baselineEvidence?.setAt ?? null, candidate: files(candidateRead), base: files(baseRead) }));
 }
 
 // Rows that stand for a graph node carry its type, whether it changed since the
 // baseline (only when the build was compared with one) and the confirmation
-// lists it is in (only where it is in one). Pseudo starts (@…) carry none.
+// lists that name it: a 뜻 line names its 기능, a document row both of its ends
+// (so screens and screen elements carry it too). Pseudo starts (@…) carry none.
 const CONFIRMATION_KEYS = Object.freeze(["neverChecked", "changedSinceCheck", "textChanged", "otherReader"]);
 const CHANGE_FIELD = Object.freeze({ changed: "changed", added: "added", reach: "reachChanged" });
 function nodeRowFields(ctx) {
@@ -272,11 +300,12 @@ function nodeRowFields(ctx) {
   const confirmed = new Map();
   if (ctx.confirmations?.status === "compared")
     for (const key of CONFIRMATION_KEYS)
-      for (const item of walk.confirmationItems(ctx.confirmations, key)) {
-        if (!item.nodeId) continue;
-        if (!confirmed.has(item.nodeId)) confirmed.set(item.nodeId, []);
-        if (!confirmed.get(item.nodeId).includes(key)) confirmed.get(item.nodeId).push(key);
-      }
+      for (const item of ctx.confirmations[key] || [])
+        for (const id of item.kind === "meaning" ? [item.id] : [item.from, item.to]) {
+          if (typeof id !== "string") continue;
+          if (!confirmed.has(id)) confirmed.set(id, []);
+          if (!confirmed.get(id).includes(key)) confirmed.get(id).push(key);
+        }
   return (row) => {
     if (row.kind !== "node" || typeof row.id !== "string") return row;
     const node = ctx.ix.nodes.get(row.id);

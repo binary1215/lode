@@ -14,14 +14,16 @@ export const READ_CHAIN_LIMITS = Object.freeze({
   pages: 10,
   defaultBytes: 16 * 1024,
   maxBytes: 64 * 1024,
-  minBytes: 1024,
+  minBytes: 4096,
   memoryBytes: 16 * 1024 * 1024,
   inputBytes: 64 * 1024,
   conditionDepth: 2,
   inValues: 100,
   pickFields: 32,
   pathSegments: 4,
+  nestingDepth: 32,
   messageChars: 500,
+  itemChars: 120,
 });
 
 const STEP_KINDS = Object.freeze(["read", "where", "pick", "sort", "limit", "unique", "count"]);
@@ -38,7 +40,7 @@ const hasItemKey = (value) =>
 export const READ_CHAIN_TOOL = Object.freeze({
   name: READ_CHAIN_TOOL_NAME,
   description:
-    "Run several read-only Lode tool calls as one declarative step list inside the server and return only the rows asked for, with Lode-counted totals (total, returned, cut, notSeen). Steps: read (one call), each+read (one call per earlier row), where, pick, sort, limit, unique, count. Grants nothing and writes nothing. Full step reference: lode_tools_discover with name lode_tools_read_chain.",
+    "Run several read-only Lode tool calls as one declarative step list inside the server and return only the rows asked for, with Lode-counted totals and one everythingSeen verdict. Steps: read (one call), each+read (one call per earlier row), where, pick, sort, limit, unique, count. Only tools that declare their completeness can be inner calls (lode_product_graph_query, lode_project_graph). Grants nothing and writes nothing. Full step reference: lode_tools_discover with name lode_tools_read_chain.",
   inputSchema: {
     type: "object",
     properties: {
@@ -73,15 +75,16 @@ export const READ_CHAIN_TOOL = Object.freeze({
 
 export const READ_CHAIN_REFERENCE = Object.freeze({
   steps: {
-    read: '{ id, read: { name, arguments }, take?: "rows", pages?: 1..10 } — one call of a read-only tool (the same route as lode_tools_read). take names where the row list is in the result (a dotted path, default rows); a result without a list there becomes one row. pages follows the tool\'s own page.nextMcpArguments and appends the rows.',
-    each: '{ id, each: { from, value, max?: 1..20 }, read: { name, arguments }, take?, pages? } — one call per row of an earlier step, in order; value names the field handed over; an argument { "$item": true } is that value. Each produced row carries item.',
+    read: "{ id, read: { name, arguments }, take?, pages?: 1..10 } — one call of a tool that may be an inner call (the same route as lode_tools_read). take names where the row list is in the result (a dotted path; default the tool's declared row list); a result without a list there becomes one row and is counted as not fully seen. pages follows the tool's own next-page arguments and appends the rows (only for a tool that declares them).",
+    each: '{ id, each: { from, value, max?: 1..20 }, read: { name, arguments }, take?, pages? } — one call per row of an earlier step, in order; value names the field handed over; an argument { "$item": true } is that value; max counts the step\'s inner calls, pages included. Rows without the value get no call and are counted (notSeen.eachNoValue): filter them out first. Each produced row carries item.',
     where:
       "{ id, from, where: condition } — keep rows matching. condition: { field, <op>: value } with op one of eq, ne, in, contains, startsWith, exists, gte, lte; or { all: [conditions] } / { any: [conditions] }, nested at most two levels.",
-    pick: "{ id, from, pick: [fields] } — keep the named fields.",
-    sort: "{ id, from, sort: { by, order?: asc|desc } } — stable; numbers by value, text by code points, missing values last.",
+    pick: "{ id, from, pick: [fields] } — keep the named fields; a dotted path keeps its nesting, so later steps address it by the same path.",
+    sort: "{ id, from, sort: { by, order?: asc|desc } } — stable; numbers by value, text by UTF-16 code units, missing and null values last.",
     limit: "{ id, from, limit: n } — the first n rows.",
     unique: "{ id, from, unique: { by } } — one row per value of the field, the first wins.",
-    count: "{ id, from, count: { by } } — rows { value, count } per value of the field, in first-seen order.",
+    count:
+      "{ id, from, count: { by } } — rows { value, count } per value of the field, in first-seen order; rows without the field are one row { value: null, missing: true, count }.",
   },
   arguments:
     'A literal JSON value, or { "$item": true } as a whole argument value inside each+read. No interpolation, expressions, regular expressions or branching.',
@@ -90,19 +93,28 @@ export const READ_CHAIN_REFERENCE = Object.freeze({
   bounds: {
     steps: READ_CHAIN_LIMITS.steps,
     innerCallsIncludingPages: READ_CHAIN_LIMITS.calls,
-    callsOfOneEach: READ_CHAIN_LIMITS.eachCalls,
+    callsOfOneEachIncludingPages: READ_CHAIN_LIMITS.eachCalls,
     pagesOfOneRead: READ_CHAIN_LIMITS.pages,
-    returnedBytes: { default: READ_CHAIN_LIMITS.defaultBytes, max: READ_CHAIN_LIMITS.maxBytes },
+    returnedBytes: { default: READ_CHAIN_LIMITS.defaultBytes, min: READ_CHAIN_LIMITS.minBytes, max: READ_CHAIN_LIMITS.maxBytes },
     intermediateBytes: READ_CHAIN_LIMITS.memoryBytes,
     inputBytes: READ_CHAIN_LIMITS.inputBytes,
+    inValues: READ_CHAIN_LIMITS.inValues,
+    pickFields: READ_CHAIN_LIMITS.pickFields,
+    pathParts: READ_CHAIN_LIMITS.pathSegments,
+    conditionNesting: READ_CHAIN_LIMITS.conditionDepth,
+    inputNesting: READ_CHAIN_LIMITS.nestingDepth,
   },
   statuses: {
-    completed: "Everything ran; check cut and notSeen to know whether everything was seen.",
-    partial: "A bound was reached or an inner call failed or was refused; the answer holds what was reached and counts the rest.",
-    stopped: "The product graph build changed between calls (no rows are returned), on_error stop met a failed call, or the request was cancelled.",
+    completed: "Everything ran without a failure or a bound.",
+    partial:
+      "A bound was reached, a tool said its answer was cut, or an inner call failed or was refused; the answer holds what was reached and counts the rest.",
+    stopped: "The product graph build or baseline changed between calls (no rows are returned), on_error stop met a failed call, or the request was cancelled.",
     refused: "The step list is invalid; no inner call ran.",
   },
-  everythingSeen: "Only when status is completed, ran.failed and ran.refused are 0, every result's cut is 0 and every notSeen count is 0.",
+  everythingSeen:
+    "Lode's verdict: true only when the status is completed, no inner call failed or was refused, every notSeen count is 0, no rows were cut and every returned step was reached. notSeenBecause names the reasons when it is false.",
+  innerTools:
+    "Only tools that declare their completeness (how they say no answer, more pages and cut) can be inner calls: lode_product_graph_query and lode_project_graph (not with inventory_page). Every other tool is refused with CHAIN_TOOL_NOT_CHAINABLE before any call. Neither keeps any per-caller state, so a chain changes nothing a later call may do or is given.",
   pinning:
     "A chain never returns rows from two product graph builds. This is detected after each call, not prevented: every answer of lode_product_graph_query carries buildSha256 (the build files and the baseline it read), and when a later one differs from the first the chain stops with CHAIN_BUILD_CHANGED and returns no rows. Pages carry expected_basis_sha256 as the tool returns them; a basis-changed page stops the chain the same way. Other tools are not pinned (basis[].pinned false).",
   authority: "A chain grants nothing and writes nothing; each inner call keeps every check of lode_tools_read.",
@@ -117,21 +129,35 @@ export const READ_CHAIN_REFERENCE = Object.freeze({
         each: { from: "one", value: "id", max: 20 },
         read: { name: "lode_product_graph_query", arguments: { question: "up", id: { $item: true } } },
       },
-      { id: "busy", from: "callers", count: { by: "item" } },
+      {
+        id: "pointing",
+        from: "callers",
+        where: {
+          all: [
+            { field: "kind", eq: "node" },
+            { field: "depth", gte: 1 },
+          ],
+        },
+      },
+      { id: "busy", from: "pointing", count: { by: "item" } },
       { id: "top", from: "busy", sort: { by: "count", order: "desc" } },
     ],
     return: [{ from: "top", limit: 10 }],
   },
 });
 
-// Names of the inner tools a chain asks for, for callers that classify a request
-// before it runs (Session binding, hook correlation). Malformed input yields
-// what can be read; the chain itself refuses it later.
-export function readChainInnerCalls(args) {
-  if (!isObject(args) || !Array.isArray(args.steps)) return [];
-  return args.steps
-    .filter((step) => isObject(step) && isObject(step.read) && typeof step.read.name === "string")
-    .map((step) => ({ name: step.read.name, arguments: isObject(step.read.arguments) ? step.read.arguments : {} }));
+// How deep the input nests, without recursion (a deep literal is refused, not a crash).
+function nestingDepth(value, limit) {
+  const stack = [[value, 1]];
+  let deepest = 0;
+  while (stack.length) {
+    const [current, depth] = stack.pop();
+    if (current === null || typeof current !== "object") continue;
+    deepest = Math.max(deepest, depth);
+    if (deepest > limit) return deepest;
+    for (const child of Array.isArray(current) ? current : Object.values(current)) stack.push([child, depth + 1]);
+  }
+  return deepest;
 }
 
 function fieldPath(value) {
@@ -144,7 +170,7 @@ function fieldPath(value) {
 function fieldValue(row, parts) {
   let value = row;
   for (const part of parts) {
-    if (!isObject(value) || !Object.hasOwn(value, part)) return undefined;
+    if (value === null || typeof value !== "object" || !Object.hasOwn(value, part)) return undefined;
     value = value[part];
   }
   return value;
@@ -197,6 +223,8 @@ export function validateReadChain(input, { resolveTarget } = {}) {
   const problems = [];
   const add = (at, message, code = "CHAIN_INVALID") => problems.push({ code, at, message });
   if (!isObject(input)) return [{ code: "CHAIN_INVALID", at: "", message: "The chain input is an object." }];
+  if (nestingDepth(input, READ_CHAIN_LIMITS.nestingDepth) > READ_CHAIN_LIMITS.nestingDepth)
+    return [{ code: "CHAIN_INVALID", at: "", message: `The chain input nests deeper than ${READ_CHAIN_LIMITS.nestingDepth} levels.` }];
   let size = 0;
   try {
     size = Buffer.byteLength(JSON.stringify(input), "utf8");
@@ -260,6 +288,9 @@ export function validateReadChain(input, { resolveTarget } = {}) {
       if (step.take !== undefined && !fieldPath(step.take)) add(`${at}.take`, "take is a name or a dotted path of at most 4 parts.");
       if (step.pages !== undefined && (!Number.isInteger(step.pages) || step.pages < 1 || step.pages > READ_CHAIN_LIMITS.pages))
         add(`${at}.pages`, `pages is 1 to ${READ_CHAIN_LIMITS.pages}.`);
+      const placeholder = isObject(args) ? Object.fromEntries(Object.entries(args).map(([key, value]) => [key, isItemReference(value) ? "" : value])) : {};
+      const pagedTarget = isObject(read) && typeof read.name === "string" && resolveTarget ? resolveTarget(read.name, placeholder) : null;
+      if (step.pages > 1 && pagedTarget?.ok && !pagedTarget.completeness?.pages) add(`${at}.pages`, `${read.name} has no next-page arguments to follow.`);
       if (isObject(read) && typeof read.name === "string" && read.name && isObject(args)) {
         // A placeholder stands in for each handed-over value while the target is resolved.
         const probe = Object.fromEntries(Object.entries(args).map(([key, value]) => [key, isItemReference(value) ? "" : value]));
@@ -362,8 +393,12 @@ function transform(kind, spec, rows) {
     return rows.map((row) => {
       const picked = {};
       for (const field of spec) {
-        const value = fieldValue(row, fieldPath(field));
-        if (value !== undefined) picked[field] = value;
+        const parts = fieldPath(field);
+        const value = fieldValue(row, parts);
+        if (value === undefined) continue;
+        let place = picked;
+        for (const part of parts.slice(0, -1)) place = isObject(place[part]) ? place[part] : (place[part] = {});
+        place[parts.at(-1)] = value;
       }
       return picked;
     });
@@ -396,7 +431,7 @@ function transform(kind, spec, rows) {
     for (const row of rows) {
       const value = fieldValue(row, parts);
       const key = valueKey(value);
-      if (!counts.has(key)) counts.set(key, { value: value === undefined ? null : value, count: 0 });
+      if (!counts.has(key)) counts.set(key, value === undefined ? { value: null, missing: true, count: 0 } : { value, count: 0 });
       counts.get(key).count += 1;
     }
     return [...counts.values()];
@@ -406,58 +441,79 @@ function transform(kind, spec, rows) {
 
 // ---------- running ----------
 
-const PRODUCT_GRAPH_QUERY = "lode_product_graph_query";
-const ANSWER_FAILURES = new Set(["not-built", "unreadable", "failed"]);
-const short = (text) => {
+const short = (text, limit = READ_CHAIN_LIMITS.messageChars) => {
   const value = String(text ?? "");
-  return value.length > READ_CHAIN_LIMITS.messageChars ? `${value.slice(0, READ_CHAIN_LIMITS.messageChars)}…` : value;
+  return value.length > limit ? `${value.slice(0, limit)}…` : value;
 };
 const bytesOf = (value) => Buffer.byteLength(JSON.stringify(value), "utf8");
 const asRow = (entry) => (isObject(entry) ? entry : { value: entry });
+const digits = (number) => String(number).length;
+// A handed-over item as an issue shows it: short text, or a short JSON form.
+const shownItem = (item) => (typeof item === "string" ? short(item, READ_CHAIN_LIMITS.itemChars) : short(JSON.stringify(item), READ_CHAIN_LIMITS.itemChars));
+const yieldToEvents = () => new Promise((resolve) => setImmediate(resolve));
+const matchesSpec = (value, spec) => {
+  const found = fieldValue(value, fieldPath(spec.field));
+  if (Object.hasOwn(spec, "in")) return spec.in.includes(found);
+  if (Object.hasOwn(spec, "eq")) return found === spec.eq;
+  if (Object.hasOwn(spec, "gt")) return typeof found === "number" && found > spec.gt;
+  return false;
+};
 
-// Reads one inner response: { value } for an answer, { failure } otherwise.
-function innerOutcome(response) {
+// Reads one inner response against the tool's declared completeness: an
+// answer, a refusal, a failure, or a changed build basis. A non-answer is
+// never a row.
+function innerOutcome(response, completeness) {
   if (!response) return { failure: { kind: "failed", code: "CHAIN_INNER_NO_RESPONSE", message: "The inner call returned nothing." } };
   if (response.error)
     return { failure: { kind: "failed", code: response.error.data?.reasonCode || "CHAIN_INNER_CALL_FAILED", message: short(response.error.message) } };
   const result = response.result || {};
   const text = result.content?.find?.((entry) => entry?.type === "text")?.text;
   if (result.isError) return { failure: { kind: "failed", code: "CHAIN_INNER_CALL_FAILED", message: short(text) } };
-  const value = result.structuredContent !== undefined ? result.structuredContent : { text: text ?? null };
-  if (isObject(value) && typeof value.code === "string") {
-    if (value.status === "refused") return { failure: { kind: "refused", code: value.code, message: short(value.message ?? value.text) }, value };
-    if (value.status === "basis-changed") return { buildChanged: true, value };
-    if (ANSWER_FAILURES.has(value.status)) return { failure: { kind: "failed", code: value.code, message: short(value.message ?? value.text) }, value };
-  }
-  return { value };
+  const value = result.structuredContent;
+  if (!isObject(value)) return { failure: { kind: "failed", code: "CHAIN_INNER_NOT_AN_ANSWER", message: "The inner call returned no structured answer." } };
+  if (matchesSpec(value, completeness.answered)) return { value };
+  const code = completeness.code.map((field) => fieldValue(value, fieldPath(field))).find((found) => typeof found === "string") || "CHAIN_INNER_NOT_AN_ANSWER";
+  const message = short(
+    completeness.message.map((field) => fieldValue(value, fieldPath(field))).find((found) => typeof found === "string") ?? `${value.status ?? "no status"}`,
+  );
+  if (completeness.basisChanged && matchesSpec(value, completeness.basisChanged))
+    return { basisChanged: true, failure: { kind: "failed", code, message }, value };
+  if (completeness.refused && matchesSpec(value, completeness.refused)) return { failure: { kind: "refused", code, message }, value };
+  return { failure: { kind: "failed", code, message }, value };
 }
 
-function rowsOf(value, take) {
-  const parts = fieldPath(take ?? "rows");
-  const list = fieldValue(value, parts);
+function rowsOf(value, take, defaultTake) {
+  const list = fieldValue(value, fieldPath(take ?? defaultTake));
   return Array.isArray(list) ? { rows: list.map(asRow), listed: true } : { rows: [asRow(value)], listed: false };
 }
 
+const EMPTY_NOT_SEEN = () => ({ pagesLeft: 0, itemsLeft: 0, eachSkipped: 0, eachNoValue: 0, callsSkipped: 0, rowsDropped: 0, cutByTool: 0 });
+
 // Runs a chain. call(name, args) performs one lode_tools_read call and returns
-// its JSON-RPC response; resolveTarget is the validation resolver above.
+// its JSON-RPC response; resolveTarget is the validation resolver above and
+// gives each target its declared completeness.
 export async function runReadChain(input, { resolveTarget, call, signal } = {}) {
   const problems = validateReadChain(input, { resolveTarget });
-  if (problems.length)
-    return {
+  if (problems.length) {
+    const refused = {
       status: "refused",
+      everythingSeen: false,
+      notSeenBecause: [],
       ran: { steps: 0, calls: 0, failed: 0, refused: 0 },
       basis: [],
       header: [],
       results: {},
-      notSeen: { pagesLeft: 0, itemsLeft: 0, eachSkipped: 0, callsSkipped: 0, rowsDropped: 0 },
-      issues: problems,
+      notSeen: EMPTY_NOT_SEEN(),
+      issues: problems.map((problem) => ({ ...problem, message: short(problem.message), at: short(problem.at, READ_CHAIN_LIMITS.itemChars) })),
       persisted: false,
       grantsAuthorization: false,
     };
+    return fitAnswer(refused, [], READ_CHAIN_LIMITS.defaultBytes);
+  }
   const stopOnError = input.on_error === "stop";
   const maxBytes = input.max_bytes ?? READ_CHAIN_LIMITS.defaultBytes;
   const ran = { steps: 0, calls: 0, failed: 0, refused: 0 };
-  const notSeen = { pagesLeft: 0, itemsLeft: 0, eachSkipped: 0, callsSkipped: 0, rowsDropped: 0 };
+  const notSeen = EMPTY_NOT_SEEN();
   const issues = [];
   const basis = new Map();
   const headers = [];
@@ -467,12 +523,17 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
   let stop = null;
   let pinnedBuild = null;
 
+  const addIssue = (issue) => {
+    const same = issues.find((seen) => seen.code === issue.code && seen.step === issue.step && seen.kind === issue.kind);
+    if (same) same.count = (same.count ?? 1) + (issue.count ?? 1);
+    else issues.push(issue);
+  };
   const keep = (rows, list) => {
     for (const row of rows) {
       const size = bytesOf(row);
       if (memoryFull || memory + size > READ_CHAIN_LIMITS.memoryBytes) {
         if (!memoryFull)
-          issues.push({ code: "CHAIN_MEMORY_LIMIT", message: `Intermediate rows reached ${READ_CHAIN_LIMITS.memoryBytes} bytes; later rows were dropped.` });
+          addIssue({ code: "CHAIN_MEMORY_LIMIT", message: `Intermediate rows reached ${READ_CHAIN_LIMITS.memoryBytes} bytes; later rows were dropped.` });
         memoryFull = true;
         notSeen.rowsDropped += 1;
         continue;
@@ -481,135 +542,169 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
       list.push(row);
     }
   };
-
   const supplied = (target, args) => (target.declaresProjectRoot && args.project_root === undefined ? { project_root: input.project_root, ...args } : args);
+  const fail = (step, outcome, extra) => {
+    ran[outcome.failure.kind] += 1;
+    addIssue({ code: outcome.failure.code, kind: outcome.failure.kind, step: step.id, ...extra, message: outcome.failure.message });
+    if (stopOnError) stop = { code: "CHAIN_STOPPED_ON_ERROR", message: `Stopped at step ${step.id}: on_error is stop.` };
+  };
+  const leftOver = (remaining) => {
+    notSeen.pagesLeft += 1;
+    if (Number.isInteger(remaining)) notSeen.itemsLeft += remaining;
+  };
 
-  // One read (with its pages). Returns the rows, or null when the chain stops.
-  const readOnce = async (step, target, args, extra) => {
-    const rows = [];
+  // One read with its pages, within budget.left calls of its step. Appends to
+  // rows. Returns "skipped" when no call could be made.
+  const readOnce = async (step, target, args, extra, budget, rows) => {
     let current = supplied(target, args);
+    const completeness = target.completeness;
+    let remainingBefore = null;
     for (let page = 1; ; page += 1) {
+      // Lets a cancellation notice be read before the next inner call.
+      await yieldToEvents();
       if (signal?.aborted) {
         stop = { code: "CHAIN_CANCELLED", message: "The request was cancelled; no further inner call was made." };
-        return null;
+        return "stopped";
       }
-      // Past the call bound, or with intermediate rows full, no further call is made.
-      if (ran.calls >= READ_CHAIN_LIMITS.calls || memoryFull) {
-        notSeen.callsSkipped += 1;
-        return rows;
+      if (ran.calls >= READ_CHAIN_LIMITS.calls || memoryFull || budget.left <= 0) {
+        if (page === 1) return "skipped";
+        leftOver(remainingBefore);
+        return "done";
       }
       ran.calls += 1;
-      const outcome = innerOutcome(await call(target.name, current));
+      budget.left -= 1;
+      const outcome = innerOutcome(await call(target.name, current), completeness);
       const value = outcome.value;
-      if (target.operation === PRODUCT_GRAPH_QUERY && isObject(value)) {
-        if (!basis.has(target.operation))
-          basis.set(target.operation, { tool: target.operation, builtAt: value.builtAt ?? null, freshness: value.freshness?.text ?? null, pinned: true });
-        if (typeof value.buildSha256 === "string") {
-          pinnedBuild ??= value.buildSha256;
-          if (value.buildSha256 !== pinnedBuild) outcome.buildChanged = true;
-        }
-      } else if (!basis.has(target.operation)) basis.set(target.operation, { tool: target.operation, pinned: false });
+      if (!basis.has(target.operation))
+        basis.set(target.operation, {
+          tool: target.operation,
+          pinned: Boolean(completeness.identity),
+          ...(completeness.identity && isObject(value) ? { builtAt: value.builtAt ?? null, freshness: value.freshness?.text ?? null } : {}),
+        });
+      // One build: an answer read from another build than the first one stops
+      // the chain, and so does a later page whose basis changed.
+      // A basis change on a first page is that call's own failure (its own
+      // expected_basis_sha256 argument), not a change between calls.
+      const identity = completeness.identity && isObject(value) ? fieldValue(value, fieldPath(completeness.identity)) : undefined;
+      if (typeof identity === "string") {
+        pinnedBuild ??= identity;
+        if (identity !== pinnedBuild) outcome.buildChanged = true;
+      }
+      if (outcome.basisChanged && page > 1) outcome.buildChanged = true;
       if (outcome.buildChanged) {
         stop = {
           code: "CHAIN_BUILD_CHANGED",
-          message: "The product graph build changed between inner calls; nothing from the two builds is mixed and no rows are returned.",
+          message: "The product graph build or its baseline changed between inner calls; no rows of either are returned.",
           build: true,
         };
-        return null;
+        return "stopped";
       }
       if (outcome.failure) {
-        ran[outcome.failure.kind] += 1;
-        issues.push({ code: outcome.failure.code, kind: outcome.failure.kind, step: step.id, ...extra, message: outcome.failure.message });
-        if (stopOnError) {
-          stop = { code: "CHAIN_STOPPED_ON_ERROR", message: `Stopped at step ${step.id}: on_error is stop.` };
-          return null;
-        }
-        return rows;
+        fail(step, outcome, extra);
+        if (page > 1) leftOver(remainingBefore);
+        return stop ? "stopped" : "done";
       }
-      if (isObject(value) && Array.isArray(value.header)) headers.push({ step: step.id, header: value.header });
-      const taken = rowsOf(value, step.take);
-      if (!taken.listed && step.take !== undefined && !issues.some((issue) => issue.code === "CHAIN_TAKE_NOT_A_LIST" && issue.step === step.id))
-        issues.push({ code: "CHAIN_TAKE_NOT_A_LIST", step: step.id, message: `The result has no list at ${step.take}; the whole result is one row.` });
+      if (Array.isArray(value.header)) headers.push({ step: step.id, header: value.header });
+      for (const cut of completeness.cut || []) {
+        if (!matchesSpec(value, cut)) continue;
+        const counted = cut.count ? fieldValue(value, fieldPath(cut.count)) : null;
+        notSeen.cutByTool += Number.isInteger(counted) && counted > 0 ? counted : 1;
+        addIssue({ code: "CHAIN_TOOL_CUT", step: step.id, message: `${target.operation} said its answer was cut (${cut.field}).` });
+      }
+      const taken = rowsOf(value, step.take, completeness.rows);
+      if (!taken.listed) {
+        notSeen.cutByTool += 1;
+        addIssue({
+          code: "CHAIN_TAKE_NOT_A_LIST",
+          step: step.id,
+          message: `The result has no list at ${step.take ?? completeness.rows}; the whole result is one row.`,
+        });
+      }
       keep(extra.item === undefined ? taken.rows : taken.rows.map((row) => ({ ...row, item: extra.item })), rows);
-      const next = isObject(value) && isObject(value.page) && isObject(value.page.nextMcpArguments) ? value.page.nextMcpArguments : null;
-      if (!next) return rows;
+      const next = completeness.pages ? fieldValue(value, fieldPath(completeness.pages.next)) : undefined;
+      if (!isObject(next)) return "done";
+      remainingBefore = fieldValue(value, fieldPath(completeness.pages.remaining));
       if (page >= (step.pages ?? 1) || memoryFull) {
-        notSeen.pagesLeft += 1;
-        if (Number.isInteger(value.page.remaining)) notSeen.itemsLeft += value.page.remaining;
-        return rows;
+        leftOver(remainingBefore);
+        return "done";
       }
-      current = supplied(target, next);
+      // The next page as the tool gave it; a grouped name keeps its action.
+      current = supplied(target, target.name !== target.operation ? { ...next, action: args.action } : next);
     }
   };
 
   for (const step of input.steps) {
     if (stop) break;
     ran.steps += 1;
+    const rows = [];
     if (Object.hasOwn(step, "read")) {
       const args = step.read.arguments ?? {};
-      const rows = [];
       if (!step.each) {
-        const target = resolveTarget(step.read.name, args);
-        const got = await readOnce(step, target, args, {});
-        if (got === null) break;
-        rows.push(...got);
+        const got = await readOnce(step, resolveTarget(step.read.name, args), args, {}, { left: READ_CHAIN_LIMITS.calls }, rows);
+        if (got === "skipped") notSeen.callsSkipped += 1;
       } else {
         const parts = fieldPath(step.each.value);
-        const cap = step.each.max ?? READ_CHAIN_LIMITS.eachCalls;
+        const budget = { left: step.each.max ?? READ_CHAIN_LIMITS.eachCalls };
         const source = produced.get(step.each.from);
-        let attempted = 0;
-        let missing = 0;
+        let noValue = 0;
         for (const [index, row] of source.entries()) {
+          if (stop) break;
           const item = fieldValue(row, parts);
           if (item === undefined || item === null) {
-            missing += 1;
+            noValue += 1;
             continue;
           }
-          attempted += 1;
-          if (attempted > cap) {
-            notSeen.eachSkipped += source.slice(index).filter((rest) => ![undefined, null].includes(fieldValue(rest, parts))).length;
+          // Items past the step's own max are eachSkipped; items it would still
+          // allow but the chain's call bound blocks are callsSkipped.
+          if (budget.left <= 0 || ran.calls >= READ_CHAIN_LIMITS.calls) {
+            const rest = source.slice(index).filter((entry) => ![undefined, null].includes(fieldValue(entry, parts))).length;
+            const blocked = ran.calls >= READ_CHAIN_LIMITS.calls ? Math.min(rest, budget.left) : 0;
+            notSeen.callsSkipped += blocked;
+            notSeen.eachSkipped += rest - blocked;
             break;
           }
           const resolved = Object.fromEntries(Object.entries(args).map(([key, value]) => [key, isItemReference(value) ? item : value]));
           const target = resolveTarget(step.read.name, resolved);
           if (!target.ok) {
-            ran.refused += 1;
-            issues.push({ code: target.code || "CHAIN_TOOL_REFUSED", kind: "refused", step: step.id, item, message: short(target.message) });
-            if (stopOnError) {
-              stop = { code: "CHAIN_STOPPED_ON_ERROR", message: `Stopped at step ${step.id}: on_error is stop.` };
-              break;
-            }
+            fail(step, { failure: { kind: "refused", code: target.code || "CHAIN_TOOL_REFUSED", message: short(target.message) } }, { item });
             continue;
           }
-          const got = await readOnce(step, target, resolved, { item });
-          if (got === null) break;
-          rows.push(...got);
+          const got = await readOnce(step, target, resolved, { item }, budget, rows);
+          if (got === "skipped") notSeen.callsSkipped += 1;
         }
-        if (missing)
-          issues.push({
+        if (noValue) {
+          notSeen.eachNoValue += noValue;
+          addIssue({
             code: "CHAIN_EACH_NO_VALUE",
             step: step.id,
-            count: missing,
-            message: `${missing} rows of ${step.each.from} had no ${step.each.value}; no call was made for them.`,
+            count: noValue,
+            message: `Rows of ${step.each.from} without ${step.each.value} get no call; filter them out first.`,
           });
-        if (stop) break;
+        }
       }
       produced.set(step.id, rows);
       continue;
     }
     const kind = STEP_KINDS.find((name) => Object.hasOwn(step, name));
-    const rows = [];
     keep(transform(kind, step[kind], produced.get(step.from)), rows);
     produced.set(step.id, rows);
   }
 
   const buildChanged = Boolean(stop?.build);
-  if (stop) issues.push({ code: stop.code, message: stop.message });
-  const status = stop ? "stopped" : ran.failed || ran.refused || memoryFull || Object.values(notSeen).some((count) => count > 0) ? "partial" : "completed";
+  if (stop) addIssue({ code: stop.code, message: stop.message });
+  // Issues name the step and the item they came from (shortened); after a
+  // build change they carry codes and counts only, no content of either build.
+  for (const issue of issues) {
+    if (issue.item !== undefined && !buildChanged) issue.item = shownItem(issue.item);
+    else delete issue.item;
+    if (buildChanged && issue.code !== "CHAIN_BUILD_CHANGED") delete issue.message;
+  }
   const distinct = [];
-  for (const entry of headers) if (!distinct.some((seen) => sameValue(seen.header, entry.header))) distinct.push(entry);
+  if (!buildChanged) for (const entry of headers) if (!distinct.some((seen) => sameValue(seen.header, entry.header))) distinct.push(entry);
   const output = {
-    status,
+    status: stop ? "stopped" : ran.failed || ran.refused || memoryFull || Object.values(notSeen).some((count) => count > 0) ? "partial" : "completed",
+    everythingSeen: false,
+    notSeenBecause: [],
     ran,
     basis: [...basis.values()],
     header: distinct.length === 1 ? distinct[0].header : [],
@@ -620,7 +715,6 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
     persisted: false,
     grantsAuthorization: false,
   };
-  // Rows are added in return order while the answer stays within max_bytes.
   const pending = [];
   for (const entry of input.return) {
     const all = buildChanged ? [] : (produced.get(entry.from) ?? []);
@@ -629,31 +723,92 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
     output.results[entry.from] = result;
     pending.push({ result, rows: limited });
   }
-  // Filled once; when the bound is met, filled again with the status and the
-  // issue that say so, so the answer as sent stays within max_bytes.
-  const fill = () => {
-    let size = bytesOf(output);
-    for (const { result, rows } of pending) {
-      for (const row of rows) {
-        const added = bytesOf(row) + (result.rows.length ? 1 : 0);
-        if (size + added > maxBytes) return true;
-        result.rows.push(row);
-        result.returned += 1;
-        result.cut -= 1;
-        size += added;
+  return fitAnswer(output, pending, maxBytes);
+}
+
+// Lode's own verdict: everything was seen only when none of these holds.
+function seenVerdict(output) {
+  const reasons = [];
+  if (output.status !== "completed") reasons.push(`STATUS_${output.status.toUpperCase()}`);
+  if (output.ran.failed) reasons.push("INNER_CALL_FAILED");
+  if (output.ran.refused) reasons.push("INNER_CALL_REFUSED");
+  for (const [key, count] of Object.entries(output.notSeen)) if (count > 0) reasons.push(`NOT_SEEN_${key}`);
+  if (Object.values(output.results).some((result) => result.cut > 0)) reasons.push("ROWS_CUT");
+  if (Object.values(output.results).some((result) => result.reached === false)) reasons.push("STEP_NOT_REACHED");
+  return reasons;
+}
+
+// The answer as sent is at most maxBytes. When even the answer without rows
+// does not fit, it is made smaller step by step (issue messages and items,
+// then headers, then issues to counts by code, then basis to tool names);
+// then rows are added in return order while they fit.
+function fitAnswer(output, pending, maxBytes) {
+  const reduce = [
+    () => {
+      for (const issue of output.issues) {
+        delete issue.message;
+        delete issue.item;
+        delete issue.at;
       }
-    }
-    return false;
+    },
+    () => {
+      if (output.header.length) output.headerOmitted = output.header.length;
+      output.header = [];
+      if (output.headers) {
+        output.headersOmitted = output.headers.length;
+        delete output.headers;
+      }
+    },
+    () => {
+      const counts = {};
+      for (const issue of output.issues) counts[issue.code] = (counts[issue.code] ?? 0) + (issue.count ?? 1);
+      output.issues = Object.entries(counts).map(([code, count]) => ({ code, count }));
+    },
+    () => {
+      output.basis = output.basis.map((entry) => ({ tool: entry.tool, pinned: entry.pinned }));
+    },
+  ];
+  const verdict = () => {
+    const reasons = seenVerdict(output);
+    output.everythingSeen = reasons.length === 0;
+    output.notSeenBecause = reasons;
   };
-  if (fill()) {
-    for (const { result } of pending) {
-      result.rows = [];
-      result.cut += result.returned;
-      result.returned = 0;
+  // Room for what a cut adds: the bytes issue, a status change and two reasons.
+  const RESERVE = bytesOf({ code: "CHAIN_BYTES_LIMIT" }) + 1 + bytesOf(["STATUS_PARTIAL", "ROWS_CUT"]);
+  verdict();
+  for (const step of reduce) {
+    if (bytesOf(output) + RESERVE <= maxBytes) break;
+    step();
+  }
+  let size = bytesOf(output);
+  let full = false;
+  for (const { result, rows } of pending) {
+    for (const row of rows) {
+      const added =
+        bytesOf(row) + (result.rows.length ? 1 : 0) + (digits(result.returned + 1) - digits(result.returned)) + (digits(result.cut - 1) - digits(result.cut));
+      if (full || size + added + RESERVE > maxBytes) {
+        full = true;
+        break;
+      }
+      result.rows.push(row);
+      result.returned += 1;
+      result.cut -= 1;
+      size += added;
     }
+  }
+  if (full) {
     if (output.status === "completed") output.status = "partial";
-    output.issues.push({ code: "CHAIN_BYTES_LIMIT", message: `The answer reached max_bytes ${maxBytes}; later rows were cut (see cut).` });
-    fill();
+    output.issues.push({ code: "CHAIN_BYTES_LIMIT" });
+  }
+  verdict();
+  // A last guard: the answer is never more than maxBytes.
+  for (const { result } of [...pending].reverse()) {
+    while (bytesOf(output) > maxBytes && result.rows.length) {
+      result.rows.pop();
+      result.returned -= 1;
+      result.cut += 1;
+      verdict();
+    }
   }
   return output;
 }

@@ -15,7 +15,7 @@ import {
   resolveGroupedCall,
 } from "./lib/core/operation-groups.mjs";
 import { READ_CHAIN_REFERENCE, READ_CHAIN_TOOL, READ_CHAIN_TOOL_NAME, runReadChain } from "./lib/core/tools-read-chain.mjs";
-import { resultShapeFor } from "./lib/core/tool-result-shapes.mjs";
+import { chainCompletenessFor, resultShapeFor } from "./lib/core/tool-result-shapes.mjs";
 import { productGraphStructuredContent } from "./lib/world/product-graph-answer.mjs";
 const semanticToolName = (name) => resolveOperation(name)?.semanticName ?? name;
 const presentedTools = new WeakMap();
@@ -507,13 +507,50 @@ export function chainReadTarget(name, args) {
   const selected = allTools.find((tool) => semanticToolName(tool.name) === semanticToolName(operation));
   if (!selected || !descriptor) return refused(`Unknown tool: ${publicToolName(name)}.`);
   if (selected.annotations?.readOnlyHint !== true) return refused(`${publicToolName(operation)} is not read-only; a chain calls read-only tools only.`);
-  return { ok: true, name, operation: semanticToolName(selected.name), declaresProjectRoot: Boolean(selected.inputSchema?.properties?.project_root) };
+  // Only a tool that declares how it says "no answer", "more pages" and "cut"
+  // can be an inner call, so a chain never claims more than it knows. Neither
+  // such tool is Session-bound or keeps per-caller state, so its inner result
+  // equals a direct lode_tools_read call of the same caller.
+  const completeness = chainCompletenessFor(selected.name);
+  if (!completeness)
+    return {
+      ok: false,
+      code: "CHAIN_TOOL_NOT_CHAINABLE",
+      message: `${publicToolName(operation)} cannot be an inner call: a chain calls only tools that declare their completeness (${CHAINABLE_TOOLS.map(publicToolName).join(", ")}); call it directly through lode_tools_read.`,
+    };
+  const refusedArgument = (completeness.refusedArguments || []).find((key) => args && Object.hasOwn(args, key));
+  if (refusedArgument)
+    return {
+      ok: false,
+      code: "CHAIN_TOOL_NOT_CHAINABLE",
+      message: `${publicToolName(operation)} with ${refusedArgument} cannot be an inner call; call it directly.`,
+    };
+  return {
+    ok: true,
+    name,
+    operation: semanticToolName(selected.name),
+    declaresProjectRoot: Boolean(selected.inputSchema?.properties?.project_root),
+    completeness,
+  };
 }
+const CHAINABLE_TOOLS = allTools.filter((tool) => tool.annotations?.readOnlyHint === true && chainCompletenessFor(tool.name)).map((tool) => tool.name);
 
 async function dispatchReadChain(request, options) {
   const id = request.id ?? null;
   try {
     requireSurface(options.surface ?? "ordinary");
+    // Inner calls get the request's caller, surface, environment and signal,
+    // and no per-caller memory or Session callback: nothing a chain does
+    // changes what a later call may do or is given.
+    const {
+      recoveryBasisMemory: _memory,
+      resolveSessionContext: _resolve,
+      onValidatedSessionSelection: _selection,
+      readRelatedNativeContext: _related,
+      projectSessionRoute: _route,
+      projectLocationProjection: _location,
+      ...innerOptions
+    } = options;
     const value = await runReadChain(request.params?.arguments, {
       resolveTarget: chainReadTarget,
       signal: options.signal,
@@ -525,7 +562,7 @@ async function dispatchReadChain(request, options) {
             method: "tools/call",
             params: { name: publicToolName("lode_tools_read"), arguments: { name: publicToolName(name), arguments: args } },
           },
-          options,
+          innerOptions,
         ),
     });
     // The content text is the answer itself, never a second copy in prose.
@@ -847,7 +884,9 @@ async function dispatchRouted(
     // Keep absent originals as their original text value, not fabricated state.
     // A product graph answer's JSON leaves out the whole text when its rows give
     // it back exactly; the content text keeps it for reading (R1).
-    const structured = name === "lode_product_graph_query" ? productGraphStructuredContent(value) : value;
+    const structured = ["lode_product_graph_query", "lode_product_graph_check", "lode_product_graph_build", "lode_product_graph_baseline"].includes(name)
+      ? productGraphStructuredContent(value)
+      : value;
     const response = success(id, {
       content: [{ type: "text", text: formatMcpToolContent(name, value) }],
       ...(structured !== null && typeof structured === "object" && !Array.isArray(structured) ? { structuredContent: structured } : {}),

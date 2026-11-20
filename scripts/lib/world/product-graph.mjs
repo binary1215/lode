@@ -5,6 +5,7 @@
 // adopted unchanged by the user on 2026-11-15. This is not the existing
 // Product Model and does not read, write or reinterpret product-model.json.
 // The family is not a World input.
+import { markTextFromStructure } from "./product-graph-answer.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { sha256Hex } from "../core/digest.mjs";
@@ -1308,7 +1309,7 @@ function compareToBaseline({ inputs, graph, computed, takeIfMissing, readFiles }
 
 export function checkProductGraph(options = {}) {
   const { result } = run(options, { requireOutput: false });
-  return { status: "checked", readOnly: true, persisted: false, ...result };
+  return markTextFromStructure({ status: "checked", readOnly: true, persisted: false, ...result }, renderProductGraphText);
 }
 
 export function buildProductGraph(options = {}) {
@@ -1357,7 +1358,7 @@ export function buildProductGraph(options = {}) {
   };
   if (inputs.mode === "project") withProjectMutation({ root: inputs.projectRoot, storage: inputs.storage, scope: "product-graph-build", timeoutMs: 0 }, write);
   else write();
-  return {
+  const built = {
     status: "built",
     mode: result.mode,
     written: [...files, ...replaced, ...created].map(([name, content]) => ({ name, bytes: Buffer.byteLength(content), sha256: sha256Hex(content) })),
@@ -1367,6 +1368,7 @@ export function buildProductGraph(options = {}) {
     edges: graph.edges.length,
     ...result,
   };
+  return markTextFromStructure(built, renderProductGraphText);
 }
 
 // ---------- reading an existing build (query, viewer, baseline move) ----------
@@ -1563,8 +1565,10 @@ export function readProductGraphBuild(options = {}) {
   if (graph?.kind !== "LodeProductGraph" || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges) || check?.kind !== "ProductGraphCheck")
     return { status: "unreadable", code: "PRODUCT_GRAPH_BUILD_UNREADABLE", reason: "빌드 파일의 모양이 제품 그래프가 아니다", buildCommand, inputs, directory };
   const baseline = readBaseline(path.join(directory, PRODUCT_GRAPH_BASELINE_FILE));
-  // The hashes of the build files are taken only when a question needs them
-  // (a later page, the impact preview); a plain question does not pay for them.
+  // The hashes of the build files are taken when first asked for. Every
+  // query answer asks (its buildSha256): one SHA-256 pass over bytes already
+  // read, about 18 ms for Lode's own 8.6 MiB build and under 1 ms for the
+  // test fixture (measured 2026-11-21); the viewer and the baseline move do not.
   let graphFileSha256 = null,
     checkFileSha256 = null;
   const checkBytes = checkText;
@@ -1662,14 +1666,14 @@ export function moveProductGraphBaseline(options = {}) {
     inputs.mode === "project"
       ? withProjectMutation({ root: inputs.projectRoot, storage: inputs.storage, scope: "product-graph-build", timeoutMs: 0 }, move)
       : move();
-  return {
-    status: "moved",
-    setAt: baseline.setAt,
-    previous,
-    dropped,
-    text: `기준을 옮겼다: ${baseline.setAt}. 바뀐 것 ${dropped.changes}개와 다시 볼 것 ${dropped.reviewAgain}개가 목록에서 빠진다(다음 빌드부터).${previous ? ` 이전 기준: ${previous.setAt}.` : " 이전 기준은 없었다."}\n`,
-    graphUnchanged: true,
-  };
+  const moved = { status: "moved", setAt: baseline.setAt, previous, dropped, graphUnchanged: true };
+  moved.text = baselineMovedText(moved);
+  return markTextFromStructure(moved, baselineMovedText);
+}
+
+// The sentence a baseline move answers with, from its structured fields.
+function baselineMovedText({ setAt, previous, dropped }) {
+  return `기준을 옮겼다: ${setAt}. 바뀐 것 ${dropped.changes}개와 다시 볼 것 ${dropped.reviewAgain}개가 목록에서 빠진다(다음 빌드부터).${previous ? ` 이전 기준: ${previous.setAt}.` : " 이전 기준은 없었다."}\n`;
 }
 
 // The current graph, recomputed read-only, when it is exactly the build on

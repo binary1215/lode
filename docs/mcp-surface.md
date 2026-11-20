@@ -55,9 +55,10 @@ A grouped tool is named after its resource, for example
 
 `lode_tools_read_chain` runs several read-only Lode tool calls as one
 declarative step list inside the server and returns only the rows asked for,
-with counts made by Lode. It executes no code: a step is data, not an
-expression. A chain grants nothing and writes nothing (no record, cache or
-temporary file).
+with counts made by Lode and one verdict, `everythingSeen`. It executes no code:
+a step is data, not an expression. A chain grants nothing and writes nothing (no
+record, cache or temporary file), and nothing it does changes what a later call
+may do or is given.
 
 ```json
 {
@@ -68,7 +69,8 @@ temporary file).
     { "id": "one", "from": "nodes", "unique": { "by": "id" } },
     { "id": "callers", "each": { "from": "one", "value": "id", "max": 20 },
       "read": { "name": "lode_product_graph_query", "arguments": { "question": "up", "id": { "$item": true } } } },
-    { "id": "busy", "from": "callers", "count": { "by": "item" } },
+    { "id": "pointing", "from": "callers", "where": { "all": [{ "field": "kind", "eq": "node" }, { "field": "depth", "gte": 1 }] } },
+    { "id": "busy", "from": "pointing", "count": { "by": "item" } },
     { "id": "top", "from": "busy", "sort": { "by": "count", "order": "desc" } }
   ],
   "return": [{ "from": "top", "limit": 10 }],
@@ -76,44 +78,56 @@ temporary file).
 }
 ```
 
-- **Steps.** Every step has an `id` and yields a list of rows (plain objects; a
-  list entry that is not an object becomes `{ "value": … }`), and reads earlier
-  steps only. The eight kinds: `read` (one call; `take` names the row list in the
-  result, a dotted path, default `rows`; a result without a list there is one
-  row; `pages` 1–10 follows the tool's own `page.nextMcpArguments`), `each` with
-  `read` (one call per row of an earlier step, in order; `value` names the field
-  handed over, `{ "$item": true }` as a whole argument value is that value, and
-  each produced row carries `item`), `where` (`eq`, `ne`, `in`, `contains`,
-  `startsWith`, `exists`, `gte`, `lte`, combined with `all` / `any` at most two
-  levels deep), `pick`, `sort` (`by`, `asc` / `desc`, stable), `limit`,
-  `unique` (`by`, the first row wins) and `count` (`by`, rows `{ value, count }`
-  in first-seen order). There are no expressions, regular expressions, string
-  building, branching or loops. `lode_tools_discover` with
-  `name: "lode_tools_read_chain"` returns this reference.
-- **Inner calls.** `project_root` is given once and supplied to every inner call
-  whose schema declares it; an inner `project_root` that names another folder is
-  refused. Each inner call is the request a `lode_tools_read` caller would send,
-  run with the chain request's own caller, Session binding, surface and
-  cancellation signal, so it keeps every check of that route. A router, the
-  discovery tool, the chain itself, an unknown tool or a tool that is not
-  read-only is refused before any call. When an inner tool needs the caller's
-  Session binding, the chain asks for it once (in Claude Code the PreToolUse Hook
-  matches the chain like the other routers).
+- **Inner tools.** Only a tool that declares how it says "no answer", "more
+  pages" and "cut" can be an inner call: `lode_product_graph_query` (also as
+  `lode_product_graph` with `action: "query"`) and `lode_project_graph` (not
+  with `inventory_page`). Every other tool, Session-bound reads included, is
+  refused with `CHAIN_TOOL_NOT_CHAINABLE` before any call; call it directly
+  through `lode_tools_read`. Neither inner tool is Session-bound or keeps any
+  state for its caller, and each inner call is the request a `lode_tools_read`
+  caller would send, run with the chain request's caller, surface, environment
+  and cancellation signal, so the inner result equals that direct call. A
+  router, the discovery tool, the chain itself, an unknown tool or a tool that is
+  not read-only is refused too.
+- **Steps.** Every step has an `id`, yields a list of rows (plain objects; a list
+  entry that is not an object becomes `{ "value": … }`) and reads earlier steps
+  only. The eight kinds: `read` (one call; `take` names the row list in the
+  result, a dotted path, default the tool's declared list; a result without a
+  list there is one row and counts as not fully seen; `pages` 1–10 follows the
+  tool's own next-page arguments, only for a tool that declares them), `each`
+  with `read` (one call per row of an earlier step, in order; `value` names the
+  field handed over, `{ "$item": true }` as a whole argument value is that value,
+  each produced row carries `item`, and `max` counts the step's inner calls,
+  pages included; rows without the value get no call and are counted, so filter
+  them out first), `where` (`eq`, `ne`, `in`, `contains`, `startsWith`, `exists`,
+  `gte`, `lte`, combined with `all` / `any`), `pick` (a dotted path keeps its
+  nesting), `sort` (`by`, `asc` / `desc`, stable; text by UTF-16 code units;
+  missing and null values last), `limit`, `unique` (`by`, the first row wins) and
+  `count` (`by`, rows `{ value, count }` in first-seen order; rows without the
+  field are one row `{ value: null, missing: true, count }`). There are no
+  expressions, regular expressions, string building, branching or loops.
+  `lode_tools_discover` with `name: "lode_tools_read_chain"` returns this
+  reference.
 - **Before any call.** The whole program is checked first (shape, step
-  references, tools, project root) and every problem is reported at once with
-  status `refused`; then no inner call happens.
+  references, tools, project root, bounds) and every problem is reported at once
+  with status `refused`; then no inner call happens. `project_root` is given once
+  and supplied to every inner call; an inner `project_root` that names another
+  folder is refused.
 - **One build.** A chain never returns rows from two product graph builds. This
   is detected after each call, not prevented: every answered product graph query
-  carries `buildSha256` (the bytes of `graph.json` and `check.json` it read and
-  the baseline it was read against). When a later answer of
-  `lode_product_graph_query` differs from the first, the chain stops with
-  `CHAIN_BUILD_CHANGED` and returns no rows at all; a rebuild or a baseline move
-  between two calls does that. A next page after such a change is reported by
-  the tool itself (`basis-changed`) and stops the chain the same way. Other tools
-  have no such identity and are listed in `basis` with `pinned: false`.
+  carries `buildSha256` (the bytes of `graph.json` and `check.json` of every build
+  it read, and the baseline it was read against). When a later answer differs
+  from the first, the chain stops with `CHAIN_BUILD_CHANGED` and the answer
+  carries no rows and no content of either build (codes and counts only); a
+  rebuild or a baseline move between two calls does that. A next page after such
+  a change is reported by the tool itself (`basis-changed`) and stops the chain
+  the same way; a wrong `expected_basis_sha256` on a first call is that call's own
+  failure. `lode_project_graph` has no such identity and is listed in `basis`
+  with `pinned: false`.
 - **Failures.** A failed or refused inner call is recorded in `issues` with its
-  code, the step and the item, and the chain continues; `on_error: "stop"` stops
-  there. Nothing is retried.
+  code, the step and the item (shortened), and the chain continues;
+  `on_error: "stop"` stops there. Nothing is retried, and a non-answer is never a
+  row.
 - **Same input, same output.** The same input and the same state give
   byte-identical output.
 
@@ -123,42 +137,59 @@ temporary file).
 | --- | --- |
 | Steps | 12 |
 | Inner calls in total, pages included | 40 |
-| Calls of one `each` | 20 |
+| Calls of one `each`, pages included | 20 |
 | Pages of one `read` | 10 |
-| Returned bytes (`max_bytes`) | default 16 KiB, at most 64 KiB |
+| Values of one `in` | 100 |
+| Fields of one `pick` | 32 |
+| Parts of a field path | 4 |
+| Nesting of `all` / `any` | 2 |
+| Nesting of the input | 32 |
+| Returned bytes (`max_bytes`) | default 16 KiB, from 4 KiB to 64 KiB |
 | Intermediate rows | 16 MiB |
 | Input | 64 KiB |
 
-A malformed program or too many steps is refused before any call. Every other
-bound cuts: the answer holds what was reached and counts what was not.
+A program past a bound of its own shape (steps, values, fields, path parts,
+nesting, input, `max_bytes`, `max`, `pages`) is refused before any call. The call,
+page, `each` and intermediate bounds cut: the answer holds what was reached and
+counts what was not. The answer as sent is never over `max_bytes`: when even
+the answer without rows does not fit, issue messages and items go first, then
+headers, then issues become counts by code, then `basis` keeps tool names.
 
 ### Answer
 
 ```json
 {
   "status": "completed",
-  "ran": { "steps": 6, "calls": 5, "failed": 0, "refused": 0 },
-  "basis": [{ "tool": "lode_product_graph_query", "builtAt": "…", "freshness": "…", "pinned": true }],
+  "everythingSeen": true,
+  "notSeenBecause": [],
+  "ran": { "steps": 7, "calls": 5, "failed": 0, "refused": 0 },
+  "basis": [{ "tool": "lode_product_graph_query", "pinned": true, "builtAt": "…", "freshness": "…" }],
   "header": ["…"],
   "results": { "top": { "total": 3, "returned": 3, "cut": 0, "rows": [{ "value": "…", "count": 3 }] } },
-  "notSeen": { "pagesLeft": 0, "itemsLeft": 0, "eachSkipped": 0, "callsSkipped": 0, "rowsDropped": 0 },
+  "notSeen": { "pagesLeft": 0, "itemsLeft": 0, "eachSkipped": 0, "eachNoValue": 0, "callsSkipped": 0, "rowsDropped": 0, "cutByTool": 0 },
   "issues": [],
   "persisted": false,
   "grantsAuthorization": false
 }
 ```
 
-- `status`: `completed`; `partial` (a bound was reached or an inner call failed
-  or was refused); `stopped` (the build changed, `on_error: "stop"`, or the
-  request was cancelled); `refused` (the program is invalid).
-- Only steps named in `return` carry rows. `total` is the step's rows, `returned`
-  the rows in the answer, `cut` the rest (a `return` `limit` or `max_bytes`).
+- `status`: `completed`; `partial` (a bound was reached, a tool said its answer
+  was cut, or an inner call failed or was refused); `stopped` (the build or
+  baseline changed, `on_error: "stop"`, or the request was cancelled); `refused`
+  (the program is invalid).
+- `everythingSeen` is Lode's verdict: true only when the status is `completed`,
+  no inner call failed or was refused, every `notSeen` count is 0, no rows were
+  cut and every returned step was reached. `notSeenBecause` names the reasons
+  when it is false. Read it instead of deriving it.
+- Only steps named in `return` carry rows. `total` is the step's rows,
+  `returned` the rows in the answer, `cut` the rest (a `return` `limit` or
+  `max_bytes`).
 - `notSeen`: `pagesLeft` reads that stopped with a next page, `itemsLeft` the
   items those pages still had, `eachSkipped` rows past an `each` maximum,
-  `callsSkipped` calls not made because of the call bound or full intermediate
-  rows, `rowsDropped` rows dropped at the intermediate bound.
-- Everything was seen only when the status is `completed`, `ran.failed` and
-  `ran.refused` are 0, every `cut` is 0 and every `notSeen` count is 0.
+  `eachNoValue` rows without the `each` value, `callsSkipped` calls not made
+  because of the call bound or full intermediate rows, `rowsDropped` rows
+  dropped at the intermediate bound, `cutByTool` what an inner tool said it left
+  out (for `lode_project_graph`, `truncated` and `omittedMatchCount`).
 - A header that every inner answer repeated is given once in `header`;
   different headers are listed in `headers` with the step they came from.
 - The content text is the JSON answer itself, not a second copy in prose.
@@ -171,11 +202,13 @@ The CLI has the same chain, with the same checks and answer:
 
 `lode_tools_discover` by exact name returns a short `resultShape` for
 `lode_product_graph_query` (rows `rows`; `header`; paging `page.total`,
-`page.remaining`, `page.nextMcpArguments`; build `builtAt`, `buildSha256`),
-`lode_project_graph` (rows `nodes`, also `edges`) and `lode_session_work_read`
-(rows `records`, also `todoContext.items`; next `nextAfterEvidenceId`). For a
-grouped tool, each action with a shape carries it. Other read tools have no
-`rows` list; name their list with `take`, or the whole answer is one row.
+`page.remaining`, `page.nextMcpArguments`; `builtAt`, `buildSha256`,
+`confirmationComparison`), `lode_project_graph` (rows `nodes`, also `edges`;
+with `inventory_page` the rows are `inventoryPage.rows` and the next call
+`inventoryPage.next`) and `lode_session_work_read` (rows `records`, also
+`todoContext.items`; next `nextAfterEvidenceId`). `chainable` says whether the
+tool can be an inner call. For a grouped tool, each action with a shape carries
+it.
 
 ## Deprecated names
 

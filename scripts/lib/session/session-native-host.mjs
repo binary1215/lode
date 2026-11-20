@@ -20,18 +20,6 @@ const markerOwnedElsewhere = (root) => {
 import { createSessionHostRequestRegistry, parseClaudeNativeToolName } from "./session-host-request.mjs";
 import { subagentWriteGuardEnabled } from "./subagent-write-guard.mjs";
 import { effectiveToolCall } from "../core/operation-groups.mjs";
-import { READ_CHAIN_TOOL_NAME, readChainInnerCalls } from "../core/tools-read-chain.mjs";
-
-// A read chain needs the caller's Session binding when one of its inner calls
-// would need it on its own (as that call through lode_tools_read would); the
-// chain then resolves that binding once for all of its inner calls.
-export function callRequiresBinding(name, args) {
-  if (semanticToolName(name) !== READ_CHAIN_TOOL_NAME) return sessionCallRequiresBinding(name);
-  return readChainInnerCalls(args).some((inner) => {
-    const effective = effectiveToolCall(inner.name, inner.arguments);
-    return sessionCallRequiresBinding(semanticToolName(effective.name)) || Object.hasOwn(effective.arguments ?? {}, "session_id");
-  });
-}
 import { createRecoveryBasisMemory } from "./recovery-basis-memory.mjs";
 import { recordedRootSpelling, withRecordedProjectRoot, withRequestSpellingRetry } from "../storage/project-root-spelling.mjs";
 
@@ -221,7 +209,7 @@ export function createNativeSessionHostBridge({
         }
         return reply(request);
       }
-      const dependent = callRequiresBinding(name, original);
+      const dependent = sessionCallRequiresBinding(name);
       let guardOnlyCorrelation = false;
       if (
         !dependent &&
@@ -276,7 +264,7 @@ export function createNativeSessionHostBridge({
     if (typeof args?.project_root !== "string" || !args.project_root) return handler(request, route());
     if (name === "lode_session_list") return handler(request, route());
     if (caller.status === "legacy") return handler(request, route());
-    if (!callRequiresBinding(name, args) && !Object.hasOwn(args, "session_id")) return handler(request, route());
+    if (!sessionCallRequiresBinding(name) && !Object.hasOwn(args, "session_id")) return handler(request, route());
     if (caller.status !== "known") {
       // Creating a new Project has no existing Session to guess or lose.
       // Keep that original Core setup usable, but never claim native linkage.
@@ -498,8 +486,7 @@ export function createNativeSessionHostBridge({
             issuedRecoveryBasisViews.delete(basisView);
           }
         }
-        if (!callRequiresBinding(targetName, routed ? outer?.arguments : outer))
-          return handler(request, { caller: visibleCaller(caller), hostEnvironment: environment });
+        if (!sessionCallRequiresBinding(targetName)) return handler(request, { caller: visibleCaller(caller), hostEnvironment: environment });
         return await dispatchProjectRequest(request, handler, caller);
       };
       try {
