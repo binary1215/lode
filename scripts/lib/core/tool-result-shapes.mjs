@@ -33,8 +33,16 @@ const SHAPES = Object.freeze({
       code: Object.freeze(["code"]),
       message: Object.freeze(["message", "text"]),
       pages: Object.freeze({ next: "page.nextMcpArguments", remaining: "page.remaining" }),
-      cut: Object.freeze([]),
+      // Every way an answer says rows or content are missing from itself.
+      signals: Object.freeze([
+        Object.freeze({ name: "page.remaining", field: "page.remaining", gt: 0, handledBy: "pages" }),
+        Object.freeze({ name: "rows[].kind=more", rows: "rows", field: "kind", eq: "more", except: Object.freeze({ field: "hint", contains: "--cursor" }) }),
+        Object.freeze({ name: "rows[].detail.before.status", rows: "rows", field: "detail.before.status", in: Object.freeze(["partial", "unavailable"]) }),
+        Object.freeze({ name: "rows[].detail.after.status", rows: "rows", field: "detail.after.status", in: Object.freeze(["partial", "unavailable"]) }),
+      ]),
       identity: "buildSha256",
+      // What an impact answer states about the comparison itself (verified or partial), given in the basis entry.
+      stated: Object.freeze({ impact: "impact.status", impactReasons: "impact.compatibility.reasons" }),
     }),
   }),
   lode_project_graph: Object.freeze({
@@ -62,10 +70,29 @@ const SHAPES = Object.freeze({
       answered: Object.freeze({ field: "status", in: Object.freeze(["available"]) }),
       code: Object.freeze(["sourceFallback.reasonCodes.0", "integrity.excluded.0.reasonCode", "status"]),
       message: Object.freeze(["sourceFallback.action", "status"]),
-      cut: Object.freeze([
-        Object.freeze({ field: "truncated", eq: true, count: "omittedMatchCount" }),
-        Object.freeze({ field: "omittedMatchCount", gt: 0, count: "omittedMatchCount" }),
+      // Every way an answer says rows or content are missing from itself. The
+      // coverage state is partial by design, so a chain over this tool never
+      // says everything was seen.
+      signals: Object.freeze([
+        Object.freeze({ name: "truncated", field: "truncated", eq: true }),
+        Object.freeze({ name: "omittedMatchCount", field: "omittedMatchCount", gt: 0 }),
+        Object.freeze({ name: "boundary.items", field: "boundary.items", nonEmpty: true }),
+        Object.freeze({ name: "boundary.omittedCount", field: "boundary.omittedCount", gt: 0 }),
+        Object.freeze({ name: "unmatchedAnchorIds", field: "unmatchedAnchorIds", nonEmpty: true }),
+        Object.freeze({ name: "integrity.excluded", field: "integrity.excluded", nonEmpty: true }),
+        Object.freeze({ name: "coverage.state", field: "coverage.state", in: Object.freeze(["partial", "unavailable"]) }),
+        Object.freeze({ name: "coverage.inventoryBoundReached", field: "coverage.inventoryBoundReached", eq: true }),
+        Object.freeze({ name: "sourceFallback.needed", field: "sourceFallback.needed", eq: true }),
+        Object.freeze({ name: "sourceFallback.excludedInputs", field: "sourceFallback.excludedInputs", nonEmpty: true }),
+        Object.freeze({ name: "nodes[].contentPartial", rows: "nodes", field: "contentPartial", eq: true }),
       ]),
+      // What it says about its own coverage, given once per tool in the basis entry.
+      stated: Object.freeze({
+        coverage: "coverage.state",
+        sourceFallbackNeeded: "sourceFallback.needed",
+        excluded: "integrity.excluded",
+        reasonCodes: "sourceFallback.reasonCodes",
+      }),
       refusedArguments: Object.freeze(["inventory_page", "inventory_paths", "inventory_cursor"]),
     }),
   }),

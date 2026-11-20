@@ -140,7 +140,10 @@ step reference and bounds (12 steps, 40 inner calls including pages, 20 per
 exact name returns `resultShape` for the main read tools, so `take` names a
 real list. A chain grants nothing, writes nothing and changes nothing a later
 call may do. Read `everythingSeen` and `notSeenBecause` rather than deriving
-completeness; a `stopped` chain whose product graph build or baseline changed
+completeness (it is about the rows and content of these answers, and it is
+false whenever a tool said something is missing, as `lode_project_graph`
+always does; how much of the source the graph covers is in the header and
+`basis`); a `stopped` chain whose product graph build or baseline changed
 between calls returns no rows (detected after each call, not prevented).
 
 **Hidden originals.** If an inventory bound hides relevant originals, call

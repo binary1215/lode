@@ -456,8 +456,40 @@ const matchesSpec = (value, spec) => {
   if (Object.hasOwn(spec, "in")) return spec.in.includes(found);
   if (Object.hasOwn(spec, "eq")) return found === spec.eq;
   if (Object.hasOwn(spec, "gt")) return typeof found === "number" && found > spec.gt;
+  if (Object.hasOwn(spec, "nonEmpty")) return Array.isArray(found) ? found.length > 0 : isObject(found) && Object.keys(found).length > 0;
   return false;
 };
+
+// The tool's own signals that rows or content are missing from an answer,
+// as its completeness declaration lists them: the names of those that hold.
+// A row signal holds when any row matches it (and not its "except").
+export function saidIncomplete(value, signals = []) {
+  const said = [];
+  for (const signal of signals) {
+    if (signal.handledBy) continue;
+    const holds = signal.rows
+      ? (fieldValue(value, fieldPath(signal.rows)) ?? []).some?.((row) => matchesSpec(row, signal) && !(signal.except && matchesText(row, signal.except)))
+      : matchesSpec(value, signal);
+    if (holds) said.push(signal.name);
+  }
+  return said;
+}
+const matchesText = (row, spec) => {
+  const found = fieldValue(row, fieldPath(spec.field));
+  return typeof found === "string" && found.includes(spec.contains);
+};
+
+// What a tool says about its own coverage outside its rows, as declared.
+function statedCoverage(value, stated = {}) {
+  const out = {};
+  for (const [name, field] of Object.entries(stated)) {
+    let found = fieldValue(value, fieldPath(field));
+    if (Array.isArray(found))
+      found = found.slice(0, 8).map((entry) => (isObject(entry) ? { layer: entry.layer ?? null, reasonCode: entry.reasonCode ?? null } : entry));
+    if (found !== undefined) out[name] = found;
+  }
+  return out;
+}
 
 // Reads one inner response against the tool's declared completeness: an
 // answer, a refusal, a failure, or a changed build basis. A non-answer is
@@ -487,7 +519,16 @@ function rowsOf(value, take, defaultTake) {
   return Array.isArray(list) ? { rows: list.map(asRow), listed: true } : { rows: [asRow(value)], listed: false };
 }
 
-const EMPTY_NOT_SEEN = () => ({ pagesLeft: 0, itemsLeft: 0, eachSkipped: 0, eachNoValue: 0, callsSkipped: 0, rowsDropped: 0, cutByTool: 0 });
+const EMPTY_NOT_SEEN = () => ({
+  pagesLeft: 0,
+  itemsLeft: 0,
+  eachSkipped: 0,
+  eachNoValue: 0,
+  callsSkipped: 0,
+  rowsDropped: 0,
+  answersSaidIncomplete: 0,
+  takeNotAList: 0,
+});
 
 // Runs a chain. call(name, args) performs one lode_tools_read call and returns
 // its JSON-RPC response; resolveTarget is the validation resolver above and
@@ -508,7 +549,9 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
       persisted: false,
       grantsAuthorization: false,
     };
-    return fitAnswer(refused, [], READ_CHAIN_LIMITS.defaultBytes);
+    // The caller's max_bytes when it is itself valid, the default otherwise.
+    const valid = Number.isInteger(input?.max_bytes) && input.max_bytes >= READ_CHAIN_LIMITS.minBytes && input.max_bytes <= READ_CHAIN_LIMITS.maxBytes;
+    return fitAnswer(refused, [], valid ? input.max_bytes : READ_CHAIN_LIMITS.defaultBytes);
   }
   const stopOnError = input.on_error === "stop";
   const maxBytes = input.max_bytes ?? READ_CHAIN_LIMITS.defaultBytes;
@@ -522,6 +565,7 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
   let memoryFull = false;
   let stop = null;
   let pinnedBuild = null;
+  const toolSaid = new Set();
 
   const addIssue = (issue) => {
     const same = issues.find((seen) => seen.code === issue.code && seen.step === issue.step && seen.kind === issue.kind);
@@ -605,15 +649,23 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
         return stop ? "stopped" : "done";
       }
       if (Array.isArray(value.header)) headers.push({ step: step.id, header: value.header });
-      for (const cut of completeness.cut || []) {
-        if (!matchesSpec(value, cut)) continue;
-        const counted = cut.count ? fieldValue(value, fieldPath(cut.count)) : null;
-        notSeen.cutByTool += Number.isInteger(counted) && counted > 0 ? counted : 1;
-        addIssue({ code: "CHAIN_TOOL_CUT", step: step.id, message: `${target.operation} said its answer was cut (${cut.field}).` });
+      // What the tool says about its coverage reaches the model once per tool.
+      if (completeness.stated) {
+        const entry = basis.get(target.operation);
+        const stated = statedCoverage(value, completeness.stated);
+        entry.stated ??= [];
+        if (entry.stated.length < 4 && !entry.stated.some((seen) => sameValue(seen, stated))) entry.stated.push(stated);
+      }
+      // Whatever the answer says is missing from itself makes the chain say so.
+      const said = saidIncomplete(value, completeness.signals);
+      if (said.length) {
+        notSeen.answersSaidIncomplete += 1;
+        for (const name of said) toolSaid.add(`TOOL_SAID:${target.operation}:${name}`);
+        addIssue({ code: "CHAIN_TOOL_SAID_INCOMPLETE", step: step.id, message: `${target.operation} said: ${said.join(", ")}.` });
       }
       const taken = rowsOf(value, step.take, completeness.rows);
       if (!taken.listed) {
-        notSeen.cutByTool += 1;
+        notSeen.takeNotAList += 1;
         addIssue({
           code: "CHAIN_TAKE_NOT_A_LIST",
           step: step.id,
@@ -699,6 +751,9 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
     else delete issue.item;
     if (buildChanged && issue.code !== "CHAIN_BUILD_CHANGED") delete issue.message;
   }
+  // After a build change nothing of either build remains: not even the first
+  // build's time and freshness.
+  if (buildChanged) for (const [tool, entry] of basis) basis.set(tool, { tool, pinned: entry.pinned });
   const distinct = [];
   if (!buildChanged) for (const entry of headers) if (!distinct.some((seen) => sameValue(seen.header, entry.header))) distinct.push(entry);
   const output = {
@@ -723,11 +778,11 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
     output.results[entry.from] = result;
     pending.push({ result, rows: limited });
   }
-  return fitAnswer(output, pending, maxBytes);
+  return fitAnswer(output, pending, maxBytes, buildChanged ? [] : [...toolSaid]);
 }
 
 // Lode's own verdict: everything was seen only when none of these holds.
-function seenVerdict(output) {
+function seenVerdict(output, toolReasons) {
   const reasons = [];
   if (output.status !== "completed") reasons.push(`STATUS_${output.status.toUpperCase()}`);
   if (output.ran.failed) reasons.push("INNER_CALL_FAILED");
@@ -735,6 +790,7 @@ function seenVerdict(output) {
   for (const [key, count] of Object.entries(output.notSeen)) if (count > 0) reasons.push(`NOT_SEEN_${key}`);
   if (Object.values(output.results).some((result) => result.cut > 0)) reasons.push("ROWS_CUT");
   if (Object.values(output.results).some((result) => result.reached === false)) reasons.push("STEP_NOT_REACHED");
+  reasons.push(...toolReasons);
   return reasons;
 }
 
@@ -742,7 +798,7 @@ function seenVerdict(output) {
 // does not fit, it is made smaller step by step (issue messages and items,
 // then headers, then issues to counts by code, then basis to tool names);
 // then rows are added in return order while they fit.
-function fitAnswer(output, pending, maxBytes) {
+function fitAnswer(output, pending, maxBytes, toolReasons = []) {
   const reduce = [
     () => {
       for (const issue of output.issues) {
@@ -767,13 +823,18 @@ function fitAnswer(output, pending, maxBytes) {
     () => {
       output.basis = output.basis.map((entry) => ({ tool: entry.tool, pinned: entry.pinned }));
     },
+    () => {
+      // Tool reasons as counts, when even their names do not fit.
+      if (toolReasons.length > 1) toolReasons.splice(0, toolReasons.length, `TOOL_SAID_INCOMPLETE:${toolReasons.length}`);
+    },
   ];
   const verdict = () => {
-    const reasons = seenVerdict(output);
+    const reasons = seenVerdict(output, toolReasons);
     output.everythingSeen = reasons.length === 0;
     output.notSeenBecause = reasons;
   };
   // Room for what a cut adds: the bytes issue, a status change and two reasons.
+  // (Each reduction step keeps everythingSeen and its reasons.)
   const RESERVE = bytesOf({ code: "CHAIN_BYTES_LIMIT" }) + 1 + bytesOf(["STATUS_PARTIAL", "ROWS_CUT"]);
   verdict();
   for (const step of reduce) {

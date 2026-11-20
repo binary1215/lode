@@ -52,12 +52,12 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
 - **오류.** `action`이 없거나 알 수 없는 값이면 작업을 실행하기 전에
   `INVALID_TOOL_ARGUMENTS`로 거부합니다.
 
-## 읽기 묶음
+## 연쇄 읽기
 
 `lode_tools_read_chain`은 읽기 전용 Lode 도구 호출 여러 개를 단계 목록 하나로 받아
 서버 안에서 잇고, 요청한 줄과 Lode가 센 개수, 그리고 판정 하나(`everythingSeen`)만
-돌려줍니다. 코드를 실행하지 않습니다. 단계는 식이 아니라 데이터입니다. 묶음은 아무
-권한도 주지 않고 아무것도 쓰지 않으며(기록, 캐시, 임시 파일 모두 없음), 묶음이 한
+돌려줍니다. 코드를 실행하지 않습니다. 단계는 식이 아니라 데이터입니다. 연쇄 읽기는 아무
+권한도 주지 않고 아무것도 쓰지 않으며(기록, 캐시, 임시 파일 모두 없음), 연쇄 읽기가 한
 어떤 일도 뒤의 호출이 할 수 있는 것이나 받는 것을 바꾸지 않습니다.
 
 ```json
@@ -84,9 +84,9 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
   Session에 묶인 읽기를 포함해 다른 도구는 모두 호출 전에
   `CHAIN_TOOL_NOT_CHAINABLE`로 거부합니다. 그런 도구는 `lode_tools_read`로 직접
   부릅니다. 두 안쪽 도구는 Session에 묶이지 않고 호출자를 위해 기억해 두는 것이
-  없으며, 안쪽 호출은 `lode_tools_read` 호출자가 보낼 요청 그대로이고 묶음 요청의
+  없으며, 안쪽 호출은 `lode_tools_read` 호출자가 보낼 요청 그대로이고 연쇄 읽기 요청의
   호출자, 표면, 환경, 취소 신호로 실행되므로, 안쪽 결과는 그 직접 호출과 같습니다.
-  라우터, discovery 도구, 묶음 자신, 없는 도구, 읽기 전용이 아닌 도구도 거부합니다.
+  라우터, discovery 도구, 연쇄 읽기 자신, 없는 도구, 읽기 전용이 아닌 도구도 거부합니다.
 - **단계.** 단계마다 `id`가 있고 줄 목록을 만들며(줄은 평범한 객체이고, 객체가
   아닌 항목은 `{ "value": … }`가 됩니다) 앞 단계만 읽습니다. 종류는 여덟 가지입니다.
   `read`(한 번 호출. `take`는 결과 안에서 줄 목록이 있는 곳으로, 점으로 잇는 경로이고
@@ -107,19 +107,23 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
   검사하고 틀린 곳을 한꺼번에 `refused`로 알립니다. 그러면 안쪽 호출은 하나도
   일어나지 않습니다. `project_root`는 한 번만 적고 안쪽 호출마다 채워집니다. 안쪽
   `project_root`가 다른 폴더를 가리키면 거부합니다.
-- **한 빌드.** 묶음은 두 제품 그래프 빌드의 줄을 함께 돌려주지 않습니다. 이것은
+- **한 빌드.** 연쇄 읽기는 두 제품 그래프 빌드의 줄을 함께 돌려주지 않습니다. 이것은
   막는 것이 아니라 호출마다 뒤에서 알아채는 것입니다. 답이 나온 제품 그래프 질문마다
   `buildSha256`(읽은 모든 빌드의 `graph.json`과 `check.json` 바이트, 그리고 비교한
-  기준)이 있습니다. 뒤의 답이 첫 답과 다르면 묶음은 `CHAIN_BUILD_CHANGED`로 멈추고,
-  답에는 줄도 어느 빌드의 내용도 없습니다(코드와 개수만). 두 호출 사이에 다시
+  기준)이 있습니다. 뒤의 답이 첫 답과 다르면 연쇄 읽기는 `CHAIN_BUILD_CHANGED`로 멈추고,
+  답에는 줄도 어느 빌드의 내용도 없습니다. 코드와 개수, 그리고 `basis`에는 도구
+  이름과 `pinned`만 남습니다(첫 빌드의 시각이나 신선도도 없음). 두 호출 사이에 다시
   빌드하거나 기준을 옮기면 이렇게 됩니다. 그런 변화 뒤의 다음 쪽은 도구가 스스로
-  `basis-changed`로 알리고 묶음은 같은 방식으로 멈춥니다. 첫 호출에 틀린
+  `basis-changed`로 알리고 연쇄 읽기는 같은 방식으로 멈춥니다. 첫 호출에 틀린
   `expected_basis_sha256`을 준 것은 그 호출의 실패입니다. `lode_project_graph`에는
   이런 식별값이 없어 `basis`에 `pinned: false`로 적힙니다.
 - **실패.** 안쪽 호출이 실패하거나 거부되면 코드, 단계, 항목(줄여서)과 함께
   `issues`에 남기고 계속합니다. `on_error: "stop"`이면 거기서 멈춥니다. 다시 시도하지
   않고, 답이 아닌 것은 줄이 되지 않습니다.
-- **같은 입력, 같은 출력.** 같은 입력과 같은 상태면 출력 바이트가 같습니다.
+- **같은 입력, 같은 출력.** 같은 입력과 같은 상태면 출력 바이트가 같습니다. 상태에는
+  도구의 프로세스 캐시도 들어갑니다. `lode_project_graph`는 앞선 결과를 다시
+  썼는지 `reuse.status`로 알리므로, 그 필드를 돌려주는 연쇄 읽기는 앞서 같은 것을
+  실행했을 때와 다를 수 있습니다.
 
 ### 상한
 
@@ -155,32 +159,48 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
   "basis": [{ "tool": "lode_product_graph_query", "pinned": true, "builtAt": "…", "freshness": "…" }],
   "header": ["…"],
   "results": { "top": { "total": 3, "returned": 3, "cut": 0, "rows": [{ "value": "…", "count": 3 }] } },
-  "notSeen": { "pagesLeft": 0, "itemsLeft": 0, "eachSkipped": 0, "eachNoValue": 0, "callsSkipped": 0, "rowsDropped": 0, "cutByTool": 0 },
+  "notSeen": { "pagesLeft": 0, "itemsLeft": 0, "eachSkipped": 0, "eachNoValue": 0, "callsSkipped": 0, "rowsDropped": 0, "answersSaidIncomplete": 0, "takeNotAList": 0 },
   "issues": [],
   "persisted": false,
   "grantsAuthorization": false
 }
 ```
 
-- `status`: `completed`, `partial`(상한에 닿았거나, 도구가 답을 잘랐다고 했거나, 안쪽
-  호출이 실패·거부됨), `stopped`(빌드나 기준이 바뀜, `on_error: "stop"`, 요청 취소),
+- `status`: `completed`, `partial`(상한에 닿았거나, 도구가 답에 줄이나 내용이
+  빠졌다고 했거나, 안쪽 호출이 실패·거부됨), `stopped`(빌드나 기준이 바뀜, `on_error: "stop"`, 요청 취소),
   `refused`(프로그램이 틀림).
-- `everythingSeen`은 Lode의 판정입니다. 상태가 `completed`이고, 실패하거나 거부된
-  안쪽 호출이 없고, 모든 `notSeen`이 0이고, 잘린 줄이 없고, 돌려줄 단계가 모두
-  실행되었을 때만 참입니다. 거짓이면 `notSeenBecause`가 이유를 적습니다. 직접
-  계산하지 말고 이 값을 읽습니다.
+- `everythingSeen`은 이 빌드에서 받은 답들의 줄과 내용에 대한 Lode의 판정입니다.
+  상태가 `completed`이고, 실패하거나 거부된 안쪽 호출이 없고, 모든 `notSeen`이 0이고,
+  잘린 줄이 없고, 돌려줄 단계가 모두 실행되었고, 어느 안쪽 답도 자기에게서 줄이나
+  내용이 빠졌다고 하지 않았을 때만 참입니다. 거짓이면 `notSeenBecause`가 이유를
+  적고, 도구 자신의 신호는 `TOOL_SAID:<tool>:<signal>`로 나옵니다. 그래프가 소스를
+  얼마나 덮는지에 대한 판정은 아닙니다. 그것은 제품 그래프의 `header`와 `basis`의
+  `stated` 커버리지입니다. 직접 계산하지 말고 이 값을 읽습니다.
+- 안쪽 도구마다 세는 신호는 다음과 같습니다. `lode_product_graph_query`는
+  `page.remaining`(따라가지 않은 쪽), 쪽 이어짐이 아닌 `more` 줄(첫 단계 아래에서
+  잘린 트리, 한 답의 줄 상한), 상태가 `partial`이나 `unavailable`인 전후 본문
+  한쪽입니다. `lode_project_graph`는 `truncated`, `omittedMatchCount`,
+  `boundary.items`, `boundary.omittedCount`, `unmatchedAnchorIds`,
+  `integrity.excluded`, `coverage.state`(`partial`이나 `unavailable`),
+  `coverage.inventoryBoundReached`, `sourceFallback.needed`,
+  `sourceFallback.excludedInputs`, 노드의 `contentPartial`입니다. 이 도구의 커버리지 상태는 설계상 partial이므로, 이 도구를
+  부르는 연쇄 읽기는 전부 보았다고 하지 않습니다.
+- `basis`는 안쪽 도구마다 한 번씩 적습니다. `pinned`, 제품 그래프는 첫 답의
+  `builtAt`과 신선도, `lode_project_graph`는 자기 커버리지에 대해 `stated`한
+  것(상태, 소스로 돌아가야 하는지, 제외된 층과 그 이유 코드)입니다.
 - `return`에 적은 단계만 줄을 싣습니다. `total`은 그 단계의 줄 수, `returned`는 답에
   실은 줄 수, `cut`은 나머지(`return`의 `limit`이나 `max_bytes`)입니다.
 - `notSeen`: `pagesLeft`는 다음 쪽이 남은 채 멈춘 읽기 수, `itemsLeft`는 그 쪽들에
   남은 항목 수, `eachSkipped`는 `each` 상한을 넘은 줄 수, `eachNoValue`는 `each` 값이
   없는 줄 수, `callsSkipped`는 호출 상한이나 중간 줄 상한 때문에 하지 않은 호출 수,
-  `rowsDropped`는 중간 줄 상한에서 버린 줄 수, `cutByTool`은 안쪽 도구가 빼놓았다고
-  한 것(`lode_project_graph`의 `truncated`, `omittedMatchCount`)입니다.
+  `rowsDropped`는 중간 줄 상한에서 버린 줄 수, `answersSaidIncomplete`는 자기에게서
+  줄이나 내용이 빠졌다고 한 안쪽 답 수, `takeNotAList`는 `take`가 가리킨 곳에 목록이
+  없던 답 수입니다.
 - 모든 안쪽 답이 되풀이한 머리말은 `header`에 한 번만 싣습니다. 서로 다르면
   `headers`에 나온 단계와 함께 적습니다.
 - 내용 글은 JSON 답 그 자체이고, 줄을 글로 한 번 더 싣지 않습니다.
 
-CLI에도 같은 묶음이 있고, 검사와 답도 같습니다:
+CLI에도 같은 연쇄 읽기가 있고, 검사와 답도 같습니다:
 `lode-agent tools-read-chain <project> --input chain.json`. 입력에서
 `project_root`는 빼도 됩니다.
 

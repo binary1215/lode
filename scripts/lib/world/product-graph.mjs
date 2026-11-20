@@ -1666,9 +1666,9 @@ export function moveProductGraphBaseline(options = {}) {
     inputs.mode === "project"
       ? withProjectMutation({ root: inputs.projectRoot, storage: inputs.storage, scope: "product-graph-build", timeoutMs: 0 }, move)
       : move();
-  const moved = { status: "moved", setAt: baseline.setAt, previous, dropped, graphUnchanged: true };
-  moved.text = baselineMovedText(moved);
-  return markTextFromStructure(moved, baselineMovedText);
+  // Keys in the order main answered with (text before graphUnchanged).
+  const fields = { setAt: baseline.setAt, previous, dropped };
+  return markTextFromStructure({ status: "moved", ...fields, text: baselineMovedText(fields), graphUnchanged: true }, baselineMovedText);
 }
 
 // The sentence a baseline move answers with, from its structured fields.

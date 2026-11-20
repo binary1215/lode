@@ -65,7 +65,7 @@ the commit above; the method is in the last column.
 | Core text read every session | 6,909 characters (HEAD Core, after first-run consent) | 822-character entry paragraph; 2,301-character project instructions only when root files are written or linked | characters of the committed blob (`git show <commit>:packages/context/instructions/HEAD_CORE.md`, LF line endings) |
 | MCP server instructions | 1,314 characters shared, plus 241 for Claude Code or 337 for Codex | 822 characters | characters of the template-literal values in the committed `packages/context/core/mcp.mjs` (escaped backticks counted once; read as text, not evaluated) |
 | Skill descriptions in the Skill list | 1 Skill, 76 characters | 3 Skills, 969 characters | characters of the committed `start-job` `description` value |
-| Tools listed by default | 9 (10 on Codex) | 22 | tool table in `packages/context/README.md` |
+| Tools listed by default | 9 (10 on Codex) | 23 | tool table in `packages/context/README.md` |
 | Calls to save | 1 (`save`) | 1 for a verified Host caller, 2 otherwise | tool table |
 | Calls to resume | 0 when the start hook loads the work session; 1 (`load`) otherwise | 0 in a linked Host conversation; 1 (`lode_conversation_enter`) for an unverified caller or a new Codex thread; for a new Claude Code conversation 1 (`lode_conversation_enter`) when the Project has one Session, 2 (`lode_session_list`, then `lode_conversation_enter`) when it has several | README hook section |
 | Calls to delegate | 0 plugin calls; the Host's fork or agent tool | 0 Lode calls on the default path; 4 + 4 on the managed path | server instructions |
@@ -93,7 +93,7 @@ the commit above; the method is in the last column.
 - **Core text.** The original loads a longer text that teaches the context
   theory behind its principles. Lode loads a short entry paragraph and moves
   procedure detail into Skills and references that are read on demand.
-- **Tool surface.** The original lists nine tools. Lode lists 22 by default;
+- **Tool surface.** The original lists nine tools. Lode lists 23 by default;
   discovery lists a catalog of 50, 19 of which are also in the default list.
 - **Recent conversation.** After `/clear` or compaction, the original puts the
   last five exchanges back into the conversation. Lode restores recorded
