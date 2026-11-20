@@ -1733,7 +1733,7 @@ export const OPERATIONS = Object.freeze([
     tool: {
       name: "lode_product_graph_approve",
       description:
-        "Record the user's explicit approval of one product graph document (or the policy file) exactly as it is now. expected_sha256 is the digest of the content the user reviewed, as the check result lists it; a document changed since then is refused. Editing an approved document later makes it unapproved again. Requires explicit confirmation.",
+        "Record the user's explicit approval of one product graph document (or the policy file) exactly as it is now. expected_sha256 is the digest of the content the user reviewed, as the check result lists it; a document changed since then is refused. Editing an approved document later makes it unapproved again. When the build is current it also writes a user-approved confirmation record of the code the document's rows point to; otherwise it says that code basis was not recorded and still approves. Requires explicit confirmation.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1765,6 +1765,42 @@ export const OPERATIONS = Object.freeze([
       },
     },
     impl: () => import("../world/product-graph.mjs").then((module) => module.approveProductGraphDocument),
+  },
+  {
+    name: "lode_product_graph_confirm",
+    tool: {
+      name: "lode_product_graph_confirm",
+      description:
+        "Record an agent's check of product graph 뜻 lines (by 기능 ID) and of every code-linked row of named documents against the code as the current build has it. Use it only after re-reading the code each line describes; it records an agent's check, not the user's approval, and grants nothing. Refused with PRODUCT_GRAPH_BUILD_STALE when the build is not the current source, with PRODUCT_GRAPH_CHECK_TARGET_MISSING when an item is not in the graph, and with PRODUCT_GRAPH_CHECK_LIMIT when the records would pass 2000; a refusal writes nothing. Writes confirmation records under 확인/ (500 items each) and nothing else; items whose current record is already an agent check of the same code basis are not written again (status unchanged). check.txt shows them after the next build.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          features: { type: "array", items: { type: "string", minLength: 1 }, description: "기능 IDs whose 뜻 line was checked against their code." },
+          documents: {
+            type: "array",
+            items: { type: "string", minLength: 1 },
+            description:
+              "Documents inside the product graph folder whose 기능→화면요소, 화면요소→기능 and 화면→코드 rows were checked, for example 화면설계서/CHT-01.md.",
+          },
+          rationale: { type: "string", minLength: 1, maxLength: 2000, description: "What was re-read." },
+        },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+    },
+    mcp: {
+      args: (args) => [{ root: args.project_root, features: args.features ?? [], documents: args.documents ?? [], rationale: args.rationale ?? null }],
+    },
+    cli: {
+      command: "product-graph-confirm",
+      flags: ["input"],
+      args: ({ root, options, inputJson }) => {
+        const input = onlyFields(inputJson(options, "Product graph confirmation"), ["features", "documents", "rationale"], "Product graph confirmation");
+        return [{ root, features: input.features ?? [], documents: input.documents ?? [], rationale: input.rationale ?? null }];
+      },
+    },
+    impl: () => import("../world/product-graph.mjs").then((module) => module.confirmProductGraph),
   },
   {
     name: "lode_change_set_status",
@@ -6135,6 +6171,7 @@ const supplementalReadOnlyHints = {
   lode_product_graph_check: true,
   lode_product_graph_query: true,
   lode_product_graph_baseline: false,
+  lode_product_graph_confirm: false,
   lode_product_graph_approve: false,
   lode_conformance_propose: false,
   lode_conformance_disposition: false,

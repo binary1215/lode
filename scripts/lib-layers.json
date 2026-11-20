@@ -146,6 +146,7 @@
     "process-exists.mjs": "core",
     "product-graph-builtins.mjs": "world",
     "product-graph-compare.mjs": "world",
+    "product-graph-confirmations.mjs": "world",
     "product-graph-documents.mjs": "world",
     "product-graph-extraction.mjs": "world",
     "product-graph-query.mjs": "world",

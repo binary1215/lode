@@ -22,6 +22,8 @@ import { failCode as fail } from "../core/errors.mjs";
 export const PRODUCT_GRAPH_DIRECTORY = "context/product-graph";
 export const PRODUCT_GRAPH_BUILD_DIRECTORY = "build";
 export const PRODUCT_GRAPH_APPROVAL_DIRECTORY = "승인";
+// Confirmation records: what a 뜻 line or a document row was checked against.
+export const PRODUCT_GRAPH_CHECK_DIRECTORY = "확인";
 export const PRODUCT_GRAPH_ACTIVITY_DIRECTORY = "유저플로우 기획서";
 export const PRODUCT_GRAPH_SCREEN_DIRECTORY = "화면설계서";
 export const PRODUCT_GRAPH_POLICY_FILE = "정책.md";
@@ -38,6 +40,7 @@ export const PRODUCT_GRAPH_MAX_FILES = 4096;
 export const SCREEN_ID = /^[A-Z][A-Z0-9]*-[0-9]+$/;
 export const ACTIVITY_ID = /^UA-[A-Z][A-Z0-9]*-[0-9]+$/;
 const APPROVAL_NAME = /^(product-graph-approval-[a-f0-9]{24})\.json$/;
+const CHECK_NAME = /^(product-graph-check-[a-f0-9]{24})\.json$/;
 
 export const PRODUCT_GRAPH_APPROVAL_PROTOCOL = "lode-product-graph-approval";
 export const PRODUCT_GRAPH_APPROVAL_VERSION = 1;
@@ -70,10 +73,16 @@ export function classifyProductGraphPath(relative) {
     return { role: "document", canon: true, nodeType: "화면", id: name.slice(0, -3), approvable: true };
   if (directory === PRODUCT_GRAPH_APPROVAL_DIRECTORY && APPROVAL_NAME.test(name))
     return { role: "approval", canon: true, approvalId: APPROVAL_NAME.exec(name)[1] };
+  if (directory === PRODUCT_GRAPH_CHECK_DIRECTORY && CHECK_NAME.test(name)) return { role: "check", canon: true, checkId: CHECK_NAME.exec(name)[1] };
   return null;
 }
 
-export const productGraphSubdirectories = Object.freeze([PRODUCT_GRAPH_ACTIVITY_DIRECTORY, PRODUCT_GRAPH_SCREEN_DIRECTORY, PRODUCT_GRAPH_APPROVAL_DIRECTORY]);
+export const productGraphSubdirectories = Object.freeze([
+  PRODUCT_GRAPH_ACTIVITY_DIRECTORY,
+  PRODUCT_GRAPH_SCREEN_DIRECTORY,
+  PRODUCT_GRAPH_APPROVAL_DIRECTORY,
+  PRODUCT_GRAPH_CHECK_DIRECTORY,
+]);
 
 export function decodeProductGraphText(bytes) {
   if (!Buffer.isBuffer(bytes) && !(bytes instanceof Uint8Array)) fail("PRODUCT_GRAPH_FILE_INVALID");
@@ -158,6 +167,176 @@ export function verifyProductGraphApproval(document, { projectId = null, approva
   if (canonicalJson(expected) !== canonicalJson(document)) fail("PRODUCT_GRAPH_APPROVAL_INVALID");
   if (projectId !== null && document.projectId !== projectId) fail("PRODUCT_GRAPH_APPROVAL_PROJECT_MISMATCH");
   if (approvalId !== null && document.approvalId !== approvalId) fail("PRODUCT_GRAPH_APPROVAL_INVALID");
+  return document;
+}
+
+// ---------- confirmation records ----------
+// What a 뜻 line or a document row was checked against: the content (and, for
+// a 기능, reach) hashes of the nodes it points to at that moment. Written only
+// by product-graph-confirm (an agent's check, "agent-checked") or alongside
+// product-graph-approve ("user-approved"). Append-only and content-addressed
+// like approval records; never rewritten, never reclaimed. It names no
+// snapshot. It grants nothing: it says what was looked at.
+export const PRODUCT_GRAPH_CHECK_PROTOCOL = "lode-product-graph-confirmation";
+export const PRODUCT_GRAPH_CHECK_VERSION = 1;
+// Bounds that keep the records from ever stopping a build: a record is at most
+// PRODUCT_GRAPH_CHECK_MAX_BYTES (well under the 1 MiB file limit) and the
+// records are counted apart from the documents (PRODUCT_GRAPH_MAX_FILES).
+// Lode refuses to write past either bound.
+export const PRODUCT_GRAPH_CHECK_MAX_ITEMS = 500;
+export const PRODUCT_GRAPH_CHECK_MAX_BYTES = 256 * 1024;
+export const PRODUCT_GRAPH_CHECK_MAX_RECORDS = 2000;
+// One time format (what Date#toISOString writes); times are compared as instants.
+const ISO_TIME = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$/;
+// The records a new record replaces for its items (explicit supersession).
+// The current record of an item is the valid one naming it that no other
+// valid record naming it replaces; time only breaks ties between unrelated
+// records. Bounded so a record stays readable.
+export const PRODUCT_GRAPH_CHECK_MAX_SUPERSEDES = 2000;
+const CHECK_ID = /^product-graph-check-[a-f0-9]{24}$/;
+const readerValue = (value) => value === null || (typeof value === "string" && value.length <= 256) || (typeof value === "number" && Number.isFinite(value));
+const CHECK_BY = Object.freeze({
+  "agent-checked": "agent-check-of-code-not-user-approval",
+  "user-approved": "explicit-user-product-graph-approval",
+});
+const HEX64 = /^[a-f0-9]{64}$/;
+const ROW_TYPES = Object.freeze(["기능→화면요소", "화면요소→기능", "화면→코드"]);
+// An id is whatever the graph produced: any non-empty string.
+const isId = (value) => typeof value === "string" && value.length > 0;
+const sortedBy = (items, key) => [...items].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+
+function checkBasis(basis) {
+  if (!Array.isArray(basis) || !basis.length || basis.length > 64) fail("PRODUCT_GRAPH_CHECK_INVALID");
+  const out = basis.map((node) => {
+    if (!node || typeof node !== "object" || Array.isArray(node)) fail("PRODUCT_GRAPH_CHECK_INVALID");
+    const keys = Object.keys(node).sort().join(",");
+    if (!["contentSha256,id", "contentSha256,id,reachSha256"].includes(keys)) fail("PRODUCT_GRAPH_CHECK_INVALID");
+    if (!isId(node.id) || !HEX64.test(node.contentSha256) || (Object.hasOwn(node, "reachSha256") && !HEX64.test(node.reachSha256)))
+      fail("PRODUCT_GRAPH_CHECK_INVALID");
+    return Object.hasOwn(node, "reachSha256")
+      ? { id: node.id, contentSha256: node.contentSha256, reachSha256: node.reachSha256 }
+      : { id: node.id, contentSha256: node.contentSha256 };
+  });
+  if (new Set(out.map((node) => node.id)).size !== out.length) fail("PRODUCT_GRAPH_CHECK_INVALID");
+  return sortedBy(out, (node) => node.id);
+}
+
+// One checked item in a closed shape: a 뜻 line, or a row of a document.
+export function productGraphCheckItemKey(item) {
+  return item.kind === "meaning" ? `meaning\u0000${item.id}` : `row\u0000${item.document}\u0000${item.type}\u0000${item.from}\u0000${item.to}`;
+}
+
+function checkItem(item) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) fail("PRODUCT_GRAPH_CHECK_INVALID");
+  const keys = Object.keys(item).sort().join(",");
+  if (item.kind === "meaning") {
+    // Ids are stored exactly as the graph has them (a decomposed file name
+    // gives a decomposed id): never normalised, never rejected for it.
+    if (keys !== "basis,id,kind,textSha256" || !isId(item.id) || !HEX64.test(item.textSha256)) fail("PRODUCT_GRAPH_CHECK_INVALID");
+    const basis = checkBasis(item.basis);
+    // The basis names the 기능 the line describes.
+    if (!basis.some((node) => node.id === item.id)) fail("PRODUCT_GRAPH_CHECK_INVALID");
+    return { kind: "meaning", id: item.id, textSha256: item.textSha256, basis };
+  }
+  if (item.kind === "documentRow") {
+    if (keys !== "basis,document,documentTextSha256,from,kind,to,type") fail("PRODUCT_GRAPH_CHECK_INVALID");
+    const target = classifyProductGraphPath(item.document);
+    if (!target?.approvable || target.role !== "document" || nfc(item.document) !== item.document) fail("PRODUCT_GRAPH_CHECK_INVALID");
+    if (!ROW_TYPES.includes(item.type) || !isId(item.from) || !isId(item.to) || !HEX64.test(item.documentTextSha256)) fail("PRODUCT_GRAPH_CHECK_INVALID");
+    const basis = checkBasis(item.basis);
+    // The basis names the node the row says something about.
+    const rowTarget = item.type === "기능→화면요소" ? item.from : item.to;
+    if (!basis.some((node) => node.id === rowTarget)) fail("PRODUCT_GRAPH_CHECK_INVALID");
+    return {
+      kind: "documentRow",
+      document: item.document,
+      type: item.type,
+      from: item.from,
+      to: item.to,
+      documentTextSha256: item.documentTextSha256,
+      basis,
+    };
+  }
+  fail("PRODUCT_GRAPH_CHECK_INVALID");
+}
+
+function checkPayload(record) {
+  if (typeof record.projectId !== "string" || !record.projectId) fail("PRODUCT_GRAPH_CHECK_INVALID");
+  if (!Object.hasOwn(CHECK_BY, record.by)) fail("PRODUCT_GRAPH_CHECK_INVALID");
+  if (typeof record.checkedAt !== "string" || !ISO_TIME.test(record.checkedAt) || !Number.isFinite(Date.parse(record.checkedAt)))
+    fail("PRODUCT_GRAPH_CHECK_INVALID");
+  if (record.rationale !== null && (typeof record.rationale !== "string" || !record.rationale.trim() || record.rationale.length > 2000))
+    fail("PRODUCT_GRAPH_CHECK_INVALID");
+  const reader = record.reader;
+  if (!reader || typeof reader !== "object" || Array.isArray(reader) || Object.keys(reader).sort().join(",") !== "generator,graphVersion,sourceAnalysis")
+    fail("PRODUCT_GRAPH_CHECK_INVALID");
+  if (![reader.generator, reader.graphVersion, reader.sourceAnalysis].every(readerValue)) fail("PRODUCT_GRAPH_CHECK_INVALID");
+  if (!Array.isArray(record.items) || !record.items.length || record.items.length > PRODUCT_GRAPH_CHECK_MAX_ITEMS) fail("PRODUCT_GRAPH_CHECK_INVALID");
+  const items = sortedBy(record.items.map(checkItem), productGraphCheckItemKey);
+  if (new Set(items.map(productGraphCheckItemKey)).size !== items.length) fail("PRODUCT_GRAPH_CHECK_INVALID");
+  const supersedes = record.supersedes ?? [];
+  if (
+    !Array.isArray(supersedes) ||
+    supersedes.length > PRODUCT_GRAPH_CHECK_MAX_SUPERSEDES ||
+    !supersedes.every((id) => typeof id === "string" && CHECK_ID.test(id))
+  )
+    fail("PRODUCT_GRAPH_CHECK_INVALID");
+  const replaced = [...new Set(supersedes)].sort();
+  if (replaced.length !== supersedes.length) fail("PRODUCT_GRAPH_CHECK_INVALID");
+  return {
+    schemaVersion: 1,
+    kind: "ProductGraphConfirmation",
+    protocol: { name: PRODUCT_GRAPH_CHECK_PROTOCOL, version: PRODUCT_GRAPH_CHECK_VERSION },
+    projectId: record.projectId,
+    by: record.by,
+    checkedAt: record.checkedAt,
+    rationale: record.rationale === null ? null : record.rationale.trim(),
+    reader: { generator: reader.generator ?? null, graphVersion: reader.graphVersion ?? null, sourceAnalysis: reader.sourceAnalysis ?? null },
+    items,
+    supersedes: replaced,
+    authority: CHECK_BY[record.by],
+    instructionAuthority: false,
+    executionAuthority: false,
+  };
+}
+
+export function productGraphCheckRecord({ projectId, by, checkedAt, rationale = null, reader, items, supersedes = [] }) {
+  const payload = checkPayload({ projectId, by, checkedAt, rationale, reader, items, supersedes });
+  const checkHash = sha256Hex(canonicalJson(payload));
+  return { ...payload, checkId: `product-graph-check-${checkHash.slice(0, 24)}`, checkHash };
+}
+
+// A record whose name, fields or content address do not match is not a check.
+export function verifyProductGraphCheck(document, { projectId = null, checkId = null } = {}) {
+  const fields = [
+    "schemaVersion",
+    "kind",
+    "protocol",
+    "projectId",
+    "by",
+    "checkedAt",
+    "rationale",
+    "reader",
+    "items",
+    "supersedes",
+    "authority",
+    "instructionAuthority",
+    "executionAuthority",
+    "checkId",
+    "checkHash",
+  ];
+  if (
+    !document ||
+    typeof document !== "object" ||
+    Array.isArray(document) ||
+    JSON.stringify(Object.keys(document).sort()) !== JSON.stringify([...fields].sort())
+  )
+    fail("PRODUCT_GRAPH_CHECK_INVALID");
+  if (document.kind !== "ProductGraphConfirmation" || document.schemaVersion !== 1) fail("PRODUCT_GRAPH_CHECK_INVALID");
+  const expected = productGraphCheckRecord(document);
+  if (canonicalJson(expected) !== canonicalJson(document)) fail("PRODUCT_GRAPH_CHECK_INVALID");
+  if (projectId !== null && document.projectId !== projectId) fail("PRODUCT_GRAPH_CHECK_PROJECT_MISMATCH");
+  if (checkId !== null && document.checkId !== checkId) fail("PRODUCT_GRAPH_CHECK_INVALID");
   return document;
 }
 
@@ -344,6 +523,14 @@ export function verifyProductGraphCanonFile(relative, bytes, { projectId = null 
       fail("PRODUCT_GRAPH_APPROVAL_INVALID");
     }
     verifyProductGraphApproval(document, { projectId, approvalId: target.approvalId });
+  } else if (target.role === "check") {
+    let document;
+    try {
+      document = JSON.parse(text);
+    } catch {
+      fail("PRODUCT_GRAPH_CHECK_INVALID");
+    }
+    verifyProductGraphCheck(document, { projectId, checkId: target.checkId });
   }
   return target;
 }
@@ -357,6 +544,7 @@ export function verifyProductGraphCanonOriginals({ directory, list, readBytes, p
   const base = `${directory}/${PRODUCT_GRAPH_DIRECTORY}`;
   const verified = [],
     unrecognized = [];
+  let checks = 0;
   const top = list(base);
   if (!top.length) return { verified, unrecognized };
   const visit = (prefix, names) => {
@@ -372,7 +560,9 @@ export function verifyProductGraphCanonOriginals({ directory, list, readBytes, p
         unrecognized.push(within);
         continue;
       }
-      if (verified.length >= PRODUCT_GRAPH_MAX_FILES) fail("PRODUCT_GRAPH_TOO_MANY_FILES");
+      // Confirmation records are counted apart from the documents.
+      if (target.role === "check" ? ++checks > PRODUCT_GRAPH_CHECK_MAX_RECORDS : verified.length - checks >= PRODUCT_GRAPH_MAX_FILES)
+        fail("PRODUCT_GRAPH_TOO_MANY_FILES");
       verifyProductGraphCanonFile(within, readBytes(`${base}/${within}`), { projectId });
       verified.push(`${base}/${within}`);
     }
@@ -421,6 +611,7 @@ export function summarizeProductGraphTransfer({ directory, verified = [], notRec
   return {
     documents: roles.filter(([, target]) => target?.role === "document").length,
     approvalRecords: roles.filter(([, target]) => target?.role === "approval").length,
+    checkRecords: roles.filter(([, target]) => target?.role === "check").length,
     otherUserFiles: roles
       .filter(([, target]) => ["policy", "meaning", "rules"].includes(target?.role))
       .map(([file]) => file)

@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import os from "node:os";
 import { performance } from "node:perf_hooks";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { withLocalMutation } from "../storage/local-mutation-lock.mjs";
+import { takeMutationCleanupFailure, withLocalMutation } from "../storage/local-mutation-lock.mjs";
 import { resolveProjectStorage, assertProjectStorageUnchanged } from "../storage/project-storage-format.mjs";
 import { classifySnapshotFileSystem, darwinFilesystemName } from "./snapshot-filesystem.mjs";
 import { sha256Hex } from "../core/digest.mjs";
@@ -20,6 +20,31 @@ const processBirth = performance.timeOrigin;
 const fail = (message, code = "SNAPSHOT_REFERENCE_COORDINATION_UNAVAILABLE") => {
   throw Object.assign(new Error(message), { code, retryable: true });
 };
+// Registrations and collector attempts of this process that it could not
+// withdraw after an admission cleanup failure. Snapshot GC yields while they
+// exist, so this process withdraws them at its next admission on the same
+// namespace and, failing that, when it exits. Each withdrawal verifies the
+// file is still this process's own.
+const unwithdrawn = new Set();
+function withdrawLeftovers(ns = null) {
+  for (const leftover of [...unwithdrawn]) {
+    if (ns && leftover.ns.base !== ns.base) continue;
+    try {
+      leftover.withdraw();
+      unwithdrawn.delete(leftover);
+    } catch (error) {
+      if (error?.code === "ENOENT") unwithdrawn.delete(leftover);
+    }
+  }
+}
+let exitHook = false;
+function keepForLater(leftover) {
+  unwithdrawn.add(leftover);
+  if (!exitHook) {
+    exitHook = true;
+    process.once("exit", () => withdrawLeftovers());
+  }
+}
 function namespace(root, supplied) {
   const storage = supplied?.projectFile ? supplied : resolveProjectStorage(root);
   // No owned Project means no eligible collector. Initialization retains its
@@ -158,13 +183,48 @@ function begin(root, storage) {
     assertNoEligiblePriorAttempt(ns);
     return null;
   }
-  return admission(ns, () => {
-    invalidate(ns);
-    const nonce = crypto.randomBytes(16).toString("hex");
-    const file = path.join(ns.directory, "participants", `${nonce}.json`);
-    fs.writeFileSync(file, JSON.stringify(owner(ns, nonce)), { flag: "wx" });
-    return { ns, nonce, file, active: true, references: 1 };
-  });
+  withdrawLeftovers(ns);
+  try {
+    return admission(ns, () => {
+      invalidate(ns);
+      const nonce = crypto.randomBytes(16).toString("hex");
+      const file = path.join(ns.directory, "participants", `${nonce}.json`);
+      fs.writeFileSync(file, JSON.stringify(owner(ns, nonce)), { flag: "wx" });
+      return { ns, nonce, file, active: true, references: 1 };
+    });
+  } catch (error) {
+    const cleanup = takeMutationCleanupFailure(error);
+    if (cleanup?.operationReturned !== true) throw error;
+    // Registration completed, but the admission lock could not be confirmed
+    // released. The caller's operation has not started: withdraw this
+    // registration (as an ordinary release does, outside admission) and say
+    // the operation did not run, so repeating it is safe.
+    let withdrawn = true;
+    try {
+      release(cleanup.result);
+    } catch {
+      withdrawn = false;
+      const token = cleanup.result;
+      keepForLater({ ns: token.ns, withdraw: () => withdrawParticipant(token) });
+    }
+    throw Object.assign(
+      new Error(
+        `The operation did not run: the snapshot reference admission lock could not be confirmed released. ${withdrawn ? "Its registration was withdrawn; it is safe to retry." : "Its registration could not be withdrawn yet; this process withdraws it at its next snapshot admission or when it exits, and snapshot collection waits until then. It is safe to retry."}`,
+      ),
+      {
+        code: "SNAPSHOT_REFERENCE_COORDINATION_UNAVAILABLE",
+        retryable: true,
+        operationRan: false,
+        cleanup: cleanup.diagnostic,
+        participantWithdrawn: withdrawn,
+      },
+    );
+  }
+}
+function withdrawParticipant(token) {
+  const actual = verifyOwner(token.ns, original(token.file), token.nonce);
+  if (actual.pid !== process.pid || actual.processBirth !== processBirth) fail("Snapshot reference owner changed.");
+  fs.unlinkSync(token.file);
 }
 function release(token) {
   if (!token || --token.references) return;
@@ -251,6 +311,7 @@ export function beginSnapshotCollection({ root = ".", storage } = {}) {
   const ns = namespace(root, storage);
   if (!ns) return { status: "preserved", reasonCode: "NOT_INITIALIZED" };
   if (ns.excludedReason) return { status: "preserved", reasonCode: ns.excludedReason };
+  withdrawLeftovers(ns);
   try {
     const excluded = retainedBackend(ns);
     if (excluded) return { status: "preserved", reasonCode: excluded.reasonCode };
@@ -272,6 +333,20 @@ export function beginSnapshotCollection({ root = ".", storage } = {}) {
       0,
     );
   } catch (error) {
+    // The attempt was written but the admission lock could not be confirmed
+    // released: withdraw the attempt (as finishing it does), or this process
+    // withdraws it at its next admission or exit. Either way this collection
+    // does not run.
+    const cleanup = takeMutationCleanupFailure(error);
+    if (cleanup?.operationReturned === true && cleanup.result?.status === "active") {
+      const attempt = cleanup.result;
+      try {
+        finishSnapshotCollection(attempt);
+      } catch {
+        keepForLater({ ns: attempt.ns, withdraw: () => finishSnapshotCollection(attempt) });
+      }
+      return { status: "preserved", reasonCode: "LOCAL_MUTATION_CLEANUP_FAILED" };
+    }
     return { status: "preserved", reasonCode: error.code || "SNAPSHOT_COORDINATION_UNAVAILABLE" };
   }
 }

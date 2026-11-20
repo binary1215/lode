@@ -748,7 +748,7 @@ test("acceptance 11 / 18: with no build both product views say so and the export
     html,
     /default-src 'none'; script-src 'nonce-[^']+'; style-src 'nonce-[^']+'; connect-src 'none'; img-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'/,
   );
-  for (const file of ["views.js", "product-graph-walk.js", "status-model.js", "i18n.js"])
+  for (const file of ["views.js", "reading.js", "product-graph-walk.js", "status-model.js", "i18n.js"])
     assert.doesNotMatch(read(path.join(assets, file)), /\bfetch\(|XMLHttpRequest|WebSocket|localStorage|sessionStorage|innerHTML/, file);
   buildProductGraph({ root: f.root });
   const shared = await buildGraphExplorerSnapshot({ root: f.root, share: true });
@@ -1155,7 +1155,7 @@ test("C3: --share names no local path in the product graph section, however the 
 });
 
 test("acceptance 20: the new views, walk and tests name no toolkit or example project", () => {
-  for (const file of ["views.js", "views.css", "product-graph-walk.js", "status-model.js", "i18n.js"])
+  for (const file of ["views.js", "views.css", "reading.js", "product-graph-walk.js", "status-model.js", "i18n.js"])
     assert.doesNotMatch(read(path.join(assets, file)), /NeoPick|PySide|PyQt|\bQt\b|tkinter|Electron/i, file);
   assert.doesNotMatch(read(new URL(import.meta.url)).replace(/doesNotMatch\(.*\n/g, ""), /NeoPick|PySide|PyQt|tkinter/i);
 });

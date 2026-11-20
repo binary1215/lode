@@ -63,6 +63,21 @@ details.card{display:block}
 .path-part{color:var(--text)}
 .file-row{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;border-top:1px solid var(--line);padding-top:8px}
 .file-row pre{flex-basis:100%}
+.source-reader{flex-basis:100%;min-width:0}
+.source-nav{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;margin:4px 0}
+.source-lines{font:12px/1.5 ui-monospace,monospace;border:1px solid var(--line);border-radius:6px;padding:4px 0;max-height:70vh;overflow-y:auto}
+.source-line{display:flex;gap:10px;padding:0 8px}
+.source-line.in-span{background:var(--selection-fill)}
+.source-no{flex:none;min-width:3.5em;text-align:right;color:var(--muted);user-select:none}
+.source-text{min-width:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.rich-text>*{margin:4px 0}
+.rich-text ul,.rich-text ol{padding-left:20px}
+.rich-text ul{list-style:disc}
+.rich-text ol{list-style:decimal}
+.rich-text ol.rich-numbered{list-style:none;padding-left:0}
+.rich-heading{font-weight:600}
+.rich-code{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 ui-monospace,monospace}
+.item-text.rich{flex:1 1 100%;min-width:0}
 .mono,.view code{font:12px/1.5 ui-monospace,monospace;overflow-wrap:anywhere}
 .board{white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh}
 .board-lines{font-size:13px}

@@ -21,8 +21,8 @@ test("one fixed source composition exposes one finite tool vocabulary and exact 
     skills: { core: "lode-agent-core", onboarding: "lode-agent-onboarding", conversation: "lode-conversation" },
   });
   assert.ok(Object.isFrozen(ARTIFACT_COMPOSITION)); assert.ok(Object.isFrozen(ARTIFACT_COMPOSITION.skills));
-  assert.equal(OPERATION_DESCRIPTORS.length, 152);
-  assert.equal(new Set(OPERATION_DESCRIPTORS.flatMap(item => [item.legacyName, item.canonicalName])).size, 304);
+  assert.equal(OPERATION_DESCRIPTORS.length, 153);
+  assert.equal(new Set(OPERATION_DESCRIPTORS.flatMap(item => [item.legacyName, item.canonicalName])).size, 306);
   for (const item of OPERATION_DESCRIPTORS) {
     assert.equal(resolveOperation(item.legacyName), item); assert.equal(resolveOperation(item.canonicalName), item);
     assert.equal(item.semanticName, item.canonicalName);
@@ -36,7 +36,7 @@ test("one fixed source composition exposes one finite tool vocabulary and exact 
   assert.ok(tools.every(tool => tool.name.startsWith("lode_")));
   assert.ok(catalogTools.every(tool => tool.name.startsWith("lode_")));
   assert.equal(new Set(catalogTools.map(tool => tool.name)).size, catalogTools.length);
-  assert.equal(operationCatalogTools.length, 148, "Discovery, the two routers and the native Hook helper are not operation catalog entries");
+  assert.equal(operationCatalogTools.length, 149, "Discovery, the two routers and the native Hook helper are not operation catalog entries");
   // Stage 3-F: grouped tools replace their member operations in the listed catalog.
   assert.equal(catalogTools.length, 51);
   assert.deepEqual(catalogTools.filter(tool => tool.name.startsWith("lode_work_document")).map(tool => tool.name), ["lode_work_document"]);

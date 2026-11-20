@@ -11,11 +11,22 @@ export const productGraphWalk = (() => {
   const LIST_LIMIT = 50;
   const CODE_EDGES = new Set(["call", "callback"]);
   const CHANGE_WORDS = Object.freeze({ changed: "변경", added: "신규", removed: "사라짐", reach: "닿는 코드가 바뀜", reached: "새로 닿음", unreached: "닿지 않게 됨" });
+  // Confirmation records (independent of the baseline).
+  const CHECK_WORDS = Object.freeze({
+    neverChecked: "확인한 적 없음",
+    changedSinceCheck: "확인 뒤 코드가 바뀜",
+    textChanged: "확인 뒤 글이 바뀜",
+    otherReader: "다른 방식으로 읽은 때 확인함",
+    issues: "읽지 못한 확인 기록",
+  });
+  const CHECK_BY = Object.freeze({ "agent-checked": "에이전트 확인", "user-approved": "사용자 승인" });
+  const CHECK_NODE_WORDS = Object.freeze({ changed: "내용이 바뀜", reachChanged: "닿는 코드가 바뀜", removed: "사라짐", unhashed: "내용 해시 없음" });
   // The build's own words, shared with the page so it never retypes them.
   const WORDS = Object.freeze({
     guide: "처음 쓸 때 — 빠진 입력",
     checks: "제품 그래프 정합성 검사",
     comparison: "기준과 비교",
+    confirmations: "확인 기록 (기준과 따로: 기준을 옮겨도 지워지지 않는다)",
     unchecked: "검사 못 함",
     noFindings: "0건",
     findings: (count) => `${count}건`,
@@ -115,7 +126,9 @@ export const productGraphWalk = (() => {
 
   function context({ graph, check = null, freshness = null, builtAt = null, baselineNow = null, changes = undefined }) {
     const ctx = { graph, check, freshness, builtAt, baselineNow, changes: changes === undefined ? check?.changes || null : changes, ix: index(graph) };
+    ctx.confirmations = check?.confirmations || null;
     ctx.marks = changeMarks(ctx.changes);
+    ctx.checkMarks = checkMarks(ctx.confirmations);
     ctx.unresolved = new Map();
     for (const item of check?.lists?.unresolvedHandlers || []) if (!ctx.unresolved.has(item.id)) ctx.unresolved.set(item.id, item.reason);
     return ctx;
@@ -129,6 +142,21 @@ export const productGraphWalk = (() => {
       for (const id of group.added || []) marks.set(id, "added");
     }
     for (const item of changes.reachChanged || []) if (!marks.has(item.id)) marks.set(item.id, "reach");
+    return marks;
+  }
+
+  // A 기능 whose 뜻 line was checked and the check no longer holds. A line
+  // nobody checked carries no mark (it is listed in the confirmation block).
+  const STALE_MEANING_WORDS = Object.freeze({
+    changedSinceCheck: CHECK_WORDS.changedSinceCheck,
+    textChanged: "확인 뒤 뜻 줄이 바뀜",
+    otherReader: CHECK_WORDS.otherReader,
+  });
+  function checkMarks(confirmations) {
+    const marks = new Map();
+    if (!confirmations || confirmations.status !== "compared") return marks;
+    for (const key of Object.keys(STALE_MEANING_WORDS))
+      for (const item of confirmations[key] || []) if (item.kind === "meaning" && !marks.has(item.id)) marks.set(item.id, STALE_MEANING_WORDS[key]);
     return marks;
   }
 
@@ -164,7 +192,8 @@ export const productGraphWalk = (() => {
     else if (node.type === "정책" && node.kind) detail = ` (${node.kind})`;
     const at = position(node);
     const mark = ctx.marks.get(id);
-    let line = `${node.type} ${id}${words ? ` — ${words}` : ""}${detail}${at ? ` ${at}` : ""}${basisMark(node.basis)}${mark ? ` {${CHANGE_WORDS[mark]}}` : ""}`;
+    const checkMark = ctx.checkMarks?.get(id);
+    let line = `${node.type} ${id}${words ? ` — ${words}` : ""}${detail}${at ? ` ${at}` : ""}${basisMark(node.basis)}${mark ? ` {${CHANGE_WORDS[mark]}}` : ""}${checkMark ? ` {뜻: ${checkMark}}` : ""}`;
     if (node.type === "기능" && !handlersOf(ctx.ix, id).length && node.handling === "따라간다")
       line += ` — 처리 코드 없음: ${ctx.unresolved.get(id) || "처리 코드를 찾지 못함"}`;
     return line;
@@ -1102,17 +1131,91 @@ export const productGraphWalk = (() => {
     return lines;
   }
 
+  // ---------- confirmation records ----------
+
+  const CONFIRMATION_LISTS = Object.freeze(Object.keys(CHECK_WORDS).map((key) => ({ key, title: CHECK_WORDS[key] })));
+
+  function confirmationItems(confirmations, key) {
+    if (!confirmations || confirmations.status !== "compared") return [];
+    if (key === "issues") return (confirmations.issues || []).map((issue) => ({ text: `${issue.path} — ${issue.reason} (${issue.code})` }));
+    return (confirmations[key] || []).map((item) => {
+      const what =
+        item.kind === "meaning"
+          ? `뜻 줄 ${where(item.at)} 기능 ${item.id}`
+          : `문서 줄 ${where(item.at)} ${item.type} ${item.from} → ${item.to}${item.documentStatus ? ` (문서 ${item.documentStatus})` : ""}`;
+      const who = item.by ? ` — ${CHECK_BY[item.by] || item.by} ${item.checkedAt}` : "";
+      let state = CHECK_WORDS[key];
+      if (key === "changedSinceCheck") state += `: ${item.nodes.map((node) => `${node.id} (${CHECK_NODE_WORDS[node.change] || node.change})`).join(", ")}`;
+      if (key === "textChanged") state = item.kind === "meaning" ? "확인 뒤 뜻 줄이 바뀜" : "확인 뒤 문서가 바뀜";
+      const target = item.kind === "meaning" ? item.id : item.type === "기능→화면요소" ? item.from : item.to;
+      return { text: `${what} — ${state}${who}`, nodeId: target };
+    });
+  }
+
+  // The summary lines of the block (counts, what the records are, a note).
+  function confirmationHead(confirmations) {
+    if (!confirmations || confirmations.status !== "compared") return confirmations ? [`- 읽지 않음 — ${confirmations.reason}`] : [];
+    const lines = [];
+    const c = confirmations.counts;
+    lines.push(
+      `- 확인할 수 있는 뜻 줄·문서 줄 ${c.items}개: 확인 그대로 ${c.current} · 확인한 적 없음 ${c.neverChecked} · 확인 뒤 코드가 바뀜 ${c.changedSinceCheck} · 확인 뒤 글이 바뀜 ${c.textChanged} · 다른 방식으로 읽은 때 확인함 ${c.otherReader}. 확인 기록 ${confirmations.records}개.`,
+    );
+    lines.push("- 에이전트 확인은 에이전트가 코드를 다시 읽은 기록이고, 사용자 승인은 문서를 승인할 때 함께 남은 기록이다. 어느 것도 권한을 주지 않는다.");
+    if (confirmations.recordLimit)
+      lines.push(`- 확인 기록 ${confirmations.recordLimit.present}개 가운데 파일 이름 순으로 앞의 ${confirmations.recordLimit.read}개만 읽었다. 나머지는 읽지 못한 확인 기록에 있다.`);
+    if (confirmations.note) lines.push(`- ${confirmations.note}`);
+    return lines;
+  }
+
+  // The block of check.txt after the comparison: what was checked against
+  // the code and whether that still holds. Not moved by the baseline.
+  function renderConfirmations(confirmations) {
+    if (!confirmations) return [];
+    const lines = [WORDS.confirmations];
+    if (confirmations.status !== "compared") return [...lines, `- 읽지 않음 — ${confirmations.reason}`, ""];
+    lines.push(...confirmationHead(confirmations));
+    for (const key of ["issues", "changedSinceCheck", "textChanged", "otherReader", "neverChecked"]) {
+      const items = confirmationItems(confirmations, key);
+      if (key === "issues" && !items.length) continue;
+      lines.push(`- ${CHECK_WORDS[key]}${key === "issues" ? " (아무것도 확인한 것으로 치지 않는다)" : ""}: ${items.length}개`);
+      lines.push(...listLines(items).map((line) => `  ${line}`));
+    }
+    lines.push("");
+    return lines;
+  }
+
+  function confirmationsAnswer(ctx, { list, limit, cursor, answer }) {
+    const confirmations = ctx.confirmations;
+    const known = CONFIRMATION_LISTS.find((item) => item.key === list);
+    if (!confirmations || confirmations.status !== "compared")
+      return answer(`확인 기록 — ${known.title}: 비교하지 않음`, [
+        { depth: 1, kind: "text", text: `비교하지 않음 — ${confirmations?.reason || "이 빌드에는 확인 기록 비교가 없다(다시 빌드한다)"}` },
+      ]);
+    const items = confirmationItems(confirmations, list);
+    const paged = page(items, { limit, cursor });
+    const rows = paged.slice.map((item) => ({ depth: 1, kind: item.nodeId ? "node" : "text", id: item.nodeId || undefined, text: item.text }));
+    if (paged.remaining) rows.push(moreRow(1, paged, `changes --list ${list} --cursor ${paged.nextCursor}`));
+    return answer(`확인 기록 — ${known.title} ${items.length}개`, rows, {
+      page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor },
+    });
+  }
+
   function changesAnswer(ctx, { list, limit, cursor, answer }) {
     const changes = ctx.changes;
     if (!list) {
-      const lines = renderChanges(changes || { status: "none", reason: "이 빌드에는 기준 비교가 없다" }).filter((line) => line !== "");
+      const lines = [
+        ...renderChanges(changes || { status: "none", reason: "이 빌드에는 기준 비교가 없다" }).slice(1),
+        ...renderConfirmations(ctx.confirmations),
+      ].filter((line) => line !== "");
       return answer(
         "기준과 비교",
-        lines.slice(1).map((text) => ({ depth: 0, kind: "text", text })),
+        lines.map((text) => ({ depth: 0, kind: "text", text })),
       );
     }
+    if (CONFIRMATION_LISTS.some((item) => item.key === list)) return confirmationsAnswer(ctx, { list, limit, cursor, answer });
     const known = CHANGE_LISTS.find((item) => item.key === list);
-    if (!known) return fail("PRODUCT_GRAPH_QUERY_INVALID", `모르는 목록: ${list}. 있는 것: ${CHANGE_LISTS.map((item) => item.key).join(", ")}`);
+    if (!known)
+      return fail("PRODUCT_GRAPH_QUERY_INVALID", `모르는 목록: ${list}. 있는 것: ${[...CHANGE_LISTS, ...CONFIRMATION_LISTS].map((item) => item.key).join(", ")}`);
     if (!changes || changes.status !== "compared")
       return answer(`기준과 비교 — ${known.title}: 비교하지 않음`, [
         { depth: 1, kind: "text", text: `비교하지 않음 — ${changes?.reason || "이 빌드에는 기준 비교가 없다"}` },
@@ -1176,6 +1279,8 @@ export const productGraphWalk = (() => {
     LIMITS_TITLE,
     CHANGE_WORDS,
     CHANGE_LISTS,
+    CONFIRMATION_LISTS,
+    CHECK_WORDS,
     index,
     closure,
     reverseClosure,
@@ -1197,6 +1302,9 @@ export const productGraphWalk = (() => {
     gapLists,
     renderGapLists,
     renderChanges,
+    renderConfirmations,
+    confirmationHead,
+    confirmationItems,
     changeItems,
     contentHeadline,
     changeCount,

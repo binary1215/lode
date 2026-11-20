@@ -65,6 +65,7 @@ const ROWS = [
   { canonicalName: "lode_product_graph_check", router: false, sessionDependent: false, managedMutation: false, kind: "operation", nativeRole: null },
   { canonicalName: "lode_product_graph_query", router: false, sessionDependent: false, managedMutation: false, kind: "operation", nativeRole: null },
   { canonicalName: "lode_product_graph_baseline", router: false, sessionDependent: false, managedMutation: false, kind: "operation", nativeRole: null },
+  { canonicalName: "lode_product_graph_confirm", router: false, sessionDependent: false, managedMutation: false, kind: "operation", nativeRole: null },
   { canonicalName: "lode_product_graph_approve", router: false, sessionDependent: false, managedMutation: false, kind: "operation", nativeRole: null },
   { canonicalName: "lode_change_set_status", router: false, sessionDependent: false, managedMutation: false, kind: "operation", nativeRole: null },
   { canonicalName: "lode_vcs_evidence", router: false, sessionDependent: false, managedMutation: false, kind: "operation", nativeRole: null },
