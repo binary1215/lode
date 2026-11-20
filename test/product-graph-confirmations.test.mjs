@@ -418,7 +418,10 @@ test("C1: a source file stored with a decomposed name: confirm works and approve
   const save = JSON.parse(fs.readFileSync(path.join(f.family, "build", "graph.json"), "utf8")).nodes.find(
     (node) => node.type === "기능" && /@clicked:_save$/.test(node.id),
   ).id;
-  assert.notEqual(save, save.normalize("NFC"), "the graph keeps the decomposed id");
+  // The id is spelled as the file system lists the file: decomposed where the
+  // file system keeps the name as written (Windows, Linux, APFS).
+  const listed = fs.readdirSync(ui).find((name) => name.normalize("NFC") === "창.py");
+  assert.equal(save.includes(listed.slice(0, -3)), true, "the graph keeps the name as listed");
   const confirmed = confirmProductGraph({ root: f.root, features: [save], documents: [MAIN] });
   assert.equal(confirmed.status, "recorded");
   const stored = JSON.parse(fs.readFileSync(path.join(f.checks, `${confirmed.records[0]}.json`), "utf8"));
@@ -938,17 +941,15 @@ test("D7: a 확인 or 승인 folder stored decomposed is used as it is: one fold
   assert.equal(built.confirmations.counts.current, 1);
   assert.equal(readProductGraphBuild({ root: f.root }).freshness.confirmations.changed, false);
   confirmProductGraph({ root: f.root, documents: [MAIN] });
+  // One folder, whatever spelling the file system keeps for it.
   const folders = fs.readdirSync(f.family).filter((name) => name.normalize("NFC") === "확인");
-  assert.deepEqual(folders, ["확인".normalize("NFD")]);
+  assert.equal(folders.length, 1);
   assert.equal(fs.readdirSync(decomposed).length, 2);
   // 승인 the same way.
   fs.mkdirSync(path.join(f.family, "승인".normalize("NFD")));
   const digest = built.documents.list.find((item) => item.path === "화면설계서/DLG-01.md").approvalDigest;
   approveProductGraphDocument({ root: f.root, document: "화면설계서/DLG-01.md", expectedSha256: digest, rationale: "ok" });
-  assert.deepEqual(
-    fs.readdirSync(f.family).filter((name) => name.normalize("NFC") === "승인"),
-    ["승인".normalize("NFD")],
-  );
+  assert.equal(fs.readdirSync(f.family).filter((name) => name.normalize("NFC") === "승인").length, 1);
   assert.equal(checkProductGraph({ root: f.root }).documents.approved, 1);
 });
 
@@ -965,31 +966,59 @@ test("D8: a 확인 that is a file: confirm is refused by name, approve still app
 
 // ---------- review round 3 ----------
 
+// Whether this file system keeps two names that differ only by Unicode
+// normalization apart (Windows, Linux) or treats them as one (macOS APFS).
+function spellingsKeptApart(directory) {
+  const probe = path.join(directory, `spelling-probe-${"가".normalize("NFD")}`);
+  fs.mkdirSync(probe);
+  const apart = !fs.existsSync(path.join(directory, `spelling-probe-${"가".normalize("NFC")}`));
+  fs.rmSync(probe, { recursive: true });
+  return apart;
+}
+
 test("E1: with both spellings of 승인 and 확인 present, approve and confirm write to the composed folder; the build reads both", (t) => {
   const f = project(t);
   let built = buildProductGraph({ root: f.root });
-  // A record in a decomposed 확인, then the composed one appears too.
+  const apart = spellingsKeptApart(f.base);
+  // A record in a decomposed 확인, then the composed spelling too where the
+  // file system can hold both; where it cannot, the two are one folder.
   const first = confirmProductGraph({ root: f.root, features: [SAVE] });
   const decomposedChecks = path.join(f.family, "확인".normalize("NFD"));
   fs.renameSync(f.checks, decomposedChecks);
-  fs.mkdirSync(f.checks);
   fs.mkdirSync(path.join(f.family, "승인".normalize("NFD")));
-  fs.mkdirSync(path.join(f.family, "승인"));
+  if (apart) {
+    fs.mkdirSync(f.checks);
+    fs.mkdirSync(path.join(f.family, "승인"));
+  }
+  const spelled = (name) => fs.readdirSync(f.family).filter((entry) => entry.normalize("NFC") === name);
+  assert.equal(spelled("확인").length, apart ? 2 : 1);
+  assert.equal(spelled("승인").length, apart ? 2 : 1);
   built = buildProductGraph({ root: f.root });
   assert.equal(built.confirmations.counts.current, 1, "the decomposed folder is read");
   const digest = built.documents.list.find((item) => item.path === MAIN).approvalDigest;
   const approved = approveProductGraphDocument({ root: f.root, document: MAIN, expectedSha256: digest, rationale: "ok" });
   assert.equal(approved.status, "recorded");
   assert.equal(approved.codeBasis.status, "recorded");
-  assert.equal(fs.readdirSync(path.join(f.family, "승인")).length, 1, "written where main writes");
-  assert.deepEqual(fs.readdirSync(path.join(f.family, "승인".normalize("NFD"))), []);
-  assert.deepEqual(
-    fs.readdirSync(f.checks),
-    approved.codeBasis.records.map((id) => `${id}.json`),
-  );
-  // The record already in the decomposed folder is not written again.
+  if (apart) {
+    assert.equal(fs.readdirSync(path.join(f.family, "승인")).length, 1, "written where main writes");
+    assert.deepEqual(fs.readdirSync(path.join(f.family, "승인".normalize("NFD"))), []);
+    assert.deepEqual(
+      fs.readdirSync(f.checks),
+      approved.codeBasis.records.map((id) => `${id}.json`),
+    );
+  } else {
+    // One folder each: the writes went into it and no second folder appeared.
+    assert.equal(spelled("승인").length, 1);
+    assert.equal(fs.readdirSync(path.join(f.family, spelled("승인")[0])).length, 1);
+    assert.equal(spelled("확인").length, 1);
+    assert.deepEqual(
+      fs.readdirSync(path.join(f.family, spelled("확인")[0])).sort(),
+      [`${first.records[0]}.json`, ...approved.codeBasis.records.map((id) => `${id}.json`)].sort(),
+    );
+  }
+  // The record already there is not written again.
   assert.equal(confirmProductGraph({ root: f.root, features: [SAVE] }).status, "unchanged");
-  assert.deepEqual(fs.readdirSync(decomposedChecks), [`${first.records[0]}.json`]);
+  if (apart) assert.deepEqual(fs.readdirSync(decomposedChecks), [`${first.records[0]}.json`]);
   built = buildProductGraph({ root: f.root });
   assert.equal(built.documents.approved, 1);
   assert.equal(built.confirmations.counts.current, 6);
