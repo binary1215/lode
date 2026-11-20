@@ -78,6 +78,49 @@ lode-agent product-graph-query <source-root> overview --build <folder>   # a sta
 
 MCP에서는 묶은 도구 `lode_product_graph`의 `query` 동작(`lode_product_graph_query`)이 같은 질문입니다. 사용자 동작이 어떤 코드에 닿는지, 무엇이 한 파일에 닿는지, 빈 곳이 어디인지 알아야 할 때 도움이 됩니다. 타입 없는 스캔이고, 보통 작업의 전제가 아닙니다.
 
+구조화된 답(`--json`, MCP `structuredContent`)은 줄을 데이터로 싣습니다. 그래프 노드를 나타내는 줄에는 `nodeType`(노드 종류), `changedSinceBaseline`(`changed`, `added`, `reachChanged`, `unchanged`. 빌드가 기준과 비교했을 때만), `confirmation`(그 노드가 들어 있는 확인 기록 목록: `neverChecked`, `changedSinceCheck`, `textChanged`, `otherReader`. 들어 있을 때만)도 붙습니다. 확인이 그대로인 노드는 어느 목록에도 없으므로, 확인할 것이 없는 노드처럼 `confirmation`이 없습니다. 빌드는 그대로인 확인을 세기만 하고 나열하지 않기 때문입니다. 시작점(`@…`)에는 이 필드가 없습니다. 답에는 어느 빌드에서 읽었는지를 가리키는 `buildSha256`(`graph.json`과 `check.json`의 바이트. 저장하지 않음)도 있습니다. MCP의 `structuredContent`는 머리말, 제목, 줄로 전체 `text`가 그대로 되살아날 때 그 글을 싣지 않습니다. 도구가 돌려주는 내용 글은 여전히 그 글로 시작하고, CLI의 `--json`도 그대로 싣습니다. 줄보다 글이 더 많은 것을 말하는 답(`changes --list content`의 전후 본문)은 그 글을 그대로 둡니다.
+
+## 여러 질문을 한 번에
+
+`lode_tools_read_chain`(CLI `tools-read-chain <project> --input chain.json`)은 여러 질문을 한 번에 묻고 요청한 줄만 개수와 함께 돌려줍니다. 단계, 상한, 상태는 [MCP 도구 표면](mcp-surface.md#읽기-묶음)에 있습니다. 읽기 전용이고, 아무 권한도 주지 않고, 아무것도 쓰지 않습니다. 답 여러 개를 받아 그중 몇 줄만 고를 때 도움이 됩니다. 질문 하나이거나, 답의 모든 줄을 어차피 읽어야 하면 직접 묻습니다.
+
+다시 볼 것 목록, 그다음 항목마다 무엇이 가리키는지 세기:
+
+```json
+{
+  "project_root": "<project>",
+  "steps": [
+    { "id": "todo", "read": { "name": "lode_product_graph_query", "arguments": { "question": "changes", "list": "reviewAgain" } }, "pages": 3 },
+    { "id": "nodes", "from": "todo", "where": { "field": "kind", "eq": "node" } },
+    { "id": "one", "from": "nodes", "unique": { "by": "id" } },
+    { "id": "callers", "each": { "from": "one", "value": "id" },
+      "read": { "name": "lode_product_graph_query", "arguments": { "question": "up", "id": { "$item": true } } } },
+    { "id": "pointing", "from": "callers", "where": { "all": [{ "field": "kind", "eq": "node" }, { "field": "depth", "gte": 1 }] } },
+    { "id": "busy", "from": "pointing", "count": { "by": "item" } },
+    { "id": "top", "from": "busy", "sort": { "by": "count", "order": "desc" } }
+  ],
+  "return": [{ "from": "top", "limit": 10 }]
+}
+```
+
+찾기, 기준 뒤 바뀐 코드 노드만 남기기, 앞의 두 개 읽기:
+
+```json
+{
+  "project_root": "<project>",
+  "steps": [
+    { "id": "found", "read": { "name": "lode_product_graph_query", "arguments": { "question": "find", "text": "save" } } },
+    { "id": "code", "from": "found", "where": { "all": [{ "field": "nodeType", "eq": "코드" }, { "field": "changedSinceBaseline", "ne": "unchanged" }] } },
+    { "id": "two", "from": "code", "limit": 2 },
+    { "id": "nodes", "each": { "from": "two", "value": "id" },
+      "read": { "name": "lode_product_graph_query", "arguments": { "question": "node", "id": { "$item": true } } } }
+  ],
+  "return": [{ "from": "nodes" }]
+}
+```
+
+한 묶음 안의 제품 그래프 답은 모두 한 빌드에서 나와야 합니다. 두 호출 사이에 빌드가 바뀌면 묶음은 `CHAIN_BUILD_CHANGED`로 멈추고 줄을 하나도 돌려주지 않습니다. 먼저 다시 빌드한 뒤 묻습니다.
+
 ## 기준 뒤 바뀐 것
 
 빌드는 읽은 것을 해시합니다. 코드 노드마다 그 글(파일은 전체, 선언은 줄 범위), 기능마다 종류·처리·처리 코드(그리고 닿는 코드 전체에 대한 두 번째 해시), 문서 노드마다 적힌 값, 읽은 소스 파일마다 그 글(`inputs.sourceFiles`)입니다. 글은 BOM을 빼고 CR LF와 CR을 LF로 바꾼 뒤 비교하므로, 다른 체크아웃의 줄 끝은 아무것도 바꾸지 않고, 선언을 글을 바꾸지 않은 채 파일 안에서 옮겨도 해시는 그대로입니다. 선언은 범위 끝의 빈 줄을 뺀 글로 해시하므로, 파일의 마지막 선언 뒤에 코드를 붙이면 그 파일과 새 선언만 바뀝니다. 줄 끝이 CR뿐인 파일은 파일 전체로는 LF 사본과 같은 해시이지만, 공유 스캔이 한 줄로 읽어서 선언의 줄 범위와 해시는 LF 사본과 다릅니다. 이 해시는 생성된 `build/` 폴더에만 있고, ID는 바뀌지 않습니다. 읽는 방식은 생성기, 그 그래프 버전, 소스 분석 버전으로 비교합니다. Lode 버전은 참고로만 적으므로, 코드를 똑같이 읽는 업그레이드는 바뀐 것으로 치지 않습니다.

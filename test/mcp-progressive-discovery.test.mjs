@@ -77,7 +77,7 @@ test("an absent common direction remains null text, not invalid MCP structuredCo
 });
 
 test("small default catalog discovers every ordinary contract without registering, unlocking or initializing", async () => {
-  assert.equal(tools.length, 22);
+  assert.equal(tools.length, 23);
   assert.deepEqual(
     tools.map((tool) => tool.name).sort(),
     [
@@ -102,6 +102,7 @@ test("small default catalog discovers every ordinary contract without registerin
       "lode_project_direction_update",
       "lode_tools_discover",
       "lode_tools_read",
+      "lode_tools_read_chain",
       "lode_tools_call",
     ].sort(),
   );

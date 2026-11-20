@@ -6,9 +6,10 @@ resource are grouped into one tool that takes an `action`.
 
 ## Default list
 
-The ordinary `tools/list` has 22 tools. It includes `lode_tools_discover`,
-`lode_tools_read` and `lode_tools_call`. Grouping does not change it; grouping
-changes only what discovery and the managed maintenance `tools/list` show.
+The ordinary `tools/list` has 23 tools. It includes `lode_tools_discover`,
+`lode_tools_read`, `lode_tools_call` and `lode_tools_read_chain`. Grouping does
+not change it; grouping changes only what discovery and the managed maintenance
+`tools/list` show.
 
 The native Claude Hook helper `lode_session_host_request_prepare` is not a
 catalog tool. No `tools/list`, discovery or router shows or routes it; only the
@@ -49,6 +50,129 @@ A grouped tool is named after its resource, for example
   runs the same Session, write-guard and managed-surface checks.
 - **Errors.** A missing or unknown `action` is refused with
   `INVALID_TOOL_ARGUMENTS` before any operation runs.
+
+## Read chain
+
+`lode_tools_read_chain` runs several read-only Lode tool calls as one
+declarative step list inside the server and returns only the rows asked for,
+with counts made by Lode. It executes no code: a step is data, not an
+expression. A chain grants nothing and writes nothing (no record, cache or
+temporary file).
+
+```json
+{
+  "project_root": "/path/to/project",
+  "steps": [
+    { "id": "todo", "read": { "name": "lode_product_graph_query", "arguments": { "question": "changes", "list": "reviewAgain" } }, "pages": 3 },
+    { "id": "nodes", "from": "todo", "where": { "field": "kind", "eq": "node" } },
+    { "id": "one", "from": "nodes", "unique": { "by": "id" } },
+    { "id": "callers", "each": { "from": "one", "value": "id", "max": 20 },
+      "read": { "name": "lode_product_graph_query", "arguments": { "question": "up", "id": { "$item": true } } } },
+    { "id": "busy", "from": "callers", "count": { "by": "item" } },
+    { "id": "top", "from": "busy", "sort": { "by": "count", "order": "desc" } }
+  ],
+  "return": [{ "from": "top", "limit": 10 }],
+  "on_error": "continue"
+}
+```
+
+- **Steps.** Every step has an `id` and yields a list of rows (plain objects; a
+  list entry that is not an object becomes `{ "value": … }`), and reads earlier
+  steps only. The eight kinds: `read` (one call; `take` names the row list in the
+  result, a dotted path, default `rows`; a result without a list there is one
+  row; `pages` 1–10 follows the tool's own `page.nextMcpArguments`), `each` with
+  `read` (one call per row of an earlier step, in order; `value` names the field
+  handed over, `{ "$item": true }` as a whole argument value is that value, and
+  each produced row carries `item`), `where` (`eq`, `ne`, `in`, `contains`,
+  `startsWith`, `exists`, `gte`, `lte`, combined with `all` / `any` at most two
+  levels deep), `pick`, `sort` (`by`, `asc` / `desc`, stable), `limit`,
+  `unique` (`by`, the first row wins) and `count` (`by`, rows `{ value, count }`
+  in first-seen order). There are no expressions, regular expressions, string
+  building, branching or loops. `lode_tools_discover` with
+  `name: "lode_tools_read_chain"` returns this reference.
+- **Inner calls.** `project_root` is given once and supplied to every inner call
+  whose schema declares it; an inner `project_root` that names another folder is
+  refused. Each inner call is the request a `lode_tools_read` caller would send,
+  run with the chain request's own caller, Session binding, surface and
+  cancellation signal, so it keeps every check of that route. A router, the
+  discovery tool, the chain itself, an unknown tool or a tool that is not
+  read-only is refused before any call. When an inner tool needs the caller's
+  Session binding, the chain asks for it once (in Claude Code the PreToolUse Hook
+  matches the chain like the other routers).
+- **Before any call.** The whole program is checked first (shape, step
+  references, tools, project root) and every problem is reported at once with
+  status `refused`; then no inner call happens.
+- **One build.** Product graph answers carry `buildSha256`. When a later answer
+  of `lode_product_graph_query` names another build, the chain stops with
+  `CHAIN_BUILD_CHANGED` and returns no rows at all; a next page after a rebuild is
+  reported by the tool itself (`basis-changed`) and stops the chain the same way.
+  Other tools have no such mechanism and are listed in `basis` with
+  `pinned: false`.
+- **Failures.** A failed or refused inner call is recorded in `issues` with its
+  code, the step and the item, and the chain continues; `on_error: "stop"` stops
+  there. Nothing is retried.
+- **Same input, same output.** The same input and the same state give
+  byte-identical output.
+
+### Bounds
+
+| Bound | Value |
+| --- | --- |
+| Steps | 12 |
+| Inner calls in total, pages included | 40 |
+| Calls of one `each` | 20 |
+| Pages of one `read` | 10 |
+| Returned bytes (`max_bytes`) | default 16 KiB, at most 64 KiB |
+| Intermediate rows | 16 MiB |
+| Input | 64 KiB |
+
+A malformed program or too many steps is refused before any call. Every other
+bound cuts: the answer holds what was reached and counts what was not.
+
+### Answer
+
+```json
+{
+  "status": "completed",
+  "ran": { "steps": 6, "calls": 5, "failed": 0, "refused": 0 },
+  "basis": [{ "tool": "lode_product_graph_query", "builtAt": "…", "freshness": "…", "pinned": true }],
+  "header": ["…"],
+  "results": { "top": { "total": 3, "returned": 3, "cut": 0, "rows": [{ "value": "…", "count": 3 }] } },
+  "notSeen": { "pagesLeft": 0, "itemsLeft": 0, "eachSkipped": 0, "callsSkipped": 0, "rowsDropped": 0 },
+  "issues": [],
+  "persisted": false,
+  "grantsAuthorization": false
+}
+```
+
+- `status`: `completed`; `partial` (a bound was reached or an inner call failed
+  or was refused); `stopped` (the build changed, `on_error: "stop"`, or the
+  request was cancelled); `refused` (the program is invalid).
+- Only steps named in `return` carry rows. `total` is the step's rows, `returned`
+  the rows in the answer, `cut` the rest (a `return` `limit` or `max_bytes`).
+- `notSeen`: `pagesLeft` reads that stopped with a next page, `itemsLeft` the
+  items those pages still had, `eachSkipped` rows past an `each` maximum,
+  `callsSkipped` calls not made because of the call bound or full intermediate
+  rows, `rowsDropped` rows dropped at the intermediate bound.
+- Everything was seen only when the status is `completed`, `ran.failed` and
+  `ran.refused` are 0, every `cut` is 0 and every `notSeen` count is 0.
+- A header that every inner answer repeated is given once in `header`;
+  different headers are listed in `headers` with the step they came from.
+- The content text is the JSON answer itself, not a second copy in prose.
+
+The CLI has the same chain, with the same checks and answer:
+`lode-agent tools-read-chain <project> --input chain.json`. The input may omit
+`project_root`.
+
+### Result shapes
+
+`lode_tools_discover` by exact name returns a short `resultShape` for
+`lode_product_graph_query` (rows `rows`; `header`; paging `page.total`,
+`page.remaining`, `page.nextMcpArguments`; build `builtAt`, `buildSha256`),
+`lode_project_graph` (rows `nodes`, also `edges`) and `lode_session_work_read`
+(rows `records`, also `todoContext.items`; next `nextAfterEvidenceId`). For a
+grouped tool, each action with a shape carries it. Other read tools have no
+`rows` list; name their list with `take`, or the whole answer is one row.
 
 ## Deprecated names
 

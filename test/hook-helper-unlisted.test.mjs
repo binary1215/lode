@@ -81,7 +81,7 @@ test("the native Hook helper is unlisted and undiscoverable, a Hook call still c
   await withServer(t, async (call, projectRoot) => {
     // Not listed and not discoverable.
     const listed = (await call("tools/list", {})).result.tools.map((tool) => tool.name);
-    assert.equal(listed.length, 22);
+    assert.equal(listed.length, 23);
     assert.equal(listed.includes(HELPER), false);
     assert.equal(listed.includes("head_session_host_request_prepare"), false);
     const discovered = await call("tools/call", { name: "lode_tools_discover", arguments: { name: HELPER } });

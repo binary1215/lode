@@ -14,6 +14,9 @@ import {
   operationGroup,
   resolveGroupedCall,
 } from "./lib/core/operation-groups.mjs";
+import { READ_CHAIN_REFERENCE, READ_CHAIN_TOOL, READ_CHAIN_TOOL_NAME, runReadChain } from "./lib/core/tools-read-chain.mjs";
+import { resultShapeFor } from "./lib/core/tool-result-shapes.mjs";
+import { productGraphStructuredContent } from "./lib/world/product-graph-answer.mjs";
 const semanticToolName = (name) => resolveOperation(name)?.semanticName ?? name;
 const presentedTools = new WeakMap();
 const presentedTool = (tool) => {
@@ -122,6 +125,7 @@ const discoveryTools = [
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
   },
+  READ_CHAIN_TOOL,
 ];
 // Complete ordinary schemas for programmatic consumers; tools/list stays small.
 // catalogTools is the listed (grouped) catalog; operationCatalogTools keeps every
@@ -148,6 +152,7 @@ export function discoverTools({ name, prefix, offset = 0, limit = 8 } = {}, surf
   )
     throw new Error("Invalid tool discovery selector or page.");
   const available = surfaceTools.map(presentedTool);
+  const asked = name;
   if (name != null) {
     // A deprecated operation name finds the grouped tool that replaced it.
     const membership = groupMembership(resolveOperation(name)?.semanticName);
@@ -187,6 +192,11 @@ export function discoverTools({ name, prefix, offset = 0, limit = 8 } = {}, surf
       nextOffset: null,
     };
   }
+  // The chain router is described by exact name only, with its full step reference.
+  if (name != null && semanticToolName(name) === READ_CHAIN_TOOL_NAME) {
+    const chain = presentedTool(READ_CHAIN_TOOL);
+    return { ...scope, total: 1, offset: 0, nextOffset: null, tools: [{ ...chain, invokeWith: chain.name, reference: READ_CHAIN_REFERENCE }] };
+  }
   const matches = available.filter((tool) => (name != null ? tool.name === name : matchesPrefix(tool, prefix)));
   if (name != null && !matches.length) throw new Error(`Unknown or unavailable tool on ${surface}: ${name}`);
   return {
@@ -198,13 +208,15 @@ export function discoverTools({ name, prefix, offset = 0, limit = 8 } = {}, surf
       ...tool,
       invokeWith: publicToolName(tool.annotations?.readOnlyHint === true ? "lode_tools_read" : "lode_tools_call"),
       ...(isManagedMutation(tool.name) ? { executionMode: "managed" } : {}),
-      ...groupDiscovery(tool.name),
+      ...groupDiscovery(tool.name, name != null),
+      // A result shape only for an exact name: where the rows are, for a chain's take.
+      ...(name != null && (resultShapeFor(asked) ?? resultShapeFor(tool.name)) ? { resultShape: resultShapeFor(asked) ?? resultShapeFor(tool.name) } : {}),
     })),
   };
 }
 
 // Per-action routes of a grouped tool, and the deprecated names it replaced.
-function groupDiscovery(name) {
+function groupDiscovery(name, withShapes = false) {
   const group = operationGroup(name);
   if (!group) return {};
   return {
@@ -216,6 +228,7 @@ function groupDiscovery(name) {
         required: tool.inputSchema?.required ?? [],
         invokeWith: publicToolName(tool.annotations?.readOnlyHint === true ? "lode_tools_read" : "lode_tools_call"),
         ...(isManagedMutation(operation) ? { executionMode: "managed" } : {}),
+        ...(withShapes && resultShapeFor(operation) ? { resultShape: resultShapeFor(operation) } : {}),
       };
     }),
     deprecatedAliases: group.actions.map(({ action, operation }) => ({ name: publicToolName(operation), action, removedIn: DEPRECATED_ALIAS_REMOVAL_VERSION })),
@@ -303,6 +316,8 @@ export async function dispatch(request, options = {}) {
 }
 
 async function dispatchSessionRequest(request, options = {}) {
+  if (request.method === "tools/call" && semanticToolName(request.params?.name) === READ_CHAIN_TOOL_NAME)
+    return await dispatchReadChain(withRecordedProjectRoot(request), options);
   // A root that differs from the recorded one only in drive-letter case is the
   // same Project (Windows only; a read of project.json, never a write).
   request = withRecordedProjectRoot(request);
@@ -471,6 +486,63 @@ async function dispatchSpelledRequest(request, options) {
     }
   }
   return await dispatchRouted(request, options);
+}
+
+// The read chain: each inner call is the request a lode_tools_read caller would
+// send, dispatched with this request's own options (caller, Session resolver,
+// surface, cancellation signal), so every check of that route applies to it.
+export function chainReadTarget(name, args) {
+  const refused = (message) => ({ ok: false, code: "CHAIN_TOOL_REFUSED", message });
+  if (typeof name !== "string") return refused("An inner call names a tool.");
+  let operation = name;
+  try {
+    const grouped = resolveGroupedCall(name, args, publicToolName(name));
+    if (grouped) operation = grouped.name;
+  } catch (error) {
+    return refused(error.message);
+  }
+  const descriptor = resolveOperation(operation);
+  if (descriptor && descriptor.kind !== "operation")
+    return refused(`${publicToolName(name)} cannot be an inner call: routers, discovery and the chain itself are not nested.`);
+  const selected = allTools.find((tool) => semanticToolName(tool.name) === semanticToolName(operation));
+  if (!selected || !descriptor) return refused(`Unknown tool: ${publicToolName(name)}.`);
+  if (selected.annotations?.readOnlyHint !== true) return refused(`${publicToolName(operation)} is not read-only; a chain calls read-only tools only.`);
+  return { ok: true, name, operation: semanticToolName(selected.name), declaresProjectRoot: Boolean(selected.inputSchema?.properties?.project_root) };
+}
+
+async function dispatchReadChain(request, options) {
+  const id = request.id ?? null;
+  try {
+    requireSurface(options.surface ?? "ordinary");
+    const value = await runReadChain(request.params?.arguments, {
+      resolveTarget: chainReadTarget,
+      signal: options.signal,
+      call: async (name, args) =>
+        await dispatchSessionRequest(
+          {
+            jsonrpc: "2.0",
+            id,
+            method: "tools/call",
+            params: { name: publicToolName("lode_tools_read"), arguments: { name: publicToolName(name), arguments: args } },
+          },
+          options,
+        ),
+    });
+    // The content text is the answer itself, never a second copy in prose.
+    return success(id, { content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
+  } catch (error) {
+    return failure(id, error.message, error?.code);
+  }
+}
+
+// The CLI's tools-read-chain: the same chain and output as the MCP router.
+export async function runReadChainRequest(input, { surface = "ordinary", signal } = {}) {
+  const response = await dispatchReadChain(
+    { jsonrpc: "2.0", id: "cli", method: "tools/call", params: { name: READ_CHAIN_TOOL_NAME, arguments: input } },
+    { surface, signal },
+  );
+  if (response.error) throw Object.assign(new Error(response.error.message), { code: response.error.data?.reasonCode });
+  return response.result.structuredContent;
 }
 
 // 4-D (user decision 4-2 (a)). A verified caller may omit
@@ -773,9 +845,12 @@ async function dispatchRouted(
     if (basisMemory) await rememberRecoveryBasis(name, args, value, basisMemory, heldBasis, entryBasis);
     // MCP structuredContent is an optional object, never null/array/scalar.
     // Keep absent originals as their original text value, not fabricated state.
+    // A product graph answer's JSON leaves out the whole text when its rows give
+    // it back exactly; the content text keeps it for reading (R1).
+    const structured = name === "lode_product_graph_query" ? productGraphStructuredContent(value) : value;
     const response = success(id, {
       content: [{ type: "text", text: formatMcpToolContent(name, value) }],
-      ...(value !== null && typeof value === "object" && !Array.isArray(value) ? { structuredContent: value } : {}),
+      ...(structured !== null && typeof structured === "object" && !Array.isArray(structured) ? { structuredContent: structured } : {}),
     });
     const maxResponseBytes = registered?.mcp.maxResponseBytes;
     if (maxResponseBytes != null && Buffer.byteLength(JSON.stringify(response), "utf8") > maxResponseBytes) {
@@ -840,7 +915,7 @@ export function serveMcp({
         return;
       }
       let controller;
-      if (request.method === "tools/call" && requestedToolName(request) === "lode_source_context") {
+      if (request.method === "tools/call" && ["lode_source_context", READ_CHAIN_TOOL_NAME].includes(requestedToolName(request))) {
         sourceRequestId = request.id;
         if (sourceRequests.has(sourceRequestId)) throw new Error("Duplicate active source request id.");
         controller = new AbortController();

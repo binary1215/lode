@@ -127,6 +127,7 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
     `${cliDisplay} product-graph-check <source-root> --documents <folder> --rules <entry-rules.json> [--include-estimates]  # stand-alone, read-only`,
     `${cliDisplay} product-graph-query <project> [overview | node <id> | down <id> | up <id> | reach <id-or-file> | find <text> | gaps | changes | impact] [--list <key>] [--limit <n>] [--cursor <n>] [--depth <n>] [--node-types <types>] [--related-to <ID>] [--edge-types <types>] [--basis-states <states>] [--proposal-base-build <folder>] [--candidate-build <folder>] [--expected-basis-sha256 <hash>]  # read-only; the page's text board`,
     `${cliDisplay} product-graph-query <source-root> <question> [<id>] --build <folder> [--documents <folder>] [--rules <entry-rules.json>]  # a stand-alone output folder; what is not given stays unknown`,
+    `${cliDisplay} tools-read-chain <project> --input <chain.json>  # read-only; several read-only tool calls as one step list, the same as lode_tools_read_chain`,
     `${cliDisplay} product-graph-baseline <project>  # the only way the comparison baseline moves; refused when the build is stale`,
     `${cliDisplay} product-graph-baseline <source-root> --documents <folder> --rules <entry-rules.json> --out <folder>  # stand-alone`,
     `${cliDisplay} product-graph-approve <project> --input <approval.json>  # the user's approval of one document's current content`,
@@ -389,6 +390,22 @@ async function runSpelledCommand(
           ? undefined
           : inputJson({ input: parsed.options["conversation-candidates"] }, "Conversation lookup selectors"),
     });
+  }
+  if (parsed.command === "tools-read-chain") {
+    // The same chain as lode_tools_read_chain: its inner calls go through the
+    // MCP dispatcher with no Host caller, exactly as an MCP call without one.
+    requireOperationSurface(parsed.command, entry.surface);
+    if (index >= 0) throw new Error("A read chain names a Session per inner call (session_id); omit --session.");
+    const input = inputJson(parsed.options, "Read chain");
+    const root = path.resolve(parsed.root);
+    if (input && typeof input === "object" && !Array.isArray(input) && input.project_root !== undefined && path.resolve(String(input.project_root)) !== root)
+      throw Object.assign(new Error("The chain's project_root is another folder than the command's <project>."), { code: "CHAIN_PROJECT_ROOT_MISMATCH" });
+    const { runReadChainRequest } = await import("./mcp-server.mjs");
+    const value = await runReadChainRequest(input && typeof input === "object" && !Array.isArray(input) ? { ...input, project_root: root } : input, {
+      surface: entry.surface,
+      signal,
+    });
+    return value;
   }
   if (["status", "doctor"].includes(parsed.command)) {
     if (argv.lastIndexOf("--session") !== index) throw new Error("Only one logical Session route may be selected.");

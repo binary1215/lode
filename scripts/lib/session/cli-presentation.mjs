@@ -1594,6 +1594,9 @@ export function formatCliResult(command, value, presentation = {}) {
       : value.text;
   if (["product-graph-query", "product-graph-baseline"].includes(command) && typeof value?.text === "string") return value.text;
   if (command === "session-list") return formatSessionList(value);
+  if (command === "tools-read-chain")
+    return `${JSON.stringify(value)}
+`;
   if (command === "runtime-invocation-read") return formatPreparedRuntimeRead(value);
   if (value?.status === "session_selection_unresolved") return formatUnavailableSession(value, { doctor: command === "doctor" });
   if (command === "worker-prepare") return formatWorkerPreparation(value);

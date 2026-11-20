@@ -8,8 +8,8 @@ Lode는 작은 기본 MCP 도구 목록만 나열하고, 나머지 작업은 dis
 
 ## 기본 목록
 
-일반 `tools/list`의 도구는 22개입니다. 여기에는 `lode_tools_discover`,
-`lode_tools_read`, `lode_tools_call`이 포함됩니다. 묶음은 이 목록을 바꾸지 않고,
+일반 `tools/list`의 도구는 23개입니다. 여기에는 `lode_tools_discover`,
+`lode_tools_read`, `lode_tools_call`, `lode_tools_read_chain`이 포함됩니다. 묶음은 이 목록을 바꾸지 않고,
 discovery와 managed maintenance `tools/list`에 보이는 것만 바꿉니다.
 
 Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로그 도구가
@@ -51,6 +51,121 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
   write-guard, managed-surface 검사를 거칩니다.
 - **오류.** `action`이 없거나 알 수 없는 값이면 작업을 실행하기 전에
   `INVALID_TOOL_ARGUMENTS`로 거부합니다.
+
+## 읽기 묶음
+
+`lode_tools_read_chain`은 읽기 전용 Lode 도구 호출 여러 개를 단계 목록 하나로 받아
+서버 안에서 잇고, 요청한 줄과 Lode가 센 개수만 돌려줍니다. 코드를 실행하지 않습니다.
+단계는 식이 아니라 데이터입니다. 묶음은 아무 권한도 주지 않고 아무것도 쓰지 않습니다
+(기록, 캐시, 임시 파일 모두 없음).
+
+```json
+{
+  "project_root": "/path/to/project",
+  "steps": [
+    { "id": "todo", "read": { "name": "lode_product_graph_query", "arguments": { "question": "changes", "list": "reviewAgain" } }, "pages": 3 },
+    { "id": "nodes", "from": "todo", "where": { "field": "kind", "eq": "node" } },
+    { "id": "one", "from": "nodes", "unique": { "by": "id" } },
+    { "id": "callers", "each": { "from": "one", "value": "id", "max": 20 },
+      "read": { "name": "lode_product_graph_query", "arguments": { "question": "up", "id": { "$item": true } } } },
+    { "id": "busy", "from": "callers", "count": { "by": "item" } },
+    { "id": "top", "from": "busy", "sort": { "by": "count", "order": "desc" } }
+  ],
+  "return": [{ "from": "top", "limit": 10 }],
+  "on_error": "continue"
+}
+```
+
+- **단계.** 단계마다 `id`가 있고 줄 목록을 만듭니다(줄은 평범한 객체이고, 객체가
+  아닌 항목은 `{ "value": … }`가 됩니다). 단계는 앞 단계만 읽습니다. 종류는 여덟
+  가지입니다. `read`(한 번 호출. `take`는 결과 안에서 줄 목록이 있는 곳으로, 점으로
+  잇는 경로이고 기본은 `rows`입니다. 그곳에 목록이 없으면 결과 전체가 한 줄입니다.
+  `pages` 1–10은 도구가 돌려준 `page.nextMcpArguments`를 따라갑니다), `each`와
+  `read`(앞 단계의 줄마다 순서대로 한 번씩 호출. `value`는 넘길 필드이고, 인자 값
+  전체가 `{ "$item": true }`이면 그 값이 들어갑니다. 나온 줄마다 `item`이 붙습니다),
+  `where`(`eq`, `ne`, `in`, `contains`, `startsWith`, `exists`, `gte`, `lte`,
+  `all` / `any`로 두 겹까지), `pick`, `sort`(`by`, `asc` / `desc`, 안정 정렬),
+  `limit`, `unique`(`by`, 처음 줄이 남음), `count`(`by`, 처음 나온 순서의
+  `{ value, count }` 줄). 식, 정규식, 문자열 조립, 분기, 반복은 없습니다.
+  `lode_tools_discover`에 `name: "lode_tools_read_chain"`을 주면 이 설명을
+  돌려줍니다.
+- **안쪽 호출.** `project_root`는 한 번만 적고, 스키마에 `project_root`가 있는 안쪽
+  호출마다 채워집니다. 안쪽 호출이 다른 폴더를 가리키면 거부합니다. 안쪽 호출은
+  `lode_tools_read` 호출자가 보낼 요청 그대로이고, 묶음 요청의 호출자, Session
+  연결, 표면, 취소 신호로 실행되므로 그 경로의 검사가 모두 적용됩니다. 라우터,
+  discovery 도구, 묶음 자신, 없는 도구, 읽기 전용이 아닌 도구는 호출 전에 거부합니다.
+  안쪽 도구에 호출자의 Session 연결이 필요하면 묶음이 한 번 확인합니다(Claude
+  Code에서는 PreToolUse Hook이 다른 라우터처럼 묶음에도 걸립니다).
+- **호출 전 검사.** 프로그램 전체(형식, 단계 참조, 도구, 프로젝트 폴더)를 먼저
+  검사하고 틀린 곳을 한꺼번에 `refused`로 알립니다. 그러면 안쪽 호출은 하나도
+  일어나지 않습니다.
+- **한 빌드.** 제품 그래프 답에는 `buildSha256`이 있습니다. 뒤의
+  `lode_product_graph_query` 답이 다른 빌드를 가리키면 묶음은 `CHAIN_BUILD_CHANGED`로
+  멈추고 줄을 하나도 돌려주지 않습니다. 다시 빌드한 뒤의 다음 쪽은 도구가 스스로
+  `basis-changed`로 알리고, 묶음은 같은 방식으로 멈춥니다. 다른 도구에는 이런
+  장치가 없어 `basis`에 `pinned: false`로 적힙니다.
+- **실패.** 안쪽 호출이 실패하거나 거부되면 코드, 단계, 항목과 함께 `issues`에
+  남기고 계속합니다. `on_error: "stop"`이면 거기서 멈춥니다. 다시 시도하지 않습니다.
+- **같은 입력, 같은 출력.** 같은 입력과 같은 상태면 출력 바이트가 같습니다.
+
+### 상한
+
+| 항목 | 값 |
+| --- | --- |
+| 단계 수 | 12 |
+| 안쪽 호출 합계(쪽 넘김 포함) | 40 |
+| `each` 한 번의 호출 | 20 |
+| `read` 한 번의 쪽 | 10 |
+| 돌려주는 크기(`max_bytes`) | 기본 16 KiB, 최대 64 KiB |
+| 중간 줄 | 16 MiB |
+| 입력 | 64 KiB |
+
+형식이 틀렸거나 단계가 너무 많으면 호출 전에 거부합니다. 다른 상한은 자릅니다.
+답에는 닿은 데까지의 결과와 보지 못한 개수가 들어갑니다.
+
+### 답
+
+```json
+{
+  "status": "completed",
+  "ran": { "steps": 6, "calls": 5, "failed": 0, "refused": 0 },
+  "basis": [{ "tool": "lode_product_graph_query", "builtAt": "…", "freshness": "…", "pinned": true }],
+  "header": ["…"],
+  "results": { "top": { "total": 3, "returned": 3, "cut": 0, "rows": [{ "value": "…", "count": 3 }] } },
+  "notSeen": { "pagesLeft": 0, "itemsLeft": 0, "eachSkipped": 0, "callsSkipped": 0, "rowsDropped": 0 },
+  "issues": [],
+  "persisted": false,
+  "grantsAuthorization": false
+}
+```
+
+- `status`: `completed`, `partial`(상한에 닿았거나 안쪽 호출이 실패·거부됨),
+  `stopped`(빌드가 바뀜, `on_error: "stop"`, 요청 취소), `refused`(프로그램이 틀림).
+- `return`에 적은 단계만 줄을 싣습니다. `total`은 그 단계의 줄 수, `returned`는
+  답에 실은 줄 수, `cut`은 나머지(`return`의 `limit`이나 `max_bytes`)입니다.
+- `notSeen`: `pagesLeft`는 다음 쪽이 남은 채 멈춘 읽기 수, `itemsLeft`는 그 쪽들에
+  남은 항목 수, `eachSkipped`는 `each` 상한을 넘은 줄 수, `callsSkipped`는 호출
+  상한이나 중간 줄 상한 때문에 하지 않은 호출 수, `rowsDropped`는 중간 줄 상한에서
+  버린 줄 수입니다.
+- 상태가 `completed`이고, `ran.failed`와 `ran.refused`가 0이고, 모든 `cut`과
+  `notSeen`이 0일 때만 전부 본 것입니다.
+- 모든 안쪽 답이 되풀이한 머리말은 `header`에 한 번만 싣습니다. 서로 다르면
+  `headers`에 나온 단계와 함께 적습니다.
+- 내용 글은 JSON 답 그 자체이고, 줄을 글로 한 번 더 싣지 않습니다.
+
+CLI에도 같은 묶음이 있고, 검사와 답도 같습니다:
+`lode-agent tools-read-chain <project> --input chain.json`. 입력에서
+`project_root`는 빼도 됩니다.
+
+### 결과 모양
+
+`lode_tools_discover`에 정확한 이름을 주면 짧은 `resultShape`를 돌려줍니다.
+`lode_product_graph_query`(줄 `rows`, `header`, 쪽 `page.total`, `page.remaining`,
+`page.nextMcpArguments`, 빌드 `builtAt`, `buildSha256`), `lode_project_graph`(줄
+`nodes`, 그리고 `edges`), `lode_session_work_read`(줄 `records`, 그리고
+`todoContext.items`, 다음 `nextAfterEvidenceId`)입니다. 묶음 도구는 모양이 있는
+action마다 그 모양을 싣습니다. 다른 읽기 도구에는 `rows` 목록이 없습니다. `take`로
+목록을 적거나, 아니면 답 전체가 한 줄이 됩니다.
 
 ## 폐기 예정 이름
 

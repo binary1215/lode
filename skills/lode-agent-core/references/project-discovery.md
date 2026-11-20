@@ -124,6 +124,22 @@ inspect the affected imports and calls directly instead of activating World,
 refreshing everything or creating a Run. Verify retained links against current
 sources before an effect.
 
+**Several reads at once.** `lode_tools_read_chain` runs a declarative list of
+read-only calls (`read`, `each`+`read`, `where`, `pick`, `sort`, `limit`,
+`unique`, `count`) inside the server and returns only the rows asked for, with
+Lode-counted `total` / `returned` / `cut` and `notSeen`. Use it when many
+answers would each be read only to pick a few lines (a list, then one question
+per item, then counts). Do not use it for a single lookup, or for work whose
+content you must read anyway (node contents, before/after text): ask those
+directly. `lode_tools_discover` with `name: "lode_tools_read_chain"` returns the
+step reference and bounds (12 steps, 40 inner calls including pages, 20 per
+`each`, 16 KiB returned by default and at most 64 KiB); discovery by exact name
+returns `resultShape` for the main read tools, so `take` names a real list.
+Every inner call keeps every `lode_tools_read` check; a chain grants nothing and
+writes nothing. Everything was seen only when the status is `completed`,
+`ran.failed` and `ran.refused` are 0 and every `cut` and `notSeen` count is 0; a
+`stopped` chain whose product graph build changed returns no rows.
+
 **Hidden originals.** If an inventory bound hides relevant originals, call
 `lode_project_graph` with `inventory_page: true`, optionally narrowed by
 `inventory_paths` to returned owned record files or directories (CLI

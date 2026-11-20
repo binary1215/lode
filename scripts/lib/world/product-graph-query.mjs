@@ -235,11 +235,14 @@ export function queryProductGraph(options = {}) {
   // The text of a content item is in rows[].detail only; rows[].text keeps its
   // first line, and the presentation text above shows it once more for reading.
   if (Array.isArray(rows)) rows = rows.map((row) => (row.detail?.before || row.detail?.after ? { ...row, text: row.text.split("\n")[0] } : row));
+  // Filter fields on node rows, from what the build already holds (the text stays as it was).
+  if (Array.isArray(rows)) rows = rows.map(nodeRowFields(ctx));
   return {
     status: ok ? "answered" : "refused",
     ...(ok ? {} : { code, message }),
     question,
     builtAt: read.builtAt,
+    buildSha256: buildIdentity(read),
     ...(basisSha256 ? { basisSha256 } : {}),
     freshness: { state: read.freshness.state, text: read.freshness.text },
     ...(proposalFreshness ? { proposalFreshness } : {}),
@@ -248,6 +251,41 @@ export function queryProductGraph(options = {}) {
     text: answerTextNow,
     ...common,
     note: "글자 스캔으로 만든 그래프다. 타입이 없고, 풀린 call·callback만 따라간다.",
+  };
+}
+
+// Which build an answer was read from: the bytes of graph.json and check.json
+// as this answer read them. Not stored; a read chain compares it between calls.
+function buildIdentity(read) {
+  return sha256Hex(canonicalJson({ graph: read.graphFileSha256, check: read.checkFileSha256 }));
+}
+
+// Rows that stand for a graph node carry its type, whether it changed since the
+// baseline (only when the build was compared with one) and the confirmation
+// lists it is in (only where it is in one). Pseudo starts (@…) carry none.
+const CONFIRMATION_KEYS = Object.freeze(["neverChecked", "changedSinceCheck", "textChanged", "otherReader"]);
+const CHANGE_FIELD = Object.freeze({ changed: "changed", added: "added", reach: "reachChanged" });
+function nodeRowFields(ctx) {
+  const compared = ctx.changes?.status === "compared";
+  const confirmed = new Map();
+  if (ctx.confirmations?.status === "compared")
+    for (const key of CONFIRMATION_KEYS)
+      for (const item of walk.confirmationItems(ctx.confirmations, key)) {
+        if (!item.nodeId) continue;
+        if (!confirmed.has(item.nodeId)) confirmed.set(item.nodeId, []);
+        if (!confirmed.get(item.nodeId).includes(key)) confirmed.get(item.nodeId).push(key);
+      }
+  return (row) => {
+    if (row.kind !== "node" || typeof row.id !== "string") return row;
+    const node = ctx.ix.nodes.get(row.id);
+    if (!node) return row;
+    const mark = ctx.marks.get(row.id);
+    return {
+      ...row,
+      nodeType: node.type,
+      ...(compared ? { changedSinceBaseline: CHANGE_FIELD[mark] || "unchanged" } : {}),
+      ...(confirmed.has(row.id) ? { confirmation: confirmed.get(row.id) } : {}),
+    };
   };
 }
 
