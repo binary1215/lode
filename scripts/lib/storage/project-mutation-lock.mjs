@@ -14,6 +14,7 @@ import {
   nestedOwner,
   withLocalMutation,
   finishMutation,
+  startMutation,
 } from "./local-mutation-lock.mjs";
 
 // The lock primitives live in local-mutation-lock.mjs, below the snapshot
@@ -63,6 +64,7 @@ async function withProjectMutationAsyncUncoordinated({ root = ".", scope, storag
     failed = false;
   try {
     recheck();
+    startMutation(owner);
     const active = new Map(context.getStore() || []);
     active.set(directory, owner);
     result = await context.run(active, operation);

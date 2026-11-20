@@ -1622,8 +1622,7 @@ function cleanupConversationResult(observation, cleanup, error) {
   const read = readBackAfterCleanup(project, message.to.address, message.id, owned, message);
   if (read.state === "handed") return { ...resultOf(read.record, read.record.state, read.record.evidence), ...extra };
   if (read.state === "queued") return { ...resultOf(message, "queued", "inbox"), ...extra };
-  const state = operationFailed && error?.conversationTargetRefused === true ? "refused" : "unknown";
-  return { ...resultOf(message, state, "lock-cleanup-outcome-unconfirmed"), persisted: read.persisted, ...extra };
+  return { ...resultOf(message, "unknown", "lock-cleanup-outcome-unconfirmed"), persisted: read.persisted, ...extra };
 }
 
 export async function sendProjectConversation(args = {}) {
@@ -1766,7 +1765,8 @@ async function sendProjectConversationObserved(
       // A frozen error cannot take a property; keep the preservation result apart.
       let preservationError = null;
       try {
-        preserveUnknown(project, owned, error?.code || "delivery-outcome-unknown", state);
+        // Preservation that completed with only its lock cleanup failing is not an error.
+        completedStep(() => preserveUnknown(project, owned, error?.code || "delivery-outcome-unknown", state));
       } catch (cleanup) {
         preservationError = { code: cleanup?.code ?? null };
       }
@@ -1874,9 +1874,22 @@ export function registerHookPresence({ runtime, event, environment = process.env
   }
 }
 
+// A pick-up step whose own work completed but whose lock cleanup failed: the
+// step's result is used (its claims and attempts are written), never redone.
+// What counts as handed over is still decided only by markHanded.
+function completedStep(step) {
+  try {
+    return step();
+  } catch (error) {
+    const cleanup = mutationCleanupFailure(error);
+    if (cleanup?.operationReturned === true) return cleanup.result;
+    throw error;
+  }
+}
+
 function prepareAddressInjection(project, address, evidence, now, options = {}) {
   if (!hasAddressMessages(project, address)) return null;
-  return withMailboxSlot(project, slot(address), () => prepareAddressInjectionLocked(project, address, evidence, now, options));
+  return completedStep(() => withMailboxSlot(project, slot(address), () => prepareAddressInjectionLocked(project, address, evidence, now, options)));
 }
 function prepareAddressInjectionLocked(project, address, evidence, now, { deadlineAt = null, limit = null, prefix = "" } = {}) {
   const fits = limit ? (messages, remaining) => textFits(limit, prefix + renderInjection(messages, remaining)) : null;
@@ -1894,10 +1907,10 @@ function prepareAddressInjectionLocked(project, address, evidence, now, { deadli
   return {
     text: prefix + renderInjection(attempts, remaining + returned),
     commit() {
-      for (const message of attempts) markHanded(project, message, "sent", evidence);
+      for (const message of attempts) completedStep(() => markHanded(project, message, "sent", evidence));
     },
     release() {
-      for (const message of attempts) preserveUnknown(project, message, "prompt-handoff-unconfirmed");
+      for (const message of attempts) completedStep(() => preserveUnknown(project, message, "prompt-handoff-unconfirmed"));
     },
   };
 }
@@ -1980,17 +1993,17 @@ export async function deliverQueuedOpenCode({
     if (record.runtime !== "opencode") continue;
     if (sessionId && record.nativeSessionId !== sessionId) continue;
     if (skip.has(record.nativeSessionId)) continue;
-    const { claimed } = claimAddress(project, record.address, Date.now);
+    const { claimed } = completedStep(() => claimAddress(project, record.address, Date.now));
     for (const claimedMessage of claimed) {
       project.io.assertCurrent();
       const currentPresence = readPresence(project, record.address, environment);
-      const message = beginAttempt(project, claimedMessage);
+      const message = completedStep(() => beginAttempt(project, claimedMessage));
       if (
         !verifiedPresence(project, currentPresence, path.basename(presenceFile(project, record.address)), environment) ||
         currentPresence.registrationGeneration !== record.registrationGeneration ||
         JSON.stringify(currentPresence.channel) !== JSON.stringify(record.channel)
       ) {
-        const refused = preserveUnknown(project, message, "CONVERSATION_TARGET_CHANGED", "refused");
+        const refused = completedStep(() => preserveUnknown(project, message, "CONVERSATION_TARGET_CHANGED", "refused"));
         if (refused) results.push(refused);
         continue;
       }
@@ -2001,11 +2014,11 @@ export async function deliverQueuedOpenCode({
         text: renderInjection([message], 0),
       });
       if (attempt.outcome === "delivered" || attempt.outcome === "sent") {
-        const handed = markHanded(project, message, attempt.outcome, attempt.evidence, attempt.receipt ?? null);
+        const handed = completedStep(() => markHanded(project, message, attempt.outcome, attempt.evidence, attempt.receipt ?? null));
         if (handed) results.push(handed);
-      } else if (attempt.outcome === "unavailable") releaseClaim(project, message);
+      } else if (attempt.outcome === "unavailable") completedStep(() => releaseClaim(project, message));
       else {
-        const unknown = preserveUnknown(project, message, attempt.evidence || "opencode-delivery-unknown");
+        const unknown = completedStep(() => preserveUnknown(project, message, attempt.evidence || "opencode-delivery-unknown"));
         if (unknown) results.push(unknown);
       }
     }

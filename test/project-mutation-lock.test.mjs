@@ -391,3 +391,160 @@ test("sync/async nesting reuses exact ownership and unrelated sync calls cannot 
   }
   assert.deepEqual(fs.readdirSync(parent), []);
 });
+
+// ---------- on an initialized Project (the snapshot reference admission lock) ----------
+
+const { initializeProject } = await import("../scripts/lib/session/lode-core.mjs");
+const pluginRoot = path.resolve(import.meta.dirname, "..");
+
+function initialized(t) {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "lode-lock-project-")));
+  const root = path.join(base, "project");
+  fs.mkdirSync(root);
+  initializeProject({ root, pluginRoot, runtimes: ["claude"] });
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const operations = path.join(root, ".lode", ".operations");
+  return {
+    root,
+    admission: path.join(operations, "snapshot-reference-admission.lock"),
+    scope: path.join(operations, "session-recovery.lock"),
+    participants: path.join(root, ".lode", ".snapshot-gc", "participants"),
+  };
+}
+const entries = (directory) => (fs.existsSync(directory) ? fs.readdirSync(directory) : []);
+function failCleanup(t, directory, times = 3, code = "EBUSY") {
+  const originalUnlink = fs.unlinkSync;
+  const state = { failures: 0 };
+  t.mock.method(fs, "unlinkSync", (file, ...rest) => {
+    if (path.dirname(String(file)) === directory && state.failures < times) {
+      state.failures += 1;
+      throw Object.assign(new Error("fixture lock cleanup failure"), { code });
+    }
+    return originalUnlink(file, ...rest);
+  });
+  return state;
+}
+
+for (const mode of ["sync", "async"]) {
+  test(`project-${mode} on an initialized Project: an admission cleanup failure says the operation did not run`, async (t) => {
+    const project = initialized(t);
+    const before = entries(project.participants);
+    const state = failCleanup(t, project.admission);
+    let effects = 0,
+      observed;
+    try {
+      await runners[mode](project.root, () => {
+        effects += 1;
+        return "done";
+      });
+    } catch (error) {
+      observed = error;
+    }
+    t.mock.restoreAll();
+    assert.equal(state.failures, 3);
+    assert.equal(effects, 0);
+    assert.equal(observed?.code, "SNAPSHOT_REFERENCE_COORDINATION_UNAVAILABLE");
+    assert.equal(observed.operationRan, false);
+    assert.equal(observed.retryable, true);
+    assert.equal(observed.operationReturned, undefined);
+    assert.match(observed.message, /did not run/);
+    assert.doesNotMatch(observed.message, /Do not repeat/);
+    assert.equal(observed.participantWithdrawn, true);
+    assert.equal(mutationCleanupFailure(observed), null);
+    assert.deepEqual(entries(project.participants), before);
+    // On a healthy file system the same process can go on at once.
+    assert.equal(await runners[mode](project.root, () => (effects += 1)), 1);
+    assert.equal(await runners[mode](project.root, () => (effects += 1)), 2);
+    assert.deepEqual(entries(project.admission), []);
+  });
+
+  test(`project-${mode} on an initialized Project: the operation's own lock cleanup failure keeps "returned" and frees the lock for the next call`, async (t) => {
+    const project = initialized(t);
+    failCleanup(t, project.scope);
+    let effects = 0,
+      observed;
+    try {
+      await runners[mode](project.root, () => {
+        effects += 1;
+        return "done";
+      });
+    } catch (error) {
+      observed = error;
+    }
+    t.mock.restoreAll();
+    assert.equal(effects, 1);
+    assert.equal(observed?.code, "LOCAL_MUTATION_CLEANUP_FAILED");
+    assert.equal(observed.operationReturned, true);
+    assert.equal(mutationCleanupFailure(observed)?.result, "done");
+    assert.equal(entries(project.scope).length, 1, "this process's entry is retained");
+    assert.equal(await runners[mode](project.root, () => (effects += 1)), 2);
+    assert.equal(fs.existsSync(project.scope), false);
+  });
+}
+
+test("a retained owner entry of this process is removed by a timer, so another process is not held", async (t) => {
+  const { directory } = fixture(t);
+  failCleanup(t, directory);
+  assert.throws(
+    () => withLocalMutation({ directory, timeoutMs: 0 }, () => "done"),
+    (error) => error.code === "LOCAL_MUTATION_CLEANUP_FAILED",
+  );
+  t.mock.restoreAll();
+  assert.equal(entries(directory).length, 1);
+  const deadline = Date.now() + 5_000;
+  while (fs.existsSync(directory) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(fs.existsSync(directory), false);
+});
+
+test("a cleanup tag left on a reused error object is cleared by a later healthy cleanup", (t) => {
+  const { parent, directory } = fixture(t);
+  const shared = Object.freeze(Object.assign(new Error("shared"), { code: "SHARED" }));
+  failCleanup(t, directory, Infinity);
+  assert.throws(
+    () =>
+      withLocalMutation({ directory, timeoutMs: 0 }, () => {
+        throw shared;
+      }),
+    (error) => error === shared,
+  );
+  assert.equal(mutationCleanupFailure(shared)?.operationReturned, false);
+  t.mock.restoreAll();
+  assert.throws(
+    () =>
+      withLocalMutation({ directory: path.join(parent, "other.lock"), timeoutMs: 0 }, () => {
+        throw shared;
+      }),
+    (error) => error === shared,
+  );
+  assert.equal(mutationCleanupFailure(shared), null);
+});
+
+test("an inner lock's cleanup tag survives the outer lock's healthy cleanup", (t) => {
+  const { parent, directory } = fixture(t);
+  const inner = path.join(parent, "inner.lock");
+  const original = new Error("inner step failed");
+  failCleanup(t, inner, Infinity);
+  assert.throws(
+    () =>
+      withLocalMutation({ directory, timeoutMs: 0 }, () =>
+        withLocalMutation({ directory: inner, timeoutMs: 0 }, () => {
+          throw original;
+        }),
+      ),
+    (error) => error === original,
+  );
+  assert.equal(mutationCleanupFailure(original)?.operationReturned, false);
+  t.mock.restoreAll();
+});
+
+test("an operation that removes its own lock namespace returns its value", (t) => {
+  const { root } = fixture(t);
+  const work = path.join(root, "work");
+  const directory = path.join(work, "locks", "x.lock");
+  fs.mkdirSync(path.dirname(directory), { recursive: true });
+  const value = withLocalMutation({ directory, timeoutMs: 0 }, () => {
+    fs.rmSync(work, { recursive: true, force: true });
+    return "completed";
+  });
+  assert.equal(value, "completed");
+});

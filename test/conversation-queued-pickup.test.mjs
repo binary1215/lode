@@ -776,3 +776,134 @@ for (const stage of ["claim", "handed"]) {
     });
   }
 }
+
+// ---- Pick-up when a slot lock cannot be removed (the step itself completed) ----
+
+const { deliverQueuedOpenCode } = await import("../scripts/lib/session/conversation-messaging.mjs");
+const slotLock = (root, address) =>
+  path.join(root, ".lode", "messaging", ".delivery-locks", crypto.createHash("sha256").update(address).digest("hex") + ".lock");
+// Fails the next three removals of that slot's owner entry once armed.
+function failSlotCleanup(t, directory) {
+  const originalUnlink = fs.unlinkSync;
+  const state = { armed: false, failures: 0 };
+  t.mock.method(fs, "unlinkSync", (file, ...rest) => {
+    if (state.armed && path.dirname(String(file)) === directory && state.failures < 3) {
+      state.failures += 1;
+      throw Object.assign(new Error("fixture lock cleanup failure"), { code: "EBUSY" });
+    }
+    return originalUnlink(file, ...rest);
+  });
+  return state;
+}
+
+test("Stop pick-up whose claim step's lock cannot be removed still hands the prepared mail over, once", async (t) => {
+  const { root, environment } = isolated(t);
+  register(root, environment, "claude", "receiver", { kind: "claude-next-prompt" });
+  const sent = await queue(root, environment, "claude:receiver", "mail behind a stuck lock");
+  const state = failSlotCleanup(t, slotLock(root, "claude:receiver"));
+  state.armed = true;
+  const output = await runSessionHostHook({
+    runtime: "claude",
+    environment,
+    observeOnly: true,
+    event: stop("claude", root, "receiver"),
+    deliver: async () => {},
+  });
+  t.mock.restoreAll();
+  assert.equal(state.failures, 3);
+  assert.match(output.hookSpecificOutput.additionalContext, /mail behind a stuck lock/);
+  assert.equal(archived(root, sent.id).state, "sent");
+  assert.equal(archived(root, sent.id).handedToHost, true);
+  assert.deepEqual(mailbox(root).inflight, []);
+  const again = await runSessionHostHook({
+    runtime: "claude",
+    environment,
+    observeOnly: true,
+    event: stop("claude", root, "receiver"),
+    deliver: async () => {},
+  });
+  assert.deepEqual(again, {});
+});
+
+test("OpenCode pick-up whose claim step's lock cannot be removed still delivers the claimed mail, once", async (t) => {
+  const { root, environment } = isolated(t);
+  register(root, environment, "opencode", "ses_one", { kind: "opencode-async" });
+  const sent = await queue(root, environment, "opencode:ses_one", "opencode mail behind a stuck lock");
+  const prompts = [];
+  const client = {
+    session: {
+      async prompt(input) {
+        prompts.push(input);
+        return { data: { id: "msg_accepted" } };
+      },
+    },
+  };
+  const state = failSlotCleanup(t, slotLock(root, "opencode:ses_one"));
+  state.armed = true;
+  const results = await deliverQueuedOpenCode({ root, client, directory: root, environment, sessionId: "ses_one" });
+  t.mock.restoreAll();
+  assert.equal(state.failures, 3);
+  assert.equal(prompts.length, 1);
+  assert.deepEqual(
+    results.map((item) => [item.id, item.state]),
+    [[sent.id, "delivered"]],
+  );
+  assert.equal(archived(root, sent.id).handedToHost, true);
+  assert.deepEqual(await deliverQueuedOpenCode({ root, client, directory: root, environment, sessionId: "ses_one" }), []);
+  assert.equal(prompts.length, 1);
+});
+
+test("after one stuck slot lock, later sends from the same process are handed over on a healthy file system", async (t) => {
+  const { root, environment } = isolated(t);
+  liveCodex(t, root, environment);
+  const state = failSlotCleanup(t, slotLock(root, "codex:receiver"));
+  state.armed = true;
+  const delivered = [];
+  const send = (body) =>
+    sendProjectConversation({
+      root,
+      caller: caller("claude", "sender"),
+      environment,
+      to: "codex:receiver",
+      body,
+      now: nextNow,
+      waitMs: 0,
+      deliver: async ({ message }) => {
+        delivered.push(message.body);
+        return { outcome: "delivered", evidence: "test-live" };
+      },
+    });
+  const first = await send("first");
+  t.mock.restoreAll();
+  assert.equal(first.reasonCode, "LOCAL_MUTATION_CLEANUP_FAILED");
+  const second = await send("second");
+  assert.equal(second.state, "delivered");
+  // The first message was claimed but never offered: it goes first now, once.
+  assert.deepEqual(delivered, first.state === "queued" ? ["first", "second"] : ["second"]);
+});
+
+test("a preservation that completed with only its lock removal failing is not reported as a preservation error", async (t) => {
+  const { root, environment } = isolated(t);
+  liveCodex(t, root, environment);
+  const state = failSlotCleanup(t, slotLock(root, "codex:receiver"));
+  const result = await sendProjectConversation({
+    root,
+    caller: caller("claude", "sender"),
+    environment,
+    to: "codex:receiver",
+    body: "lost answer",
+    now: nextNow,
+    waitMs: 0,
+    deliver: async () => {
+      state.armed = true; // the next slot step is the preservation
+      throw Object.assign(new Error("fixture lost answer"), { code: "CONVERSATION_DELIVERY_OUTCOME_UNKNOWN" });
+    },
+  });
+  t.mock.restoreAll();
+  assert.equal(state.failures, 3);
+  assert.equal(result.state, "unknown");
+  assert.equal(result.preservationError, null);
+  const kept = archived(root, result.id);
+  assert.equal(kept.state, "unknown");
+  assert.equal(kept.replayAllowed, false);
+});

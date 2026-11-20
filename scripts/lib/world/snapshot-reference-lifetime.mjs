@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import os from "node:os";
 import { performance } from "node:perf_hooks";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { withLocalMutation } from "../storage/local-mutation-lock.mjs";
+import { mutationCleanupFailure, withLocalMutation } from "../storage/local-mutation-lock.mjs";
 import { resolveProjectStorage, assertProjectStorageUnchanged } from "../storage/project-storage-format.mjs";
 import { classifySnapshotFileSystem, darwinFilesystemName } from "./snapshot-filesystem.mjs";
 import { sha256Hex } from "../core/digest.mjs";
@@ -158,13 +158,40 @@ function begin(root, storage) {
     assertNoEligiblePriorAttempt(ns);
     return null;
   }
-  return admission(ns, () => {
-    invalidate(ns);
-    const nonce = crypto.randomBytes(16).toString("hex");
-    const file = path.join(ns.directory, "participants", `${nonce}.json`);
-    fs.writeFileSync(file, JSON.stringify(owner(ns, nonce)), { flag: "wx" });
-    return { ns, nonce, file, active: true, references: 1 };
-  });
+  try {
+    return admission(ns, () => {
+      invalidate(ns);
+      const nonce = crypto.randomBytes(16).toString("hex");
+      const file = path.join(ns.directory, "participants", `${nonce}.json`);
+      fs.writeFileSync(file, JSON.stringify(owner(ns, nonce)), { flag: "wx" });
+      return { ns, nonce, file, active: true, references: 1 };
+    });
+  } catch (error) {
+    const cleanup = mutationCleanupFailure(error);
+    if (cleanup?.operationReturned !== true) throw error;
+    // Registration completed, but the admission lock could not be confirmed
+    // released. The caller's operation has not started: withdraw this
+    // registration (as an ordinary release does, outside admission) and say
+    // the operation did not run, so repeating it is safe.
+    let withdrawn = true;
+    try {
+      release(cleanup.result);
+    } catch {
+      withdrawn = false;
+    }
+    throw Object.assign(
+      new Error(
+        `The operation did not run: the snapshot reference admission lock could not be confirmed released. ${withdrawn ? "Its registration was withdrawn; it is safe to retry." : "Its registration could not be withdrawn and stays until this process ends; it is safe to retry."}`,
+      ),
+      {
+        code: "SNAPSHOT_REFERENCE_COORDINATION_UNAVAILABLE",
+        retryable: true,
+        operationRan: false,
+        cleanup: cleanup.diagnostic,
+        participantWithdrawn: withdrawn,
+      },
+    );
+  }
 }
 function release(token) {
   if (!token || --token.references) return;
