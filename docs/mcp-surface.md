@@ -197,9 +197,11 @@ headers, then issues become counts by code, then `basis` keeps tool names.
   that says something was not checked or compared) or on a row
   (`rows[].missing`: a list cut in prose, a tree cut below the first level, the
   row cap of one answer, the connections of a find result capped at six, a
-  check not run, a comparison not made), a before/after side whose status is
-  `partial` or `unavailable`, and `confirmationComparison` or
-  `baselineComparison` other than `compared`; for `lode_project_graph`,
+  check not run, a comparison not made, the confirmation-record limit, an
+  unread confirmation record), a before/after side whose status is `partial`
+  or `unavailable`, `confirmationComparison` or `baselineComparison` other
+  than `compared`, and an impact preview whose `impact.status` is
+  `unavailable` or `partial`; for `lode_project_graph`,
   `status` `source-fallback` (no graph match), `truncated`, `omittedMatchCount`,
   `boundary.items`, `boundary.omittedCount`, `boundary.omittedAnchorCount`,
   `unmatchedAnchorIds`, `integrity.excluded`,
@@ -210,16 +212,29 @@ headers, then issues become counts by code, then `basis` keeps tool names.
   `workContentCoverage.partial` (and the summary's direction references).
   The project graph's list is not exhaustive, and its coverage is partial by
   design, so a chain over it always has reasons.
+- A mark (`missing`) has a `kind` (`cut`, `rowCap`, `connectionsCut`,
+  `notChecked`, `notCompared`, `recordLimit`, `recordUnread`), the `site` that
+  wrote it, and what it knows: `left`, `shown` and `total`, `present` and
+  `read`, `check` or `list`. The row-cap mark has `left` only when that count is
+  every hidden row. A "비교하지 않음 — …" row answering a list that was not
+  compared has no mark of its own: the mark is on the answer. A 기능's
+  positions shortened in its line ("… 외 N곳") shorten one row's text, not the
+  list, and are not reported.
 - A page continuation row of the product graph (`continues: "nextPage"`) is a
   marker, not a row: a followed page brings its rows, and a page not followed
-  is counted in `notSeen.pagesLeft`.
+  is counted in `notSeen.pagesLeft`. Rows a later page repeats (its root, its
+  headings, a group line) are not added again, so following pages gives the
+  rows one call with a large enough limit gives; `toolItems` in a result is
+  the tool's own item count (`page.total`).
 - `basis` names each inner tool once: `pinned`; for the product graph the first
   answer's `builtAt` and freshness and what it `stated`
   (`confirmationComparison`, `baselineComparison`, and for impact its status
   and reasons); for `lode_project_graph` what it `stated` (coverage state,
   whether a source fallback is needed, excluded layers with reason codes, the
   fallback reason codes, `status` and `unmatchedAnchorIds`). At most four
-  distinct statements per tool; an empty one is left out.
+  distinct statements per tool; an empty one is left out. A list in a
+  statement keeps eight entries and says how many more there were
+  (`<name>Omitted`).
 - Only steps named in `return` carry rows. `total` is the step's rows,
   `returned` the rows in the answer, `cut` the rest (a `return` `limit` or
   `max_bytes`).

@@ -183,8 +183,10 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
   않은 쪽(`page.remaining`), 답의 표시(`missing`. 무언가 검사하거나 비교하지
   않았다는 제목)와 줄의 표시(`rows[].missing`. 글로만 적힌 목록 잘림, 첫 단계
   아래에서 잘린 트리, 한 답의 줄 상한, 여섯 개로 잘린 찾기 결과의 연결, 하지 못한
-  검사, 하지 않은 비교), 상태가 `partial`이나 `unavailable`인 전후 본문 한쪽,
-  `compared`가 아닌 `confirmationComparison`이나 `baselineComparison`입니다.
+  검사, 하지 않은 비교, 확인 기록 개수 한도, 읽지 못한 확인 기록), 상태가 `partial`이나
+  `unavailable`인 전후 본문 한쪽, `compared`가 아닌 `confirmationComparison`이나
+  `baselineComparison`, `impact.status`가 `unavailable`이나 `partial`인 영향
+  미리보기입니다.
   `lode_project_graph`는 `status` `source-fallback`(그래프에 맞는 것이 없음),
   `truncated`, `omittedMatchCount`, `boundary.items`, `boundary.omittedCount`,
   `boundary.omittedAnchorCount`, `unmatchedAnchorIds`, `integrity.excluded`,
@@ -194,14 +196,24 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
   `contentPartial`, `directionContentCoverage.partial`, `workContentCoverage.partial`
   (요약의 방향 참조도)입니다. 프로젝트 그래프의 목록은 빠짐없는 것이 아니고, 그
   커버리지는 설계상 partial이므로 이 도구를 부르는 연쇄 읽기에는 늘 이유가 있습니다.
+- 표시(`missing`)에는 `kind`(`cut`, `rowCap`, `connectionsCut`, `notChecked`,
+  `notCompared`, `recordLimit`, `recordUnread`), 그 표시를 쓴 `site`, 그리고 아는
+  것(`left`, `shown`과 `total`, `present`와 `read`, `check`나 `list`)이 있습니다. 줄
+  상한 표시는 그 수가 숨은 줄 전부일 때만 `left`를 가집니다. 비교하지 않은 목록에
+  답하는 "비교하지 않음 — …" 줄에는 따로 표시가 없고, 표시는 답에 있습니다. 기능의
+  위치를 줄 글에서 줄인 "… 외 N곳"은 줄 하나의 글을 줄인 것이고 목록이 아니므로
+  알리지 않습니다.
 - 제품 그래프의 쪽 이어짐 줄(`continues: "nextPage"`)은 줄이 아니라 표시입니다.
   따라간 쪽은 그 줄들을 가져오고, 따라가지 않은 쪽은 `notSeen.pagesLeft`로 셉니다.
+  뒤의 쪽이 되풀이하는 줄(뿌리, 머리 줄, 묶음 줄)은 다시 넣지 않으므로, 쪽을
+  따라가면 충분히 큰 limit로 한 번 부른 것과 같은 줄이 나옵니다. 결과의
+  `toolItems`는 도구 자신이 센 항목 수(`page.total`)입니다.
 - `basis`는 안쪽 도구마다 한 번씩 적습니다. `pinned`, 제품 그래프는 첫 답의
   `builtAt`과 신선도, 그리고 `stated`한 것(`confirmationComparison`,
   `baselineComparison`, impact면 그 상태와 이유), `lode_project_graph`는 `stated`한
   것(커버리지 상태, 소스로 돌아가야 하는지, 제외된 층과 이유 코드, 대체 이유 코드,
   `status`, `unmatchedAnchorIds`)입니다. 도구마다 서로 다른 것을 넷까지 싣고, 빈
-  것은 싣지 않습니다.
+  것은 싣지 않습니다. 목록은 여덟 개까지 싣고 나머지 수를 적습니다(`<name>Omitted`).
 - `return`에 적은 단계만 줄을 싣습니다. `total`은 그 단계의 줄 수, `returned`는 답에
   실은 줄 수, `cut`은 나머지(`return`의 `limit`이나 `max_bytes`)입니다.
 - `notSeen`: `pagesLeft`는 다음 쪽이 남은 채 멈춘 읽기 수, `itemsLeft`는 그 쪽들에

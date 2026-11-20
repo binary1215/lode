@@ -105,7 +105,7 @@ export const READ_CHAIN_REFERENCE = Object.freeze({
     inputNesting: READ_CHAIN_LIMITS.nestingDepth,
   },
   statuses: {
-    completed: "Everything ran without a failure or a bound.",
+    completed: "Every step ran; no inner call failed or was refused and no bound was reached.",
     partial:
       "A bound was reached, a tool said its answer was cut, or an inner call failed or was refused; the answer holds what was reached and counts the rest.",
     stopped: "The product graph build or baseline changed between calls (no rows are returned), on_error stop met a failed call, or the request was cancelled.",
@@ -479,8 +479,11 @@ function statedCoverage(value, stated = {}) {
   const out = {};
   for (const [name, field] of Object.entries(stated)) {
     let found = fieldValue(value, fieldPath(field));
-    if (Array.isArray(found))
+    if (Array.isArray(found)) {
+      // At most eight entries; how many more there were is said.
+      if (found.length > 8) out[`${name}Omitted`] = found.length - 8;
       found = found.slice(0, 8).map((entry) => (isObject(entry) ? { layer: entry.layer ?? null, reasonCode: entry.reasonCode ?? null } : entry));
+    }
     if (found !== undefined) out[name] = found;
   }
   return out;
@@ -603,10 +606,17 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
 
   // One read with its pages, within budget.left calls of its step. Appends to
   // rows. Returns "skipped" when no call could be made.
+  // The item count each read step's tool gave about itself (summed over the
+  // calls of an each), per step id.
+  const toolItems = new Map();
   const readOnce = async (step, target, args, extra, budget, rows) => {
     let current = supplied(target, args);
     const completeness = target.completeness;
     let remainingBefore = null;
+    // Rows a later page repeats from earlier pages (a root, a heading, a group
+    // line) are not added again: following pages gives the rows one call with a
+    // large enough limit gives.
+    const earlier = new Set();
     for (let page = 1; ; page += 1) {
       // Lets a cancellation notice be read before the next inner call.
       await yieldToEvents();
@@ -681,7 +691,16 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
       }
       // A page marker is not a row: one that was followed brought its page; one
       // that was not is counted in notSeen.pagesLeft.
-      const listed = completeness.pageMarker ? taken.rows.filter((row) => !matchesSpec(row, completeness.pageMarker)) : taken.rows;
+      let listed = completeness.pageMarker ? taken.rows.filter((row) => !matchesSpec(row, completeness.pageMarker)) : taken.rows;
+      if (completeness.pageRepeats) {
+        const frame = (row) => typeof row.depth === "number" && row.depth <= completeness.pageRepeats.depthAtMost;
+        if (page > 1) listed = listed.filter((row) => !(frame(row) && earlier.has(canonicalJson(row))));
+        for (const row of listed) if (frame(row)) earlier.add(canonicalJson(row));
+      }
+      if (page === 1 && completeness.items) {
+        const count = fieldValue(value, fieldPath(completeness.items));
+        if (Number.isInteger(count)) toolItems.set(step.id, (toolItems.get(step.id) ?? 0) + count);
+      }
       keep(extra.item === undefined ? listed : listed.map((row) => ({ ...row, item: extra.item })), rows);
       const next = completeness.pages ? fieldValue(value, fieldPath(completeness.pages.next)) : undefined;
       if (!isObject(next)) return "done";
@@ -783,14 +802,21 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
   for (const entry of input.return) {
     const all = buildChanged ? [] : (produced.get(entry.from) ?? []);
     const limited = entry.limit === undefined ? all : all.slice(0, entry.limit);
-    const result = { total: all.length, returned: 0, cut: all.length, ...(produced.has(entry.from) || buildChanged ? {} : { reached: false }), rows: [] };
+    const result = {
+      total: all.length,
+      ...(toolItems.has(entry.from) && !buildChanged ? { toolItems: toolItems.get(entry.from) } : {}),
+      returned: 0,
+      cut: all.length,
+      ...(produced.has(entry.from) || buildChanged ? {} : { reached: false }),
+      rows: [],
+    };
     output.results[entry.from] = result;
     pending.push({ result, rows: limited });
   }
   return fitAnswer(output, pending, maxBytes, buildChanged ? [] : [...toolSaid]);
 }
 
-// Lode's own verdict: everything was seen only when none of these holds.
+// What Lode knows is missing: one reason per thing it can detect.
 function missingReasons(output, toolReasons) {
   const reasons = [];
   if (output.status !== "completed") reasons.push(`STATUS_${output.status.toUpperCase()}`);

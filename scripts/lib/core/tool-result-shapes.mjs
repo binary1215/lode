@@ -19,6 +19,10 @@ const SHAPES = Object.freeze({
       confirmation: Object.freeze(["neverChecked", "changedSinceCheck", "textChanged", "otherReader"]),
       confirmationComparison: Object.freeze(["compared", "not-read", "absent"]),
       baselineComparison: Object.freeze(["compared", "no-baseline", "absent"]),
+      // missing (on a row, or on the answer for its title): kind, the site that wrote it, and the
+      // numbers it knows (left, shown, total, present, read). rowCap has left only when it is exact.
+      missingKinds: Object.freeze(["cut", "rowCap", "connectionsCut", "notChecked", "notCompared", "recordLimit", "recordUnread"]),
+      continues: Object.freeze(["nextPage"]),
     }),
     header: "header",
     title: "title",
@@ -42,6 +46,10 @@ const SHAPES = Object.freeze({
       pages: Object.freeze({ next: "page.nextMcpArguments", remaining: "page.remaining" }),
       // A page continuation row (continues: nextPage) is a marker, not a row.
       pageMarker: Object.freeze({ field: "continues", eq: "nextPage" }),
+      // A later page repeats its root, headings and group lines (depth 0 and 1).
+      pageRepeats: Object.freeze({ depthAtMost: 1 }),
+      // The tool's own item count for the paged list.
+      items: "page.total",
       // The ways an answer says rows or content are missing from itself. The
       // walk marks every cut and "not checked / not compared" it writes in
       // prose (rows[].missing, and missing on the answer for its title).
@@ -53,6 +61,7 @@ const SHAPES = Object.freeze({
         Object.freeze({ name: "rows[].detail.after.status", rows: "rows", field: "detail.after.status", in: Object.freeze(["partial", "unavailable"]) }),
         Object.freeze({ name: "confirmationComparison", field: "confirmationComparison", ne: "compared" }),
         Object.freeze({ name: "baselineComparison", field: "baselineComparison", ne: "compared" }),
+        Object.freeze({ name: "impact.status", field: "impact.status", in: Object.freeze(["unavailable", "partial"]) }),
       ]),
       identity: "buildSha256",
       // What the answer states about its own basis, given once per tool in the
@@ -91,9 +100,9 @@ const SHAPES = Object.freeze({
       answered: Object.freeze({ field: "status", in: Object.freeze(["available", "source-fallback"]) }),
       code: Object.freeze(["sourceFallback.reasonCodes.0", "integrity.excluded.0.reasonCode", "status"]),
       message: Object.freeze(["sourceFallback.action", "status"]),
-      // Every way an answer says rows or content are missing from itself. The
-      // coverage state is partial by design, so a chain over this tool never
-      // says everything was seen.
+      // Ways an answer says rows or content are missing from itself (not
+      // exhaustive). The coverage state is partial by design, so a chain over
+      // this tool always has reasons in knownMissing.
       signals: Object.freeze([
         Object.freeze({ name: "status=source-fallback", field: "status", eq: "source-fallback" }),
         Object.freeze({ name: "truncated", field: "truncated", eq: true }),
