@@ -39,13 +39,26 @@
   const badge = (text, kind) => el("span", { text, className: `badge badge-${kind}` });
   // Authored text with headings, lists and code fences as blocks; inline
   // Markdown stays literal. Rendered through textContent only.
+  // Line breaks inside a paragraph or list item stay line breaks (<br>).
+  const withBreaks = (tag, text, className = "") => {
+    const node = el(tag, className ? { className } : {});
+    String(text)
+      .split("\n")
+      .forEach((part, index) => {
+        if (index) node.append(document.createElement("br"));
+        node.append(explorerReading.displayText(part));
+      });
+    return node;
+  };
   const richText = (text) => {
     const box = el("div", { className: "rich-text" });
     for (const block of explorerReading.blocks(text)) {
       if (block.kind === "heading") box.append(el("p", { className: `rich-heading rich-h${block.level}`, text: block.text }));
-      else if (block.kind === "list") box.append(el(block.ordered ? "ol" : "ul", {}, ...block.items.map((item) => el("li", { text: item }))));
+      // An ordered item carries the number its author wrote; the list adds none.
+      else if (block.kind === "list")
+        box.append(el(block.ordered ? "ol" : "ul", block.ordered ? { className: "rich-numbered" } : {}, ...block.items.map((item) => withBreaks("li", item))));
       else if (block.kind === "code") box.append(el("pre", { className: "rich-code", text: block.text }));
-      else box.append(el("p", { text: block.text }));
+      else box.append(withBreaks("p", block.text));
     }
     return box;
   };

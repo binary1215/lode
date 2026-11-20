@@ -145,12 +145,18 @@ export const productGraphWalk = (() => {
     return marks;
   }
 
-  // A 기능 whose 뜻 line needs a look, by what the confirmation records say.
+  // A 기능 whose 뜻 line was checked and the check no longer holds. A line
+  // nobody checked carries no mark (it is listed in the confirmation block).
+  const STALE_MEANING_WORDS = Object.freeze({
+    changedSinceCheck: CHECK_WORDS.changedSinceCheck,
+    textChanged: "확인 뒤 뜻 줄이 바뀜",
+    otherReader: CHECK_WORDS.otherReader,
+  });
   function checkMarks(confirmations) {
     const marks = new Map();
     if (!confirmations || confirmations.status !== "compared") return marks;
-    for (const key of ["changedSinceCheck", "textChanged", "otherReader", "neverChecked"])
-      for (const item of confirmations[key] || []) if (item.kind === "meaning" && !marks.has(item.id)) marks.set(item.id, CHECK_WORDS[key]);
+    for (const key of Object.keys(STALE_MEANING_WORDS))
+      for (const item of confirmations[key] || []) if (item.kind === "meaning" && !marks.has(item.id)) marks.set(item.id, STALE_MEANING_WORDS[key]);
     return marks;
   }
 
@@ -1155,6 +1161,8 @@ export const productGraphWalk = (() => {
       `- 확인할 수 있는 뜻 줄·문서 줄 ${c.items}개: 확인 그대로 ${c.current} · 확인한 적 없음 ${c.neverChecked} · 확인 뒤 코드가 바뀜 ${c.changedSinceCheck} · 확인 뒤 글이 바뀜 ${c.textChanged} · 다른 방식으로 읽은 때 확인함 ${c.otherReader}. 확인 기록 ${confirmations.records}개.`,
     );
     lines.push("- 에이전트 확인은 에이전트가 코드를 다시 읽은 기록이고, 사용자 승인은 문서를 승인할 때 함께 남은 기록이다. 어느 것도 권한을 주지 않는다.");
+    if (confirmations.recordLimit)
+      lines.push(`- 확인 기록 ${confirmations.recordLimit.present}개 가운데 파일 이름 순으로 앞의 ${confirmations.recordLimit.read}개만 읽었다. 나머지는 읽지 못한 확인 기록에 있다.`);
     if (confirmations.note) lines.push(`- ${confirmations.note}`);
     return lines;
   }

@@ -6,7 +6,13 @@
 // line describes; "user-approved" is written alongside the user's approval of
 // a document. Both stay distinguishable in every output.
 import { sha256Hex } from "../core/digest.mjs";
-import { productGraphCheckItemKey, productGraphCheckRecord, PRODUCT_GRAPH_CHECK_MAX_ITEMS } from "../storage/product-graph-store.mjs";
+import {
+  productGraphCheckItemKey,
+  productGraphCheckRecord,
+  PRODUCT_GRAPH_CHECK_MAX_BYTES,
+  PRODUCT_GRAPH_CHECK_MAX_ITEMS,
+  PRODUCT_GRAPH_CHECK_MAX_SUPERSEDES,
+} from "../storage/product-graph-store.mjs";
 import { readerKey } from "./product-graph-compare.mjs";
 
 export const CONFIRMATION_ROW_TYPES = Object.freeze(["기능→화면요소", "화면요소→기능", "화면→코드"]);
@@ -44,7 +50,10 @@ export function checkableItems({ graph, meaningDocument, documents }) {
     seen.add(key);
     return true;
   };
-  for (const meaning of meaningDocument?.parsed?.meanings || []) {
+  // The graph shows the last 뜻 row of a 기능; that row is the one checked.
+  const shown = new Map();
+  for (const meaning of meaningDocument?.parsed?.meanings || []) shown.set(meaning.id, meaning);
+  for (const meaning of shown.values()) {
     const node = nodes.get(meaning.id);
     if (!node || node.type !== "기능" || !once({ kind: "meaning", id: meaning.id })) continue;
     items.push({
@@ -98,21 +107,93 @@ export function recordItemFor(item, nodes) {
       };
 }
 
-// Builds the record a command writes. Items is a list of checkable items.
-export function confirmationRecord({ projectId, by, rationale = null, graph, items, checkedAt = new Date().toISOString() }) {
-  const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
-  const stored = items.map((item) => recordItemFor(item, nodes));
-  if (stored.some((item) => !item)) return null;
-  if (stored.length > PRODUCT_GRAPH_CHECK_MAX_ITEMS) return null;
+const instant = (time) => {
+  const value = Date.parse(time);
+  return Number.isFinite(value) ? value : -Infinity;
+};
+
+// The record that counts for each item: among the valid records naming it,
+// the one no other valid record naming it replaces (`supersedes`). Between
+// unrelated records (none replaces the other) the later instant, then the
+// larger id, decides. A pure function of the records: no clock is read.
+export function currentChecks(records) {
+  const naming = new Map();
+  for (const record of records)
+    for (const item of record.items) {
+      const key = productGraphCheckItemKey(item);
+      if (!naming.has(key)) naming.set(key, []);
+      naming.get(key).push({ record, item });
+    }
+  const current = new Map();
+  for (const [key, list] of naming) {
+    const replaced = new Set(list.flatMap(({ record }) => record.supersedes || []));
+    const heads = list.filter(({ record }) => !replaced.has(record.checkId));
+    const pool = heads.length ? heads : list;
+    pool.sort((a, b) => instant(b.record.checkedAt) - instant(a.record.checkedAt) || compare(b.record.checkId, a.record.checkId));
+    current.set(key, pool[0]);
+  }
+  return current;
+}
+
+const readerOf = (graph) => {
   const reader = graph.inputs?.reader || {};
-  return productGraphCheckRecord({
-    projectId,
-    by,
-    checkedAt,
-    rationale,
-    reader: { generator: reader.generator ?? null, graphVersion: reader.graphVersion ?? null, sourceAnalysis: reader.sourceAnalysis ?? null },
-    items: stored,
-  });
+  return { generator: reader.generator ?? null, graphVersion: reader.graphVersion ?? null, sourceAnalysis: reader.sourceAnalysis ?? null };
+};
+const sameStored = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// The records a command writes for checkable items: items whose current
+// record is already of the same kind (by) with the same text and code basis,
+// read the same way, are left out (nothing new to say). The rest go into as
+// many records as the bounds need; each names the current records of its
+// items as replaced. Returns { records, unchanged } or { missingBasis }.
+export function confirmationRecords({ projectId, by, rationale = null, graph, items, records = [], checkedAt = new Date().toISOString() }) {
+  const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
+  const reader = readerOf(graph);
+  const current = currentChecks(records);
+  const pending = [];
+  let unchanged = 0;
+  for (const item of items) {
+    const stored = recordItemFor(item, nodes);
+    if (!stored) return { missingBasis: true };
+    const head = current.get(productGraphCheckItemKey(stored));
+    if (head && head.record.by === by && readerKey(head.record.reader) === readerKey(reader) && sameStored(head.item, stored)) {
+      unchanged += 1;
+      continue;
+    }
+    pending.push({ stored, replaces: head ? [head.record.checkId] : [] });
+  }
+  const build = (chunk) =>
+    productGraphCheckRecord({
+      projectId,
+      by,
+      checkedAt,
+      rationale,
+      reader,
+      items: chunk.map((entry) => entry.stored),
+      supersedes: [...new Set(chunk.flatMap((entry) => entry.replaces))].sort(),
+    });
+  const fits = (chunk) => {
+    if (chunk.length > PRODUCT_GRAPH_CHECK_MAX_ITEMS) return null;
+    if (new Set(chunk.flatMap((entry) => entry.replaces)).size > PRODUCT_GRAPH_CHECK_MAX_SUPERSEDES) return null;
+    const record = build(chunk);
+    // The written file is the record as pretty JSON with a final newline.
+    return Buffer.byteLength(`${JSON.stringify(record, null, 2)}\n`) <= PRODUCT_GRAPH_CHECK_MAX_BYTES ? record : null;
+  };
+  // Halve until every part fits; a single item always fits (its basis is
+  // bounded by the record's own shape).
+  const split = (chunk) => {
+    if (!chunk.length) return [];
+    const record = fits(chunk);
+    if (record) return [record];
+    if (chunk.length === 1) return null;
+    const middle = Math.ceil(chunk.length / 2);
+    const left = split(chunk.slice(0, middle));
+    const right = left && split(chunk.slice(middle));
+    return left && right ? [...left, ...right] : null;
+  };
+  const written = split(pending);
+  if (!written) return { tooLarge: true };
+  return { records: written, unchanged };
 }
 
 const describe = (item) =>
@@ -131,9 +212,7 @@ export function confirmationStatus({ graph, meaningDocument, documents, records,
     };
   const nodes = new Map(graph.nodes.map((node) => [node.id, node]));
   const hashed = graph.nodes.some((node) => typeof node.contentSha256 === "string");
-  const latest = new Map();
-  const ordered = [...records].sort((a, b) => compare(a.checkedAt, b.checkedAt) || compare(a.checkId, b.checkId));
-  for (const record of ordered) for (const item of record.items) latest.set(productGraphCheckItemKey(item), { record, item });
+  const latest = currentChecks(records);
   const readerNow = readerKey(graph.inputs?.reader);
   const result = {
     status: "compared",

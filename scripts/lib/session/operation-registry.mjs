@@ -1771,7 +1771,7 @@ export const OPERATIONS = Object.freeze([
     tool: {
       name: "lode_product_graph_confirm",
       description:
-        "Record an agent's check of product graph 뜻 lines (by 기능 ID) and of every code-linked row of named documents against the code as the current build has it. Use it only after re-reading the code each line describes; it records an agent's check, not the user's approval, and grants nothing. Refused with PRODUCT_GRAPH_BUILD_STALE when the build is not the current source, and with PRODUCT_GRAPH_CHECK_TARGET_MISSING when an item is not in the graph. Writes one confirmation record under 확인/, nothing else; check.txt shows it after the next build.",
+        "Record an agent's check of product graph 뜻 lines (by 기능 ID) and of every code-linked row of named documents against the code as the current build has it. Use it only after re-reading the code each line describes; it records an agent's check, not the user's approval, and grants nothing. Refused with PRODUCT_GRAPH_BUILD_STALE when the build is not the current source, with PRODUCT_GRAPH_CHECK_TARGET_MISSING when an item is not in the graph, and with PRODUCT_GRAPH_CHECK_LIMIT when the records would pass 2000; a refusal writes nothing. Writes confirmation records under 확인/ (500 items each) and nothing else; items whose current record is already an agent check of the same code basis are not written again (status unchanged). check.txt shows them after the next build.",
       inputSchema: {
         type: "object",
         properties: {

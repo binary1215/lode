@@ -735,8 +735,9 @@ for (const stage of ["claim", "handed"]) {
       assert.deepEqual(delivered, stage === "claim" ? [] : ["older message"]);
       const handed = stage === "handed" ? 1 : 0;
       // A claim that was never offered goes back to the queue when the slot can
-      // be taken again; only a claim it cannot release stays unknown.
-      const requeued = stage === "claim" && owner === "released" ? 1 : 0;
+      // be taken again. A retained entry is this process's own: its next
+      // attempt removes it, so the slot can be taken in both cases.
+      const requeued = stage === "claim" ? 1 : 0;
       assert.deepEqual(result.earlier, {
         handed,
         unknown: 1 - handed - requeued,
@@ -744,16 +745,9 @@ for (const stage of ["claim", "handed"]) {
         cleanup: { code: "UNKNOWN", ownerReleased: owner === "released" },
       });
       if (stage === "handed") assert.equal(archived(root, older.id).state, "delivered");
-      if (owner === "released") {
-        // The slot could be taken again, so the new message went back to the queue.
-        assert.equal(result.state, "queued");
-        assert.deepEqual(queuedIds(root).sort(), (requeued ? [older.id, result.id] : [result.id]).sort());
-      } else {
-        assert.equal(result.state, "unknown");
-        assert.equal(result.reasonCode, "LOCAL_MUTATION_CLEANUP_FAILED");
-        assert.equal(result.persisted, true);
-        assert.ok(result.id);
-      }
+      // The slot could be taken again, so the new message went back to the queue.
+      assert.equal(result.state, "queued");
+      assert.deepEqual(queuedIds(root).sort(), (requeued ? [older.id, result.id] : [result.id]).sort());
       // The retained owner belongs to this process; a later process would find
       // it stale. Remove it here, then send again: nothing is handed over twice.
       fs.rmSync(directory, { recursive: true, force: true });
@@ -772,7 +766,7 @@ for (const stage of ["claim", "handed"]) {
       // is handed over for the first time by the later pass.
       const count = (body) => delivered.filter((item) => item === body).length;
       assert.equal(count("older message"), handed + requeued);
-      assert.equal(count("newer message"), owner === "released" ? 1 : 0);
+      assert.equal(count("newer message"), 1);
     });
   }
 }

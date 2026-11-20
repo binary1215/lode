@@ -1622,7 +1622,9 @@ function cleanupConversationResult(observation, cleanup, error) {
   const read = readBackAfterCleanup(project, message.to.address, message.id, owned, message);
   if (read.state === "handed") return { ...resultOf(read.record, read.record.state, read.record.evidence), ...extra };
   if (read.state === "queued") return { ...resultOf(message, "queued", "inbox"), ...extra };
-  return { ...resultOf(message, "unknown", "lock-cleanup-outcome-unconfirmed"), persisted: read.persisted, ...extra };
+  // A step that failed because the target refused keeps that meaning.
+  const state = operationFailed && error?.conversationTargetRefused === true ? "refused" : "unknown";
+  return { ...resultOf(message, state, "lock-cleanup-outcome-unconfirmed"), persisted: read.persisted, ...extra };
 }
 
 export async function sendProjectConversation(args = {}) {

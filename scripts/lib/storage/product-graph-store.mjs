@@ -186,7 +186,14 @@ export const PRODUCT_GRAPH_CHECK_VERSION = 1;
 export const PRODUCT_GRAPH_CHECK_MAX_ITEMS = 500;
 export const PRODUCT_GRAPH_CHECK_MAX_BYTES = 256 * 1024;
 export const PRODUCT_GRAPH_CHECK_MAX_RECORDS = 2000;
-const ISO_TIME = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{3})?Z$/;
+// One time format (what Date#toISOString writes); times are compared as instants.
+const ISO_TIME = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$/;
+// The records a new record replaces for its items (explicit supersession).
+// The current record of an item is the valid one naming it that no other
+// valid record naming it replaces; time only breaks ties between unrelated
+// records. Bounded so a record stays readable.
+export const PRODUCT_GRAPH_CHECK_MAX_SUPERSEDES = 2000;
+const CHECK_ID = /^product-graph-check-[a-f0-9]{24}$/;
 const readerValue = (value) => value === null || (typeof value === "string" && value.length <= 256) || (typeof value === "number" && Number.isFinite(value));
 const CHECK_BY = Object.freeze({
   "agent-checked": "agent-check-of-code-not-user-approval",
@@ -222,8 +229,9 @@ function checkItem(item) {
   if (!item || typeof item !== "object" || Array.isArray(item)) fail("PRODUCT_GRAPH_CHECK_INVALID");
   const keys = Object.keys(item).sort().join(",");
   if (item.kind === "meaning") {
-    if (keys !== "basis,id,kind,textSha256" || !isText(item.id) || nfc(item.id) !== item.id || !HEX64.test(item.textSha256))
-      fail("PRODUCT_GRAPH_CHECK_INVALID");
+    // Ids are stored exactly as the graph has them (a decomposed file name
+    // gives a decomposed id): never normalised, never rejected for it.
+    if (keys !== "basis,id,kind,textSha256" || !isText(item.id) || !HEX64.test(item.textSha256)) fail("PRODUCT_GRAPH_CHECK_INVALID");
     const basis = checkBasis(item.basis);
     // The basis names the 기능 the line describes.
     if (!basis.some((node) => node.id === item.id)) fail("PRODUCT_GRAPH_CHECK_INVALID");
@@ -234,7 +242,6 @@ function checkItem(item) {
     const target = classifyProductGraphPath(item.document);
     if (!target?.approvable || target.role !== "document" || nfc(item.document) !== item.document) fail("PRODUCT_GRAPH_CHECK_INVALID");
     if (!ROW_TYPES.includes(item.type) || !isText(item.from) || !isText(item.to) || !HEX64.test(item.documentTextSha256)) fail("PRODUCT_GRAPH_CHECK_INVALID");
-    if (nfc(item.from) !== item.from || nfc(item.to) !== item.to) fail("PRODUCT_GRAPH_CHECK_INVALID");
     const basis = checkBasis(item.basis);
     // The basis names the node the row says something about.
     const rowTarget = item.type === "기능→화면요소" ? item.from : item.to;
@@ -266,6 +273,15 @@ function checkPayload(record) {
   if (!Array.isArray(record.items) || !record.items.length || record.items.length > PRODUCT_GRAPH_CHECK_MAX_ITEMS) fail("PRODUCT_GRAPH_CHECK_INVALID");
   const items = sortedBy(record.items.map(checkItem), productGraphCheckItemKey);
   if (new Set(items.map(productGraphCheckItemKey)).size !== items.length) fail("PRODUCT_GRAPH_CHECK_INVALID");
+  const supersedes = record.supersedes ?? [];
+  if (
+    !Array.isArray(supersedes) ||
+    supersedes.length > PRODUCT_GRAPH_CHECK_MAX_SUPERSEDES ||
+    !supersedes.every((id) => typeof id === "string" && CHECK_ID.test(id))
+  )
+    fail("PRODUCT_GRAPH_CHECK_INVALID");
+  const replaced = [...new Set(supersedes)].sort();
+  if (replaced.length !== supersedes.length) fail("PRODUCT_GRAPH_CHECK_INVALID");
   return {
     schemaVersion: 1,
     kind: "ProductGraphConfirmation",
@@ -276,14 +292,15 @@ function checkPayload(record) {
     rationale: record.rationale === null ? null : record.rationale.trim(),
     reader: { generator: reader.generator ?? null, graphVersion: reader.graphVersion ?? null, sourceAnalysis: reader.sourceAnalysis ?? null },
     items,
+    supersedes: replaced,
     authority: CHECK_BY[record.by],
     instructionAuthority: false,
     executionAuthority: false,
   };
 }
 
-export function productGraphCheckRecord({ projectId, by, checkedAt, rationale = null, reader, items }) {
-  const payload = checkPayload({ projectId, by, checkedAt, rationale, reader, items });
+export function productGraphCheckRecord({ projectId, by, checkedAt, rationale = null, reader, items, supersedes = [] }) {
+  const payload = checkPayload({ projectId, by, checkedAt, rationale, reader, items, supersedes });
   const checkHash = sha256Hex(canonicalJson(payload));
   return { ...payload, checkId: `product-graph-check-${checkHash.slice(0, 24)}`, checkHash };
 }
@@ -300,6 +317,7 @@ export function verifyProductGraphCheck(document, { projectId = null, checkId = 
     "rationale",
     "reader",
     "items",
+    "supersedes",
     "authority",
     "instructionAuthority",
     "executionAuthority",

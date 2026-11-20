@@ -31,7 +31,7 @@ import {
   verifyProductGraphCheck,
   verifyProductGraphRules,
 } from "../storage/product-graph-store.mjs";
-import { checkableItems, confirmationRecord, confirmationStatus } from "./product-graph-confirmations.mjs";
+import { checkableItems, confirmationRecords, confirmationStatus } from "./product-graph-confirmations.mjs";
 import {
   CORE_HEADINGS,
   parseActivityDocument,
@@ -172,8 +172,8 @@ function assertNoLinkedComponents(projectRoot, target) {
 // listed, never parsed.
 function readDocumentFiles(directory) {
   const files = [],
-    unrecognized = [];
-  let checks = 0;
+    unrecognized = [],
+    checks = [];
   const visit = (prefix, absolute) => {
     for (const entry of listDirectory(absolute)) {
       const name = nfc(entry.name);
@@ -189,10 +189,13 @@ function readDocumentFiles(directory) {
         unrecognized.push(relative);
         continue;
       }
-      // Confirmation records are counted apart from the documents, so they
-      // never push a Project over the document limit.
-      if (target.role === "check" ? ++checks > PRODUCT_GRAPH_CHECK_MAX_RECORDS : files.length - checks >= PRODUCT_GRAPH_MAX_FILES)
-        fail("PRODUCT_GRAPH_TOO_MANY_FILES");
+      // Confirmation records are read apart (below): nothing in 확인/ can
+      // stop a build, a check or a baseline move.
+      if (target.role === "check") {
+        checks.push({ path: relative, ...target, absolute: path.join(absolute, entry.name) });
+        continue;
+      }
+      if (files.length >= PRODUCT_GRAPH_MAX_FILES) fail("PRODUCT_GRAPH_TOO_MANY_FILES");
       const bytes = readBounded(path.join(absolute, entry.name));
       files.push({ path: relative, ...target, bytes, sha256: sha256Hex(bytes) });
     }
@@ -205,7 +208,72 @@ function readDocumentFiles(directory) {
     files: files.filter((file) => !twins.includes(file.path)).sort((a, b) => compare(a.path, b.path)),
     unrecognized: unrecognized.sort(),
     twins: twins.sort(),
+    ...readCheckFiles(checks),
   };
+}
+
+// Confirmation records, in file-name order: the first
+// PRODUCT_GRAPH_CHECK_MAX_RECORDS are read, each up to
+// PRODUCT_GRAPH_CHECK_MAX_BYTES. A record over the size, one that cannot be
+// read, and every record past the count is an issue naming its file; an issue
+// excuses nothing and never fails the build.
+function readCheckFiles(entries) {
+  const checkFiles = [],
+    checkIssues = [];
+  const ordered = [...entries].sort((a, b) => compare(a.path, b.path));
+  const seen = new Set();
+  for (const [index, entry] of ordered.entries()) {
+    const issue = ({ code }, reason, extra = {}) => checkIssues.push({ path: entry.path, code, reason, ...extra });
+    if (seen.has(entry.path)) {
+      issue({ code: "PRODUCT_GRAPH_CHECK_INVALID" }, "같은 이름(정규화 뒤)의 확인 기록이 둘 이상이다");
+      continue;
+    }
+    seen.add(entry.path);
+    if (index >= PRODUCT_GRAPH_CHECK_MAX_RECORDS) {
+      issue(
+        { code: "PRODUCT_GRAPH_CHECK_LIMIT" },
+        `확인 기록이 ${PRODUCT_GRAPH_CHECK_MAX_RECORDS}개를 넘어 읽지 않았다(파일 이름 순으로 앞의 ${PRODUCT_GRAPH_CHECK_MAX_RECORDS}개만 읽는다)`,
+      );
+      continue;
+    }
+    let stat;
+    try {
+      stat = fs.lstatSync(entry.absolute);
+    } catch (error) {
+      issue({ code: "PRODUCT_GRAPH_CHECK_UNREADABLE" }, "확인 기록을 읽지 못했다", { errno: error.code || null });
+      continue;
+    }
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      issue({ code: "PRODUCT_GRAPH_CHECK_INVALID" }, "확인 기록이 일반 파일이 아니다");
+      continue;
+    }
+    if (stat.size > PRODUCT_GRAPH_CHECK_MAX_BYTES) {
+      issue({ code: "PRODUCT_GRAPH_CHECK_LIMIT" }, `확인 기록이 ${PRODUCT_GRAPH_CHECK_MAX_BYTES}바이트를 넘어 읽지 않았다`, { bytes: stat.size });
+      continue;
+    }
+    let bytes;
+    try {
+      bytes = fs.readFileSync(entry.absolute);
+    } catch (error) {
+      issue({ code: "PRODUCT_GRAPH_CHECK_UNREADABLE" }, "확인 기록을 읽지 못했다", { errno: error.code || null });
+      continue;
+    }
+    if (bytes.length > PRODUCT_GRAPH_CHECK_MAX_BYTES) {
+      issue({ code: "PRODUCT_GRAPH_CHECK_LIMIT" }, `확인 기록이 ${PRODUCT_GRAPH_CHECK_MAX_BYTES}바이트를 넘어 읽지 않았다`, { bytes: bytes.length });
+      continue;
+    }
+    checkFiles.push({ path: entry.path, role: entry.role, checkId: entry.checkId, bytes, sha256: sha256Hex(bytes) });
+  }
+  const recordLimit = ordered.length > PRODUCT_GRAPH_CHECK_MAX_RECORDS ? { present: ordered.length, read: PRODUCT_GRAPH_CHECK_MAX_RECORDS } : null;
+  return { checkFiles, checkIssues, recordLimit, checkRecordsSha256: checkRecordsDigest(ordered, checkFiles) };
+}
+
+// What the build read from 확인/: every name with its content hash (or that
+// it was not read). Freshness compares it, so a record changed in place is
+// noticed before the next build.
+function checkRecordsDigest(ordered, checkFiles) {
+  const read = new Map(checkFiles.map((file) => [file.path, file.sha256]));
+  return sha256Hex(JSON.stringify(ordered.map((entry) => [entry.path, read.get(entry.path) ?? null])));
 }
 
 function resolveInputs(options) {
@@ -314,8 +382,8 @@ function loadDocuments(inputs) {
   // Confirmation records (project mode only, like approvals). One that does
   // not verify is an issue naming its file and excuses nothing.
   const checkRecords = [];
-  const checkIssues = [];
-  for (const file of read.files.filter((item) => item.role === "check")) {
+  const checkIssues = inputs.approvals ? [...read.checkIssues] : [];
+  for (const file of read.checkFiles) {
     if (!inputs.approvals) continue;
     try {
       checkRecords.push(verifyProductGraphCheck(JSON.parse(decodeProductGraphText(file.bytes)), { projectId: inputs.projectId, checkId: file.checkId }));
@@ -363,7 +431,18 @@ function loadDocuments(inputs) {
       parsed,
     });
   }
-  return { documents, unrecognized: read.unrecognized, twins: read.twins, approvalIssues, approvalsRead: inputs.approvals, checkRecords, checkIssues };
+  checkIssues.sort((a, b) => compare(a.path, b.path));
+  return {
+    documents,
+    unrecognized: read.unrecognized,
+    twins: read.twins,
+    approvalIssues,
+    approvalsRead: inputs.approvals,
+    checkRecords,
+    checkIssues,
+    checkRecordsSha256: read.checkRecordsSha256,
+    checkRecordLimit: read.recordLimit,
+  };
 }
 
 // A document is used as the product description only while 승인. One whose
@@ -1056,13 +1135,21 @@ function confirmationsOf({ graph, computed, loaded }) {
     read: loaded.approvalsRead,
   });
   if (status.status !== "compared") return status;
-  return { ...status, recordFiles: confirmationFileNames(loaded) };
+  return { ...status, ...(loaded.checkRecordLimit ? { recordLimit: loaded.checkRecordLimit } : {}), recordsSha256: loaded.checkRecordsSha256 };
 }
 
-const confirmationFileNames = (loaded) =>
-  [...loaded.checkRecords.map((record) => `${PRODUCT_GRAPH_CHECK_DIRECTORY}/${record.checkId}.json`), ...loaded.checkIssues.map((issue) => issue.path)].sort(
-    compare,
-  );
+// The records in 확인/ as they are now (names and contents), read the way a
+// build reads them.
+function checkRecordsNow(documentsDirectory) {
+  const directory = path.join(documentsDirectory, PRODUCT_GRAPH_CHECK_DIRECTORY);
+  const entries = [];
+  for (const entry of listDirectory(directory)) {
+    const relative = `${PRODUCT_GRAPH_CHECK_DIRECTORY}/${nfc(entry.name)}`;
+    const target = classifyProductGraphPath(relative);
+    if (entry.isFile() && target?.role === "check") entries.push({ path: relative, ...target, absolute: path.join(directory, entry.name) });
+  }
+  return readCheckFiles(entries);
+}
 
 // The comparison with the baseline (8A.3). A missing baseline is taken from
 // this build by a build (never by a check); an unreadable one is reported and
@@ -1343,18 +1430,15 @@ function freshnessOf(inputs, graph) {
 // said next to the freshness; it does not make the build stale (the graph is
 // still the source as it is) and blocks nothing.
 function withConfirmationFiles(freshness, inputs, check) {
-  const recorded = check?.confirmations?.recordFiles;
-  if (inputs?.mode !== "project" || !Array.isArray(recorded)) return freshness;
+  const recorded = check?.confirmations?.recordsSha256;
+  if (inputs?.mode !== "project" || typeof recorded !== "string") return freshness;
   let now;
   try {
-    now = readDocumentFiles(inputs.documentsDirectory)
-      .files.filter((file) => file.role === "check")
-      .map((file) => file.path)
-      .sort(compare);
+    now = checkRecordsNow(inputs.documentsDirectory).checkRecordsSha256;
   } catch {
     return freshness;
   }
-  const changed = now.length !== recorded.length || now.some((name, index) => name !== recorded[index]);
+  const changed = now !== recorded;
   if (!changed) return { ...freshness, confirmations: { changed: false } };
   const note = "확인 기록이 빌드 뒤 바뀜 — 다시 빌드하면 확인 상태에 반영된다";
   return { ...freshness, confirmations: { changed: true, text: note }, text: `${freshness.text} · ${note}` };
@@ -1560,30 +1644,40 @@ function currentBuildGraph(root) {
 
 const checkableOf = (ran) => checkableItems({ graph: ran.graph, meaningDocument: ran.computed.meaningDocument, documents: ran.loaded.documents });
 
-function writeCheckRecord({ projectRoot, family, record }) {
+// Writes the records of one command. Everything is checked first: a refusal
+// (too many records, a linked path, a colliding name) writes nothing.
+function writeCheckRecords({ projectRoot, family, records }) {
   const directory = path.join(family, PRODUCT_GRAPH_CHECK_DIRECTORY);
-  const destination = path.join(directory, `${record.checkId}.json`);
-  assertNoLinkedComponents(projectRoot, destination);
-  // Never write what a build could not read back, nor past the record count.
-  const text = json(record);
-  if (Buffer.byteLength(text) > PRODUCT_GRAPH_CHECK_MAX_BYTES)
-    fail("PRODUCT_GRAPH_CHECK_LIMIT", `확인 기록 하나가 ${PRODUCT_GRAPH_CHECK_MAX_BYTES}바이트를 넘는다. 나눠서 확인한다.`);
-  const existing = fs.existsSync(directory)
-    ? listDirectory(directory).filter((entry) => classifyProductGraphPath(`${PRODUCT_GRAPH_CHECK_DIRECTORY}/${nfc(entry.name)}`)?.role === "check")
-    : [];
-  if (existing.length >= PRODUCT_GRAPH_CHECK_MAX_RECORDS && !fs.existsSync(destination))
-    fail("PRODUCT_GRAPH_CHECK_LIMIT", `확인 기록이 ${PRODUCT_GRAPH_CHECK_MAX_RECORDS}개로 한도에 닿아 더 쓰지 않는다.`);
-  if (fs.existsSync(destination)) {
-    const existing = verifyProductGraphCheck(JSON.parse(decodeProductGraphText(readBounded(destination))), {
-      projectId: record.projectId,
-      checkId: record.checkId,
-    });
-    if (existing.checkHash !== record.checkHash) fail("PRODUCT_GRAPH_CHECK_COLLISION");
-    return "existing";
-  }
-  fs.mkdirSync(directory, { recursive: true });
-  atomicCreateArtifact(destination, text);
-  return "recorded";
+  const planned = records.map((record) => {
+    const destination = path.join(directory, `${record.checkId}.json`);
+    assertNoLinkedComponents(projectRoot, destination);
+    const text = json(record);
+    // A record a build could not read back is never written.
+    if (Buffer.byteLength(text) > PRODUCT_GRAPH_CHECK_MAX_BYTES)
+      fail("PRODUCT_GRAPH_CHECK_LIMIT", `확인 기록 하나가 ${PRODUCT_GRAPH_CHECK_MAX_BYTES}바이트를 넘는다.`);
+    let existing = false;
+    if (fs.existsSync(destination)) {
+      const stored = verifyProductGraphCheck(JSON.parse(decodeProductGraphText(readBounded(destination))), {
+        projectId: record.projectId,
+        checkId: record.checkId,
+      });
+      if (stored.checkHash !== record.checkHash) fail("PRODUCT_GRAPH_CHECK_COLLISION");
+      existing = true;
+    }
+    return { destination, text, existing };
+  });
+  const present = fs.existsSync(directory)
+    ? listDirectory(directory).filter((entry) => classifyProductGraphPath(`${PRODUCT_GRAPH_CHECK_DIRECTORY}/${nfc(entry.name)}`)?.role === "check").length
+    : 0;
+  const added = planned.filter((entry) => !entry.existing).length;
+  if (present + added > PRODUCT_GRAPH_CHECK_MAX_RECORDS)
+    fail(
+      "PRODUCT_GRAPH_CHECK_LIMIT",
+      `확인 기록이 ${present}개 있어, ${added}개를 더 쓰면 한도 ${PRODUCT_GRAPH_CHECK_MAX_RECORDS}개를 넘는다. 아무것도 쓰지 않았다.`,
+    );
+  if (added) fs.mkdirSync(directory, { recursive: true });
+  for (const entry of planned) if (!entry.existing) atomicCreateArtifact(entry.destination, entry.text);
+  return { recorded: added, existing: planned.length - added };
 }
 
 const PRODUCT_GRAPH_CHECK_NOTE =
@@ -1621,26 +1715,38 @@ export function confirmProductGraph({ root = ".", features = [], documents = [],
       else missing.push(`${document}: 코드와 잇는 행(기능→화면요소, 화면요소→기능, 화면→코드)이 없는 문서다`);
     }
     if (missing.length) fail("PRODUCT_GRAPH_CHECK_TARGET_MISSING", `확인할 것이 없다: ${missing.join(" / ")}`);
-    const record = confirmationRecord({ projectId: inspected.project.projectId, by: "agent-checked", rationale, graph: current.ran.graph, items });
-    if (!record) fail("PRODUCT_GRAPH_CHECK_TARGET_INVALID", "한 번에 확인할 수 있는 것보다 많거나, 내용 해시가 없는 노드를 가리킨다.");
-    const status = writeCheckRecord({ projectRoot, family, record });
-    const records = status === "existing" ? current.ran.loaded.checkRecords : [...current.ran.loaded.checkRecords, record];
+    const made = confirmationRecords({
+      projectId: inspected.project.projectId,
+      by: "agent-checked",
+      rationale,
+      graph: current.ran.graph,
+      items,
+      records: current.ran.loaded.checkRecords,
+    });
+    if (made.missingBasis) fail("PRODUCT_GRAPH_CHECK_TARGET_INVALID", "내용 해시가 없는 노드를 가리킨다. 다시 빌드한다.");
+    if (made.tooLarge) fail("PRODUCT_GRAPH_CHECK_LIMIT", "한 항목의 코드 근거가 확인 기록 하나에 들어가지 않는다.");
+    const written = made.records.length ? writeCheckRecords({ projectRoot, family, records: made.records }) : { recorded: 0, existing: 0 };
     const confirmations = confirmationsOf({
       graph: current.ran.graph,
       computed: current.ran.computed,
-      loaded: { ...current.ran.loaded, checkRecords: records },
+      loaded: { ...current.ran.loaded, checkRecords: [...current.ran.loaded.checkRecords, ...made.records] },
     });
+    const stored = made.records.flatMap((record) => record.items);
     return {
-      status,
-      checkId: record.checkId,
-      by: record.by,
-      checkedAt: record.checkedAt,
-      items: record.items.length,
-      meanings: record.items.filter((item) => item.kind === "meaning").length,
-      documentRows: record.items.filter((item) => item.kind === "documentRow").length,
+      status: made.records.length ? "recorded" : "unchanged",
+      ...(made.records.length ? {} : { reason: "고른 항목마다 같은 코드 근거의 에이전트 확인이 이미 지금 기록이다. 새로 쓰지 않았다." }),
+      records: made.records.map((record) => record.checkId),
+      recordsWritten: written.recorded,
+      by: "agent-checked",
+      checkedAt: made.records[0]?.checkedAt ?? null,
+      items: items.length,
+      itemsRecorded: stored.length,
+      itemsAlreadyCurrent: made.unchanged,
+      meanings: stored.filter((item) => item.kind === "meaning").length,
+      documentRows: stored.filter((item) => item.kind === "documentRow").length,
       confirmations: { status: confirmations.status, counts: confirmations.counts },
       note: `${PRODUCT_GRAPH_CHECK_NOTE} check.txt에는 다음 빌드부터 보인다.`,
-      authority: record.authority,
+      authority: "agent-check-of-code-not-user-approval",
       instructionAuthority: false,
       executionAuthority: false,
     };
@@ -1664,19 +1770,32 @@ function physicalFile(base, relative) {
 // basis was not recorded; this never blocks the approval. Computed against
 // the graph from before this approval was written (the build's own).
 function approvedCodeBasisRecord({ projectRoot, projectId, document, digest, rationale }) {
-  let current;
+  // Nothing here may stop the approval: every failure becomes "not recorded".
   try {
-    current = currentBuildGraph(projectRoot);
+    const current = currentBuildGraph(projectRoot);
+    if (!current.ok)
+      return { result: { status: "not-recorded", code: current.code, reason: `코드 근거는 기록하지 않았다(문서 승인은 됐다): ${current.reason}` } };
+    const items = checkableOf(current.ran).filter((item) => item.kind === "documentRow" && item.document === document && item.documentTextSha256 === digest);
+    if (!items.length) return { result: { status: "not-recorded", reason: "이 문서에는 코드와 잇는 행이 없어 코드 근거를 기록하지 않았다" } };
+    const made = confirmationRecords({ projectId, by: "user-approved", rationale, graph: current.ran.graph, items, records: current.ran.loaded.checkRecords });
+    if (made.missingBasis || made.tooLarge)
+      return {
+        result: {
+          status: "not-recorded",
+          code: "PRODUCT_GRAPH_CHECK_LIMIT",
+          reason: "내용 해시가 없는 노드를 가리키거나 한 행의 근거가 너무 커서 코드 근거를 기록하지 않았다",
+        },
+      };
+    return { records: made.records, rows: items.length, unchanged: made.unchanged };
   } catch (error) {
-    current = { ok: false, code: error.code || "PRODUCT_GRAPH_BUILD_UNREADABLE", reason: "지금 그래프를 다시 계산하지 못했다" };
+    return {
+      result: {
+        status: "not-recorded",
+        code: /^[A-Z][A-Z0-9_]{0,63}$/.test(error?.code) ? error.code : "PRODUCT_GRAPH_CHECK_INVALID",
+        reason: "코드 근거를 계산하지 못해 기록하지 않았다(문서 승인은 됐다)",
+      },
+    };
   }
-  if (!current.ok)
-    return { result: { status: "not-recorded", code: current.code, reason: `코드 근거는 기록하지 않았다(문서 승인은 됐다): ${current.reason}` } };
-  const items = checkableOf(current.ran).filter((item) => item.kind === "documentRow" && item.document === document && item.documentTextSha256 === digest);
-  if (!items.length) return { result: { status: "not-recorded", reason: "이 문서에는 코드와 잇는 행이 없어 코드 근거를 기록하지 않았다" } };
-  const record = confirmationRecord({ projectId, by: "user-approved", rationale, graph: current.ran.graph, items });
-  if (!record) return { result: { status: "not-recorded", reason: "행이 너무 많거나 내용 해시가 없는 노드를 가리켜 코드 근거를 기록하지 않았다" } };
-  return { record, rows: items.length };
 }
 
 // Records the user's approval of one document's exact current bytes. The
@@ -1718,11 +1837,23 @@ export function approveProductGraphDocument({ root = ".", document, expectedSha2
     }
     // The approval is written; the code basis never turns it into a failure.
     let codeBasis = basis.result;
-    if (basis.record)
+    if (basis.records)
       try {
-        codeBasis = { status: writeCheckRecord({ projectRoot, family, record: basis.record }), checkId: basis.record.checkId, rows: basis.rows };
+        const written = basis.records.length ? writeCheckRecords({ projectRoot, family, records: basis.records }) : { recorded: 0 };
+        codeBasis = {
+          status: basis.records.length ? "recorded" : "unchanged",
+          records: basis.records.map((item) => item.checkId),
+          recordsWritten: written.recorded,
+          rows: basis.rows,
+          rowsAlreadyCurrent: basis.unchanged,
+          ...(basis.records.length ? {} : { reason: "행마다 같은 코드 근거의 사용자 승인 기록이 이미 지금 기록이다. 새로 쓰지 않았다." }),
+        };
       } catch (error) {
-        codeBasis = { status: "not-recorded", code: error.code || "PRODUCT_GRAPH_CHECK_LIMIT", reason: "코드 근거 기록을 쓰지 못했다(문서 승인은 됐다)" };
+        codeBasis = {
+          status: "not-recorded",
+          code: /^[A-Z][A-Z0-9_]{0,63}$/.test(error?.code) ? error.code : "PRODUCT_GRAPH_CHECK_LIMIT",
+          reason: "코드 근거 기록을 쓰지 못했다(문서 승인은 됐다)",
+        };
       }
     return {
       status,

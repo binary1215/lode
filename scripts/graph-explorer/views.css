@@ -74,6 +74,7 @@ details.card{display:block}
 .rich-text ul,.rich-text ol{padding-left:20px}
 .rich-text ul{list-style:disc}
 .rich-text ol{list-style:decimal}
+.rich-text ol.rich-numbered{list-style:none;padding-left:0}
 .rich-heading{font-weight:600}
 .rich-code{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 ui-monospace,monospace}
 .item-text.rich{flex:1 1 100%;min-width:0}
