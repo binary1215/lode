@@ -21,7 +21,7 @@ const SHAPES = Object.freeze({
     paging: Object.freeze({ total: "page.total", remaining: "page.remaining", next: "page.nextMcpArguments" }),
     build: Object.freeze({ builtAt: "builtAt", buildSha256: "buildSha256", freshness: "freshness.text" }),
     notes:
-      "nodeType and changedSinceBaseline are on rows whose id is a graph node (not @ starts); changedSinceBaseline only when the build was compared with a baseline; confirmation only when the node is in one of the listed confirmation lists.",
+      "nodeType and changedSinceBaseline are on rows whose id is a graph node (not @ starts); changedSinceBaseline only when the build was compared with a baseline. confirmation lists the confirmation lists the node is in; an absent confirmation means either still current or nothing to check: the build keeps only a count of current ones. buildSha256 names the build files and the baseline the answer was read from.",
   }),
   lode_project_graph: Object.freeze({
     rows: "nodes",

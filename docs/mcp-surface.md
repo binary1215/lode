@@ -102,12 +102,15 @@ temporary file).
 - **Before any call.** The whole program is checked first (shape, step
   references, tools, project root) and every problem is reported at once with
   status `refused`; then no inner call happens.
-- **One build.** Product graph answers carry `buildSha256`. When a later answer
-  of `lode_product_graph_query` names another build, the chain stops with
-  `CHAIN_BUILD_CHANGED` and returns no rows at all; a next page after a rebuild is
-  reported by the tool itself (`basis-changed`) and stops the chain the same way.
-  Other tools have no such mechanism and are listed in `basis` with
-  `pinned: false`.
+- **One build.** A chain never returns rows from two product graph builds. This
+  is detected after each call, not prevented: every answered product graph query
+  carries `buildSha256` (the bytes of `graph.json` and `check.json` it read and
+  the baseline it was read against). When a later answer of
+  `lode_product_graph_query` differs from the first, the chain stops with
+  `CHAIN_BUILD_CHANGED` and returns no rows at all; a rebuild or a baseline move
+  between two calls does that. A next page after such a change is reported by
+  the tool itself (`basis-changed`) and stops the chain the same way. Other tools
+  have no such identity and are listed in `basis` with `pinned: false`.
 - **Failures.** A failed or refused inner call is recorded in `issues` with its
   code, the step and the item, and the chain continues; `on_error: "stop"` stops
   there. Nothing is retried.

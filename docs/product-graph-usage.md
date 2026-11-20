@@ -76,7 +76,7 @@ The query reads the existing build and never builds, checks, approves or writes.
 
 Through MCP the same question is the grouped tool `lode_product_graph` with action `query` (`lode_product_graph_query`). The graph helps when you need which code a user action reaches, what reaches a file, or where the gaps are; it is a scan without types and never a prerequisite of ordinary work.
 
-The structured answer (`--json`, MCP `structuredContent`) carries the rows as data. A row that stands for a graph node also carries `nodeType` (the node's type), `changedSinceBaseline` (`changed`, `added`, `reachChanged` or `unchanged`; only when the build was compared with a baseline) and `confirmation` (the confirmation lists the node is in: `neverChecked`, `changedSinceCheck`, `textChanged`, `otherReader`; only where it is in one). A node whose check still holds is in no list, so it has no `confirmation` field, like a node with nothing to check: the build counts current checks without listing them. The starts (`@…`) carry none of these. The answer also carries `buildSha256`, which names the build it was read from (the bytes of `graph.json` and `check.json`; nothing is stored). Through MCP, `structuredContent` leaves out the whole `text` when the header, the title and the rows give it back exactly; the content text the tool returns still starts with it, and the CLI keeps it in `--json`. An answer whose text says more than its rows (the before/after content of `changes --list content`) keeps it.
+The structured answer (`--json`, MCP `structuredContent`) carries the rows as data. A row that stands for a graph node also carries `nodeType` (the node's type), `changedSinceBaseline` (`changed`, `added`, `reachChanged` or `unchanged`; only when the build was compared with a baseline) and `confirmation` (the confirmation lists the node is in: `neverChecked`, `changedSinceCheck`, `textChanged`, `otherReader`; only where it is in one). An absent `confirmation` means either still current or nothing to check: the build keeps only a count of current ones. The starts (`@…`) carry none of these. The answer also carries `buildSha256`, which names what it was read from (the bytes of `graph.json` and `check.json` and the baseline; nothing is stored). Through MCP, `structuredContent` leaves out the whole `text` when the header, the title and the rows give it back exactly; the content text the tool returns still starts with it, and the CLI keeps it in `--json`. An answer whose text says more than its rows (the before/after content of `changes --list content`) keeps it.
 
 ## Several questions in one call
 
@@ -117,7 +117,7 @@ Find, keep the code nodes that changed since the baseline, and read the first tw
 }
 ```
 
-Every product graph answer in one chain must come from one build: when the build changes between two calls, the chain stops with `CHAIN_BUILD_CHANGED` and returns no rows. Build again first, then ask.
+A chain never returns rows from two builds. It detects a change after each call rather than preventing it: when the build or the baseline changes between two calls, the chain stops with `CHAIN_BUILD_CHANGED` and returns no rows. Ask again once the build is as you want it.
 
 ## Changes since the baseline
 

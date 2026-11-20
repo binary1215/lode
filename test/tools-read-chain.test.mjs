@@ -36,7 +36,9 @@ function graphProject(t, { confirm = false } = {}) {
   const window = path.join(f.root, "station", "ui", "main_window.py");
   fs.writeFileSync(
     window,
-    fs.readFileSync(window, "utf8").replace("    def _save(self):\n        self.model.refresh()", "    def _save(self):\n        self.model.refresh()\n        self.model.refresh()"),
+    fs
+      .readFileSync(window, "utf8")
+      .replace("    def _save(self):\n        self.model.refresh()", "    def _save(self):\n        self.model.refresh()\n        self.model.refresh()"),
   );
   buildProductGraph({ root: f.root });
   return { ...f, window };
@@ -139,7 +141,10 @@ test("T5.1: every invalid program is refused before any inner call, with every p
   for (const [label, steps, pattern] of cases) {
     const value = await runReadChain({ project_root: f.root, steps, return: [{ from: steps[0].id }] }, { resolveTarget: target, call: spy });
     assert.equal(value.status, "refused", label);
-    assert.ok(value.issues.some((issue) => pattern.test(issue.message)), `${label}: ${JSON.stringify(value.issues)}`);
+    assert.ok(
+      value.issues.some((issue) => pattern.test(issue.message)),
+      `${label}: ${JSON.stringify(value.issues)}`,
+    );
     assert.equal(value.ran.calls, 0, label);
   }
   assert.deepEqual(calls, [], "no inner call ran");
@@ -169,8 +174,21 @@ test("T3, T5.5, T5.6: a chain's rows equal the same calls made one by one with t
       { id: "todo", read: { name: QUERY, arguments: { question: "changes", list: "reviewAgain", limit: 2 } }, pages: 3 },
       { id: "nodes", from: "todo", where: { field: "kind", eq: "node" } },
       { id: "one", from: "nodes", unique: { by: "id" } },
-      { id: "callers", each: { from: "one", value: "id" }, read: { name: "lode_product_graph", arguments: { action: "query", question: "up", id: { $item: true } } } },
-      { id: "callerNodes", from: "callers", where: { all: [{ field: "kind", eq: "node" }, { field: "depth", gte: 1 }] } },
+      {
+        id: "callers",
+        each: { from: "one", value: "id" },
+        read: { name: "lode_product_graph", arguments: { action: "query", question: "up", id: { $item: true } } },
+      },
+      {
+        id: "callerNodes",
+        from: "callers",
+        where: {
+          all: [
+            { field: "kind", eq: "node" },
+            { field: "depth", gte: 1 },
+          ],
+        },
+      },
       { id: "busy", from: "callerNodes", count: { by: "item" } },
       { id: "top", from: "busy", sort: { by: "count", order: "desc" } },
     ],
@@ -211,7 +229,10 @@ test("T3, T5.5, T5.6: a chain's rows equal the same calls made one by one with t
   assert.deepEqual(value.results.top.rows, top.slice(0, 10));
   assert.equal(value.ran.calls, calls);
   assert.deepEqual(value.notSeen, { pagesLeft: 0, itemsLeft: 0, eachSkipped: 0, callsSkipped: 0, rowsDropped: 0 });
-  assert.deepEqual(value.basis.map((entry) => [entry.tool, entry.pinned]), [[QUERY, true]]);
+  assert.deepEqual(
+    value.basis.map((entry) => [entry.tool, entry.pinned]),
+    [[QUERY, true]],
+  );
   assert.equal(value.header.length, 3, "the repeated header is given once");
   assert.equal(value.headers, undefined);
 });
@@ -252,16 +273,16 @@ test("T4: each stops at its max and counts the rest; total calls stop at 40 and 
 });
 
 test("T4: pages stop at the asked number and count what was left; returned bytes stop at max_bytes and count the cut; intermediate rows stop at 16 MiB", async () => {
-  const paged = await run(
-    { steps: [{ id: "a", read: { name: "t", arguments: {} }, pages: 2 }], return: [{ from: "a" }] },
-    fakeCall({ rows: 10, pageSize: 3 }),
-  );
+  const paged = await run({ steps: [{ id: "a", read: { name: "t", arguments: {} }, pages: 2 }], return: [{ from: "a" }] }, fakeCall({ rows: 10, pageSize: 3 }));
   assert.equal(paged.ran.calls, 2);
   assert.equal(paged.results.a.total, 6);
   assert.deepEqual([paged.notSeen.pagesLeft, paged.notSeen.itemsLeft], [1, 4]);
   assert.equal(paged.status, "partial");
 
-  const bytes = await run({ steps: [{ id: "a", read: { name: "t", arguments: {} } }], max_bytes: 1024, return: [{ from: "a" }] }, fakeCall({ rows: 50, size: 40 }));
+  const bytes = await run(
+    { steps: [{ id: "a", read: { name: "t", arguments: {} } }], max_bytes: 1024, return: [{ from: "a" }] },
+    fakeCall({ rows: 50, size: 40 }),
+  );
   assert.equal(bytes.status, "partial");
   assert.ok(Buffer.byteLength(JSON.stringify(bytes)) <= 1024);
   assert.equal(bytes.results.a.total, 50);
@@ -370,11 +391,41 @@ test("T5.3: a build that changes between two inner calls stops the chain; nothin
     return response;
   };
   const pages = await runReadChain(
-    { project_root: f.root, steps: [{ id: "p", read: { name: QUERY, arguments: { question: "changes", list: "neverChecked", limit: 2 } }, pages: 3 }], return: [{ from: "p" }] },
+    {
+      project_root: f.root,
+      steps: [{ id: "p", read: { name: QUERY, arguments: { question: "changes", list: "neverChecked", limit: 2 } }, pages: 3 }],
+      return: [{ from: "p" }],
+    },
     { resolveTarget: chainReadTarget, call: pageCall },
   );
   assert.equal(pages.status, "stopped");
   assert.deepEqual(pages.results.p.rows, []);
+});
+
+test("T5.3: a baseline move between two inner calls stops the chain too: check.json is unchanged, the answers are not", async (t) => {
+  const f = graphProject(t);
+  const checkFile = path.join(f.root, ".lode", "context", "product-graph", "build", "check.json");
+  const checkBefore = fs.readFileSync(checkFile);
+  const before = answer(await read(QUERY, { project_root: f.root, question: "changes" }));
+  let calls = 0;
+  const call = async (name, args) => {
+    const response = await read(name, args);
+    calls += 1;
+    if (calls === 1) moveProductGraphBaseline({ root: f.root });
+    return response;
+  };
+  const steps = [
+    { id: "a", read: { name: QUERY, arguments: { question: "changes" } } },
+    { id: "b", read: { name: QUERY, arguments: { question: "changes", list: "changed" } } },
+  ];
+  const value = await runReadChain({ project_root: f.root, steps, return: [{ from: "a" }, { from: "b" }] }, { resolveTarget: chainReadTarget, call });
+  assert.deepEqual(fs.readFileSync(checkFile), checkBefore, "the move did not touch check.json");
+  const after = answer(await read(QUERY, { project_root: f.root, question: "changes" }));
+  assert.notEqual(after.buildSha256, before.buildSha256, "the baseline is part of the identity");
+  assert.notDeepEqual(after.header, before.header, "the answers differ after the move");
+  assert.equal(value.status, "stopped");
+  assert.ok(value.issues.some((issue) => issue.code === "CHAIN_BUILD_CHANGED"));
+  assert.deepEqual([value.results.a.rows, value.results.b.rows], [[], []]);
 });
 
 test("T5.7: a cancelled request makes no further inner call", async () => {
@@ -412,7 +463,9 @@ test("T5.2: inner calls take the lode_tools_read route: a guarded subagent calle
   // The operation's own refusal reaches the chain unchanged.
   const direct = await read(QUERY, { project_root: f.root, question: "node" });
   assert.equal(direct.error.data.reasonCode, "PRODUCT_GRAPH_QUERY_INVALID");
-  const inner = answer(await chain({ project_root: f.root, steps: [{ id: "g", read: { name: QUERY, arguments: { question: "node" } } }], return: [{ from: "g" }] }));
+  const inner = answer(
+    await chain({ project_root: f.root, steps: [{ id: "g", read: { name: QUERY, arguments: { question: "node" } } }], return: [{ from: "g" }] }),
+  );
   assert.equal(inner.ran.failed, 1);
   assert.deepEqual([inner.issues[0].code, inner.issues[0].message], [direct.error.data.reasonCode, direct.error.message]);
 });
@@ -435,7 +488,10 @@ test("T7: tools-read-chain gives the same answer as the MCP router, and the same
   const mcp = answer(await chain({ project_root: path.resolve(f.root), ...input }));
   assert.deepEqual(cli, mcp);
   assert.deepEqual(cli.results.ids.rows, [{ id: SAVE_CODE, changedSinceBaseline: "changed" }]);
-  fs.writeFileSync(file, JSON.stringify({ ...input, steps: [{ id: "x", read: { name: "lode_session_work_record", arguments: {} } }], return: [{ from: "x" }] }));
+  fs.writeFileSync(
+    file,
+    JSON.stringify({ ...input, steps: [{ id: "x", read: { name: "lode_session_work_record", arguments: {} } }], return: [{ from: "x" }] }),
+  );
   assert.equal((await runCommand(["tools-read-chain", f.root, "--input", file])).status, "refused");
   fs.writeFileSync(file, JSON.stringify({ ...input, project_root: path.join(f.base, "elsewhere") }));
   await assert.rejects(runCommand(["tools-read-chain", f.root, "--input", file]), { code: "CHAIN_PROJECT_ROOT_MISMATCH" });
@@ -456,7 +512,14 @@ test("R1: structuredContent of a product graph answer has no second copy of its 
     const response = await read(QUERY, { project_root: f.root, ...args });
     const structured = answer(response);
     assert.equal(structured.text, undefined, JSON.stringify(args));
-    const cli = await runCommand(["product-graph-query", f.root, args.question, ...(args.id ? [args.id] : args.text ? [args.text] : []), ...(args.list ? ["--list", args.list] : []), ...(args.limit ? ["--limit", String(args.limit)] : [])]);
+    const cli = await runCommand([
+      "product-graph-query",
+      f.root,
+      args.question,
+      ...(args.id ? [args.id] : args.text ? [args.text] : []),
+      ...(args.list ? ["--list", args.list] : []),
+      ...(args.limit ? ["--limit", String(args.limit)] : []),
+    ]);
     assert.equal(typeof cli.text, "string", "the CLI JSON keeps the text");
     assert.equal(response.result.content[0].text, formatMcpToolContent(QUERY, cli), "the content text is unchanged");
     const rebuilt = [...structured.header, structured.title, ...structured.rows.map((row) => `${"  ".repeat(row.depth)}${row.text}`)].join("\n") + "\n";
@@ -514,8 +577,13 @@ test("R3: resultShape is returned for the main read tools by exact name and matc
     shapes[name] = found.tools[0].resultShape;
     assert.deepEqual(shapes[name], resultShapeFor(name), name);
   }
-  const prefix = answer(await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "lode_tools_discover", arguments: { prefix: "lode_project_" } } }));
-  assert.ok(prefix.tools.every((tool) => tool.resultShape === undefined), "only by exact name");
+  const prefix = answer(
+    await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "lode_tools_discover", arguments: { prefix: "lode_project_" } } }),
+  );
+  assert.ok(
+    prefix.tools.every((tool) => tool.resultShape === undefined),
+    "only by exact name",
+  );
   const at = (value, dotted) => dotted.split(".").reduce((current, key) => (current == null ? undefined : current[key]), value);
   // Product graph: rows, fields, paging and build fields.
   const query = shapes[QUERY];
@@ -546,7 +614,10 @@ test("R3: resultShape is returned for the main read tools by exact name and matc
     jsonrpc: "2.0",
     id: 1,
     method: "tools/call",
-    params: { name: "lode_tools_call", arguments: { name: "lode_session_work_record", arguments: { project_root: f.root, evidence: { summary: "s", workTopics: ["t"] } } } },
+    params: {
+      name: "lode_tools_call",
+      arguments: { name: "lode_session_work_record", arguments: { project_root: f.root, evidence: { summary: "s", workTopics: ["t"] } } },
+    },
   });
   const work = answer(await read("lode_session_work_read", { project_root: f.root }));
   const workShape = shapes.lode_session_work_read;
@@ -561,7 +632,10 @@ test("R3: resultShape is returned for the main read tools by exact name and matc
   const taken = answer(
     await chain({
       project_root: f.root,
-      steps: [{ id: "w", read: { name: "lode_session_work_read", arguments: {} }, take: workShape.rows }, { id: "s", from: "w", pick: ["content.summary"] }],
+      steps: [
+        { id: "w", read: { name: "lode_session_work_read", arguments: {} }, take: workShape.rows },
+        { id: "s", from: "w", pick: ["content.summary"] },
+      ],
       return: [{ from: "s" }],
     }),
   );

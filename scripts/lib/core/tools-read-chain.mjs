@@ -104,7 +104,7 @@ export const READ_CHAIN_REFERENCE = Object.freeze({
   },
   everythingSeen: "Only when status is completed, ran.failed and ran.refused are 0, every result's cut is 0 and every notSeen count is 0.",
   pinning:
-    "Product graph answers carry buildSha256; every later answer of lode_product_graph_query must carry the first one's, otherwise the chain stops with CHAIN_BUILD_CHANGED and returns no rows. Pages carry expected_basis_sha256 as the tool returns them. Other tools are not pinned (basis[].pinned false).",
+    "A chain never returns rows from two product graph builds. This is detected after each call, not prevented: every answer of lode_product_graph_query carries buildSha256 (the build files and the baseline it read), and when a later one differs from the first the chain stops with CHAIN_BUILD_CHANGED and returns no rows. Pages carry expected_basis_sha256 as the tool returns them; a basis-changed page stops the chain the same way. Other tools are not pinned (basis[].pinned false).",
   authority: "A chain grants nothing and writes nothing; each inner call keeps every check of lode_tools_read.",
   example: {
     project_root: "<project>",

@@ -138,7 +138,8 @@ returns `resultShape` for the main read tools, so `take` names a real list.
 Every inner call keeps every `lode_tools_read` check; a chain grants nothing and
 writes nothing. Everything was seen only when the status is `completed`,
 `ran.failed` and `ran.refused` are 0 and every `cut` and `notSeen` count is 0; a
-`stopped` chain whose product graph build changed returns no rows.
+`stopped` chain whose product graph build or baseline changed between calls
+returns no rows (detected after each call, not prevented).
 
 **Hidden originals.** If an inventory bound hides relevant originals, call
 `lode_project_graph` with `inventory_page: true`, optionally narrowed by

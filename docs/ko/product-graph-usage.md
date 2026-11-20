@@ -78,7 +78,7 @@ lode-agent product-graph-query <source-root> overview --build <folder>   # a sta
 
 MCP에서는 묶은 도구 `lode_product_graph`의 `query` 동작(`lode_product_graph_query`)이 같은 질문입니다. 사용자 동작이 어떤 코드에 닿는지, 무엇이 한 파일에 닿는지, 빈 곳이 어디인지 알아야 할 때 도움이 됩니다. 타입 없는 스캔이고, 보통 작업의 전제가 아닙니다.
 
-구조화된 답(`--json`, MCP `structuredContent`)은 줄을 데이터로 싣습니다. 그래프 노드를 나타내는 줄에는 `nodeType`(노드 종류), `changedSinceBaseline`(`changed`, `added`, `reachChanged`, `unchanged`. 빌드가 기준과 비교했을 때만), `confirmation`(그 노드가 들어 있는 확인 기록 목록: `neverChecked`, `changedSinceCheck`, `textChanged`, `otherReader`. 들어 있을 때만)도 붙습니다. 확인이 그대로인 노드는 어느 목록에도 없으므로, 확인할 것이 없는 노드처럼 `confirmation`이 없습니다. 빌드는 그대로인 확인을 세기만 하고 나열하지 않기 때문입니다. 시작점(`@…`)에는 이 필드가 없습니다. 답에는 어느 빌드에서 읽었는지를 가리키는 `buildSha256`(`graph.json`과 `check.json`의 바이트. 저장하지 않음)도 있습니다. MCP의 `structuredContent`는 머리말, 제목, 줄로 전체 `text`가 그대로 되살아날 때 그 글을 싣지 않습니다. 도구가 돌려주는 내용 글은 여전히 그 글로 시작하고, CLI의 `--json`도 그대로 싣습니다. 줄보다 글이 더 많은 것을 말하는 답(`changes --list content`의 전후 본문)은 그 글을 그대로 둡니다.
+구조화된 답(`--json`, MCP `structuredContent`)은 줄을 데이터로 싣습니다. 그래프 노드를 나타내는 줄에는 `nodeType`(노드 종류), `changedSinceBaseline`(`changed`, `added`, `reachChanged`, `unchanged`. 빌드가 기준과 비교했을 때만), `confirmation`(그 노드가 들어 있는 확인 기록 목록: `neverChecked`, `changedSinceCheck`, `textChanged`, `otherReader`. 들어 있을 때만)도 붙습니다. `confirmation`이 없으면 확인이 그대로이거나 확인할 것이 없다는 뜻입니다. 빌드는 그대로인 확인의 개수만 갖고 있습니다. 시작점(`@…`)에는 이 필드가 없습니다. 답에는 무엇에서 읽었는지를 가리키는 `buildSha256`(`graph.json`과 `check.json`의 바이트, 그리고 기준. 저장하지 않음)도 있습니다. MCP의 `structuredContent`는 머리말, 제목, 줄로 전체 `text`가 그대로 되살아날 때 그 글을 싣지 않습니다. 도구가 돌려주는 내용 글은 여전히 그 글로 시작하고, CLI의 `--json`도 그대로 싣습니다. 줄보다 글이 더 많은 것을 말하는 답(`changes --list content`의 전후 본문)은 그 글을 그대로 둡니다.
 
 ## 여러 질문을 한 번에
 
@@ -119,7 +119,7 @@ MCP에서는 묶은 도구 `lode_product_graph`의 `query` 동작(`lode_product_
 }
 ```
 
-한 묶음 안의 제품 그래프 답은 모두 한 빌드에서 나와야 합니다. 두 호출 사이에 빌드가 바뀌면 묶음은 `CHAIN_BUILD_CHANGED`로 멈추고 줄을 하나도 돌려주지 않습니다. 먼저 다시 빌드한 뒤 묻습니다.
+묶음은 두 빌드의 줄을 함께 돌려주지 않습니다. 변화를 막는 것이 아니라 호출마다 뒤에서 알아챕니다. 두 호출 사이에 빌드나 기준이 바뀌면 묶음은 `CHAIN_BUILD_CHANGED`로 멈추고 줄을 하나도 돌려주지 않습니다. 빌드가 원하는 상태가 된 뒤 다시 묻습니다.
 
 ## 기준 뒤 바뀐 것
 

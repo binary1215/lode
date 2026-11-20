@@ -255,9 +255,11 @@ export function queryProductGraph(options = {}) {
 }
 
 // Which build an answer was read from: the bytes of graph.json and check.json
-// as this answer read them. Not stored; a read chain compares it between calls.
+// as this answer read them, and the baseline it was read against (a baseline
+// move changes answers without changing check.json; basisOf names it the same
+// way). Not stored; a read chain compares it between calls.
 function buildIdentity(read) {
-  return sha256Hex(canonicalJson({ graph: read.graphFileSha256, check: read.checkFileSha256 }));
+  return sha256Hex(canonicalJson({ graph: read.graphFileSha256, check: read.checkFileSha256, baseline: read.baselineEvidence?.setAt ?? null }));
 }
 
 // Rows that stand for a graph node carry its type, whether it changed since the
