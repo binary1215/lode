@@ -203,7 +203,6 @@ const HEX64 = /^[a-f0-9]{64}$/;
 const ROW_TYPES = Object.freeze(["기능→화면요소", "화면요소→기능", "화면→코드"]);
 // An id is whatever the graph produced: any non-empty string.
 const isId = (value) => typeof value === "string" && value.length > 0;
-const isText = (value, max = 2048) => typeof value === "string" && value.length > 0 && value.length <= max && !/[\x00-\x1f]/.test(value);
 const sortedBy = (items, key) => [...items].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
 
 function checkBasis(basis) {

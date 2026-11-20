@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -593,7 +594,7 @@ test("K1: a callback that re-enters a lock after its operation ended (entry reta
   assert.equal(maxInside, 1);
 });
 
-test("K2: a waiter tries to remove this process's retained entry once per call, not on every wait step", async (t) => {
+test("K2: a waiter retries removing this process's retained entry with a backoff, not on every wait step", async (t) => {
   const { parent } = fixture(t);
   const directory = path.join(parent, "x.lock");
   const state = failCleanup(t, directory, Infinity);
@@ -607,7 +608,8 @@ test("K2: a waiter tries to remove this process's retained entry once per call, 
     { code: "PROJECT_MUTATION_BUSY" },
   );
   t.mock.restoreAll();
-  assert(state.failures - before <= 3, `removal attempts while waiting: ${state.failures - before}`);
+  // A few attempts with a backoff (each up to three removals), not one per 10 ms wait step.
+  assert(state.failures - before <= 12, `removal attempts while waiting: ${state.failures - before}`);
 });
 
 test("K3: a cleanup failure awaited inside a later-started healthy lock keeps its tag; the answering caller takes it once", async (t) => {
@@ -679,4 +681,71 @@ test("K6: a collector attempt whose admission cleanup fails is withdrawn; the ne
   const next = lifetime.beginSnapshotCollection({ root: project.root });
   assert.equal(next.status, "active");
   lifetime.finishSnapshotCollection(next);
+});
+
+// ---------- review round 3: E2, E4 ----------
+
+test("E2: a caller already waiting frees this process's entry retained during its wait, once the file system lets it", async (t) => {
+  const { parent } = fixture(t);
+  const directory = path.join(parent, "x.lock");
+  const originalUnlink = fs.unlinkSync;
+  let blockedUntil = 0;
+  t.mock.method(fs, "unlinkSync", (file, ...rest) => {
+    if (path.dirname(String(file)) === directory && Date.now() < blockedUntil) throw Object.assign(new Error("fixture held"), { code: "EBUSY" });
+    return originalUnlink(file, ...rest);
+  });
+  let release;
+  const holding = new Promise((resolve) => (release = resolve));
+  const first = withLocalMutationAsync({ directory }, async () => {
+    await holding;
+    // From here the entry cannot be removed for 1.3 s.
+    blockedUntil = Date.now() + 1300;
+    return "first";
+  });
+  first.catch(() => {});
+  await pause(30);
+  const started = Date.now();
+  const second = withLocalMutationAsync({ directory, timeoutMs: 4000 }, async () => "second");
+  await pause(30);
+  release();
+  await assert.rejects(first, { code: "LOCAL_MUTATION_CLEANUP_FAILED" });
+  assert.equal(await second, "second");
+  const elapsed = Date.now() - started;
+  t.mock.restoreAll();
+  assert(elapsed < 3000, `the waiter ran after ${elapsed} ms`);
+});
+
+test("E4: a registration that could not be withdrawn is withdrawn when its process exits", (t) => {
+  const project = initialized(t);
+  const before = entries(project.participants);
+  const script = `
+    import fs from "node:fs";
+    import path from "node:path";
+    import { pathToFileURL } from "node:url";
+    const [root, plugin] = process.argv.slice(1);
+    const { withProjectMutation } = await import(pathToFileURL(path.join(plugin, "scripts/lib/storage/project-mutation-lock.mjs")).href);
+    const admission = path.join(root, ".lode", ".operations", "snapshot-reference-admission.lock");
+    const participants = path.join(root, ".lode", ".snapshot-gc", "participants");
+    const unlink = fs.unlinkSync;
+    let failures = 0;
+    fs.unlinkSync = (file, ...rest) => {
+      const directory = path.dirname(String(file));
+      if ((directory === admission && failures < 3) || (directory === participants && failures === 3)) {
+        failures += 1;
+        throw Object.assign(new Error("fixture"), { code: "EBUSY" });
+      }
+      return unlink(file, ...rest);
+    };
+    try {
+      withProjectMutation({ root, scope: "session-recovery" }, () => "ran");
+    } catch (error) {
+      console.log(JSON.stringify({ code: error.code, withdrawn: error.participantWithdrawn, left: fs.readdirSync(participants).length }));
+    }
+  `;
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", script, project.root, pluginRoot], { encoding: "utf8" });
+  const reported = JSON.parse(child.stdout.trim().split("\n").at(-1));
+  assert.equal(reported.code, "SNAPSHOT_REFERENCE_COORDINATION_UNAVAILABLE");
+  assert.equal(reported.withdrawn, false);
+  assert.equal(reported.left, before.length + 1, "left behind while the process ran");
+  assert.deepEqual(entries(project.participants), before, "withdrawn when it exited");
 });

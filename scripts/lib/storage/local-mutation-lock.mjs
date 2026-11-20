@@ -26,6 +26,10 @@ const cleanupFailures = new WeakMap();
 // two short timers. Each removal revalidates the exact entry first.
 const retainedOwners = new Map();
 const RECLAIM_AFTER_MS = [1_000, 10_000];
+// Known limit: a cleanup failure that settled before a later lock started,
+// and is only awaited inside that lock, has a tag set before the later lock
+// began; that lock's healthy cleanup clears it (no caller in this repository
+// awaits a settled failure that way).
 // One sequence orders invocation starts and cleanup tags. A tag set before an
 // invocation started cannot come from anything that invocation awaited: when
 // that invocation's own cleanup is healthy, such a tag on the error it rethrows
@@ -109,7 +113,31 @@ function releaseCompletedOwner(owner) {
   }
 }
 
-// Called once per coordinator call, before its wait loop, and by the timers.
+// A waiter's reclaim of this process's retained entry: at once, then with a
+// backoff (100 ms doubling to 1 s) while it waits, and at once again when a
+// new entry is retained during the wait. Bounded, so an entry that stays
+// unremovable costs a few attempts per second, not one per wait step.
+export function retainedReclaimer(directory) {
+  let tried = null,
+    next = 0,
+    gap = 100;
+  return () => {
+    const owner = retainedOwners.get(directory);
+    if (!owner) return;
+    if (owner !== tried) {
+      tried = owner;
+      next = 0;
+      gap = 100;
+    }
+    const now = Date.now();
+    if (now < next) return;
+    reclaimRetained(directory);
+    next = now + gap;
+    gap = Math.min(gap * 2, 1000);
+  };
+}
+
+// Also called by the timers.
 export function reclaimRetained(directory) {
   const owner = retainedOwners.get(directory);
   if (!owner) return;
@@ -360,12 +388,13 @@ export function withLocalMutation({ directory, timeoutMs = WAIT_MS }, operation)
     fail("Invalid local mutation lock.", "INVALID_PROJECT_MUTATION_SCOPE");
   if (nestedOwner(directory)) return operation();
   cleanInterruptedStaging(directory);
-  // This process's own entry left by a failed cleanup is removed first (once
-  // per call), so a healthy file system does not keep the lock busy.
-  reclaimRetained(directory);
+  // This process's own entry left by a failed cleanup is removed first and,
+  // bounded, while waiting, so a healthy file system does not keep it busy.
+  const reclaim = retainedReclaimer(directory);
+  reclaim();
   const deadline = Date.now() + timeoutMs;
   let owner;
-  while (!(owner = attempt(directory))) {
+  while ((reclaim(), !(owner = attempt(directory)))) {
     // A synchronous caller cannot wait for an unrelated async owner in this
     // event loop: doing so would prevent that owner from releasing its lock.
     try {
@@ -407,12 +436,13 @@ export async function withLocalMutationAsync({ directory, timeoutMs = WAIT_MS },
     fail("Invalid local mutation lock.", "INVALID_PROJECT_MUTATION_SCOPE");
   if (nestedOwner(directory)) return operation();
   cleanInterruptedStaging(directory);
-  // This process's own entry left by a failed cleanup is removed first (once
-  // per call), so a healthy file system does not keep the lock busy.
-  reclaimRetained(directory);
+  // This process's own entry left by a failed cleanup is removed first and,
+  // bounded, while waiting, so a healthy file system does not keep it busy.
+  const reclaim = retainedReclaimer(directory);
+  reclaim();
   const deadline = Date.now() + timeoutMs;
   let owner;
-  while (!(owner = attempt(directory))) {
+  while ((reclaim(), !(owner = attempt(directory)))) {
     if (Date.now() >= deadline) fail("This document destination is busy; ordinary work remains available.");
     await delay(10);
   }

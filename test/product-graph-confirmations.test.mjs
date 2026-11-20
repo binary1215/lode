@@ -962,3 +962,52 @@ test("D8: a 확인 that is a file: confirm is refused by name, approve still app
   assert.equal(approved.status, "recorded");
   assert.equal(approved.codeBasis.code, "PRODUCT_GRAPH_CHECK_FOLDER_INVALID");
 });
+
+// ---------- review round 3 ----------
+
+test("E1: with both spellings of 승인 and 확인 present, approve and confirm write to the composed folder; the build reads both", (t) => {
+  const f = project(t);
+  let built = buildProductGraph({ root: f.root });
+  // A record in a decomposed 확인, then the composed one appears too.
+  const first = confirmProductGraph({ root: f.root, features: [SAVE] });
+  const decomposedChecks = path.join(f.family, "확인".normalize("NFD"));
+  fs.renameSync(f.checks, decomposedChecks);
+  fs.mkdirSync(f.checks);
+  fs.mkdirSync(path.join(f.family, "승인".normalize("NFD")));
+  fs.mkdirSync(path.join(f.family, "승인"));
+  built = buildProductGraph({ root: f.root });
+  assert.equal(built.confirmations.counts.current, 1, "the decomposed folder is read");
+  const digest = built.documents.list.find((item) => item.path === MAIN).approvalDigest;
+  const approved = approveProductGraphDocument({ root: f.root, document: MAIN, expectedSha256: digest, rationale: "ok" });
+  assert.equal(approved.status, "recorded");
+  assert.equal(approved.codeBasis.status, "recorded");
+  assert.equal(fs.readdirSync(path.join(f.family, "승인")).length, 1, "written where main writes");
+  assert.deepEqual(fs.readdirSync(path.join(f.family, "승인".normalize("NFD"))), []);
+  assert.deepEqual(
+    fs.readdirSync(f.checks),
+    approved.codeBasis.records.map((id) => `${id}.json`),
+  );
+  // The record already in the decomposed folder is not written again.
+  assert.equal(confirmProductGraph({ root: f.root, features: [SAVE] }).status, "unchanged");
+  assert.deepEqual(fs.readdirSync(decomposedChecks), [`${first.records[0]}.json`]);
+  built = buildProductGraph({ root: f.root });
+  assert.equal(built.documents.approved, 1);
+  assert.equal(built.confirmations.counts.current, 6);
+  assert.deepEqual(built.confirmations.issues, []);
+});
+
+test("E3: a refusal for items that are not there names at most ten, each cut short, and counts the rest", (t) => {
+  const f = project(t);
+  buildProductGraph({ root: f.root });
+  const unknown = [`cli:${"z".repeat(60000)}`, ...Array.from({ length: 29 }, (_, index) => `cli:missing-${index}`)];
+  let observed;
+  try {
+    confirmProductGraph({ root: f.root, features: unknown });
+  } catch (error) {
+    observed = error;
+  }
+  assert.equal(observed?.code, "PRODUCT_GRAPH_CHECK_TARGET_MISSING");
+  assert(observed.message.length < 4000, `message length ${observed.message.length}`);
+  assert.match(observed.message, /외 20개/);
+  assert.match(observed.message, /…\(60004자\)/);
+});

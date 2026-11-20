@@ -1702,13 +1702,17 @@ function currentBuildGraph(root) {
 
 const checkableOf = (ran) => checkableItems({ graph: ran.graph, meaningDocument: ran.computed.meaningDocument, documents: ran.loaded.documents });
 
-// The folder of the family named `name` as it is on disk: a name stored
-// decomposed (NFD) is the same folder, never a second one.
+// Where the family's folder named `name` is written: the folder spelled
+// exactly `name` (NFC) when there is one, as main writes; otherwise the one
+// existing folder whatever its spelling (a name stored decomposed); otherwise
+// a new NFC folder. Folder spelling never stops a write. `all` lists every
+// folder with that name after normalisation (a build reads them all).
 function familyFolder(family, name) {
   const matches = listDirectory(family).filter((entry) => nfc(entry.name) === name);
-  if (matches.length > 1) fail("PRODUCT_GRAPH_NAME_TWIN", `같은 이름이 유니코드 정규화만 다르게 두 번 있다: ${name}/`);
-  if (!matches.length) return { path: path.join(family, name), exists: false };
-  return { path: path.join(family, matches[0].name), exists: true, folder: matches[0].isDirectory() };
+  const all = matches.filter((entry) => entry.isDirectory()).map((entry) => path.join(family, entry.name));
+  if (!matches.length) return { path: path.join(family, name), exists: false, folder: false, all };
+  const chosen = matches.find((entry) => entry.name === name) || matches[0];
+  return { path: path.join(family, chosen.name), exists: true, folder: chosen.isDirectory(), all };
 }
 
 // Writes the records of one command. Everything that can be checked is checked
@@ -1728,8 +1732,10 @@ function writeCheckRecords({ projectRoot, family, records }) {
     if (Buffer.byteLength(text) > PRODUCT_GRAPH_CHECK_MAX_BYTES)
       fail("PRODUCT_GRAPH_CHECK_LIMIT", `확인 기록 하나가 ${PRODUCT_GRAPH_CHECK_MAX_BYTES}바이트를 넘는다.`);
     let existing = false;
-    if (fs.existsSync(destination)) {
-      const stored = verifyProductGraphCheck(JSON.parse(decodeProductGraphText(readBounded(destination))), {
+    // The same record in the other spelling's folder is already there.
+    const present = [destination, ...folder.all.map((other) => path.join(other, `${record.checkId}.json`))].find((candidate) => fs.existsSync(candidate));
+    if (present) {
+      const stored = verifyProductGraphCheck(JSON.parse(decodeProductGraphText(readBounded(present))), {
         projectId: record.projectId,
         checkId: record.checkId,
       });
@@ -1740,9 +1746,11 @@ function writeCheckRecords({ projectRoot, family, records }) {
   });
   let present = 0;
   try {
-    present = listDirectory(directory).filter(
-      (entry) => classifyProductGraphPath(`${PRODUCT_GRAPH_CHECK_DIRECTORY}/${nfc(entry.name)}`)?.role === "check",
-    ).length;
+    // Counted over every 확인 folder, as a build reads them.
+    for (const each of folder.all.length ? folder.all : [directory])
+      present += listDirectory(each).filter(
+        (entry) => classifyProductGraphPath(`${PRODUCT_GRAPH_CHECK_DIRECTORY}/${nfc(entry.name)}`)?.role === "check",
+      ).length;
   } catch (error) {
     fail("PRODUCT_GRAPH_CHECK_UNREADABLE", `확인 기록 폴더를 읽지 못해 쓰지 않는다(${error.code || "오류"}).`);
   }
@@ -1772,6 +1780,9 @@ function writeCheckRecords({ projectRoot, family, records }) {
 }
 
 const PRODUCT_GRAPH_CHECK_MAX_ID = 65536;
+const MISSING_LISTED = 10;
+const ECHO_CHARS = 200;
+const echo = (value) => (value.length > ECHO_CHARS ? `${value.slice(0, ECHO_CHARS)}…(${value.length}자)` : value);
 const describeItem = (item) =>
   item?.kind === "meaning"
     ? `기능 ${String(item.id).slice(0, 120)}`
@@ -1810,14 +1821,19 @@ export function confirmProductGraph({ root = ".", features = [], documents = [],
     for (const id of new Set(featureIds)) {
       const item = checkable.find((entry) => entry.kind === "meaning" && entry.id === id);
       if (item) items.push(item);
-      else missing.push(`기능 ${id}: 그래프에 있는 기능의 뜻 줄이 없다`);
+      else missing.push(`기능 ${echo(id)}: 그래프에 있는 기능의 뜻 줄이 없다`);
     }
     for (const document of new Set(documentPaths)) {
       const rows = checkable.filter((entry) => entry.kind === "documentRow" && entry.document === document);
       if (rows.length) items.push(...rows);
-      else missing.push(`${document}: 코드와 잇는 행(기능→화면요소, 화면요소→기능, 화면→코드)이 없는 문서다`);
+      else missing.push(`${echo(document)}: 코드와 잇는 행(기능→화면요소, 화면요소→기능, 화면→코드)이 없는 문서다`);
     }
-    if (missing.length) fail("PRODUCT_GRAPH_CHECK_TARGET_MISSING", `확인할 것이 없다: ${missing.join(" / ")}`);
+    // Bounded: the first MISSING_LISTED names, each cut to ECHO_CHARS, then a count.
+    if (missing.length)
+      fail(
+        "PRODUCT_GRAPH_CHECK_TARGET_MISSING",
+        `확인할 것이 없다: ${missing.slice(0, MISSING_LISTED).join(" / ")}${missing.length > MISSING_LISTED ? ` / 외 ${missing.length - MISSING_LISTED}개` : ""}`,
+      );
     const made = confirmationRecords({
       projectId: inspected.project.projectId,
       by: "agent-checked",

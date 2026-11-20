@@ -15,7 +15,7 @@ import {
   withLocalMutation,
   finishMutation,
   startMutation,
-  reclaimRetained,
+  retainedReclaimer,
 } from "./local-mutation-lock.mjs";
 
 // The lock primitives live in local-mutation-lock.mjs, below the snapshot
@@ -54,10 +54,11 @@ async function withProjectMutationAsyncUncoordinated({ root = ".", scope, storag
   const directory = lockFor(root, scope, storage);
   if (nestedOwner(directory)) return operation();
   cleanInterruptedStaging(directory);
-  reclaimRetained(directory);
+  const reclaim = retainedReclaimer(directory);
+  reclaim();
   const deadline = Date.now() + WAIT_MS;
   let owner;
-  while (!(owner = attempt(directory))) {
+  while ((reclaim(), !(owner = attempt(directory)))) {
     if (Date.now() >= deadline) fail(`The ${scope} operation is busy; retry this operation shortly.`);
     await delay(10);
   }
