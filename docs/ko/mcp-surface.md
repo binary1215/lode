@@ -55,8 +55,8 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
 ## 연쇄 읽기
 
 `lode_tools_read_chain`은 읽기 전용 Lode 도구 호출 여러 개를 단계 목록 하나로 받아
-서버 안에서 잇고, 요청한 줄과 Lode가 센 개수, 그리고 판정 하나(`everythingSeen`)만
-돌려줍니다. 코드를 실행하지 않습니다. 단계는 식이 아니라 데이터입니다. 연쇄 읽기는 아무
+서버 안에서 잇고, 요청한 줄과 Lode가 센 개수, 그리고 빠졌다고 Lode가 아는 것
+(`knownMissing`)만 돌려줍니다. 코드를 실행하지 않습니다. 단계는 식이 아니라 데이터입니다. 연쇄 읽기는 아무
 권한도 주지 않고 아무것도 쓰지 않으며(기록, 캐시, 임시 파일 모두 없음), 연쇄 읽기가 한
 어떤 일도 뒤의 호출이 할 수 있는 것이나 받는 것을 바꾸지 않습니다.
 
@@ -121,9 +121,11 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
   `issues`에 남기고 계속합니다. `on_error: "stop"`이면 거기서 멈춥니다. 다시 시도하지
   않고, 답이 아닌 것은 줄이 되지 않습니다.
 - **같은 입력, 같은 출력.** 같은 입력과 같은 상태면 출력 바이트가 같습니다. 상태에는
-  도구의 프로세스 캐시도 들어갑니다. `lode_project_graph`는 앞선 결과를 다시
-  썼는지 `reuse.status`로 알리므로, 그 필드를 돌려주는 연쇄 읽기는 앞서 같은 것을
-  실행했을 때와 다를 수 있습니다.
+  `lode_project_graph`의 프로세스 캐시도 들어갑니다. 같은 연쇄 읽기를 다시 하면 그
+  도구가 앞선 결과를 다시 썼는지에 대해 말하는 것이 다를 수 있습니다. 답의
+  `reuse.status`와, `sourceFallback.reasonCodes`(그래서
+  `basis[].stated[].reasonCodes`에도)의 `PROJECT_GRAPH_SCOPED_VERIFICATION` 같은 이유
+  코드입니다. 제품 그래프 답에는 이런 캐시가 없습니다.
 
 ### 상한
 
@@ -153,10 +155,9 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
 ```json
 {
   "status": "completed",
-  "everythingSeen": true,
-  "notSeenBecause": [],
+  "knownMissing": [],
   "ran": { "steps": 7, "calls": 5, "failed": 0, "refused": 0 },
-  "basis": [{ "tool": "lode_product_graph_query", "pinned": true, "builtAt": "…", "freshness": "…" }],
+  "basis": [{ "tool": "lode_product_graph_query", "pinned": true, "builtAt": "…", "freshness": "…", "stated": [{ "confirmationComparison": "compared", "baselineComparison": "compared" }] }],
   "header": ["…"],
   "results": { "top": { "total": 3, "returned": 3, "cut": 0, "rows": [{ "value": "…", "count": 3 }] } },
   "notSeen": { "pagesLeft": 0, "itemsLeft": 0, "eachSkipped": 0, "eachNoValue": 0, "callsSkipped": 0, "rowsDropped": 0, "answersSaidIncomplete": 0, "takeNotAList": 0 },
@@ -167,27 +168,40 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
 ```
 
 - `status`: `completed`, `partial`(상한에 닿았거나, 도구가 답에 줄이나 내용이
-  빠졌다고 했거나, 안쪽 호출이 실패·거부됨), `stopped`(빌드나 기준이 바뀜, `on_error: "stop"`, 요청 취소),
-  `refused`(프로그램이 틀림).
-- `everythingSeen`은 이 빌드에서 받은 답들의 줄과 내용에 대한 Lode의 판정입니다.
-  상태가 `completed`이고, 실패하거나 거부된 안쪽 호출이 없고, 모든 `notSeen`이 0이고,
-  잘린 줄이 없고, 돌려줄 단계가 모두 실행되었고, 어느 안쪽 답도 자기에게서 줄이나
-  내용이 빠졌다고 하지 않았을 때만 참입니다. 거짓이면 `notSeenBecause`가 이유를
-  적고, 도구 자신의 신호는 `TOOL_SAID:<tool>:<signal>`로 나옵니다. 그래프가 소스를
-  얼마나 덮는지에 대한 판정은 아닙니다. 그것은 제품 그래프의 `header`와 `basis`의
-  `stated` 커버리지입니다. 직접 계산하지 말고 이 값을 읽습니다.
-- 안쪽 도구마다 세는 신호는 다음과 같습니다. `lode_product_graph_query`는
-  `page.remaining`(따라가지 않은 쪽), 쪽 이어짐이 아닌 `more` 줄(첫 단계 아래에서
-  잘린 트리, 한 답의 줄 상한), 상태가 `partial`이나 `unavailable`인 전후 본문
-  한쪽입니다. `lode_project_graph`는 `truncated`, `omittedMatchCount`,
-  `boundary.items`, `boundary.omittedCount`, `unmatchedAnchorIds`,
-  `integrity.excluded`, `coverage.state`(`partial`이나 `unavailable`),
-  `coverage.inventoryBoundReached`, `sourceFallback.needed`,
-  `sourceFallback.excludedInputs`, 노드의 `contentPartial`입니다. 이 도구의 커버리지 상태는 설계상 partial이므로, 이 도구를
-  부르는 연쇄 읽기는 전부 보았다고 하지 않습니다.
+  빠졌다고 했거나, 안쪽 호출이 실패·거부됨), `stopped`(빌드나 기준이 바뀜,
+  `on_error: "stop"`, 요청 취소), `refused`(프로그램이 틀림).
+- `knownMissing`은 이 답들의 줄과 내용에서 무언가 빠졌다고 Lode가 아는 이유
+  목록입니다. `STATUS_PARTIAL`이나 `STATUS_STOPPED`, `INNER_CALL_FAILED`,
+  `INNER_CALL_REFUSED`, 0이 아닌 `notSeen` 항목마다 `NOT_SEEN_<count>`(따라가지 않은
+  쪽은 `NOT_SEEN_pagesLeft`), `ROWS_CUT`, `STEP_NOT_REACHED`, 그리고 안쪽 답이 자기에
+  대해 준 신호마다 `TOOL_SAID:<tool>:<signal>`입니다. 이 이름들도 `max_bytes`에 맞지
+  않으면 도구 이유는 `TOOL_SAID_INCOMPLETE:<n>` 하나가 됩니다. **목록이 비어 있다고
+  전부라는 뜻은 아닙니다. Lode가 알아챌 수 있는 빠진 것이 없었다는 뜻입니다.**
+  그래프가 소스를 얼마나 덮는지는 이 목록에 없고, 제품 그래프의 `header`와
+  `basis`의 `stated` 커버리지에 있습니다.
+- 안쪽 도구마다 세는 신호는 다음과 같습니다. `lode_product_graph_query`는 따라가지
+  않은 쪽(`page.remaining`), 답의 표시(`missing`. 무언가 검사하거나 비교하지
+  않았다는 제목)와 줄의 표시(`rows[].missing`. 글로만 적힌 목록 잘림, 첫 단계
+  아래에서 잘린 트리, 한 답의 줄 상한, 여섯 개로 잘린 찾기 결과의 연결, 하지 못한
+  검사, 하지 않은 비교), 상태가 `partial`이나 `unavailable`인 전후 본문 한쪽,
+  `compared`가 아닌 `confirmationComparison`이나 `baselineComparison`입니다.
+  `lode_project_graph`는 `status` `source-fallback`(그래프에 맞는 것이 없음),
+  `truncated`, `omittedMatchCount`, `boundary.items`, `boundary.omittedCount`,
+  `boundary.omittedAnchorCount`, `unmatchedAnchorIds`, `integrity.excluded`,
+  `integrity.omittedVerifiedRecordPathCount`, `coverage.state`,
+  `coverage.layers[].status`, `coverage.inventoryBoundReached`,
+  `sourceFallback.needed`, `sourceFallback.excludedInputs`, 노드의
+  `contentPartial`, `directionContentCoverage.partial`, `workContentCoverage.partial`
+  (요약의 방향 참조도)입니다. 프로젝트 그래프의 목록은 빠짐없는 것이 아니고, 그
+  커버리지는 설계상 partial이므로 이 도구를 부르는 연쇄 읽기에는 늘 이유가 있습니다.
+- 제품 그래프의 쪽 이어짐 줄(`continues: "nextPage"`)은 줄이 아니라 표시입니다.
+  따라간 쪽은 그 줄들을 가져오고, 따라가지 않은 쪽은 `notSeen.pagesLeft`로 셉니다.
 - `basis`는 안쪽 도구마다 한 번씩 적습니다. `pinned`, 제품 그래프는 첫 답의
-  `builtAt`과 신선도, `lode_project_graph`는 자기 커버리지에 대해 `stated`한
-  것(상태, 소스로 돌아가야 하는지, 제외된 층과 그 이유 코드)입니다.
+  `builtAt`과 신선도, 그리고 `stated`한 것(`confirmationComparison`,
+  `baselineComparison`, impact면 그 상태와 이유), `lode_project_graph`는 `stated`한
+  것(커버리지 상태, 소스로 돌아가야 하는지, 제외된 층과 이유 코드, 대체 이유 코드,
+  `status`, `unmatchedAnchorIds`)입니다. 도구마다 서로 다른 것을 넷까지 싣고, 빈
+  것은 싣지 않습니다.
 - `return`에 적은 단계만 줄을 싣습니다. `total`은 그 단계의 줄 수, `returned`는 답에
   실은 줄 수, `cut`은 나머지(`return`의 `limit`이나 `max_bytes`)입니다.
 - `notSeen`: `pagesLeft`는 다음 쪽이 남은 채 멈춘 읽기 수, `itemsLeft`는 그 쪽들에

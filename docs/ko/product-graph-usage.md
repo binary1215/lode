@@ -82,7 +82,7 @@ MCP에서는 묶은 도구 `lode_product_graph`의 `query` 동작(`lode_product_
 
 ## 여러 질문을 한 번에
 
-`lode_tools_read_chain`(CLI `tools-read-chain <project> --input chain.json`)은 여러 질문을 한 번에 묻고 요청한 줄만 개수와 함께 돌려줍니다. 단계, 상한, 상태는 [MCP 도구 표면](mcp-surface.md#연쇄-읽기)에 있습니다. 읽기 전용이고, 아무 권한도 주지 않고, 아무것도 쓰지 않습니다. 답 여러 개를 받아 그중 몇 줄만 고를 때 도움이 됩니다. 질문 하나이거나, 답의 모든 줄을 어차피 읽어야 하면 직접 묻습니다. 안쪽 호출은 제품 그래프 질문과 `lode_project_graph`입니다. 줄이 전부인지는 `everythingSeen`(과 `notSeenBecause`)을 읽어 압니다.
+`lode_tools_read_chain`(CLI `tools-read-chain <project> --input chain.json`)은 여러 질문을 한 번에 묻고 요청한 줄만 개수와 함께 돌려줍니다. 단계, 상한, 상태는 [MCP 도구 표면](mcp-surface.md#연쇄-읽기)에 있습니다. 읽기 전용이고, 아무 권한도 주지 않고, 아무것도 쓰지 않습니다. 답 여러 개를 받아 그중 몇 줄만 고를 때 도움이 됩니다. 질문 하나이거나, 답의 모든 줄을 어차피 읽어야 하면 직접 묻습니다. 안쪽 호출은 제품 그래프 질문과 `lode_project_graph`입니다. 빠졌다고 Lode가 아는 것은 `knownMissing`에 있습니다. 목록이 비어 있다고 줄이 전부라는 뜻은 아닙니다.
 
 다시 볼 것 목록, 그다음 항목마다 무엇이 가리키는지 세기:
 

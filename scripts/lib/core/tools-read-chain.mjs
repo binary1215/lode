@@ -40,7 +40,7 @@ const hasItemKey = (value) =>
 export const READ_CHAIN_TOOL = Object.freeze({
   name: READ_CHAIN_TOOL_NAME,
   description:
-    "Run several read-only Lode tool calls as one declarative step list inside the server and return only the rows asked for, with Lode-counted totals and one everythingSeen verdict. Steps: read (one call), each+read (one call per earlier row), where, pick, sort, limit, unique, count. Only tools that declare their completeness can be inner calls (lode_product_graph with action query, lode_project_graph). Grants nothing and writes nothing. Full step reference: lode_tools_discover with name lode_tools_read_chain.",
+    "Run several read-only Lode tool calls as one declarative step list inside the server and return only the rows asked for, with Lode-counted totals and the list of what Lode knows is missing (knownMissing). Steps: read (one call), each+read (one call per earlier row), where, pick, sort, limit, unique, count. Only tools that declare their completeness can be inner calls (lode_product_graph with action query, lode_project_graph). Grants nothing and writes nothing. Full step reference: lode_tools_discover with name lode_tools_read_chain.",
   inputSchema: {
     type: "object",
     properties: {
@@ -111,8 +111,8 @@ export const READ_CHAIN_REFERENCE = Object.freeze({
     stopped: "The product graph build or baseline changed between calls (no rows are returned), on_error stop met a failed call, or the request was cancelled.",
     refused: "The step list is invalid; no inner call ran.",
   },
-  everythingSeen:
-    "Lode's verdict: true only when the status is completed, no inner call failed or was refused, every notSeen count is 0, no rows were cut and every returned step was reached. notSeenBecause names the reasons when it is false.",
+  knownMissing:
+    "The reasons Lode knows something is missing: a failed or refused inner call, a bound, a cut, a step not reached, or a signal an inner answer gives about itself (TOOL_SAID:<tool>:<signal>). An empty list does not prove completeness: it means nothing Lode can detect was missing.",
   innerTools:
     "Only tools that declare their completeness (how they say no answer, more pages and cut) can be inner calls: lode_product_graph with action query and lode_project_graph (not with inventory_page). Every other tool is refused with CHAIN_TOOL_NOT_CHAINABLE before any call. Neither keeps any per-caller state, so a chain changes nothing a later call may do or is given.",
   pinning:
@@ -456,28 +456,23 @@ const matchesSpec = (value, spec) => {
   if (Object.hasOwn(spec, "in")) return spec.in.includes(found);
   if (Object.hasOwn(spec, "eq")) return found === spec.eq;
   if (Object.hasOwn(spec, "gt")) return typeof found === "number" && found > spec.gt;
+  if (Object.hasOwn(spec, "ne")) return found !== undefined && found !== spec.ne;
   if (Object.hasOwn(spec, "nonEmpty")) return Array.isArray(found) ? found.length > 0 : isObject(found) && Object.keys(found).length > 0;
   return false;
 };
 
 // The tool's own signals that rows or content are missing from an answer,
 // as its completeness declaration lists them: the names of those that hold.
-// A row signal holds when any row matches it (and not its "except").
+// A row signal holds when any row matches it.
 export function saidIncomplete(value, signals = []) {
   const said = [];
   for (const signal of signals) {
     if (signal.handledBy) continue;
-    const holds = signal.rows
-      ? (fieldValue(value, fieldPath(signal.rows)) ?? []).some?.((row) => matchesSpec(row, signal) && !(signal.except && matchesText(row, signal.except)))
-      : matchesSpec(value, signal);
+    const holds = signal.rows ? (fieldValue(value, fieldPath(signal.rows)) ?? []).some?.((row) => matchesSpec(row, signal)) : matchesSpec(value, signal);
     if (holds) said.push(signal.name);
   }
   return said;
 }
-const matchesText = (row, spec) => {
-  const found = fieldValue(row, fieldPath(spec.field));
-  return typeof found === "string" && found.includes(spec.contains);
-};
 
 // What a tool says about its own coverage outside its rows, as declared.
 function statedCoverage(value, stated = {}) {
@@ -497,14 +492,23 @@ function statedCoverage(value, stated = {}) {
 function innerOutcome(response, completeness) {
   if (!response) return { failure: { kind: "failed", code: "CHAIN_INNER_NO_RESPONSE", message: "The inner call returned nothing." } };
   if (response.error)
-    return { failure: { kind: "failed", code: response.error.data?.reasonCode || "CHAIN_INNER_CALL_FAILED", message: short(response.error.message) } };
+    return {
+      failure: {
+        kind: "failed",
+        code: short(response.error.data?.reasonCode || "CHAIN_INNER_CALL_FAILED", READ_CHAIN_LIMITS.itemChars),
+        message: short(response.error.message),
+      },
+    };
   const result = response.result || {};
   const text = result.content?.find?.((entry) => entry?.type === "text")?.text;
   if (result.isError) return { failure: { kind: "failed", code: "CHAIN_INNER_CALL_FAILED", message: short(text) } };
   const value = result.structuredContent;
   if (!isObject(value)) return { failure: { kind: "failed", code: "CHAIN_INNER_NOT_AN_ANSWER", message: "The inner call returned no structured answer." } };
   if (matchesSpec(value, completeness.answered)) return { value };
-  const code = completeness.code.map((field) => fieldValue(value, fieldPath(field))).find((found) => typeof found === "string") || "CHAIN_INNER_NOT_AN_ANSWER";
+  const code = short(
+    completeness.code.map((field) => fieldValue(value, fieldPath(field))).find((found) => typeof found === "string") || "CHAIN_INNER_NOT_AN_ANSWER",
+    READ_CHAIN_LIMITS.itemChars,
+  );
   const message = short(
     completeness.message.map((field) => fieldValue(value, fieldPath(field))).find((found) => typeof found === "string") ?? `${value.status ?? "no status"}`,
   );
@@ -538,8 +542,7 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
   if (problems.length) {
     const refused = {
       status: "refused",
-      everythingSeen: false,
-      notSeenBecause: [],
+      knownMissing: [],
       ran: { steps: 0, calls: 0, failed: 0, refused: 0 },
       basis: [],
       header: [],
@@ -567,7 +570,8 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
   let pinnedBuild = null;
   const toolSaid = new Set();
 
-  const addIssue = (issue) => {
+  const addIssue = (given) => {
+    const issue = { ...given, code: short(given.code, READ_CHAIN_LIMITS.itemChars) };
     const same = issues.find((seen) => seen.code === issue.code && seen.step === issue.step && seen.kind === issue.kind);
     if (same) same.count = (same.count ?? 1) + (issue.count ?? 1);
     else issues.push(issue);
@@ -653,8 +657,11 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
       if (completeness.stated) {
         const entry = basis.get(target.operation);
         const stated = statedCoverage(value, completeness.stated);
-        entry.stated ??= [];
-        if (entry.stated.length < 4 && !entry.stated.some((seen) => sameValue(seen, stated))) entry.stated.push(stated);
+        // At most four distinct statements per tool; an empty one is left out.
+        if (Object.keys(stated).length) {
+          entry.stated ??= [];
+          if (entry.stated.length < 4 && !entry.stated.some((seen) => sameValue(seen, stated))) entry.stated.push(stated);
+        }
       }
       // Whatever the answer says is missing from itself makes the chain say so.
       const said = saidIncomplete(value, completeness.signals);
@@ -672,7 +679,10 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
           message: `The result has no list at ${step.take ?? completeness.rows}; the whole result is one row.`,
         });
       }
-      keep(extra.item === undefined ? taken.rows : taken.rows.map((row) => ({ ...row, item: extra.item })), rows);
+      // A page marker is not a row: one that was followed brought its page; one
+      // that was not is counted in notSeen.pagesLeft.
+      const listed = completeness.pageMarker ? taken.rows.filter((row) => !matchesSpec(row, completeness.pageMarker)) : taken.rows;
+      keep(extra.item === undefined ? listed : listed.map((row) => ({ ...row, item: extra.item })), rows);
       const next = completeness.pages ? fieldValue(value, fieldPath(completeness.pages.next)) : undefined;
       if (!isObject(next)) return "done";
       remainingBefore = fieldValue(value, fieldPath(completeness.pages.remaining));
@@ -758,8 +768,7 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
   if (!buildChanged) for (const entry of headers) if (!distinct.some((seen) => sameValue(seen.header, entry.header))) distinct.push(entry);
   const output = {
     status: stop ? "stopped" : ran.failed || ran.refused || memoryFull || Object.values(notSeen).some((count) => count > 0) ? "partial" : "completed",
-    everythingSeen: false,
-    notSeenBecause: [],
+    knownMissing: [],
     ran,
     basis: [...basis.values()],
     header: distinct.length === 1 ? distinct[0].header : [],
@@ -782,7 +791,7 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
 }
 
 // Lode's own verdict: everything was seen only when none of these holds.
-function seenVerdict(output, toolReasons) {
+function missingReasons(output, toolReasons) {
   const reasons = [];
   if (output.status !== "completed") reasons.push(`STATUS_${output.status.toUpperCase()}`);
   if (output.ran.failed) reasons.push("INNER_CALL_FAILED");
@@ -821,7 +830,7 @@ function fitAnswer(output, pending, maxBytes, toolReasons = []) {
       output.issues = Object.entries(counts).map(([code, count]) => ({ code, count }));
     },
     () => {
-      output.basis = output.basis.map((entry) => ({ tool: entry.tool, pinned: entry.pinned }));
+      output.basis = output.basis.map((entry) => ({ tool: short(entry.tool, READ_CHAIN_LIMITS.itemChars), pinned: entry.pinned }));
     },
     () => {
       // Tool reasons as counts, when even their names do not fit.
@@ -829,12 +838,10 @@ function fitAnswer(output, pending, maxBytes, toolReasons = []) {
     },
   ];
   const verdict = () => {
-    const reasons = seenVerdict(output, toolReasons);
-    output.everythingSeen = reasons.length === 0;
-    output.notSeenBecause = reasons;
+    output.knownMissing = missingReasons(output, toolReasons);
   };
   // Room for what a cut adds: the bytes issue, a status change and two reasons.
-  // (Each reduction step keeps everythingSeen and its reasons.)
+  // (Each reduction step keeps knownMissing.)
   const RESERVE = bytesOf({ code: "CHAIN_BYTES_LIMIT" }) + 1 + bytesOf(["STATUS_PARTIAL", "ROWS_CUT"]);
   verdict();
   for (const step of reduce) {

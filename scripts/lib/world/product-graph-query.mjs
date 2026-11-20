@@ -256,6 +256,8 @@ export function queryProductGraph(options = {}) {
     builtAt: read.builtAt,
     buildSha256: identity(),
     confirmationComparison: ctx.confirmations ? (ctx.confirmations.status === "compared" ? "compared" : "not-read") : "absent",
+    // Whether the build was compared with a baseline (changedSinceBaseline is on rows only then).
+    baselineComparison: ctx.changes ? (ctx.changes.status === "compared" ? "compared" : String(ctx.changes.status ?? "absent")) : "absent",
     ...(basisSha256 ? { basisSha256 } : {}),
     freshness: { state: read.freshness.state, text: read.freshness.text },
     ...(proposalFreshness ? { proposalFreshness } : {}),

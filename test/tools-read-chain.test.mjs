@@ -19,7 +19,7 @@ import { productGraphQueryContext, queryProductGraph } from "../scripts/lib/worl
 import { productGraphWalk as walk } from "../scripts/graph-explorer/product-graph-walk.js";
 import { chainReadTarget, dispatch, operationCatalogTools, tools, toolsForSurface } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
-import { READ_CHAIN_LIMITS, READ_CHAIN_REFERENCE, runReadChain } from "../scripts/lib/core/tools-read-chain.mjs";
+import { READ_CHAIN_LIMITS, READ_CHAIN_REFERENCE, runReadChain, saidIncomplete } from "../scripts/lib/core/tools-read-chain.mjs";
 import { RESULT_SHAPE_TOOLS, chainCompletenessFor, resultShapeFor } from "../scripts/lib/core/tool-result-shapes.mjs";
 import { SESSION_HOST_REQUEST_HELPER, claudeNativeHookMatchers } from "../scripts/lib/session/session-host-request.mjs";
 import { createNativeSessionHostBridge } from "../scripts/lib/session/session-native-host.mjs";
@@ -234,7 +234,7 @@ test("T5.1: every invalid program is refused before any inner call, with every p
       `${label}: ${JSON.stringify(value.issues).slice(0, 600)}`,
     );
     assert.equal(value.ran.calls, 0, label);
-    assert.equal(value.everythingSeen, false, label);
+    assert.equal(value.knownMissing.length > 0, true, label);
   }
   assert.deepEqual(calls, [], "no inner call ran");
   const refused = answer(
@@ -366,7 +366,7 @@ test("T3, T5.5, T5.6: a chain's rows equal the same calls made one by one with t
   assert.deepEqual(tree(f.root), before, "the Project folder is unchanged");
   const value = first.structuredContent;
   assert.equal(value.status, "completed");
-  assert.equal(value.everythingSeen, true, JSON.stringify(value.notSeenBecause));
+  assert.deepEqual(value.knownMissing, []);
   assert.equal(first.content[0].text, JSON.stringify(value), "the content text is no larger than the JSON");
   const todo = [];
   let args = { project_root: f.root, question: "changes", list: "reviewAgain", limit: 2 };
@@ -421,12 +421,12 @@ test("E6: pages of the listed grouped name follow to the end; stopping early cou
   );
   assert.equal(value.ran.failed, 0, JSON.stringify(value.issues));
   assert.deepEqual(value.results.items.rows, direct);
-  assert.equal(value.everythingSeen, true);
+  assert.deepEqual(value.knownMissing, []);
   const two = answer(await chain(single(f.root, "lode_product_graph", { action: "query", question: "changes", list: "neverChecked", limit: 3 }, { pages: 2 })));
   assert.equal(two.notSeen.pagesLeft, 1);
   assert.equal(two.notSeen.itemsLeft, direct.length - 6);
-  assert.equal(two.everythingSeen, false);
-  assert.ok(two.notSeenBecause.includes("NOT_SEEN_pagesLeft"));
+  assert.equal(two.knownMissing.length > 0, true);
+  assert.ok(two.knownMissing.includes("NOT_SEEN_pagesLeft"));
 });
 
 // ---------- T4: bounds, past them ----------
@@ -435,7 +435,7 @@ test("T4: each counts its calls with pages and stops past its max; the total sto
   const each = await run({ steps: [src(), per()], return: [{ from: "per", limit: 0 }] }, fakeCall({ rows: 25 }));
   assert.equal(each.ran.calls, 21, "one read and twenty, not twenty-five");
   assert.equal(each.notSeen.eachSkipped, 5);
-  assert.equal(each.everythingSeen, false);
+  assert.equal(each.knownMissing.length > 0, true);
   // max counts inner calls, pages included: 3 calls cover one item's two pages and the next item's first.
   const paged = await run(
     { steps: [src({ pages: 2 }), per({ pages: 2 }, { max: 3 })], return: [{ from: "per", limit: 0 }] },
@@ -480,8 +480,8 @@ test("T4: pages stop at the asked number; intermediate rows stop past 16 MiB; ro
   );
   assert.equal(holes.notSeen.eachNoValue, 2);
   assert.equal(holes.ran.calls, 2);
-  assert.equal(holes.everythingSeen, false);
-  assert.ok(holes.notSeenBecause.includes("NOT_SEEN_eachNoValue"));
+  assert.equal(holes.knownMissing.length > 0, true);
+  assert.ok(holes.knownMissing.includes("NOT_SEEN_eachNoValue"));
   const many = await run({ steps: [src()], return: [{ from: "src", limit: 1 }] }, fakeCall({ rows: 200_000, size: 1 }));
   assert.equal(many.results.src.total, 200_000);
 });
@@ -553,7 +553,7 @@ test("E4: with a real tool and long handed-over items the answer stays within ma
       }),
     );
     assert.ok(Buffer.byteLength(JSON.stringify(value)) <= maxBytes, `${maxBytes}`);
-    assert.equal(value.everythingSeen, false);
+    assert.equal(value.knownMissing.length > 0, true);
   }
 });
 
@@ -565,7 +565,7 @@ test("T5.4, E3: a failed or refused inner call is recorded once per code and ste
   const go = failing();
   const continued = await run(program(), go);
   assert.equal(continued.status, "partial");
-  assert.equal(continued.everythingSeen, false);
+  assert.equal(continued.knownMissing.length > 0, true);
   assert.equal(continued.ran.failed, 1);
   assert.equal(continued.ran.calls, 5);
   assert.equal(go.calls.filter((args) => args.item === 1).length, 1, "not retried");
@@ -574,7 +574,7 @@ test("T5.4, E3: a failed or refused inner call is recorded once per code and ste
     [["FAKE_FAILED", "per", "1"]],
   );
   assert.equal(continued.results.per.total, 3 * 4);
-  assert.ok(continued.notSeenBecause.includes("INNER_CALL_FAILED"));
+  assert.ok(continued.knownMissing.includes("INNER_CALL_FAILED"));
   const stopped = await run(program("stop"), failing());
   assert.equal(stopped.status, "stopped");
   assert.equal(stopped.ran.calls, 3, "no call after the failed one");
@@ -585,7 +585,7 @@ test("T5.4, E3: a failed or refused inner call is recorded once per code and ste
     ["refused", "FAKE_REFUSED", "refused"],
   ]) {
     const value = await run({ steps: [src()], return: [{ from: "src" }] }, fakeCall({ fail: () => mode }));
-    assert.deepEqual([value.issues[0].code, value.issues[0].kind, value.results.src.total, value.everythingSeen], [code, kind, 0, false], mode);
+    assert.deepEqual([value.issues[0].code, value.issues[0].kind, value.results.src.total, value.knownMissing.length > 0], [code, kind, 0, true], mode);
   }
   // An item the target refuses gets no call and is counted as refused.
   const perItem = await run(
@@ -593,11 +593,11 @@ test("T5.4, E3: a failed or refused inner call is recorded once per code and ste
     fakeCall({ rows: 0, answer: (args) => (args.item === undefined ? { rows: [{ tag: "a" }, { tag: "refuse-me" }, { tag: "b" }] } : {}) }),
   );
   assert.deepEqual([perItem.ran.calls, perItem.ran.refused, perItem.issues[0].code, perItem.issues[0].item], [3, 1, "CHAIN_TOOL_NOT_CHAINABLE", "refuse-me"]);
-  assert.ok(perItem.notSeenBecause.includes("INNER_CALL_REFUSED"));
+  assert.ok(perItem.knownMissing.includes("INNER_CALL_REFUSED"));
   // A return limit cuts rows: counted, and not everything was seen.
   const limited = await run({ steps: [src()], return: [{ from: "src", limit: 2 }] }, fakeCall({ rows: 3 }));
-  assert.deepEqual([limited.results.src.returned, limited.results.src.cut, limited.status, limited.everythingSeen], [2, 1, "completed", false]);
-  assert.deepEqual(limited.notSeenBecause, ["ROWS_CUT"]);
+  assert.deepEqual([limited.results.src.returned, limited.results.src.cut, limited.status, limited.knownMissing.length > 0], [2, 1, "completed", true]);
+  assert.deepEqual(limited.knownMissing, ["ROWS_CUT"]);
   // A basis change on a later page stops the chain even when the build identity is the same.
   const pageBasis = await run(
     { steps: [src({ pages: 3 })], return: [{ from: "src" }] },
@@ -606,11 +606,11 @@ test("T5.4, E3: a failed or refused inner call is recorded once per code and ste
   assert.deepEqual([pageBasis.status, pageBasis.results.src.rows], ["stopped", []]);
   assert.ok(pageBasis.issues.some((issue) => issue.code === "CHAIN_BUILD_CHANGED"));
   const cut = await run({ steps: [src()], return: [{ from: "src" }] }, fakeCall({ answer: () => ({ truncated: true, omitted: 7 }) }));
-  assert.deepEqual([cut.notSeen.answersSaidIncomplete, cut.everythingSeen], [1, false]);
-  assert.ok(cut.notSeenBecause.includes("TOOL_SAID:t:truncated"));
+  assert.deepEqual([cut.notSeen.answersSaidIncomplete, cut.knownMissing.length > 0], [1, true]);
+  assert.ok(cut.knownMissing.includes("TOOL_SAID:t:truncated"));
   const take = await run({ steps: [src({ take: "nowhere" })], return: [{ from: "src" }] }, fakeCall());
   assert.ok(take.issues.some((issue) => issue.code === "CHAIN_TAKE_NOT_A_LIST"));
-  assert.equal(take.everythingSeen, false);
+  assert.equal(take.knownMissing.length > 0, true);
   const headers = await run(
     { steps: [src(), per()], return: [{ from: "per", limit: 0 }] },
     fakeCall({ rows: 2, answer: (args) => ({ header: [`h ${args.item ?? "src"}`] }) }),
@@ -626,26 +626,26 @@ test("E3: real answers that are not answers or are cut are never counted as comp
   const f = fixture(t);
   const notBuilt = answer(await chain(single(f.root, QUERY)));
   assert.deepEqual(
-    [notBuilt.status, notBuilt.ran.failed, notBuilt.issues[0].code, notBuilt.results.s.total, notBuilt.everythingSeen],
-    ["partial", 1, "PRODUCT_GRAPH_NOT_BUILT", 0, false],
+    [notBuilt.status, notBuilt.ran.failed, notBuilt.issues[0].code, notBuilt.results.s.total, notBuilt.knownMissing.length > 0],
+    ["partial", 1, "PRODUCT_GRAPH_NOT_BUILT", 0, true],
   );
   const g = graphProject(t);
   const refused = answer(await chain(single(g.root, QUERY, { question: "up", id: "no-such-node" })));
-  assert.deepEqual([refused.ran.refused, refused.issues[0].kind, refused.everythingSeen], [1, "refused", false]);
+  assert.deepEqual([refused.ran.refused, refused.issues[0].kind, refused.knownMissing.length > 0], [1, "refused", true]);
   assert.match(refused.issues[0].code, /^PRODUCT_GRAPH_/);
   const direct = answer(await read("lode_project_graph", { project_root: g.root, max_nodes: 1 }));
   assert.ok(direct.truncated === true || direct.omittedMatchCount > 0, "the tool says it cut");
   const cut = answer(await chain(single(g.root, "lode_project_graph", { max_nodes: 1 })));
-  assert.equal(cut.everythingSeen, false);
+  assert.equal(cut.knownMissing.length > 0, true);
   assert.equal(cut.notSeen.answersSaidIncomplete, 1, "one answer, counted once however many signals it gives");
-  assert.ok(cut.notSeenBecause.includes("TOOL_SAID:lode_project_graph:truncated"));
+  assert.ok(cut.knownMissing.includes("TOOL_SAID:lode_project_graph:truncated"));
 });
 
-test("F1: lode_project_graph's own coverage signals make everythingSeen false and reach the basis once", async (t) => {
+test("F1: lode_project_graph's own coverage signals are known as missing and reach the basis once", async (t) => {
   const g = graphProject(t);
   const plain = answer(await chain(single(g.root, "lode_project_graph", { max_nodes: 50, max_edges: 100 })));
-  assert.equal(plain.everythingSeen, false, "its coverage is partial by design");
-  assert.ok(plain.notSeenBecause.includes("TOOL_SAID:lode_project_graph:coverage.state"));
+  assert.equal(plain.knownMissing.length > 0, true, "its coverage is partial by design");
+  assert.ok(plain.knownMissing.includes("TOOL_SAID:lode_project_graph:coverage.state"));
   assert.deepEqual(
     plain.basis.map((entry) => [entry.tool, entry.pinned, entry.stated?.[0]?.coverage]),
     [["lode_project_graph", false, "partial"]],
@@ -661,8 +661,8 @@ test("F1: lode_project_graph's own coverage signals make everythingSeen false an
   const direct = answer(await read("lode_project_graph", { project_root: g.root, max_nodes: 50 }));
   assert.ok(direct.integrity.excluded.length > 0, "the tool excludes the tampered layer");
   const tampered = answer(await chain(single(g.root, "lode_project_graph", { max_nodes: 50 })));
-  assert.equal(tampered.everythingSeen, false);
-  assert.ok(tampered.notSeenBecause.includes("TOOL_SAID:lode_project_graph:integrity.excluded"));
+  assert.equal(tampered.knownMissing.length > 0, true);
+  assert.ok(tampered.knownMissing.includes("TOOL_SAID:lode_project_graph:integrity.excluded"));
   assert.deepEqual(
     tampered.basis[0].stated[0].excluded,
     direct.integrity.excluded.map((entry) => ({ layer: entry.layer ?? null, reasonCode: entry.reasonCode ?? null })),
@@ -670,7 +670,7 @@ test("F1: lode_project_graph's own coverage signals make everythingSeen false an
   assert.equal(tampered.basis[0].stated[0].sourceFallbackNeeded, true);
 });
 
-test("F2: a product graph tree cut below the first level makes everythingSeen false", async (t) => {
+test("F2: a product graph tree cut below the first level is known as missing", async (t) => {
   const g = graphProject(t);
   const direct = answer(await read(QUERY, { project_root: g.root, question: "down", id: "@화면", depth: 3, limit: 1 }));
   assert.ok(
@@ -678,83 +678,338 @@ test("F2: a product graph tree cut below the first level makes everythingSeen fa
     "the tool cuts below the first level",
   );
   const value = answer(await chain(single(g.root, QUERY, { question: "down", id: "@화면", depth: 3, limit: 1 }, { pages: 10 })));
-  assert.equal(value.everythingSeen, false);
-  assert.ok(value.notSeenBecause.includes("TOOL_SAID:lode_product_graph_query:rows[].kind=more"), JSON.stringify(value.notSeenBecause));
+  assert.equal(value.knownMissing.length > 0, true);
+  assert.ok(value.knownMissing.includes("TOOL_SAID:lode_product_graph_query:rows[].missing"), JSON.stringify(value.knownMissing));
   // A page continuation that was followed is not a cut.
   const followed = answer(await chain(single(g.root, QUERY, { question: "changes", list: "neverChecked", limit: 2 }, { pages: 10 })));
-  assert.equal(followed.everythingSeen, true, JSON.stringify(followed.notSeenBecause));
+  assert.deepEqual(followed.knownMissing, []);
 });
 
-// Any way a real answer says something is missing from itself, found without
-// the declaration, must be one of the tool's declared signals.
-function incompletenessPaths(value) {
-  const found = new Set();
-  const visit = (node, at) => {
-    if (Array.isArray(node)) return node.forEach((entry) => visit(entry, `${at}[]`));
-    if (node === null || typeof node !== "object") return;
-    for (const [key, child] of Object.entries(node)) {
-      const here = at ? `${at}.${key}` : key;
-      const loud = child === true || (typeof child === "number" && child > 0) || (Array.isArray(child) && child.length > 0);
-      if (/truncat|omitted|exclud|unmatched|boundreached|needed|remaining|partial|uninspected/i.test(key) && loud) found.add(here);
-      if (["status", "state"].includes(key) && ["partial", "unavailable"].includes(child)) found.add(here);
-      if (key === "kind" && child === "more") found.add(here);
-      visit(child, here);
+// A generated product big enough to reach the walk's caps: a hub reached from
+// _save calls 60 functions that each call 39 leaves (2340 leaves, past the
+// 2000-row cap), and every leaf file changes after the baseline (more than 50
+// changed nodes and more than 10 changed source files). No documents, so the
+// screen-pointing check is not run.
+function bigProject(t, { mids = 60, leaves = 39 } = {}) {
+  const f = fixture(t);
+  fs.cpSync(path.join(fixtures, "ui-signal"), f.root, { recursive: true });
+  const gen = path.join(f.root, "station", "gen");
+  fs.mkdirSync(gen, { recursive: true });
+  fs.writeFileSync(path.join(gen, "__init__.py"), "");
+  const pad = (n) => String(n).padStart(3, "0");
+  const writeLeaves = (bump) => {
+    for (let m = 0; m < mids; m += 1) {
+      const lines = [];
+      for (let k = 0; k < leaves; k += 1) lines.push(`def leaf_${pad(m)}_${pad(k)}():`, `    return ${k + bump}`, "", "");
+      fs.writeFileSync(path.join(gen, `leaf${pad(m)}.py`), lines.join("\n"));
     }
   };
-  visit(value, "");
-  return found;
+  writeLeaves(0);
+  const midLines = [];
+  for (let m = 0; m < mids; m += 1)
+    midLines.push(`from station.gen.leaf${pad(m)} import ${Array.from({ length: leaves }, (_, k) => `leaf_${pad(m)}_${pad(k)}`).join(", ")}`);
+  midLines.push("", "");
+  for (let m = 0; m < mids; m += 1) {
+    midLines.push(`def mid_${pad(m)}():`);
+    for (let k = 0; k < leaves; k += 1) midLines.push(`    leaf_${pad(m)}_${pad(k)}()`);
+    midLines.push("", "");
+  }
+  fs.writeFileSync(path.join(gen, "mids.py"), midLines.join("\n"));
+  fs.writeFileSync(
+    path.join(gen, "hub.py"),
+    [
+      `from station.gen.mids import ${Array.from({ length: mids }, (_, m) => `mid_${pad(m)}`).join(", ")}`,
+      "",
+      "",
+      "def hub():",
+      ...Array.from({ length: mids }, (_, m) => `    mid_${pad(m)}()`),
+      "",
+    ].join("\n"),
+  );
+  const window = path.join(f.root, "station", "ui", "main_window.py");
+  fs.writeFileSync(
+    window,
+    fs
+      .readFileSync(window, "utf8")
+      .replace("from PySide6.QtCore", "from station.gen.hub import hub\nfrom PySide6.QtCore")
+      .replace("    def _save(self):\n        self.model.refresh()", "    def _save(self):\n        self.model.refresh()\n        hub()"),
+  );
+  buildProductGraph({ root: f.root });
+  moveProductGraphBaseline({ root: f.root });
+  writeLeaves(1);
+  buildProductGraph({ root: f.root });
+  return { ...f, mids, leaves, family: path.join(f.root, ".lode", "context", "product-graph") };
 }
 
-test("F1, F2: every incompleteness signal in real answers is declared", async (t) => {
-  const g = graphProject(t);
-  const declared = (tool) => {
-    const names = new Set();
-    for (const signal of chainCompletenessFor(tool).signals) names.add(signal.rows ? `${signal.rows}[].${signal.field}` : signal.field);
-    // What the tool states about coverage outside its rows reaches the basis instead.
-    for (const field of Object.values(chainCompletenessFor(tool).stated ?? {})) names.add(field);
-    return names;
-  };
-  // Paths that are parts of a declared signal: the omitted bytes of a side whose status is partial.
-  const partOf = { "rows[].detail.before.omittedBytes": "rows[].detail.before.status", "rows[].detail.after.omittedBytes": "rows[].detail.after.status" };
-  const check = (tool, value, label) => {
-    const known = declared(tool);
-    for (const found of incompletenessPaths(value)) assert.ok(known.has(found) || known.has(partOf[found]), `${tool} ${label}: ${found} is not declared`);
-  };
+// The walk's own words for a cut or for something not checked or compared.
+const CUT_PHRASES = /외 \d+개|검사 못 함|비교하지 않음|기준 없음|읽지 않음|보이지 않았다|보이지 않음|앞부분만/;
+const HUB = "station/gen/hub.py#hub";
+
+test("G2, G3: every cut or not-checked phrase in a product graph answer has a structured mark, and the chain reports it", async (t) => {
+  const g = bigProject(t);
   const questions = [
     { question: "overview" },
-    { question: "down", id: "@기능", depth: 3, limit: 1 },
-    { question: "down", id: "@파일", depth: 4, limit: 2 },
-    { question: "down", id: "@화면", depth: 3, limit: 1 },
-    { question: "up", id: SAVE_CODE, depth: 3, limit: 1 },
-    { question: "reach", id: SAVE, limit: 1 },
-    { question: "find", text: "save", limit: 1 },
+    { question: "changes" },
+    { question: "changes", list: "changed", limit: 500 },
+    { question: "changes", list: "reachChanged", limit: 500 },
+    { question: "changes", list: "unexplained" },
+    { question: "changes", list: "reviewAgain" },
+    { question: "changes", list: "neverChecked" },
+    { question: "changes", list: "content", limit: 3 },
     { question: "gaps" },
-    { question: "changes", list: "neverChecked", limit: 1 },
-    { question: "changes", list: "content", limit: 1 },
+    { question: "gaps", list: "unpointedFunctions" },
+    { question: "gaps", list: "unreachedCode", limit: 5 },
+    { question: "find", text: "hub" },
+    { question: "down", id: HUB, depth: 2, limit: 500 },
+    { question: "down", id: "@파일", depth: 3, limit: 2 },
+    { question: "up", id: "station/gen/leaf000.py#leaf_000_000", depth: 4 },
     { question: "impact" },
   ];
-  for (const args of questions) check(QUERY, answer(await read(QUERY, { project_root: g.root, ...args })), JSON.stringify(args));
-  // A content side cut at its bound.
-  fs.appendFileSync(g.window, `\n# ${"long line ".repeat(3000)}\n`);
-  buildProductGraph({ root: g.root });
-  const content = answer(await read(QUERY, { project_root: g.root, question: "changes", list: "content", limit: 50 }));
-  check(QUERY, content, "content with a long side");
-  const graphCases = [
-    {},
-    { max_nodes: 1 },
-    { max_nodes: 3 },
-    { anchor_ids: ["no-such-anchor"] },
-    { query: "zzz-nothing-matches-this" },
-    { details: true, max_nodes: 500 },
-  ];
-  for (const args of graphCases) check("lode_project_graph", answer(await read("lode_project_graph", { project_root: g.root, ...args })), JSON.stringify(args));
-  const records = path.join(g.root, ".lode", "sessions", "records");
-  const record = path.join(
-    records,
-    fs.readdirSync(records).find((name) => name.startsWith("session-") && name.endsWith(".json")),
+  const kinds = new Set();
+  for (const args of questions) {
+    const value = queryProductGraph({ root: g.root, ...args });
+    if (value.status !== "answered") continue;
+    let marked = Boolean(value.missing?.length);
+    if (CUT_PHRASES.test(value.title)) assert.ok(value.missing?.length, `${JSON.stringify(args)}: title "${value.title}" has no mark`);
+    for (const mark of value.missing || []) kinds.add(mark.kind);
+    for (const row of value.rows) {
+      const full = row.detail?.before || row.detail?.after ? walk.contentItemText(row.detail) : row.text;
+      const sideMissing = ["partial", "unavailable"].includes(row.detail?.before?.status) || ["partial", "unavailable"].includes(row.detail?.after?.status);
+      if (CUT_PHRASES.test(full))
+        assert.ok(row.missing || row.continues === "nextPage" || sideMissing, `${JSON.stringify(args)}: "${full.slice(0, 120)}" has no mark`);
+      if (row.missing) kinds.add(row.missing.kind);
+      if (row.missing || sideMissing) marked = true;
+    }
+    if (marked) {
+      const chained = answer(await chain(single(g.root, QUERY, args)));
+      assert.ok(
+        chained.knownMissing.some((reason) => reason.startsWith(`TOOL_SAID:${QUERY}:`)),
+        `${JSON.stringify(args)}: ${JSON.stringify(chained.knownMissing)}`,
+      );
+    }
+  }
+  // Every kind of mark the walk writes was reached on this fixture.
+  for (const kind of ["cut", "notChecked", "connectionsCut", "rowCap"]) assert.ok(kinds.has(kind), `${kind} not reached`);
+});
+
+test("G3: the row cap says what it left out, also when it ends at the end of a sub-list", (t) => {
+  const g = bigProject(t);
+  const value = queryProductGraph({ root: g.root, question: "down", id: HUB, depth: 2, limit: 500 });
+  const capRow = value.rows.find((row) => row.missing?.kind === "rowCap");
+  assert.ok(capRow, "the cap row is there");
+  const shownLeaves = value.rows.filter((row) => row.kind === "node" && row.depth === 4).length;
+  assert.equal(shownLeaves + capRow.missing.left, g.mids * g.leaves, "shown plus left out is every leaf");
+  assert.ok(value.text.includes(`외 ${capRow.missing.left}개 줄은 보이지 않았다`));
+  // With a limit below each sub-list's length, the sub-list a cap lands in also counts its own remainder.
+  const wide = bigProject(t, { mids: 40, leaves: 60 });
+  const paged = queryProductGraph({ root: wide.root, question: "down", id: HUB, depth: 2, limit: 50 });
+  const shown = paged.rows.filter((row) => row.kind === "node" && row.depth === 4).length;
+  const nested = paged.rows.filter((row) => row.kind === "more" && row.depth === 3).reduce((sum, row) => sum + row.missing.left, 0);
+  const cap = paged.rows.find((row) => row.missing?.kind === "rowCap");
+  const listedMids = paged.rows.filter((row) => row.kind === "node" && row.depth === 2).length;
+  assert.equal(listedMids, wide.mids);
+  assert.equal(shown + nested + cap.missing.left, listedMids * wide.leaves, "every leaf of the listed mids is shown, in a nested more row, or in the cap");
+});
+
+test("G5: a followed page's marker is not a row; a page not followed is counted, not listed", async (t) => {
+  const g = graphProject(t);
+  const all = queryProductGraph({ root: g.root, question: "changes", list: "neverChecked", limit: 500 }).rows.length;
+  const followed = answer(await chain(single(g.root, QUERY, { question: "changes", list: "neverChecked", limit: 2 }, { pages: 10 })));
+  assert.equal(followed.results.s.total, all);
+  assert.ok(followed.results.s.rows.every((row) => row.kind !== "more"));
+  const stopped = answer(await chain(single(g.root, QUERY, { question: "changes", list: "neverChecked", limit: 2 }, { pages: 2 })));
+  assert.equal(stopped.results.s.total, 4);
+  assert.equal(stopped.notSeen.pagesLeft, 1);
+});
+
+test("G4: a node id that contains --cursor does not hide a real cut", (t) => {
+  const g = graphProject(t);
+  const odd = path.join(g.root, "station", "x --cursor y");
+  fs.mkdirSync(odd, { recursive: true });
+  fs.writeFileSync(
+    path.join(odd, "entry.py"),
+    [
+      "def entry():",
+      "    mid1()",
+      "    mid2()",
+      "",
+      "",
+      "def mid1():",
+      "    a()",
+      "    b()",
+      "    c()",
+      "",
+      "",
+      "def mid2():",
+      "    return 0",
+      "",
+      "",
+      "def a():",
+      "    return 1",
+      "",
+      "",
+      "def b():",
+      "    return 2",
+      "",
+      "",
+      "def c():",
+      "    return 3",
+      "",
+    ].join(String.fromCharCode(10)),
   );
-  fs.writeFileSync(record, JSON.stringify({ ...JSON.parse(fs.readFileSync(record, "utf8")), tampered: true }));
-  check("lode_project_graph", answer(await read("lode_project_graph", { project_root: g.root, max_nodes: 50 })), "tampered");
+  buildProductGraph({ root: g.root });
+  const id = "station/x --cursor y/entry.py#entry";
+  const tree = queryProductGraph({ root: g.root, question: "down", id, depth: 2, limit: 1 });
+  assert.equal(tree.status, "answered", JSON.stringify(tree.message));
+  const nested = tree.rows.filter((row) => row.kind === "more" && row.depth > 1);
+  assert.ok(nested.length > 0 && nested.every((row) => row.hint.includes("--cursor")), "the nested hint contains --cursor");
+  assert.ok(nested.every((row) => row.missing?.kind === "cut" && row.continues === undefined));
+  const page = tree.rows.find((row) => row.kind === "more" && row.depth === 1);
+  assert.equal(page.continues, "nextPage");
+  assert.ok(saidIncomplete(tree, chainCompletenessFor(QUERY).signals).includes("rows[].missing"));
+});
+
+test("G6: what an answer says about its basis reaches the basis entry and, when something was not compared, knownMissing", async (t) => {
+  const g = graphProject(t);
+  const plain = answer(await chain(single(g.root, QUERY, { question: "overview" })));
+  assert.deepEqual(plain.basis[0].stated, [{ confirmationComparison: "compared", baselineComparison: "compared" }]);
+  assert.deepEqual(plain.knownMissing, []);
+  const checkFile = path.join(g.family, "build", "check.json");
+  const check = JSON.parse(fs.readFileSync(checkFile, "utf8"));
+  delete check.confirmations;
+  delete check.changes;
+  fs.writeFileSync(checkFile, `${JSON.stringify(check, null, 2)}\n`);
+  const bare = answer(
+    await chain({
+      project_root: g.root,
+      steps: [
+        { id: "s", read: { name: QUERY, arguments: { question: "find", text: "save" } } },
+        { id: "w", from: "s", where: { field: "confirmation", exists: true } },
+      ],
+      return: [{ from: "w" }],
+    }),
+  );
+  assert.equal(bare.results.w.total, 0);
+  assert.ok(bare.knownMissing.includes(`TOOL_SAID:${QUERY}:confirmationComparison`));
+  assert.ok(bare.knownMissing.includes(`TOOL_SAID:${QUERY}:baselineComparison`));
+  assert.deepEqual(bare.basis[0].stated, [{ confirmationComparison: "absent", baselineComparison: "absent" }]);
+  // The project graph's no-match answer is an answer with its own reasons, not a failure with a borrowed code.
+  const none = answer(await chain(single(g.root, "lode_project_graph", { anchor_ids: ["no-such-anchor"] })));
+  assert.equal(none.ran.failed, 0);
+  assert.ok(none.knownMissing.includes("TOOL_SAID:lode_project_graph:status=source-fallback"));
+  assert.ok(none.knownMissing.includes("TOOL_SAID:lode_project_graph:unmatchedAnchorIds"));
+  assert.equal(none.basis[0].stated[0].status, "source-fallback");
+  assert.deepEqual(none.basis[0].stated[0].unmatchedAnchorIds, ["no-such-anchor"]);
+});
+
+// The declared signals, named here so that removing one fails, each with an
+// answer that gives it.
+const DECLARED = {
+  [QUERY]: {
+    "page.remaining": null,
+    missing: { missing: [{ kind: "notChecked" }] },
+    "rows[].missing": { rows: [{ kind: "more", missing: { kind: "cut", left: 2 } }] },
+    "rows[].detail.before.status": { rows: [{ detail: { before: { status: "partial" } } }] },
+    "rows[].detail.after.status": { rows: [{ detail: { after: { status: "unavailable" } } }] },
+    confirmationComparison: { confirmationComparison: "not-read" },
+    baselineComparison: { baselineComparison: "absent" },
+  },
+  lode_project_graph: {
+    "status=source-fallback": { status: "source-fallback" },
+    truncated: { truncated: true },
+    omittedMatchCount: { omittedMatchCount: 3 },
+    "boundary.items": { boundary: { items: [{}] } },
+    "boundary.omittedCount": { boundary: { omittedCount: 1 } },
+    unmatchedAnchorIds: { unmatchedAnchorIds: ["x"] },
+    "integrity.excluded": { integrity: { excluded: [{ layer: "sessions" }] } },
+    "coverage.state": { coverage: { state: "partial" } },
+    "coverage.inventoryBoundReached": { coverage: { inventoryBoundReached: true } },
+    "sourceFallback.needed": { sourceFallback: { needed: true } },
+    "sourceFallback.excludedInputs": { sourceFallback: { excludedInputs: [{}] } },
+    "nodes[].contentPartial": { nodes: [{ contentPartial: true }] },
+    "nodes[].directionContentCoverage.partial": { nodes: [{ directionContentCoverage: { partial: true } }] },
+    "nodes[].workContentCoverage.partial": { nodes: [{ workContentCoverage: { partial: true } }] },
+    "summary.directionReferences[].contentCoverage.partial": { summary: { directionReferences: [{ contentCoverage: { partial: true } }] } },
+    "boundary.omittedAnchorCount": { boundary: { omittedAnchorCount: 2 } },
+    "integrity.omittedVerifiedRecordPathCount": { integrity: { omittedVerifiedRecordPathCount: 2 } },
+    "coverage.layers[].status": { coverage: { layers: [{ status: "absent" }] } },
+  },
+};
+
+test("G8: each declared signal is named here and is recognised in an answer that gives it", () => {
+  for (const [tool, signals] of Object.entries(DECLARED)) {
+    const declared = chainCompletenessFor(tool).signals;
+    assert.deepEqual(declared.map((signal) => signal.name).sort(), Object.keys(signals).sort(), tool);
+    for (const [name, sample] of Object.entries(signals)) {
+      if (!sample) continue;
+      assert.deepEqual(saidIncomplete(sample, declared), [name], `${tool}: ${name}`);
+    }
+  }
+  // A page continuation is not a cut.
+  assert.deepEqual(saidIncomplete({ rows: [{ kind: "more", continues: "nextPage" }] }, chainCompletenessFor(QUERY).signals), []);
+});
+
+test("G8: real answers give the declared signals", async (t) => {
+  const g = graphProject(t);
+  const real = async (args) => answer(await read("lode_project_graph", { project_root: g.root, ...args }));
+  const said = async (args) => saidIncomplete(await real(args), chainCompletenessFor("lode_project_graph").signals);
+  assert.ok((await said({ max_nodes: 1 })).includes("truncated"));
+  assert.ok((await said({ max_nodes: 1 })).includes("coverage.state"));
+  assert.ok((await said({ max_nodes: 1 })).includes("sourceFallback.needed"));
+  assert.ok((await said({ anchor_ids: ["no-such-anchor"] })).includes("unmatchedAnchorIds"));
+  const q = (args) => queryProductGraph({ root: g.root, ...args });
+  assert.deepEqual(saidIncomplete(q({ question: "changes", list: "neverChecked", limit: 2 }), chainCompletenessFor(QUERY).signals), []);
+  assert.ok(saidIncomplete(q({ question: "down", id: "@화면", depth: 3, limit: 1 }), chainCompletenessFor(QUERY).signals).includes("rows[].missing"));
+});
+
+test("G9: invalid max_bytes on a refusal, the tool reason reduction, four statements per tool and their projection, the issue naming signals", async () => {
+  // A refusal for an invalid max_bytes is fitted to the default, not to the invalid value.
+  const refused = await run({ steps: [{ id: "a", frob: 1 }], return: [{ from: "a" }], max_bytes: 100 }, fakeCall());
+  assert.equal(refused.status, "refused");
+  assert.ok(refused.issues.every((issue) => typeof issue.message === "string"));
+  // Many long tool names saying they are incomplete: reasons become one count.
+  const loud = { ...FAKE, signals: [{ name: "truncated", field: "truncated", eq: true }] };
+  const many = await runReadChain(
+    {
+      project_root: "P",
+      steps: Array.from({ length: 12 }, (_, index) => ({ id: `s${index}`, read: { name: `t${index}${"x".repeat(600)}`, arguments: {} } })),
+      return: [{ from: "s0" }],
+      max_bytes: READ_CHAIN_LIMITS.minBytes,
+    },
+    {
+      resolveTarget: (name) => ({ ok: true, name, operation: name, declaresProjectRoot: true, completeness: loud }),
+      call: fakeCall({ answer: () => ({ truncated: true }) }).call,
+    },
+  );
+  assert.ok(Buffer.byteLength(JSON.stringify(many)) <= READ_CHAIN_LIMITS.minBytes, `${Buffer.byteLength(JSON.stringify(many))}`);
+  assert.ok(many.knownMissing.includes("TOOL_SAID_INCOMPLETE:12"), JSON.stringify(many.knownMissing).slice(0, 300));
+  // At most four distinct statements per tool, projected to layer and reason code.
+  const stating = { ...FAKE, stated: { excluded: "excluded", state: "state" } };
+  const stated = await runReadChain(
+    { project_root: "P", steps: [src(), per()], return: [{ from: "per", limit: 0 }] },
+    {
+      resolveTarget: (name) => ({ ok: true, name, operation: name, declaresProjectRoot: true, completeness: stating }),
+      call: fakeCall({ rows: 6, answer: (args) => ({ state: `s${args.item ?? "src"}`, excluded: [{ layer: "L", reasonCode: "R", extra: "dropped" }] }) }).call,
+    },
+  );
+  assert.equal(stated.basis[0].stated.length, 4);
+  assert.deepEqual(stated.basis[0].stated[0], { excluded: [{ layer: "L", reasonCode: "R" }], state: "ssrc" });
+  // The issue names the signals the tool gave.
+  const named = await run({ steps: [src()], return: [{ from: "src" }] }, fakeCall({ answer: () => ({ truncated: true }) }));
+  assert.match(named.issues.find((issue) => issue.code === "CHAIN_TOOL_SAID_INCOMPLETE").message, /t said: truncated\./);
+});
+
+test("G10: long distinct failure codes of a tool are bounded like messages", async () => {
+  const value = await run(
+    { steps: [src(), per()], return: [{ from: "per" }], max_bytes: READ_CHAIN_LIMITS.minBytes },
+    {
+      call: async (name, args) =>
+        args.item === undefined
+          ? { jsonrpc: "2.0", id: 1, result: { structuredContent: { status: "ok", rows: Array.from({ length: 20 }, (_, n) => ({ n })) } } }
+          : { jsonrpc: "2.0", id: 1, error: { code: -32000, message: "m".repeat(2000), data: { reasonCode: `C${args.item}_${"c".repeat(2000)}` } } },
+    },
+  );
+  assert.ok(Buffer.byteLength(JSON.stringify(value)) <= READ_CHAIN_LIMITS.minBytes, `${Buffer.byteLength(JSON.stringify(value))}`);
 });
 
 // ---------- T5.3: one build ----------
@@ -1403,7 +1658,7 @@ test("F4: repeated codes merge; a failed later page counts as left; headers go a
     { steps: [src({ pages: 3 })], return: [{ from: "src" }] },
     fakeCall({ rows: 6, pageSize: 2, fail: (args) => (args.cursor === 2 ? "page two" : null) }),
   );
-  assert.deepEqual([laterPage.notSeen.pagesLeft, laterPage.notSeen.itemsLeft, laterPage.everythingSeen], [1, 4, false]);
+  assert.deepEqual([laterPage.notSeen.pagesLeft, laterPage.notSeen.itemsLeft, laterPage.knownMissing.length > 0], [1, 4, true]);
   const changed = await run(
     { steps: [src(), { id: "b", read: { name: "t", arguments: {} } }], return: [{ from: "src" }] },
     fakeCall({ answer: (args, count) => ({ build: count === 1 ? "A" : "B", header: [`h${count}`] }) }),
@@ -1438,4 +1693,21 @@ test("F9: the docs name the default tool count, and the Korean docs call the cha
     assert.equal(text.includes("읽기 묶음"), false, file);
     assert.ok(text.includes("연쇄 읽기"), file);
   }
+});
+
+test("G6, G10: an empty statement is left out; a long code of a per-item refusal is shortened", async () => {
+  const stating = { ...FAKE, stated: { nowhere: "not.there" } };
+  const quiet = await runReadChain(
+    { project_root: "P", steps: [src()], return: [{ from: "src" }] },
+    { resolveTarget: (name) => ({ ok: true, name, operation: name, declaresProjectRoot: true, completeness: stating }), call: fakeCall().call },
+  );
+  assert.equal(quiet.basis[0].stated, undefined, "no statement when the answer carries none of the stated fields");
+  const refusing = (name, args = {}) =>
+    args.item === undefined || args.item === "" ? fakeTarget(name) : { ok: false, code: `R${args.item}_${"c".repeat(2000)}`, message: "m".repeat(2000) };
+  const value = await runReadChain(
+    { project_root: "P", steps: [src(), per()], return: [{ from: "per" }], max_bytes: READ_CHAIN_LIMITS.minBytes },
+    { resolveTarget: refusing, call: fakeCall({ rows: 20 }).call },
+  );
+  assert.ok(Buffer.byteLength(JSON.stringify(value)) <= READ_CHAIN_LIMITS.minBytes, `${Buffer.byteLength(JSON.stringify(value))}`);
+  assert.ok(value.issues.every((issue) => issue.code.length <= READ_CHAIN_LIMITS.itemChars + 1));
 });

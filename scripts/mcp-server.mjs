@@ -562,6 +562,9 @@ async function dispatchReadChain(request, options) {
             method: "tools/call",
             params: { name: publicToolName("lode_tools_read"), arguments: { name: publicToolName(name), arguments: args } },
           },
+          // Dropping these options is not observable with the two chainable
+          // tools today (their argument mappers take the arguments only); the
+          // bridge-equality test covers any tool declared chainable later.
           innerOptions,
         ),
     });

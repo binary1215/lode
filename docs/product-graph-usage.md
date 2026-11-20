@@ -80,7 +80,7 @@ The structured answer (`--json`, MCP `structuredContent`) carries the rows as da
 
 ## Several questions in one call
 
-`lode_tools_read_chain` (CLI `tools-read-chain <project> --input chain.json`) asks several questions in one call and returns only the rows asked for, counted; see [MCP tool surface](mcp-surface.md#read-chain) for the steps, bounds and statuses. It is read-only, grants nothing and writes nothing. It helps when many answers would each be read only to pick a few lines out of them; for a single question, or when every line of the answers has to be read anyway, ask the questions directly. Its inner calls are product graph questions and `lode_project_graph`. Read `everythingSeen` (with `notSeenBecause`) to know whether the rows are all there is.
+`lode_tools_read_chain` (CLI `tools-read-chain <project> --input chain.json`) asks several questions in one call and returns only the rows asked for, counted; see [MCP tool surface](mcp-surface.md#read-chain) for the steps, bounds and statuses. It is read-only, grants nothing and writes nothing. It helps when many answers would each be read only to pick a few lines out of them; for a single question, or when every line of the answers has to be read anyway, ask the questions directly. Its inner calls are product graph questions and `lode_project_graph`. Read `knownMissing` for what Lode knows is missing; an empty list does not prove the rows are all there is.
 
 The review list, then who points at each item, counted:
 

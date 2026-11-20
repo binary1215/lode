@@ -55,7 +55,7 @@ A grouped tool is named after its resource, for example
 
 `lode_tools_read_chain` runs several read-only Lode tool calls as one
 declarative step list inside the server and returns only the rows asked for,
-with counts made by Lode and one verdict, `everythingSeen`. It executes no code:
+with counts made by Lode and `knownMissing`, what Lode knows is missing. It executes no code:
 a step is data, not an expression. A chain grants nothing and writes nothing (no
 record, cache or temporary file), and nothing it does changes what a later call
 may do or is given.
@@ -130,10 +130,12 @@ may do or is given.
   `on_error: "stop"` stops there. Nothing is retried, and a non-answer is never a
   row.
 - **Same input, same output.** The same input and the same state give
-  byte-identical output. The state includes a tool's own process cache:
-  `lode_project_graph` reports in `reuse.status` whether it reused an earlier
-  result, so a chain that returns that field can differ from an identical one
-  run before it.
+  byte-identical output. The state includes `lode_project_graph`'s own
+  process cache: an identical second chain can differ in what that tool says
+  about reusing an earlier result, namely `reuse.status` in its answer and
+  reason codes such as `PROJECT_GRAPH_SCOPED_VERIFICATION` in its
+  `sourceFallback.reasonCodes` (so in `basis[].stated[].reasonCodes` too).
+  Product graph answers have no such cache.
 
 ### Bounds
 
@@ -164,10 +166,9 @@ headers, then issues become counts by code, then `basis` keeps tool names.
 ```json
 {
   "status": "completed",
-  "everythingSeen": true,
-  "notSeenBecause": [],
+  "knownMissing": [],
   "ran": { "steps": 7, "calls": 5, "failed": 0, "refused": 0 },
-  "basis": [{ "tool": "lode_product_graph_query", "pinned": true, "builtAt": "…", "freshness": "…" }],
+  "basis": [{ "tool": "lode_product_graph_query", "pinned": true, "builtAt": "…", "freshness": "…", "stated": [{ "confirmationComparison": "compared", "baselineComparison": "compared" }] }],
   "header": ["…"],
   "results": { "top": { "total": 3, "returned": 3, "cut": 0, "rows": [{ "value": "…", "count": 3 }] } },
   "notSeen": { "pagesLeft": 0, "itemsLeft": 0, "eachSkipped": 0, "eachNoValue": 0, "callsSkipped": 0, "rowsDropped": 0, "answersSaidIncomplete": 0, "takeNotAList": 0 },
@@ -178,31 +179,47 @@ headers, then issues become counts by code, then `basis` keeps tool names.
 ```
 
 - `status`: `completed`; `partial` (a bound was reached, a tool said rows or
-  content were missing from its answer, or an inner call failed or was refused); `stopped` (the build or
-  baseline changed, `on_error: "stop"`, or the request was cancelled); `refused`
-  (the program is invalid).
-- `everythingSeen` is Lode's verdict about the rows and content of these
-  answers on this build: true only when the status is `completed`, no inner call
-  failed or was refused, every `notSeen` count is 0, no rows were cut, every
-  returned step was reached and no inner answer said rows or content were
-  missing from itself. `notSeenBecause` names the reasons when it is false; a
-  tool's own signal appears as `TOOL_SAID:<tool>:<signal>`. It is not about how
-  much of the source the graph covers: that is the product graph `header` and
-  the `stated` coverage in `basis`. Read it instead of deriving it.
-- The signals each inner tool gives, all of which count: for
-  `lode_product_graph_query`, `page.remaining` (a page not followed), a
-  `more` row other than a page continuation (a tree cut below the first level,
-  the row cap of one answer) and a before/after side whose status is `partial`
-  or `unavailable`; for `lode_project_graph`, `truncated`,
-  `omittedMatchCount`, `boundary.items`, `boundary.omittedCount`,
-  `unmatchedAnchorIds`, `integrity.excluded`, `coverage.state` (`partial` or
-  `unavailable`), `coverage.inventoryBoundReached`, `sourceFallback.needed`,
-  `sourceFallback.excludedInputs` and a node's `contentPartial`. Its coverage state is partial by design, so a
-  chain over it never says everything was seen.
-- `basis` names each inner tool once: `pinned`, for the product graph the
-  first answer's `builtAt` and freshness, and for `lode_project_graph` what it
-  `stated` about its coverage (state, whether a source fallback is needed, the
-  excluded layers with their reason codes).
+  content were missing from its answer, or an inner call failed or was
+  refused); `stopped` (the build or baseline changed, `on_error: "stop"`, or
+  the request was cancelled); `refused` (the program is invalid).
+- `knownMissing` lists the reasons Lode knows something is missing from the
+  rows and content of these answers: `STATUS_PARTIAL` or `STATUS_STOPPED`,
+  `INNER_CALL_FAILED`, `INNER_CALL_REFUSED`, `NOT_SEEN_<count>` for each
+  non-zero `notSeen` count (a page not followed is `NOT_SEEN_pagesLeft`),
+  `ROWS_CUT`, `STEP_NOT_REACHED`, and `TOOL_SAID:<tool>:<signal>` for each
+  signal an inner answer gave about itself. When even those names do not fit
+  in `max_bytes`, the tool reasons become one `TOOL_SAID_INCOMPLETE:<n>`. **An
+  empty list does not prove completeness: it means nothing Lode can detect was
+  missing.** How much of the source the graph covers is not in this list; it is
+  the product graph `header` and the `stated` coverage in `basis`.
+- The signals each inner tool gives: for `lode_product_graph_query`, a page not
+  followed (`page.remaining`), a mark on the answer (`missing`, for a title
+  that says something was not checked or compared) or on a row
+  (`rows[].missing`: a list cut in prose, a tree cut below the first level, the
+  row cap of one answer, the connections of a find result capped at six, a
+  check not run, a comparison not made), a before/after side whose status is
+  `partial` or `unavailable`, and `confirmationComparison` or
+  `baselineComparison` other than `compared`; for `lode_project_graph`,
+  `status` `source-fallback` (no graph match), `truncated`, `omittedMatchCount`,
+  `boundary.items`, `boundary.omittedCount`, `boundary.omittedAnchorCount`,
+  `unmatchedAnchorIds`, `integrity.excluded`,
+  `integrity.omittedVerifiedRecordPathCount`, `coverage.state`,
+  `coverage.layers[].status`, `coverage.inventoryBoundReached`,
+  `sourceFallback.needed`, `sourceFallback.excludedInputs`, and a node's
+  `contentPartial`, `directionContentCoverage.partial` or
+  `workContentCoverage.partial` (and the summary's direction references).
+  The project graph's list is not exhaustive, and its coverage is partial by
+  design, so a chain over it always has reasons.
+- A page continuation row of the product graph (`continues: "nextPage"`) is a
+  marker, not a row: a followed page brings its rows, and a page not followed
+  is counted in `notSeen.pagesLeft`.
+- `basis` names each inner tool once: `pinned`; for the product graph the first
+  answer's `builtAt` and freshness and what it `stated`
+  (`confirmationComparison`, `baselineComparison`, and for impact its status
+  and reasons); for `lode_project_graph` what it `stated` (coverage state,
+  whether a source fallback is needed, excluded layers with reason codes, the
+  fallback reason codes, `status` and `unmatchedAnchorIds`). At most four
+  distinct statements per tool; an empty one is left out.
 - Only steps named in `return` carry rows. `total` is the step's rows,
   `returned` the rows in the answer, `cut` the rest (a `return` `limit` or
   `max_bytes`).
