@@ -11,6 +11,60 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.132 — publication tracked separately
+
+- Added: confirmation records for the product graph (확인 기록), which say what
+  was actually checked against the code, apart from the baseline.
+  - `product-graph-confirm` (MCP: `lode_product_graph` action `confirm`)
+    records an agent's check of 뜻 lines or of a document's code-linked rows
+    as `agent-checked`; `product-graph-approve` also records the code the
+    approved document described as `user-approved`. A record is written once
+    under `.lode/context/product-graph/확인/`, is never rewritten or removed
+    by Lode, travels with export, import and folder copies like approval
+    records, and grants nothing.
+  - The build adds a 확인 기록 block after the comparison with the baseline:
+    확인한 적 없음, 확인 뒤 코드가 바뀜 (with the nodes and who checked when),
+    확인 뒤 글이 바뀜, 다른 방식으로 읽은 때 확인함. Moving the baseline does not
+    clear it. `product-graph-query changes --list <status>` pages each list,
+    and the Gaps view shows the block.
+  - A new record names the records it replaces for its items, so the record
+    a confirm or an approval just wrote is the one that counts whatever the
+    clocks say. A confirm or approval whose items are already current writes
+    nothing and says so.
+  - A 기능 line carries a `{뜻: …}` mark only when a check exists and no longer
+    holds. With no record, every existing answer is unchanged.
+  - Nothing in `확인/` can stop a build, a check, a query, a baseline move or
+    an approval: an oversized, unreadable, surplus or non-verifying record is
+    an issue that names it and excuses nothing. More than 2000 records are
+    read in file-name order up to 2000, and the output says so. Export,
+    import, folder-copy adoption and GC still refuse such a store.
+  - A query reads no record body (2000 records: about 0.1 s per query). A
+    record changed in place without a size change is noticed at the next
+    build.
+- Added: the Status view shows multi-line reasons, Session purposes, pending
+  work and unknowns as headings, lists, code blocks and paragraphs (inline
+  Markdown stays as written), opens referred files in a reader with line
+  numbers, 80 lines a page, and shows control characters and bidirectional
+  marks as `\uXXXX`.
+- Fixed: approving a document when the `승인` folder name is stored decomposed
+  (as macOS stores it) no longer creates a second folder.
+- Fixed: lock cleanup failures (follow-up to 0.3.0-beta.131).
+  - When the cleanup of the snapshot reference admission lock failed before
+    the caller's operation ran, the caller was told the operation had
+    returned and must not be repeated. It is now told the operation did not
+    run and is safe to retry, and its registration is withdrawn.
+  - A lock entry left by a failed cleanup was held until the process ended.
+    The process that made it now removes it at its next attempt on that lock
+    (and after 1 and 10 seconds); a retained entry never counts as the
+    operation still running.
+  - A mail pick-up (prompt or Stop Hook, the OpenCode plugin) whose claim
+    step completed but whose lock removal failed hands the claimed mail over
+    instead of dropping it; it counts as handed over only after that was
+    recorded, so nothing is handed over twice.
+  - A snapshot GC attempt or a participant registration left by such a
+    failure is cleared by the same process at its next admission or at exit,
+    instead of making every later GC yield.
+
 ## 0.3.0-beta.131 — publication tracked separately
 
 - Fixed: a lock entry that cannot be removed no longer replaces what the
