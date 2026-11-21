@@ -1871,7 +1871,7 @@ test("R3: resultShape is returned by exact name, every declared field occurs in 
   );
   // Fields only a rule table this fixture does not have can give (hand-written
   // connections and boundaries); test/product-graph-evidence.test.mjs asserts them.
-  const fromOtherRules = new Set(["judgement", "boundary", "notExpanded", "entryStops"]);
+  const fromOtherRules = new Set(["judgement", "boundary", "notExpanded", "entryStops", "machine"]);
   for (const field of fromOtherRules) assert.ok(known.has(field), field);
   for (const field of known) assert.ok(seenFields.has(field) || notOnFixture.has(field) || fromOtherRules.has(field), `declared field ${field} occurs`);
   assert.ok(notOnFixture.size <= 2, `${[...notOnFixture]}`);

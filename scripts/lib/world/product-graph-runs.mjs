@@ -213,11 +213,17 @@ export function machineEdges({ graph, screens, states, files, codeOf, removals =
   };
   const unconnected = [],
     unresolvedUses = [];
+  let operatedOnly = 0;
   for (const { element, screen, phrases } of elements) {
     for (const id of element.shows) if (functionIds.has(id)) add(id, element, screen, { kind: "문서" });
     if (!phrases.length) {
       // S5: quoted text too short to use is said as such.
       const quoted = /`[^`]+`/.test(element.oneLineCell ?? "");
+      // A row that only operates a 기능 (a button) shows no result: not a gap (F3).
+      if (!element.shows.length && !quoted && element.operates?.length) {
+        operatedOnly += 1;
+        continue;
+      }
       if (!element.shows.length)
         unconnected.push({
           id: element.id,
@@ -305,6 +311,7 @@ export function machineEdges({ graph, screens, states, files, codeOf, removals =
       unresolvedConstantUses: unresolvedUses.sort((a, b) => compare(a.path, b.path) || a.line - b.line),
     },
     phrased: elements.filter((item) => item.phrases.length).length,
+    operatedOnly,
     filesRead: read.reads,
   };
 }

@@ -1451,3 +1451,39 @@ test("S5: a row whose quoted text is too short says so", (t) => {
     ],
   );
 });
+
+// ---------- review round 2 ----------
+
+test("F2: down and up say a machine-found 기능→화면요소 edge was found by the machine and give its 근거; a document edge with machine evidence gives both", (t) => {
+  const p = evidenceProject(t, {
+    rows: [
+      "| MAIN-01#2 | 오류 줄 `불러오기 실패` | | | |",
+      "| MAIN-01#6 | 다른 알림 `파일을 저장했습니다` | | | `tool:load` |",
+      "| MAIN-01#7 | 오류 알림 `불러오기 실패` | | | `tool:load` |",
+      "| MAIN-01#8 | 저장 버튼 | | `tool:save` | |",
+    ],
+  });
+  const built = p.build();
+  const down = queryProductGraph({ root: p.root, question: "down", id: "tool:load" });
+  const row = (id) => down.rows.find((item) => item.id === id);
+  // Machine only: no document position, the 근거 instead.
+  assert.match(row("MAIN-01#2").text, / ← 기계가 찾음 \(근거: 코드 src\/app\.js:6\)$/);
+  assert.equal(row("MAIN-01#2").machine, true);
+  assert.deepEqual(row("MAIN-01#2").evidence, ["코드 src/app.js:6"]);
+  assert.doesNotMatch(row("MAIN-01#2").text, / ← 화면설계서\//);
+  // Document only: the document position, as before.
+  assert.match(row("MAIN-01#6").text, / ← 화면설계서\/MAIN-01\.md:\d+ \[추정: [^\]]+\]$/);
+  assert.equal(row("MAIN-01#6").machine, undefined);
+  assert.deepEqual(row("MAIN-01#6").evidence, ["문서"]);
+  // Both: the document position and every kind of evidence.
+  assert.match(row("MAIN-01#7").text, / ← 화면설계서\/MAIN-01\.md:\d+ \[추정: [^\]]+\] \(근거: 문서; 코드 src\/app\.js:6\)$/);
+  assert.deepEqual(row("MAIN-01#7").evidence, ["문서", "코드 src/app.js:6"]);
+  const up = queryProductGraph({ root: p.root, question: "up", id: "MAIN-01#2" });
+  assert.match(up.rows.find((item) => item.id === "tool:load").text, / ← 기계가 찾음 \(근거: 코드 src\/app\.js:6\)$/);
+  const upBoth = queryProductGraph({ root: p.root, question: "up", id: "MAIN-01#7" });
+  assert.match(upBoth.rows.find((item) => item.id === "tool:load").text, /\(근거: 문서; 코드 src\/app\.js:6\)$/);
+  // F3: a row that only operates a 기능 is not a gap; it is counted in the heading.
+  assert(!built.lists.screenEvidence.unconnected.some((item) => item.id === "MAIN-01#8"));
+  assert.equal(built.lists.screenEvidence.operatedOnly, 1);
+  assert.match(built.text, /\n이어지지 않은 화면요소: \d+개 \(조작만 하는 화면요소 1개는 세지 않는다\)\n/);
+});

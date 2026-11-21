@@ -372,7 +372,14 @@ export const productGraphWalk = (() => {
     if (item.screen !== undefined) line += item.screen ? ` (화면 ${item.screen})` : " (화면 없음)";
     if (item.edge && isEntry(item.edge)) line += " (입구)";
     if (item.edge?.judgement) line += " (판단)";
-    if (item.edge?.basis) line += ` ← ${where(item.edge.at)}${basisMark(item.edge.basis)}`;
+    // A 기능→화면요소 edge the machine found says so and gives its 근거 instead
+    // of a document position; a document edge with machine evidence too gives both.
+    const evidence = item.edge?.type === "기능→화면요소" ? item.edge.근거 : null;
+    if (item.edge?.machine) line += ` ← 기계가 찾음 (근거: ${(evidence || []).join("; ")})`;
+    else if (item.edge?.basis) {
+      line += ` ← ${where(item.edge.at)}${basisMark(item.edge.basis)}`;
+      if (evidence?.some((entry) => entry !== "문서")) line += ` (근거: ${evidence.join("; ")})`;
+    }
     if (item.edge && CODE_EDGES.has(item.edge.type) && item.count > 1) line += ` ×${item.count}`;
     return line;
   }
@@ -766,6 +773,8 @@ export const productGraphWalk = (() => {
       const role = {
         ...(item.edge?.type === "기능→코드" ? { 역할: isEntry(item.edge) ? "입구" : "처리" } : {}),
         ...(item.edge?.judgement ? { judgement: true } : {}),
+        ...(item.edge?.type === "기능→화면요소" && item.edge.근거 ? { evidence: item.edge.근거 } : {}),
+        ...(item.edge?.machine ? { machine: true } : {}),
       };
       rows.push({ depth: level + 1, kind: "node", id: item.to, text: childText(ctx, item) + (onPath ? ` ${WORDS.onPath}` : ""), onPath, group: item.group, ...role });
       budget.left -= 1;
@@ -1412,7 +1421,7 @@ export const productGraphWalk = (() => {
       add(
         "unconnected",
         evidence.unconnected.length,
-        [`이어지지 않은 화면요소: ${evidence.unconnected.length}개`],
+        [`이어지지 않은 화면요소: ${evidence.unconnected.length}개${evidence.operatedOnly ? ` (조작만 하는 화면요소 ${evidence.operatedOnly}개는 세지 않는다)` : ""}`],
         evidence.unconnected.map((item) => ({ text: `${item.id} (${where(item.at)}) — ${item.reason}`, nodeId: item.id })),
       );
       add(

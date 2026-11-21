@@ -1358,7 +1358,13 @@ function applyRunEvidence({ graph, computed, loaded, extraction, rules, result }
     ...(loaded.runRecordLimit ? { recordLimit: loaded.runRecordLimit } : {}),
     recordsListingSha256: loaded.runListingSha256 ?? null,
   };
-  result.lists.screenEvidence = { phrased: found.phrased, removed: found.removed, filesRead: found.filesRead, ...found.lists };
+  result.lists.screenEvidence = {
+    phrased: found.phrased,
+    removed: found.removed,
+    filesRead: found.filesRead,
+    operatedOnly: found.operatedOnly,
+    ...found.lists,
+  };
   result.lists.ruleIssues.push(...found.ruleIssues);
   // The limits block: Lode ran nothing, and what it read of runs.
   if (states.records) {
