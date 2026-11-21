@@ -23,6 +23,11 @@ import {
   PRODUCT_GRAPH_MAX_FILE_BYTES,
   PRODUCT_GRAPH_MAX_FILES,
   PRODUCT_GRAPH_RULES_FILE,
+  PRODUCT_GRAPH_RUN_DIRECTORY,
+  PRODUCT_GRAPH_RUN_MAX_BYTES,
+  PRODUCT_GRAPH_RUN_MAX_OUTPUT,
+  PRODUCT_GRAPH_RUN_MAX_RECORDS,
+  PRODUCT_GRAPH_RUN_MAX_RUNS,
   classifyProductGraphPath,
   decodeProductGraphText,
   productGraphApprovalDigest,
@@ -31,6 +36,8 @@ import {
   verifyProductGraphApproval,
   verifyProductGraphCheck,
   verifyProductGraphRules,
+  verifyProductGraphRun,
+  productGraphRunRecord,
 } from "../storage/product-graph-store.mjs";
 import { checkableItems, confirmationRecords, confirmationStatus } from "./product-graph-confirmations.mjs";
 import {
@@ -61,8 +68,9 @@ import {
   sourceTextHash,
 } from "./product-graph-compare.mjs";
 import { productGraphWalk as walk } from "../../graph-explorer/product-graph-walk.js";
+import { machineEdges, runLabel, runStates } from "./product-graph-runs.mjs";
 
-export const PRODUCT_GRAPH_VERSION = 1;
+export const PRODUCT_GRAPH_VERSION = 2;
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const nfc = (name) => name.normalize("NFC");
@@ -91,7 +99,13 @@ export const NODE_TYPES = Object.freeze([
   "DB",
   "계측 이벤트",
 ]);
-export const NOT_EXTRACTED = Object.freeze(["데이터", "외부 연결", "DB", "계측 이벤트"]);
+export const NOT_EXTRACTED = Object.freeze(["계측 이벤트"]);
+// What the counts of the outside-facing node types cover (2.8).
+export const COUNT_COVERS = Object.freeze({
+  데이터: "환경 변수 이름과 바깥 규칙이 이름 붙인 데이터",
+  "외부 연결": "바깥 규칙이 이름 붙인 외부 연결",
+  DB: "코드 문자열과 .sql 파일의 CREATE TABLE로 만든 표와 그 열",
+});
 
 // The original's six checks: phrase and meaning, verbatim.
 export const CHECKS = Object.freeze([
@@ -177,13 +191,24 @@ function readDocumentFiles(directory, { readChecks = true } = {}) {
   const files = [],
     unrecognized = [],
     checks = [],
-    checkFolderIssues = [];
+    checkFolderIssues = [],
+    runs = [],
+    runFolderIssues = [];
   const visit = (prefix, absolute) => {
     let entries;
     try {
       entries = listDirectory(absolute);
     } catch (error) {
-      // A 확인/ folder that cannot be listed is an issue, never a failure.
+      // A 확인/ or 실행 기록/ folder that cannot be listed is an issue, never a failure.
+      if (prefix === PRODUCT_GRAPH_RUN_DIRECTORY) {
+        runFolderIssues.push({
+          path: `${PRODUCT_GRAPH_RUN_DIRECTORY}/`,
+          code: "PRODUCT_GRAPH_RUN_UNREADABLE",
+          reason: "실행 기록 폴더를 읽지 못했다",
+          errno: error.code || null,
+        });
+        return;
+      }
       if (prefix !== PRODUCT_GRAPH_CHECK_DIRECTORY) throw error;
       checkFolderIssues.push({
         path: `${PRODUCT_GRAPH_CHECK_DIRECTORY}/`,
@@ -213,6 +238,10 @@ function readDocumentFiles(directory, { readChecks = true } = {}) {
         checks.push({ path: relative, ...target, absolute: path.join(absolute, entry.name) });
         continue;
       }
+      if (target.role === "run") {
+        runs.push({ path: relative, ...target, absolute: path.join(absolute, entry.name) });
+        continue;
+      }
       if (files.length >= PRODUCT_GRAPH_MAX_FILES) fail("PRODUCT_GRAPH_TOO_MANY_FILES");
       const bytes = readBounded(path.join(absolute, entry.name));
       files.push({ path: relative, ...target, bytes, sha256: sha256Hex(bytes) });
@@ -227,6 +256,7 @@ function readDocumentFiles(directory, { readChecks = true } = {}) {
     unrecognized: unrecognized.sort(),
     twins: twins.sort(),
     ...(readChecks ? readCheckFiles(checks, checkFolderIssues) : {}),
+    ...(readChecks ? readRunFiles(runs, runFolderIssues) : {}),
   };
 }
 
@@ -239,18 +269,49 @@ const CHECK_SURPLUS_LISTED = 100;
 // read, and records past the count are issues naming their file (the first
 // CHECK_SURPLUS_LISTED surplus names, then one count); an issue excuses
 // nothing and never fails the build.
+// The words and bounds of each kind of record a build reads apart.
+const RECORD_KINDS = Object.freeze({
+  check: {
+    directory: PRODUCT_GRAPH_CHECK_DIRECTORY,
+    maxRecords: PRODUCT_GRAPH_CHECK_MAX_RECORDS,
+    maxBytes: PRODUCT_GRAPH_CHECK_MAX_BYTES,
+    noun: "확인 기록",
+    idField: "checkId",
+    codes: { invalid: "PRODUCT_GRAPH_CHECK_INVALID", limit: "PRODUCT_GRAPH_CHECK_LIMIT", unreadable: "PRODUCT_GRAPH_CHECK_UNREADABLE" },
+  },
+  run: {
+    directory: PRODUCT_GRAPH_RUN_DIRECTORY,
+    maxRecords: PRODUCT_GRAPH_RUN_MAX_RECORDS,
+    maxBytes: PRODUCT_GRAPH_RUN_MAX_BYTES,
+    noun: "실행 기록",
+    idField: "runId",
+    codes: { invalid: "PRODUCT_GRAPH_RUN_INVALID", limit: "PRODUCT_GRAPH_RUN_LIMIT", unreadable: "PRODUCT_GRAPH_RUN_UNREADABLE" },
+  },
+});
+
 function readCheckFiles(entries, folderIssues = []) {
-  const checkFiles = [],
-    checkIssues = [...folderIssues];
+  const read = readRecordFiles(entries, folderIssues, RECORD_KINDS.check);
+  return { checkFiles: read.files, checkIssues: read.issues, recordLimit: read.recordLimit, checkListingSha256: read.listingSha256 };
+}
+
+// Run records, read like confirmation records (2.6): an issue never fails a build.
+function readRunFiles(entries, folderIssues = []) {
+  const read = readRecordFiles(entries, folderIssues, RECORD_KINDS.run);
+  return { runFiles: read.files, runIssues: read.issues, runRecordLimit: read.recordLimit, runListingSha256: read.listingSha256 };
+}
+
+function readRecordFiles(entries, folderIssues, spec) {
+  const files = [],
+    issues = [...folderIssues];
   const ordered = [...entries].sort((a, b) => compare(a.path, b.path));
   const seen = new Set();
   const listing = [];
   let surplus = 0;
   for (const [index, entry] of ordered.entries()) {
-    const issue = ({ code }, reason, extra = {}) => checkIssues.push({ path: entry.path, code, reason, ...extra });
+    const issue = ({ code }, reason, extra = {}) => issues.push({ path: entry.path, code, reason, ...extra });
     // Sizes only for the records that are read; surplus names are names only.
     let stat = null;
-    if (index < PRODUCT_GRAPH_CHECK_MAX_RECORDS)
+    if (index < spec.maxRecords)
       try {
         stat = fs.lstatSync(entry.absolute);
       } catch {
@@ -258,53 +319,50 @@ function readCheckFiles(entries, folderIssues = []) {
       }
     listing.push([entry.path, stat?.size ?? null]);
     if (seen.has(entry.path)) {
-      issue({ code: "PRODUCT_GRAPH_CHECK_INVALID" }, "같은 이름(정규화 뒤)의 확인 기록이 둘 이상이다");
+      issue({ code: spec.codes.invalid }, `같은 이름(정규화 뒤)의 ${spec.noun}이 둘 이상이다`);
       continue;
     }
     seen.add(entry.path);
-    if (index >= PRODUCT_GRAPH_CHECK_MAX_RECORDS) {
+    if (index >= spec.maxRecords) {
       surplus += 1;
       if (surplus <= CHECK_SURPLUS_LISTED)
-        issue(
-          { code: "PRODUCT_GRAPH_CHECK_LIMIT" },
-          `확인 기록이 ${PRODUCT_GRAPH_CHECK_MAX_RECORDS}개를 넘어 읽지 않았다(파일 이름 순으로 앞의 ${PRODUCT_GRAPH_CHECK_MAX_RECORDS}개만 읽는다)`,
-        );
+        issue({ code: spec.codes.limit }, `${spec.noun}이 ${spec.maxRecords}개를 넘어 읽지 않았다(파일 이름 순으로 앞의 ${spec.maxRecords}개만 읽는다)`);
       continue;
     }
     if (!stat) {
-      issue({ code: "PRODUCT_GRAPH_CHECK_UNREADABLE" }, "확인 기록을 읽지 못했다");
+      issue({ code: spec.codes.unreadable }, `${spec.noun}을 읽지 못했다`);
       continue;
     }
     if (!stat.isFile() || stat.isSymbolicLink()) {
-      issue({ code: "PRODUCT_GRAPH_CHECK_INVALID" }, "확인 기록이 일반 파일이 아니다");
+      issue({ code: spec.codes.invalid }, `${spec.noun}이 일반 파일이 아니다`);
       continue;
     }
-    if (stat.size > PRODUCT_GRAPH_CHECK_MAX_BYTES) {
-      issue({ code: "PRODUCT_GRAPH_CHECK_LIMIT" }, `확인 기록이 ${PRODUCT_GRAPH_CHECK_MAX_BYTES}바이트를 넘어 읽지 않았다`, { bytes: stat.size });
+    if (stat.size > spec.maxBytes) {
+      issue({ code: spec.codes.limit }, `${spec.noun}이 ${spec.maxBytes}바이트를 넘어 읽지 않았다`, { bytes: stat.size });
       continue;
     }
     let bytes;
     try {
       bytes = fs.readFileSync(entry.absolute);
     } catch (error) {
-      issue({ code: "PRODUCT_GRAPH_CHECK_UNREADABLE" }, "확인 기록을 읽지 못했다", { errno: error.code || null });
+      issue({ code: spec.codes.unreadable }, `${spec.noun}을 읽지 못했다`, { errno: error.code || null });
       continue;
     }
-    if (bytes.length > PRODUCT_GRAPH_CHECK_MAX_BYTES) {
-      issue({ code: "PRODUCT_GRAPH_CHECK_LIMIT" }, `확인 기록이 ${PRODUCT_GRAPH_CHECK_MAX_BYTES}바이트를 넘어 읽지 않았다`, { bytes: bytes.length });
+    if (bytes.length > spec.maxBytes) {
+      issue({ code: spec.codes.limit }, `${spec.noun}이 ${spec.maxBytes}바이트를 넘어 읽지 않았다`, { bytes: bytes.length });
       continue;
     }
-    checkFiles.push({ path: entry.path, role: entry.role, checkId: entry.checkId, bytes, sha256: sha256Hex(bytes) });
+    files.push({ path: entry.path, role: entry.role, [spec.idField]: entry[spec.idField], bytes, sha256: sha256Hex(bytes) });
   }
   if (surplus > CHECK_SURPLUS_LISTED)
-    checkIssues.push({
-      path: `${PRODUCT_GRAPH_CHECK_DIRECTORY}/`,
-      code: "PRODUCT_GRAPH_CHECK_LIMIT",
-      reason: `그 밖에 확인 기록 ${surplus - CHECK_SURPLUS_LISTED}개를 더 읽지 않았다(이름은 앞의 ${CHECK_SURPLUS_LISTED}개만 적는다)`,
+    issues.push({
+      path: `${spec.directory}/`,
+      code: spec.codes.limit,
+      reason: `그 밖에 ${spec.noun} ${surplus - CHECK_SURPLUS_LISTED}개를 더 읽지 않았다(이름은 앞의 ${CHECK_SURPLUS_LISTED}개만 적는다)`,
       count: surplus - CHECK_SURPLUS_LISTED,
     });
-  const recordLimit = ordered.length > PRODUCT_GRAPH_CHECK_MAX_RECORDS ? { present: ordered.length, read: PRODUCT_GRAPH_CHECK_MAX_RECORDS } : null;
-  return { checkFiles, checkIssues, recordLimit, checkListingSha256: checkListingDigest(listing, folderIssues) };
+  const recordLimit = ordered.length > spec.maxRecords ? { present: ordered.length, read: spec.maxRecords } : null;
+  return { files, issues, recordLimit, listingSha256: checkListingDigest(listing, folderIssues) };
 }
 
 // What freshness compares: every record name with its size, and whether the
@@ -480,7 +538,35 @@ function loadDocuments(inputs) {
     checkIssues,
     checkListingSha256: read.checkListingSha256,
     checkRecordLimit: read.recordLimit,
+    ...loadRunRecords(inputs, read),
   };
+}
+
+// Run records (project mode only, like 확인 records). One that does not
+// verify is an issue naming its file and gives no evidence.
+function loadRunRecords(inputs, read) {
+  const runRecords = [];
+  const runIssues = inputs.approvals ? [...(read.runIssues || [])] : [];
+  for (const file of read.runFiles || []) {
+    if (!inputs.approvals) continue;
+    try {
+      runRecords.push(verifyProductGraphRun(JSON.parse(decodeProductGraphText(file.bytes)), { projectId: inputs.projectId, runId: file.runId }));
+    } catch (error) {
+      const code = error.code || "PRODUCT_GRAPH_RUN_INVALID";
+      runIssues.push({
+        path: file.path,
+        code,
+        reason:
+          code === "PRODUCT_GRAPH_RUN_PROJECT_MISMATCH"
+            ? "다른 프로젝트의 실행 기록이다"
+            : code === "PRODUCT_GRAPH_RUN_INVALID"
+              ? "실행 기록의 모양이나 내용 주소가 맞지 않는다"
+              : "실행 기록으로 읽지 못했다",
+      });
+    }
+  }
+  runIssues.sort((a, b) => compare(a.path, b.path));
+  return { runRecords, runIssues, runListingSha256: read.runListingSha256 ?? null, runRecordLimit: read.runRecordLimit ?? null };
 }
 
 // A document is used as the product description only while 승인. One whose
@@ -776,6 +862,7 @@ function compute({ extraction, loaded, includeEstimates }) {
   counts["정책"] = allPolicies.size;
   counts["기능"] = extraction.functionNodes.length;
   counts["코드"] = extraction.codeNodes.length;
+  for (const type of ["데이터", "외부 연결", "DB"]) counts[type] = (extraction.outsideNodes || []).filter((node) => node.type === type).length;
   const usedCounts = {
     "유저 활동": activities.length,
     화면: screens.length,
@@ -839,6 +926,12 @@ function compute({ extraction, loaded, includeEstimates }) {
       uiWithoutRule: extraction.uiWithoutRule,
       outOfScope: extraction.outOfScope,
       ruleIssues: extraction.ruleIssues,
+      // framework-invoked as read (2.2): every site, and the paths more than one file matched.
+      runByPath: extraction.runByPath,
+      // 분기 matches whose branch block could not be delimited (2.9).
+      branchUndelimited: extraction.branchUndelimited || [],
+      // Outside calls no 바깥 rule names, and named 데이터 calls neither read nor write (2.8).
+      outside: extraction.outside?.lists || null,
       formatIssues: formatIssues.sort((a, b) => compare(a.path, b.path) || a.line - b.line),
       unrecognizedFiles: loaded.unrecognized,
       approvalIssues: loaded.approvalIssues,
@@ -966,11 +1059,34 @@ function graphDocument({ extraction, loaded, computed, inputs, rules, result }) 
   for (const entry of extraction.functionNodes) {
     nodes.push({ id: entry.id, type: "기능", kind: entry.kind, oneLine: meaning.get(entry.id) || "", handling: entry.handling, positions: entry.positions });
     for (const handler of entry.handlers)
-      edges.push({ type: "기능→코드", from: entry.id, to: handler, at: entry.handlerAt?.[handler] || entry.positions[0] || null });
+      edges.push({
+        type: "기능→코드",
+        from: entry.id,
+        to: handler,
+        역할: "처리",
+        at: entry.handlerAt?.[handler] || entry.positions[0] || null,
+        // 분기 (2.9): the lines of the shared handler this 기능 passes.
+        ...(entry.handlerRanges?.[handler] ? { 줄: entry.handlerRanges[handler] } : {}),
+      });
+    // 입구: code the 기능 passes through that is not its handler (a rule says so).
+    for (const code of entry.entries || []) edges.push({ type: "기능→코드", from: entry.id, to: code, 역할: "입구", at: entry.positions[0] || null });
   }
   for (const node of extraction.codeNodes) nodes.push(node);
+  for (const node of extraction.outsideNodes || []) nodes.push(node);
+  const branchHandlers = new Set(extraction.branchHandlers || []);
   for (const reference of extraction.references)
-    edges.push({ type: reference.type, from: reference.from, to: reference.to, at: reference.source, count: reference.count });
+    edges.push({
+      type: reference.type,
+      from: reference.from,
+      to: reference.to,
+      at: reference.source,
+      count: reference.count,
+      // Written by hand (2.4): a judgement, and what the rule says.
+      ...(reference.judgement ? { judgement: true } : {}),
+      ...(reference.설명 ? { 설명: reference.설명 } : {}),
+      // Every line it occurs on, from a handler a 분기 rule splits (2.9).
+      ...(branchHandlers.has(reference.from) && reference.allLines?.size > 1 ? { lines: [...reference.allLines].sort((a, b) => a - b) } : {}),
+    });
   // A 화면요소 or 정책 ID written twice in the documents is a 형식 문제
   // (listed by the check); the graph keeps its first occurrence.
   const kept = new Set();
@@ -1048,7 +1164,16 @@ export function renderProductGraphText(result) {
 // ---------- what this graph cannot answer ----------
 
 export const LIMITS_TITLE = "이 그래프가 답하지 못하는 것";
-const NOT_TOLD_APART = Object.freeze(["framework-invoked", "render", "type reference", "re-render", "response", "enqueue", "navigate", "http", "defines"]);
+const NOT_TOLD_APART = Object.freeze(["render", "type reference", "re-render", "response", "enqueue", "navigate", "http", "defines"]);
+// The shapes of framework-invoked this reading sees, and what it still does not.
+const RUN_BY_PATH_LIMITS =
+  "framework-invoked는 두 모양만 읽는다: 코드의 문자열·템플릿 리터럴이 스캔한 코드 파일 하나의 경로(전체 상대 경로, 또는 / 경계에서 시작하는 그 뒷부분)로 끝나고 그 글자를 실행·적재하는 호출에 넘기는 곳(동적 import, spawn·fork·exec 같은 프로세스 시작, Worker, 언어의 실행 파일(process.execPath, sys.executable)도 함께 넘기는 호출. 경로를 만드는 join·resolve·URL과 배열·객체는 건너 본다. 공백이 있는 글자는 명령 줄이라, 그 경로는 프로그램 자체이거나 언어 실행기(node, python 같은 것) 뒤의 스크립트일 때만 센다), 그리고 이름 없이 들여오는 JS·TS import \"<상대 경로>\". 경로가 여러 파일에 맞으면 잇지 않고 센다. 경로를 상수에 담아 뒤에서 넘기는 곳, import·export·require의 경로, 주입, 데코레이터, 파일 이름으로 정하는 경로는 보지 못한다. 읽은 곳은 모두 '경로로 실행으로 읽은 곳'에 적는다.";
+const ENTRY_STOP_RULE =
+  "닿는 범위는 처리 코드와 입구 둘 다에서 시작하고, 입구에서 걷는 길은 다른 기능의 처리 코드인 노드 앞에서 멈춘다(그 노드만. 멈춘 곳은 답마다 센다). 그래서 분배 코드가 한 기능의 처리 코드를 다른 기능들의 공통 단계로 정말 부르면 그 길은 보이지 않는다.";
+const OUTSIDE_LIMITS =
+  '환경 변수는 process.env.NAME, process.env["NAME"], os.environ["NAME"], os.environ.get("NAME"), os.getenv("NAME")만 읽어 데이터 data:env:NAME을 읽는 연결로 적고, 대입이나 delete는 쓰는 연결로 적는다. const { NAME } = process.env는 꺼내는 이름마다 읽음이다. 환경 객체를 다른 이름에 담아 넘기면 따라가지 않는다. 바깥 모듈 표(JS: fs, fs/promises, net, http, https, dgram, tls, child_process, readline. Python: 내장 open, os, shutil, pathlib, subprocess, socket, sqlite3, urllib, http.client. 바깥 규칙이 적은 모듈도 더한다)에서 들여온 이름으로 부른 호출은 사실로 적고, 프로젝트가 바깥 규칙으로 맞은편을 이름 붙인 것만 연결이 된다. 짐작하지 않는다. SQL은 동사가 제자리에서 이름을 받는 문자열만 읽는다: 읽기(FROM·JOIN <이름>)나 쓰기(INSERT INTO·REPLACE INTO <이름>, UPDATE <이름> … SET, DELETE FROM <이름>). 그런 문자열은 모두 SQL로 읽은 곳에 적고, 아는 표면 잇고, CREATE TABLE이 만들지 않은 이름은 표를 모름으로 적는다. 동사 낱말만 있는 문자열은 SQL로 보지 않는다. 표는 코드 문자열이나 .sql 파일의 CREATE TABLE로 만든 것만 보고, 다른 방법으로 만든 표는 보지 못한다. 표와 데이터의 뜻 줄은 없다.';
+const VALUE_USE_LIMITS =
+  '부르지 않고 넘기거나 담은 이름(.map(f), { run }, process.on("x", f), 기본값 = f)이 호출과 같은 규칙(안쪽 선언, 같은 파일, import, 다시 내보내기)으로 함수·클래스 선언 하나로 풀린 곳이 callback 연결이 된다. 멤버는 호출이 풀리는 곳에서만 푼다: 클래스 안 this.x·self.x, 제품 클래스의 C.x(JS는 static), 모듈 수준 객체 리터럴이나 namespace import의 name.x. 매개변수·지역 변수에 담긴 이름, 이름이 제품에 하나뿐이라는 이유로는 풀지 않는다. 선언·import·export 목록·속성 이름·점 뒤 멤버는 쓰임으로 세지 않고, TypeScript의 타입 자리(:, satisfies 뒤)와 <…> 안, 데코레이터는 읽지 않는다.';
 const UI_SCAN_LIMITS = Object.freeze([
   "UI 연결은 패턴을 글자에 맞춰 찾는다. 여러 줄에 걸친 연결, 문자열로 만든 연결, 툴킷이 이름으로 자동으로 잇는 연결, 이벤트 이름을 실행 중에 계산하는 연결은 보지 못한다.",
   "코드인지는 글자 단위 lexer로 가린다. JS·TS·Python 파일에서는 주석과 문자열(여러 줄 문자열과 템플릿 문자열 포함) 안의 연결을 걸러내고, HTML·Vue·Svelte 파일에서는 <!-- --> 주석만 걸러낸다. JSX의 on<Event>={…} 속성은 주석과 문자열을 가리지 않는다. lexer는 파서가 아니어서 정규식 리터럴을 바로 앞 글자로만 알아본다.",
@@ -1095,7 +1220,16 @@ function limitsOf({ extraction, computed, includeEstimates, loaded, callbacks })
     codeReading: "코드는 정규식 기반 소스 분석으로 읽었다. 구문 트리가 아니고 타입 정보가 없다.",
     calls: callNumbers(extraction.referenceSummary, callbacks),
     callReading: CALL_READING_LIMITS,
-    referenceKinds: { emitted: ["call", "callback"], notToldApart: NOT_TOLD_APART },
+    referenceKinds: { emitted: ["call", "callback", "framework-invoked"], notToldApart: NOT_TOLD_APART },
+    runByPath: RUN_BY_PATH_LIMITS,
+    // 입구 (2.1): the stop rule, stated whenever a rule gives 입구.
+    ...(extraction.functionNodes.some((entry) => entry.entries?.length)
+      ? { entries: { functions: extraction.functionNodes.filter((entry) => entry.entries?.length).length, rule: ENTRY_STOP_RULE } }
+      : {}),
+    // 데이터, 외부 연결, DB (2.8): what is read and what is still not seen.
+    outside: { ...(extraction.outside?.counts || {}), unnamedCalls: extraction.outside?.lists.unnamedOutsideCount ?? 0, reading: OUTSIDE_LIMITS },
+    // Functions used as values (2.3), counted apart from calls.
+    valueUses: { ...extraction.valueUses, reading: VALUE_USE_LIMITS },
     notExtracted: { nodeTypes: NOT_EXTRACTED, edges: ["navigate"], grouping: "C4 묶음" },
     uiBindingScan: UI_SCAN_LIMITS,
     // Files whose lexer mask could not be trusted: 코드만 fell back to the
@@ -1144,6 +1278,7 @@ function run(options, { requireOutput }) {
     lists: computed.lists,
     counts: computed.counts,
     usedCounts: computed.usedCounts,
+    countCovers: COUNT_COVERS,
     referenceSummary: {
       resolvedCalls: extraction.referenceSummary.resolvedCalls,
       callbacks,
@@ -1153,11 +1288,94 @@ function run(options, { requireOutput }) {
   };
   result.limits = limitsOf({ extraction, computed, includeEstimates, loaded, callbacks });
   const graph = graphDocument({ extraction, loaded, computed, inputs, rules, result });
+  applyRunEvidence({ graph, computed, loaded, extraction, rules, result });
   const baseline = compareToBaseline({ inputs, graph, computed, readFiles: extraction.readFiles, takeIfMissing: requireOutput });
   result.changes = baseline.changes;
   result.confirmations = confirmationsOf({ graph, computed, loaded });
   result.text = renderProductGraphText(result);
   return { inputs, rules, extraction, loaded, computed, result, graph, baseline };
+}
+
+// Run records and the machine's 기능→화면요소 edges (2.6), on the finished
+// graph (hashes in place): the edges are added after hashing because a
+// 기능→화면요소 edge is in no content or reach hash. Document edges say
+// 근거 "문서"; an edge lists every kind of evidence it has.
+function applyRunEvidence({ graph, computed, loaded, extraction, rules, result }) {
+  const states = runStates({ graph, records: loaded.runRecords || [], reader: graph.inputs.reader });
+  const codeNodes = new Map();
+  for (const node of graph.nodes) if (node.type === "코드") push(codeNodes, node.file, node);
+  const codeOf = (file, line) => {
+    let best = null;
+    for (const node of codeNodes.get(file) || [])
+      if (
+        node.lines &&
+        node.id !== node.file &&
+        node.lines[0] <= line &&
+        line <= node.lines[1] &&
+        (!best || node.lines[1] - node.lines[0] < best.lines[1] - best.lines[0])
+      )
+        best = node;
+    return best ? best.id : codeNodes.has(file) ? file : null;
+  };
+  const files = new Map([...extraction.readFiles].filter(([file]) => codeNodes.has(file)));
+  const found = machineEdges({ graph, screens: computed.screens, states, files, codeOf, removals: rules.rules?.["빼는 연결"] || [] });
+  const basisOf = (screen) => ({ path: screen.path, status: screen.status, estimateKind: screen.estimateKind });
+  const byPair = new Map(found.edges.map((edge) => [`${edge.from}\u0000${edge.to}`, edge]));
+  for (const edge of graph.edges) {
+    if (edge.type !== "기능→화면요소") continue;
+    const machine = byPair.get(`${edge.from}\u0000${edge.to}`);
+    edge.근거 = machine?.document ? machine.근거 : ["문서"];
+  }
+  const screenOf = new Map();
+  for (const screen of computed.screens) for (const element of screen.parsed.elements) screenOf.set(element.id, screen);
+  for (const edge of found.edges)
+    if (!edge.document)
+      graph.edges.push({
+        type: "기능→화면요소",
+        from: edge.from,
+        to: edge.to,
+        at: edge.at,
+        basis: basisOf(screenOf.get(edge.to)),
+        근거: edge.근거,
+        machine: true,
+      });
+  graph.edges.sort(
+    (a, b) =>
+      compare(a.type, b.type) ||
+      compare(a.from, b.from) ||
+      compare(a.to, b.to) ||
+      compare(a.at?.path || "", b.at?.path || "") ||
+      (a.at?.line || 0) - (b.at?.line || 0),
+  );
+  result.lists.runs = {
+    records: states.records,
+    functions: states.functions,
+    currentFunctions: states.currentFunctions,
+    replaced: states.replaced,
+    current: states.current.map(({ 출력, ...run }) => ({ ...run, outputBytes: Buffer.byteLength(출력) })),
+    stale: states.stale,
+    issues: loaded.runIssues || [],
+    ...(loaded.runRecordLimit ? { recordLimit: loaded.runRecordLimit } : {}),
+    recordsListingSha256: loaded.runListingSha256 ?? null,
+  };
+  result.lists.screenEvidence = {
+    phrased: found.phrased,
+    removed: found.removed,
+    filesRead: found.filesRead,
+    operatedOnly: found.operatedOnly,
+    ...found.lists,
+  };
+  result.lists.ruleIssues.push(...found.ruleIssues);
+  // The limits block: Lode ran nothing, and what it read of runs.
+  if (states.records) {
+    result.limits.execution = `아무것도 실행하지 않았다. 프로젝트가 넘긴 실행 기록 ${states.records}개(기능 ${states.functions}개)를 읽었고, 그중 기능 ${states.currentFunctions}개의 실행이 지금 코드에 그대로다. 실행 근거는 그 실행의 출력 글이다.`;
+    result.limits.runs = { records: states.records, functions: states.functions, currentFunctions: states.currentFunctions, lodeRan: false };
+  }
+}
+
+function push(map, key, value) {
+  if (!map.has(key)) map.set(key, []);
+  map.get(key).push(value);
 }
 
 const baselineFile = (inputs) => path.join(inputs.outputDirectory, PRODUCT_GRAPH_BASELINE_FILE);
@@ -1179,27 +1397,35 @@ function confirmationsOf({ graph, computed, loaded }) {
 // The records in 확인/ as they are now: names and sizes only, from every
 // folder named 확인 (after normalisation), as a build finds them.
 function checkListingNow(documentsDirectory) {
+  return recordListingNow(documentsDirectory, { ...RECORD_KINDS.check, role: "check" });
+}
+
+function runListingNow(documentsDirectory) {
+  return recordListingNow(documentsDirectory, { ...RECORD_KINDS.run, role: "run" });
+}
+
+function recordListingNow(documentsDirectory, spec) {
   const listing = [],
     folderIssues = [];
-  for (const folder of listDirectory(documentsDirectory).filter((entry) => entry.isDirectory() && nfc(entry.name) === PRODUCT_GRAPH_CHECK_DIRECTORY)) {
+  for (const folder of listDirectory(documentsDirectory).filter((entry) => entry.isDirectory() && nfc(entry.name) === spec.directory)) {
     let entries;
     try {
       entries = listDirectory(path.join(documentsDirectory, folder.name));
     } catch {
-      folderIssues.push({ path: `${PRODUCT_GRAPH_CHECK_DIRECTORY}/` });
+      folderIssues.push({ path: `${spec.directory}/` });
       continue;
     }
     for (const entry of entries) {
-      const relative = `${PRODUCT_GRAPH_CHECK_DIRECTORY}/${nfc(entry.name)}`;
-      if (!entry.isFile() || classifyProductGraphPath(relative)?.role !== "check") continue;
+      const relative = `${spec.directory}/${nfc(entry.name)}`;
+      if (!entry.isFile() || classifyProductGraphPath(relative)?.role !== spec.role) continue;
       listing.push([relative, path.join(documentsDirectory, folder.name, entry.name)]);
     }
   }
   listing.sort((a, b) => compare(a[0], b[0]));
-  // As a build: sizes for the first PRODUCT_GRAPH_CHECK_MAX_RECORDS, names for the rest.
+  // As a build: sizes for the first spec.maxRecords, names for the rest.
   listing.forEach((row, index) => {
     let size = null;
-    if (index < PRODUCT_GRAPH_CHECK_MAX_RECORDS)
+    if (index < spec.maxRecords)
       try {
         size = fs.lstatSync(row[1]).size;
       } catch {
@@ -1504,6 +1730,21 @@ function withConfirmationFiles(freshness, inputs, check) {
   return { ...freshness, confirmations: { changed: true, text: note }, text: `${freshness.text} · ${note}` };
 }
 
+// Run records added or removed since the build: a note, like 확인 records.
+function withRunFiles(freshness, inputs, check) {
+  const recorded = check?.lists?.runs?.recordsListingSha256;
+  if (inputs?.mode !== "project" || typeof recorded !== "string") return freshness;
+  let now;
+  try {
+    now = runListingNow(inputs.documentsDirectory);
+  } catch {
+    return freshness;
+  }
+  if (now === recorded) return { ...freshness, runs: { changed: false } };
+  const note = "실행 기록이 빌드 뒤 바뀜 — 다시 빌드하면 연결에 반영된다";
+  return { ...freshness, runs: { changed: true, text: note }, text: `${freshness.text} · ${note}` };
+}
+
 // Reads the existing build: graph.json, check.json, the time of graph.json
 // and the baseline's time. Never builds, checks or writes. Project mode reads
 // the Project's build folder; { buildDirectory } reads a stand-alone output
@@ -1583,7 +1824,7 @@ export function readProductGraphBuild(options = {}) {
       return (checkFileSha256 ??= sha256Hex(checkBytes));
     },
     check,
-    freshness: withConfirmationFiles(freshnessOf(inputs, graph), inputs, check),
+    freshness: withRunFiles(withConfirmationFiles(freshnessOf(inputs, graph), inputs, check), inputs, check),
     baselineNow: baseline.baseline ? { setAt: baseline.baseline.setAt } : null,
     baselineEvidence: baseline.baseline || null,
     buildCommand,
@@ -1887,6 +2128,152 @@ export function confirmProductGraph({ root = ".", features = [], documents = [],
       confirmations: { status: confirmations.status, counts: confirmations.counts },
       note: `${PRODUCT_GRAPH_CHECK_NOTE} check.txt에는 다음 빌드부터 보인다.`,
       authority: "agent-check-of-code-not-user-approval",
+      instructionAuthority: false,
+      executionAuthority: false,
+    };
+  });
+}
+
+// ---------- run records (2.6) ----------
+
+// Writes the run records of one command, as writeCheckRecords writes 확인
+// records: everything checkable first, so a refusal writes nothing.
+function writeRunRecords({ projectRoot, family, records }) {
+  const folder = familyFolder(family, PRODUCT_GRAPH_RUN_DIRECTORY);
+  if (folder.exists && !folder.folder) fail("PRODUCT_GRAPH_RUN_FOLDER_INVALID", `${PRODUCT_GRAPH_RUN_DIRECTORY}가 폴더가 아니라서 실행 기록을 쓰지 않는다.`);
+  const directory = folder.path;
+  const planned = records.map((record) => {
+    const destination = path.join(directory, `${record.runId}.json`);
+    assertNoLinkedComponents(projectRoot, destination);
+    const text = json(record);
+    if (Buffer.byteLength(text) > PRODUCT_GRAPH_RUN_MAX_BYTES)
+      fail("PRODUCT_GRAPH_RUN_LIMIT", `실행 기록 하나가 ${PRODUCT_GRAPH_RUN_MAX_BYTES}바이트를 넘는다.`);
+    const present = [destination, ...folder.all.map((other) => path.join(other, `${record.runId}.json`))].find((candidate) => fs.existsSync(candidate));
+    if (present) {
+      const stored = verifyProductGraphRun(JSON.parse(decodeProductGraphText(readBounded(present))), { projectId: record.projectId, runId: record.runId });
+      if (stored.runHash !== record.runHash) fail("PRODUCT_GRAPH_RUN_COLLISION");
+    }
+    return { runId: record.runId, destination, text, existing: Boolean(present) };
+  });
+  let present = 0;
+  try {
+    for (const each of folder.all.length ? folder.all : [directory])
+      present += listDirectory(each).filter((entry) => classifyProductGraphPath(`${PRODUCT_GRAPH_RUN_DIRECTORY}/${nfc(entry.name)}`)?.role === "run").length;
+  } catch (error) {
+    fail("PRODUCT_GRAPH_RUN_UNREADABLE", `실행 기록 폴더를 읽지 못해 쓰지 않는다(${error.code || "오류"}).`);
+  }
+  const added = planned.filter((entry) => !entry.existing).length;
+  if (present + added > PRODUCT_GRAPH_RUN_MAX_RECORDS)
+    fail(
+      "PRODUCT_GRAPH_RUN_LIMIT",
+      `실행 기록이 ${present}개 있어, ${added}개를 더 쓰면 한도 ${PRODUCT_GRAPH_RUN_MAX_RECORDS}개를 넘는다. 아무것도 쓰지 않았다.`,
+    );
+  const result = { written: [], existing: planned.filter((entry) => entry.existing).map((entry) => entry.runId), notWritten: [], error: null };
+  for (const entry of planned) {
+    if (entry.existing) continue;
+    if (result.error) {
+      result.notWritten.push(entry.runId);
+      continue;
+    }
+    try {
+      if (!result.written.length) fs.mkdirSync(directory, { recursive: true });
+      atomicCreateArtifact(entry.destination, entry.text);
+      result.written.push(entry.runId);
+    } catch (error) {
+      result.error = /^[A-Z][A-Z0-9_]{0,63}$/.test(error?.code) ? error.code : "UNKNOWN";
+      result.notWritten.push(entry.runId);
+    }
+  }
+  return result;
+}
+
+const PRODUCT_GRAPH_RUN_NOTE =
+  "Lode는 아무것도 실행하지 않았다. 프로젝트가 실행한 것과 그 출력을, 지금 빌드의 기능 내용·닿는 코드 해시와 함께 적었다. 출력 글은 이 기록에 그대로 남고 이식용 내보내기에 함께 실린다. Lode는 출력에 비밀이 있는지 보지 않는다.";
+
+// Records runs a project made (what it ran, its state label, its raw output,
+// its exit code), each with the 기능's content and reach hashes from the
+// present build and the way code is read. Refusals mirror confirm: the build
+// is not current, a 기능 is not in the graph, a bound (2,000 records, 256 KiB
+// per record, 16 KiB per output: a longer output is refused, not cut).
+export function addProductGraphRuns({ root = ".", runs = [], rationale = null } = {}) {
+  const inspected = readProject(root);
+  if (!inspected.project) fail("NOT_INITIALIZED", "실행 기록은 Lode 프로젝트에서만 쓴다. 이 폴더는 Lode 프로젝트가 아니다.");
+  if (!Array.isArray(runs) || !runs.length) fail("PRODUCT_GRAPH_RUN_TARGET_INVALID", "runs는 실행 하나 이상의 목록이다.");
+  if (rationale !== null && (typeof rationale !== "string" || !rationale.trim() || rationale.length > 2000))
+    fail("PRODUCT_GRAPH_RUN_TARGET_INVALID", "근거는 비어 있지 않은 2000자 이하 글이다.");
+  const given = runs.map((run, index) => {
+    const where = `runs[${index}]`;
+    if (!run || typeof run !== "object" || Array.isArray(run)) fail("PRODUCT_GRAPH_RUN_TARGET_INVALID", `${where}가 객체가 아니다.`);
+    const unknown = Object.keys(run).find((key) => !["기능", "실행", "상태", "출력", "종료"].includes(key));
+    if (unknown) fail("PRODUCT_GRAPH_RUN_TARGET_INVALID", `${where}에 모르는 항목 ${unknown}.`);
+    if (typeof run.기능 !== "string" || !run.기능 || run.기능.length > PRODUCT_GRAPH_CHECK_MAX_ID)
+      fail("PRODUCT_GRAPH_RUN_TARGET_INVALID", `${where}.기능은 기능 ID다.`);
+    if (typeof run.실행 !== "string" || !run.실행.trim() || run.실행.length > 2000)
+      fail("PRODUCT_GRAPH_RUN_TARGET_INVALID", `${where}.실행은 무엇을 실행했는지 적은 2000자 이하 글이다.`);
+    if (run.상태 !== undefined && run.상태 !== null && (typeof run.상태 !== "string" || run.상태.length > 2000))
+      fail("PRODUCT_GRAPH_RUN_TARGET_INVALID", `${where}.상태는 2000자 이하 글이다.`);
+    if (typeof run.출력 !== "string") fail("PRODUCT_GRAPH_RUN_TARGET_INVALID", `${where}.출력은 출력 글이다.`);
+    if (Buffer.byteLength(run.출력) > PRODUCT_GRAPH_RUN_MAX_OUTPUT)
+      fail("PRODUCT_GRAPH_RUN_LIMIT", `${where}.출력이 ${PRODUCT_GRAPH_RUN_MAX_OUTPUT}바이트를 넘는다. 자르지 않고 거부한다.`);
+    if (run.종료 !== undefined && run.종료 !== null && !Number.isSafeInteger(run.종료)) fail("PRODUCT_GRAPH_RUN_TARGET_INVALID", `${where}.종료는 정수다.`);
+    return { 기능: run.기능, 실행: run.실행, 상태: run.상태 ?? null, 출력: run.출력, 종료: run.종료 ?? null };
+  });
+  const projectRoot = inspected.project.projectRoot;
+  const family = path.join(projectRoot, inspected.storage.directory, ...PRODUCT_GRAPH_DIRECTORY.split("/"));
+  return withProjectMutation({ root: projectRoot, storage: inspected.storage, scope: "product-graph-run", timeoutMs: 0 }, () => {
+    const current = currentBuildGraph(projectRoot);
+    if (!current.ok) fail(current.code, current.reason);
+    const nodes = new Map(current.ran.graph.nodes.map((node) => [node.id, node]));
+    const missing = [...new Set(given.map((run) => run.기능))].filter((id) => nodes.get(id)?.type !== "기능");
+    if (missing.length)
+      fail(
+        "PRODUCT_GRAPH_RUN_TARGET_MISSING",
+        `그래프에 없는 기능이다: ${missing.slice(0, MISSING_LISTED).map(echo).join(", ")}${missing.length > MISSING_LISTED ? ` 외 ${missing.length - MISSING_LISTED}개` : ""}`,
+      );
+    const reader = JSON.parse(readerKey(current.ran.graph.inputs.reader));
+    const recordedAt = new Date().toISOString();
+    const withBasis = given.map((run) => {
+      const node = nodes.get(run.기능);
+      return { ...run, basis: { id: node.id, contentSha256: node.contentSha256, reachSha256: node.reachSha256 } };
+    });
+    // Split by size: runs in order, a new record when one would pass a bound.
+    const records = [];
+    let batch = [];
+    const make = (list) =>
+      productGraphRunRecord({
+        projectId: inspected.project.projectId,
+        recordedAt,
+        rationale,
+        reader,
+        runs: list.map((run, index) => ({ 번호: index + 1, ...run })),
+      });
+    for (const run of withBasis) {
+      const next = [...batch, run];
+      if (batch.length && (next.length > PRODUCT_GRAPH_RUN_MAX_RUNS || Buffer.byteLength(json(make(next))) > PRODUCT_GRAPH_RUN_MAX_BYTES)) {
+        records.push(make(batch));
+        batch = [run];
+      } else batch = next;
+    }
+    if (batch.length) records.push(make(batch));
+    const written = writeRunRecords({ projectRoot, family, records });
+    if (written.error && !written.written.length && !written.existing.length)
+      fail("PRODUCT_GRAPH_RUN_WRITE_FAILED", `실행 기록을 쓰지 못했다(${written.error}). 아무것도 쓰지 않았다.`);
+    const kept = new Set([...written.written, ...written.existing]);
+    return {
+      status: written.error ? "partial" : "recorded",
+      ...(written.error
+        ? { reason: `실행 기록 ${records.length}개 가운데 ${kept.size}개만 썼다(${written.error}).`, notWritten: written.notWritten, writeError: written.error }
+        : {}),
+      records: [...kept],
+      recordsWritten: written.written.length,
+      runs: records
+        .filter((record) => kept.has(record.runId))
+        .flatMap((record) => record.runs.map((run) => ({ id: runLabel(record.runId, run.번호), 기능: run.기능, 실행: run.실행 }))),
+      recordedAt,
+      lodeRan: false,
+      note: `${PRODUCT_GRAPH_RUN_NOTE} check.txt와 연결에는 다음 빌드부터 보인다.`,
+      storedAt: `${PRODUCT_GRAPH_DIRECTORY}/${PRODUCT_GRAPH_RUN_DIRECTORY}/`,
+      authority: "project-supplied-run-evidence-not-lode-execution",
       instructionAuthority: false,
       executionAuthority: false,
     };

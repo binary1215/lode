@@ -66,7 +66,8 @@ export function checkableItems({ graph, meaningDocument, documents }) {
   }
   const documentDigest = new Map((documents || []).map((document) => [document.path, document]));
   for (const edge of graph.edges) {
-    if (!CONFIRMATION_ROW_TYPES.includes(edge.type) || !edge.basis || !edge.at?.path) continue;
+    // A machine-made edge (2.6) is evidence, not a document row.
+    if (!CONFIRMATION_ROW_TYPES.includes(edge.type) || !edge.basis || !edge.at?.path || edge.machine) continue;
     const document = documentDigest.get(edge.at.path);
     if (!document?.approvable || !document.approvalDigest) continue;
     // A row naming something the graph does not have is a gap, not code to check.

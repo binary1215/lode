@@ -27,7 +27,7 @@ lode-agent product-graph-check <project> --include-estimates
 
 The check is read-only. It prints the six rows of the 정합성 검사 and the lists that follow them, in Korean. By default it uses approved documents only and says how many estimates it left out. With `--include-estimates` it also uses estimates and labels every finding that rests on one, for example `[추정: 코드만 보고 쓴 추정]`.
 
-Through MCP the same operations are the grouped tool `lode_product_graph` with action `build`, `check`, `query`, `baseline`, `confirm` or `approve`, routed through `lode_tools_call` (or `lode_tools_read` for the read-only check and query). They are not on the default tool list.
+Through MCP the same operations are the grouped tool `lode_product_graph` with action `build`, `check`, `query`, `sample`, `coverage`, `baseline`, `confirm`, `runs_add` or `approve`, routed through `lode_tools_call` (or `lode_tools_read` for the read-only check, query, sample and coverage). They are not on the default tool list.
 
 ## Approve
 
@@ -49,13 +49,17 @@ If the document changed after the digest was taken, the approval is refused. Edi
 
 - **0건** means the check compared at least one pair and found nothing.
 - **검사 못 함: <reason>** means the check could not run, and says why: a missing document (제품 정의서가 없다), documents that exist but are not approved yet, a document that does not hold what the check needs, or a link this version does not extract (navigate 연결을 뽑지 않음). It never means "nothing wrong".
-- **뽑지 않음** next to a node type (데이터, 외부 연결, DB, 계측 이벤트) means this version does not extract that type. It is not a count of zero.
+- **뽑지 않음** next to a node type (now only 계측 이벤트) means this version does not extract that type. It is not a count of zero. The counts of 데이터, 외부 연결 and DB are numbers, each with what it covers: environment variable names and data a 바깥 rule names, outside connections a 바깥 rule names, and tables and columns made by `CREATE TABLE` in code strings and `.sql` files.
 - 제품코어 against 정책 is always left to a reader: the check prints both side by side.
 - **처음 쓸 때 — 빠진 입력** appears only when a document the checks need is missing or not yet approved: each line names the input, the checks and lists it unlocks, and the next step. The checks below it still end in 검사 못 함 with the same reason.
 - **이 그래프가 답하지 못하는 것** comes first. Read it before the findings: it says how much of the code was resolved, what is not extracted, what the UI scan cannot see, that nothing was run, and which documents this run used.
 - **어느 기능에서도 닿지 않는 코드** lists declarations no 기능 reaches through resolved references, most-affected files first. With few resolved calls, many entries are expected; an entry is a question for a reader (a missing 기능, or dead code), not a verdict.
 - **하나로 정하지 못한 호출** gives one count per reason and what would settle it; the limits block puts the calls in three numbers: all, those that cannot be product code or go to modules outside the product, and of the rest how many resolved. **코드로 읽지 않은 파일** counts what was not looked at, so a gap in coverage is visible.
 - **사라진 기능의 뜻** lists 뜻 lines whose 기능 is gone, usually after a rename: move the line to the new ID by hand. A build never edits `기능 뜻.md`.
+- **경로로 실행으로 읽은 곳** lists every place read as running or loading a file by its path (framework-invoked). It is read from text: read the sites and correct a wrong one with a rule. Paths that fit several files are counted, not linked.
+- **규칙이 가리키는 코드가 없음** and **규칙이 낡음 — …** are rule issues: an 입구, 대상 or 선언 that is not a 코드 node, a 파일 that is not scanned code, 글 on no code line, or a 빼는 연결 that removes nothing. They are listed and never stop a build.
+- **분기를 정하지 못함**, **이름 없는 바깥 호출** and **읽기·쓰기를 정하지 못함** say where the 분기 and 바깥 reading stopped: a branch that could not be delimited (that 기능 passes the whole function), outside calls no rule names, by module and file, and named data whose api is in neither the read nor the write list.
+- **문서에만 있음(실행·코드 근거 없음)**, **실행·코드에만 있음(문서에 없음)**, **이어지지 않은 화면요소** and **실행 뒤 코드가 바뀜** compare the documents' 기능→화면요소 rows with the evidence (see Run records below). 이어지지 않은 화면요소 lists a row that should show a result and is tied to no 기능: one with a quoted phrase no run or code matched, or with neither a phrase, a 보여 주는 기능 nor a 조작하면 실행되는 기능. A row that only operates a 기능 (a button) shows no result and is not listed; the heading counts how many were left out. A machine edge is not an approval and changes no document. Wherever an answer shows a 기능→화면요소 edge (`down`, `up`, the page tree), a machine-found edge reads "← 기계가 찾음 (근거: 실행 R…; 코드 file:line)" instead of a document position, and a document edge that also has machine evidence adds "(근거: 문서; …)"; the row data carries `evidence` and `machine`.
 
 ## Ask the graph
 
@@ -66,17 +70,23 @@ lode-agent product-graph-query <project> down cli:sync [--depth 2]
 lode-agent product-graph-query <project> up cli:sync
 lode-agent product-graph-query <project> reach cli:sync       # code a 기능 reaches
 lode-agent product-graph-query <project> reach src/store.mjs  # 기능 that reach a file or a 코드 node
+lode-agent product-graph-query <project> tree cli:sync        # everything a 기능 reaches, as one tree per role
+lode-agent product-graph-query <project> user UA-CHT-01       # a 유저 활동's steps and the 기능 behind them
 lode-agent product-graph-query <project> find store
 lode-agent product-graph-query <project> gaps [--list unreachedCode]
 lode-agent product-graph-query <project> changes [--list reviewAgain]
 lode-agent product-graph-query <source-root> overview --build <folder>   # a stand-alone output folder
 ```
 
-The query reads the existing build and never builds, checks, approves or writes. Every answer starts with three lines: when `graph.json` was written and whether the build is still the source as it is now (빌드 뒤 바뀐 것 없음, 빌드가 낡음: …, or 소스가 바뀌었는지 알 수 없음), how many calls that can be product code were resolved, and what changed since the baseline. Then the path line and the indented tree, in the build's words. Answers are paged (`--limit`, default 50, and `--cursor`); an answer with more says how many remain and the command for the next page. `down` and the starts `@기능`, `@기능/<kind>`, `@화면`, `@유저 활동`, `@파일` and `@바뀐 것` go one step at a time; a node already on the path is marked 위에 있음. `reach` follows resolved call and callback references only, the same closure the check uses for 어느 기능에서도 닿지 않는 코드. `--json` gives the structured form. The text is the same as the viewer's "Show as text" for the same question. With no build the answer is `PRODUCT_GRAPH_NOT_BUILT` with the build command; an unknown ID is `PRODUCT_GRAPH_NODE_NOT_FOUND` with the nearest matches.
+The query reads the existing build and never builds, checks, approves or writes. Every answer starts with three lines: when `graph.json` was written and whether the build is still the source as it is now (빌드 뒤 바뀐 것 없음, 빌드가 낡음: …, or 소스가 바뀌었는지 알 수 없음), how many calls that can be product code were resolved, and what changed since the baseline. Then the path line and the indented tree, in the build's words. Answers are paged (`--limit`, default 50, and `--cursor`); an answer with more says how many remain and the command for the next page. `down` and the starts `@기능`, `@기능/<kind>`, `@화면`, `@유저 활동`, `@파일` and `@바뀐 것` go one step at a time; a node already on the path is marked 위에 있음. `reach` follows resolved call, callback and framework-invoked references from both the 처리 and the 입구 code, the same closure the check uses for 어느 기능에서도 닿지 않는 코드: it stops at a 경계 and does not enter another 기능's 처리 코드 from 입구. In `reach <기능>`, code reached through 입구 is marked "— 입구로 닿음"; in `reach <code>`, a 기능 that reaches it only through 입구 is marked "— 입구로만 닿음". A 기능's child rows carry their 역할, marked "(입구)" for entry code. A boundary prints "경계에서 멈춤: <설명> → <대상>" under the node where reach stops, and `reach <code>` behind a boundary adds "경계를 넘으면 닿는 기능 N개 (…)". An edge written by hand is marked "(판단)".
+
+`tree <기능>` prints one indented tree per role, 처리 first, with the boundaries and each code line's read, write and 외부 연결. A node already expanded is marked "— 위에서 펼침", and another 기능's 처리 코드 "— <기능>의 처리 코드라 펼치지 않음". `user <유저 활동>` gives the activity's steps in order, each with its 화면요소, the "부르는 기능", the "결과를 보여 주는 기능" with its 근거, and each 기능's "처리 코드". Both are paged like every answer (a continuation row, and rows a later page repeats, are marked); a tree past 2000 rows says so and points to `down <ID>`.
+
+`--json` gives the structured form. The text is the same as the viewer's "Show as text" for the same question. With no build the answer is `PRODUCT_GRAPH_NOT_BUILT` with the build command; an unknown ID is `PRODUCT_GRAPH_NODE_NOT_FOUND` with the nearest matches.
 
 Through MCP the same question is the grouped tool `lode_product_graph` with action `query` (`lode_product_graph_query`). The graph helps when you need which code a user action reaches, what reaches a file, or where the gaps are; it is a scan without types and never a prerequisite of ordinary work.
 
-The structured answer (`--json`, MCP `structuredContent`) carries the rows as data. A row that stands for a graph node also carries `nodeType` (the node's type), `changedSinceBaseline` (`changed`, `added`, `reachChanged` or `unchanged`; only when the build was compared with a baseline) and `confirmation` (the confirmation lists that name the node: `neverChecked`, `changedSinceCheck`, `textChanged`, `otherReader`). A 뜻 line names its 기능 and a document row names both of its ends, so screens and screen elements carry it too. Every answer says `baselineComparison` (`compared`, `baseline-moved` when the baseline was moved after the build so the comparison is with the earlier one, `no-baseline` or `absent`) and `confirmationComparison`: `compared`, `partial` (the build read only the first confirmation records by name; every list and `confirmation` comes from those), `not-read` (a stand-alone build reads no confirmation records) or `absent` (a build made before confirmation records existed). A row a later page repeats from an earlier page (its root, a heading, the group line its first item continues) carries `repeats: "earlierPage"`; its text is unchanged. Only when `confirmationComparison` is `compared` does an absent `confirmation` mean either still current or nothing to check: the build keeps only a count of current ones. The starts (`@…`) carry none of these. The answer also carries `buildSha256`, which names what it was read from (the bytes of `graph.json` and `check.json` of every build it read, and the baseline; nothing is stored). Through MCP, the `structuredContent` of `lode_product_graph_query`, `_check`, `_build` and `_baseline` leaves out the whole `text` when the structured part gives it back exactly (a before/after item of `changes --list content` from its `rows[].detail`, check from its result); the content text the tool returns still starts with it, and the CLI keeps it in `--json`. An answer without rows keeps `text`: no build, an unreadable build and a refusal (their sentence is also in `message`), and a basis change (whose sentence is only in `text`).
+The structured answer (`--json`, MCP `structuredContent`) carries the rows as data. A row that stands for a graph node also carries `nodeType` (the node's type), `changedSinceBaseline` (`changed`, `added`, `reachChanged` or `unchanged`; only when the build was compared with a baseline) and `confirmation` (the confirmation lists that name the node: `neverChecked`, `changedSinceCheck`, `textChanged`, `otherReader`). A 뜻 line names its 기능 and a document row names both of its ends, so screens and screen elements carry it too. Every answer says `baselineComparison` (`compared`, `baseline-moved` when the baseline was moved after the build so the comparison is with the earlier one, `no-baseline` or `absent`) and `confirmationComparison`: `compared`, `partial` (the build read only the first confirmation records by name; every list and `confirmation` comes from those), `not-read` (a stand-alone build reads no confirmation records) or `absent` (a build made before confirmation records existed). A row a later page repeats from an earlier page (its root, a heading, the group line its first item continues) carries `repeats: "earlierPage"`; its text is unchanged. Only when `confirmationComparison` is `compared` does an absent `confirmation` mean either still current or nothing to check: the build keeps only a count of current ones. The starts (`@…`) carry none of these. Some rows carry more: a reach row says through which role it is reached (`via`: `처리` or `입구`; on `reach <code>`, `입구` means only through 입구); a 기능→코드 child row carries `역할`; a row of an edge written by hand carries `judgement: true`; a row that says where reach stopped at a boundary, or what crossing it would add, carries `boundary` (`from`, `to`, `설명`); a tree's role heading carries `role`, and a node it names without expanding carries `notExpanded` (`otherFunction` or `expandedAbove`); a `user` answer's step heading carries `step`, and a 기능 row carries `relation` (`calls` or `shows`) and, for `shows`, `evidence` (the edge's 근거). The answer also carries `buildSha256`, which names what it was read from (the bytes of `graph.json` and `check.json` of every build it read, and the baseline; nothing is stored). Through MCP, the `structuredContent` of `lode_product_graph_query`, `_check`, `_build` and `_baseline` leaves out the whole `text` when the structured part gives it back exactly (a before/after item of `changes --list content` from its `rows[].detail`, check from its result); the content text the tool returns still starts with it, and the CLI keeps it in `--json`. An answer without rows keeps `text`: no build, an unreadable build and a refusal (their sentence is also in `message`), and a basis change (whose sentence is only in `text`).
 
 ## Several questions in one call
 
@@ -123,7 +133,18 @@ A chain never returns rows from two builds. It detects a change after each call 
 
 Every build hashes what it read: each 코드 node's text (a file's whole text, a declaration's line range), each 기능's kind, handling and 처리 코드 (and a second hash over the code it reaches), each document node's stated fields, and every source file it read (`inputs.sourceFiles`). Text is compared after dropping a BOM and turning CR LF and CR into LF, so another checkout's line endings change nothing, and moving a declaration inside its file without changing its text keeps its hash. A declaration is hashed without the blank lines at the end of its range, so appending code after the last declaration of a file changes only the file and the new declaration. A file with lone CR line endings hashes like its LF copy as a whole, but the shared scan reads it as one line, so its declarations' ranges and hashes differ from those of an LF copy. These hashes live only in the generated `build/` folder; IDs do not change. The reader is compared by the generator, its graph version and the source analysis version; the Lode version is recorded for information only, so an upgrade that reads code the same way is not a change.
 
-The first build takes itself as the baseline (`build/baseline.json`) and says "기준 없음 — 이번 빌드를 기준으로 삼았다". Later builds compare with it and never move it, so building again keeps showing everything that changed since the baseline. `check.txt` and `check.json` (`changes`) give, right after the limits: when the baseline was set and what moved since (source files, documents, the rules file, the reader); per node type 변화 없음 as a count and 변경, 신규, 사라짐 by ID; 기능 whose own content is the same but whose reached code changed (닿는 코드가 바뀜) with the changed nodes; new and gone links; pairs that may have moved (same type, name and content); what changed where the source did not; and **다시 볼 것**: 뜻 lines and document rows (화면요소→기능, 기능→화면요소, 화면→코드) that point at something changed, with the document's state. An approved document among them is marked "승인된 문서가 가리키는 것이 기준 뒤 바뀜"; its approval stays, because whether its text is still right is a person's judgment. The build changes no document, 뜻 line or approval.
+The first build takes itself as the baseline (`build/baseline.json`) and says "기준 없음 — 이번 빌드를 기준으로 삼았다". Later builds compare with it and never move it, so building again keeps showing everything that changed since the baseline. `check.txt` and `check.json` (`changes`) give, right after the limits: when the baseline was set and what moved since (source files, documents, the rules file, the reader); per node type 변화 없음 as a count and 변경, 신규, 사라짐 by ID; 기능 whose own content is the same but whose reached code changed (닿는 코드가 바뀜) with the changed nodes; new and gone links; pairs that may have moved (same type, name and content); what changed where the source did not; and **다시 볼 것**: 뜻 lines and document rows (화면요소→기능, 기능→화면요소, 화면→코드) that point at something changed, with the document's state. An approved document among them is marked "승인된 문서가 가리키는 것이 기준 뒤 바뀜"; its approval stays, because whether its text is still right is a person's judgment. The build changes no document, 뜻 line or approval. Machine 기능→화면요소 edges are never in 다시 볼 것.
+
+### After updating to reader version 2
+
+The update that added 입구, framework-invoked paths, functions used as values, 데이터·외부 연결·DB and 분기 reads code another way (`PRODUCT_GRAPH_VERSION` 1 → 2). The first build after it compares with a baseline read the old way, and keeps what the new reading caused apart from what really changed:
+
+- A 기능 whose reach differs only in nodes that all lie in files whose text equals the baseline's is counted under "읽는 방식이 달라져 닿는 범위가 달라진 기능 N개" and is left out of 닿는 코드가 바뀜 and 다시 볼 것.
+- New 데이터, 외부 연결 and DB nodes are counted as "읽는 방식이 달라져 새로 생긴 노드", not as 신규.
+- A 기능 that reaches code in a file that really changed is listed as before.
+- Confirmation records show "다른 방식으로 읽은 때 확인함" until they are confirmed again.
+
+After reviewing that list, run `product-graph-baseline` to take a baseline read the new way. `호출 방식 표.json` gains the optional keys 입구, 분기, 손으로 적는 연결, 바깥 and 빼는 연결; a table without them reads as before, and unknown keys are still refused. The new user-owned folder `실행 기록/` is optional: without it there is simply no run evidence.
 
 ```bash
 lode-agent product-graph-baseline <project>
@@ -182,6 +203,85 @@ A call to a runtime global the built-in table does not list (a host's own global
 ```
 
 `hostLog(x)` is then a built-in function and `host.run(x)` a built-in namespace member, in every file that does not declare, import or bind that name.
+
+## Entry code, branches and connections the scan cannot see
+
+All of these go in `호출 방식 표.json` and are marked 판단; the definitions page says exactly how each is read. A rule issue (규칙이 가리키는 코드가 없음, 규칙이 낡음 — …) is listed in the check and never stops a build.
+
+When every MCP tool call passes one dispatcher before its handler, name it as 입구 so the dispatcher counts as reached by each tool 기능 without making each tool reach every other handler:
+
+```json
+{ "종류": "tool", "판단": true, "입구": ["src/server.mjs#dispatch"] }
+```
+
+A rule with only 종류 like this one gives 입구 to every 기능 of that kind; a rule with 파일 and 패턴 gives it to the 기능 it produces. Adding 입구 changes what each of those 기능 is stated to pass through, so after the next build every one of them is listed as 변경 (and as 닿는 코드가 바뀜 where its reach grew) against the baseline, and their 확인 records show 확인 뒤 코드가 바뀜 until they are checked again; `product-graph-baseline` takes the new state as the baseline once you have read the list.
+
+When one function handles several commands in branches, `"분기": true` on its pattern rule gives each 기능 only its own branch's lines:
+
+```json
+{ "종류": "cli", "판단": true, "파일": ["src/cli.mjs"], "패턴": "case \"([a-z-]+)\":", "분기": true }
+```
+
+When the code reaches something in a way the scan does not see (a framework that calls a handler by configuration, for example), write the connection by hand, or mark where reach should stop:
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "LodeProductGraphEntryRules",
+  "rules": [],
+  "손으로 적는 연결": [
+    { "판단": true, "종류": "framework-invoked", "파일": "src/app.mjs", "글": "registerJobs(", "대상": ["src/jobs.mjs#runJobs"], "설명": "the scheduler calls runJobs" },
+    { "판단": true, "종류": "경계", "파일": "src/plugins.mjs", "글": "loadPlugin(", "대상": ["src/plugin-host.mjs"], "설명": "third-party plugins" }
+  ],
+  "바깥": [
+    { "판단": true, "이름": "settings", "종류": "데이터", "닿는 곳": [{ "모듈": "fs", "파일": ["src/settings.mjs"] }], "설명": "the settings file" },
+    { "판단": true, "이름": "billing-api", "종류": "외부 연결", "닿는 곳": [{ "모듈": "https", "선언": ["src/billing.mjs#charge"] }] }
+  ]
+}
+```
+
+Outside calls that no 바깥 rule names are listed under 이름 없는 바깥 호출 by module and file, so you can see which to name. A call two rules claim is a rule issue unless exactly one narrows it by 줄 or 선언.
+
+## Check a sample of edges
+
+```bash
+lode-agent product-graph-sample <project> [--seed n] [--count k] [--types call,callback]
+```
+
+The sample reads the existing build and picks `k` edges (default 30, at most 500), spread over the edge types present, for a person to check against the source. Each edge shows both ends with file and line range, where it was read and its evidence. It prints the seed; without one, the seed is derived from the build, so the same build gives the same sample. It stores nothing and gives no verdict: read the source and report wrong edges. MCP: `lode_product_graph` action `sample` (`lode_product_graph_sample`).
+
+## Run records
+
+Lode runs nothing. When the project has run a 기능 (a test, a script, a person at the terminal), hand Lode what was run and what came back:
+
+```json
+{ "runs": [{ "기능": "cli:sync", "실행": "lode-agent sync ./demo", "상태": "ok", "출력": "<the raw output>", "종료": 0 }], "rationale": "why these runs were made" }
+```
+
+```bash
+lode-agent product-graph-runs-add <project> --input runs.json
+```
+
+(MCP: `lode_product_graph` action `runs_add`.) Each run gets the 기능's content and reach hash from the present build and the way code is read, so a run made on older code never becomes evidence for today's code. Records go to `.lode/context/product-graph/실행 기록/product-graph-run-<id>.json`, content-addressed and split by size; Lode never edits or deletes them. Refusals mirror confirm and write nothing: `PRODUCT_GRAPH_BUILD_STALE` when the build is not the source as it is now, `PRODUCT_GRAPH_RUN_TARGET_MISSING` when a 기능 is not in the graph, and `PRODUCT_GRAPH_RUN_LIMIT` past 2,000 records, for a record over 256 KiB, or for an output over 16 KiB (refused, not cut). Runs are shown as `R<record short id>-<n>`.
+
+**The output is stored as you give it.** Lode does not look for secrets in it, and a portable export carries it. Remove secrets before you hand an output over.
+
+The next build uses current runs as evidence for 기능→화면요소 edges: a phrase quoted in backticks in a 화면요소 row's 한 줄 cell that appears in a run's output. Code string literals are evidence too (see the definitions page). Each edge says its 근거 ("문서", "실행 <ids>", "코드 <file>:<line>"). To remove a wrong machine edge, add a judged rule:
+
+```json
+{ "빼는 연결": [{ "판단": true, "기능": "cli:sync", "화면요소": "CLI-01#2", "이유": "the phrase also appears in the help text" }] }
+```
+
+Machine edges are evidence, not approval: they never change a document, an approval or a confirmation record and are never in 다시 볼 것. A run whose 기능 changed since is listed as 실행 뒤 코드가 바뀜 and gives no edge; record it again on the current code. A newer run with the same 기능 and 실행 label replaces the older. `changes --list runsCurrent` and `--list runsStale` list the runs, and a 기능 with a stale run carries `{실행: 실행 뒤 코드가 바뀜}` on its node line. Reading the build notes next to its freshness when run records changed since the build ("실행 기록이 빌드 뒤 바뀜 — 다시 빌드하면 연결에 반영된다").
+
+## Compare a 기능's reach with a real run
+
+```bash
+NODE_V8_COVERAGE=<folder> <run the project so it does that one 기능>
+lode-agent product-graph-coverage <project> --feature cli:sync --v8 <folder>
+```
+
+The comparison is read-only and stores nothing; Lode runs nothing, the project runs. It lists "실행됐는데 닿는 범위 밖" (code that ran outside the reach: a path the graph misses) and "닿는다고 했는데 돌지 않음" (reach that did not run, untaken branches and error paths included). 입구 code is inside the reach. Code that ran behind a stop of the walk from 입구 (another 기능's 처리 코드) is listed apart, under "실행됐는데 입구에서 멈춘 곳 뒤에 있음", so a stop is not mistaken for a missing edge. A file changed since the run is skipped and named under "실행한 파일이 지금 소스와 다름". When nothing could be compared, both lists say "비교하지 않음 — <reason>", never 0. Only V8 coverage JSON is read. V8 coverage carries no source text, so "the same source" is judged by script length and by the file not having changed after the coverage file was written. The script's own whole-file range (its top level, run whenever the module is loaded) is not counted; a function that starts on the file's first line is. MCP: `lode_product_graph` action `coverage` (`lode_product_graph_coverage`).
 
 
 ## Find a flow, inspect its changes, preview a proposal

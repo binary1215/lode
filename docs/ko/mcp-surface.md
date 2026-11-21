@@ -255,6 +255,13 @@ CLI에도 같은 연쇄 읽기가 있고, 검사와 답도 같습니다:
 그 도구가 안쪽 호출이 될 수 있는지 알려 줍니다. 묶음 도구는 모양이 있는 action마다
 그 모양을 싣습니다.
 
+제품 그래프 질의의 모양은 답의 줄에 붙을 수 있는 필드와 그 값도 밝힙니다.
+`via`와 `역할`(`처리` 또는 `입구`), `judgement`(손으로 적는 연결), `boundary`(닿는
+길이 경계에서 멈춘 곳), `role`과 `notExpanded`(`tree` 답), 그리고 `step`,
+`relation`, `evidence`(`user` 답)입니다. 제품 그래프 action `sample`과 `coverage`는
+읽기 전용이고 `runs_add`는 실행 기록을 씁니다. 어느 것도 안쪽 호출이 아니므로 연쇄
+읽기가 허용하는 도구는 그대로입니다.
+
 ## 폐기 예정 이름
 
 묶음으로 대체된 작업 이름은 마이너 버전 두 개 동안 계속 호출할 수 있습니다.
@@ -339,8 +346,11 @@ CLI에도 같은 연쇄 읽기가 있고, 검사와 답도 같습니다:
 | `lode_product_graph` | `build` | `lode_tools_call` | `lode_product_graph_build` |
 | `lode_product_graph` | `check` | `lode_tools_read` | `lode_product_graph_check` |
 | `lode_product_graph` | `query` | `lode_tools_read` | `lode_product_graph_query` |
+| `lode_product_graph` | `sample` | `lode_tools_read` | `lode_product_graph_sample` |
+| `lode_product_graph` | `coverage` | `lode_tools_read` | `lode_product_graph_coverage` |
 | `lode_product_graph` | `baseline` | `lode_tools_call` | `lode_product_graph_baseline` |
 | `lode_product_graph` | `confirm` | `lode_tools_call` | `lode_product_graph_confirm` |
+| `lode_product_graph` | `runs_add` | `lode_tools_call` | `lode_product_graph_runs_add` |
 | `lode_product_graph` | `approve` | `lode_tools_call` | `lode_product_graph_approve` |
 | `lode_vcs` | `change_set_status` | `lode_tools_read` | `lode_change_set_status` |
 | `lode_vcs` | `evidence` | `lode_tools_read` | `lode_vcs_evidence` |

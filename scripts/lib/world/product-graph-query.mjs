@@ -9,7 +9,7 @@ import { sha256Hex } from "../core/digest.mjs";
 import { canonicalJson } from "../core/canonical-json.mjs";
 import { markTextFromStructure } from "./product-graph-answer.mjs";
 
-export const PRODUCT_GRAPH_QUESTIONS = Object.freeze(["overview", "node", "down", "up", "reach", "find", "gaps", "changes", "impact"]);
+export const PRODUCT_GRAPH_QUESTIONS = Object.freeze(["overview", "node", "down", "up", "reach", "tree", "user", "find", "gaps", "changes", "impact"]);
 const MAX_LIMIT = 500;
 
 export function productGraphQueryContext(read) {
@@ -35,7 +35,7 @@ export function queryProductGraph(options = {}) {
     ...location
   } = options;
   if (!PRODUCT_GRAPH_QUESTIONS.includes(question)) fail("PRODUCT_GRAPH_QUERY_INVALID", `질문은 ${PRODUCT_GRAPH_QUESTIONS.join(", ")} 중 하나다.`);
-  if (["node", "down", "up", "reach"].includes(question) && (typeof id !== "string" || !id))
+  if (["node", "down", "up", "reach", "tree", "user"].includes(question) && (typeof id !== "string" || !id))
     fail("PRODUCT_GRAPH_QUERY_INVALID", `${question}에는 노드 ID가 필요하다.`);
   if (question === "find" && (typeof text !== "string" || !text)) fail("PRODUCT_GRAPH_QUERY_INVALID", "find에는 찾을 글자가 필요하다.");
   const number = (value, name, minimum, maximum) => {

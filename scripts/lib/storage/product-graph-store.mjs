@@ -24,6 +24,9 @@ export const PRODUCT_GRAPH_BUILD_DIRECTORY = "build";
 export const PRODUCT_GRAPH_APPROVAL_DIRECTORY = "승인";
 // Confirmation records: what a 뜻 line or a document row was checked against.
 export const PRODUCT_GRAPH_CHECK_DIRECTORY = "확인";
+// Run records: what a project ran and what came back, written by
+// product-graph-runs-add with the code hashes of the build it was run on.
+export const PRODUCT_GRAPH_RUN_DIRECTORY = "실행 기록";
 export const PRODUCT_GRAPH_ACTIVITY_DIRECTORY = "유저플로우 기획서";
 export const PRODUCT_GRAPH_SCREEN_DIRECTORY = "화면설계서";
 export const PRODUCT_GRAPH_POLICY_FILE = "정책.md";
@@ -41,6 +44,7 @@ export const SCREEN_ID = /^[A-Z][A-Z0-9]*-[0-9]+$/;
 export const ACTIVITY_ID = /^UA-[A-Z][A-Z0-9]*-[0-9]+$/;
 const APPROVAL_NAME = /^(product-graph-approval-[a-f0-9]{24})\.json$/;
 const CHECK_NAME = /^(product-graph-check-[a-f0-9]{24})\.json$/;
+const RUN_NAME = /^(product-graph-run-[a-f0-9]{24})\.json$/;
 
 export const PRODUCT_GRAPH_APPROVAL_PROTOCOL = "lode-product-graph-approval";
 export const PRODUCT_GRAPH_APPROVAL_VERSION = 1;
@@ -74,6 +78,7 @@ export function classifyProductGraphPath(relative) {
   if (directory === PRODUCT_GRAPH_APPROVAL_DIRECTORY && APPROVAL_NAME.test(name))
     return { role: "approval", canon: true, approvalId: APPROVAL_NAME.exec(name)[1] };
   if (directory === PRODUCT_GRAPH_CHECK_DIRECTORY && CHECK_NAME.test(name)) return { role: "check", canon: true, checkId: CHECK_NAME.exec(name)[1] };
+  if (directory === PRODUCT_GRAPH_RUN_DIRECTORY && RUN_NAME.test(name)) return { role: "run", canon: true, runId: RUN_NAME.exec(name)[1] };
   return null;
 }
 
@@ -82,6 +87,7 @@ export const productGraphSubdirectories = Object.freeze([
   PRODUCT_GRAPH_SCREEN_DIRECTORY,
   PRODUCT_GRAPH_APPROVAL_DIRECTORY,
   PRODUCT_GRAPH_CHECK_DIRECTORY,
+  PRODUCT_GRAPH_RUN_DIRECTORY,
 ]);
 
 export function decodeProductGraphText(bytes) {
@@ -340,8 +346,114 @@ export function verifyProductGraphCheck(document, { projectId = null, checkId = 
   return document;
 }
 
+// ---------- run records ----------
+// What a project (its agent, its scripts) ran and what came back, one record
+// per product-graph-runs-add. Lode ran nothing: it adds, for every run, the
+// 기능's content and reach hashes from the present build and the way code was
+// read, so a run made on older code never makes an edge on today's code.
+// Append-only and content-addressed like confirmation records; never edited
+// or deleted by Lode. Lode does not inspect the output for secrets.
+export const PRODUCT_GRAPH_RUN_PROTOCOL = "lode-product-graph-run";
+export const PRODUCT_GRAPH_RUN_VERSION = 1;
+export const PRODUCT_GRAPH_RUN_MAX_RECORDS = 2000;
+export const PRODUCT_GRAPH_RUN_MAX_BYTES = 256 * 1024;
+export const PRODUCT_GRAPH_RUN_MAX_OUTPUT = 16 * 1024;
+export const PRODUCT_GRAPH_RUN_MAX_RUNS = 500;
+const RUN_TEXT_MAX = 2000;
+
+function runEntry(run, index) {
+  if (!run || typeof run !== "object" || Array.isArray(run)) fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (Object.keys(run).sort().join(",") !== "basis,기능,번호,상태,실행,종료,출력") fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (run.번호 !== index + 1) fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (!isId(run.기능) || typeof run.실행 !== "string" || !run.실행.trim() || run.실행.length > RUN_TEXT_MAX) fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (run.상태 !== null && (typeof run.상태 !== "string" || run.상태.length > RUN_TEXT_MAX)) fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (typeof run.출력 !== "string" || Buffer.byteLength(run.출력) > PRODUCT_GRAPH_RUN_MAX_OUTPUT) fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (run.종료 !== null && !Number.isSafeInteger(run.종료)) fail("PRODUCT_GRAPH_RUN_INVALID");
+  const basis = run.basis;
+  if (!basis || typeof basis !== "object" || Array.isArray(basis) || Object.keys(basis).sort().join(",") !== "contentSha256,id,reachSha256")
+    fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (basis.id !== run.기능 || !HEX64.test(basis.contentSha256) || !HEX64.test(basis.reachSha256)) fail("PRODUCT_GRAPH_RUN_INVALID");
+  return {
+    번호: run.번호,
+    기능: run.기능,
+    실행: run.실행,
+    상태: run.상태,
+    출력: run.출력,
+    종료: run.종료,
+    basis: { id: basis.id, contentSha256: basis.contentSha256, reachSha256: basis.reachSha256 },
+  };
+}
+
+function runPayload(record) {
+  if (typeof record.projectId !== "string" || !record.projectId) fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (typeof record.recordedAt !== "string" || !ISO_TIME.test(record.recordedAt) || !Number.isFinite(Date.parse(record.recordedAt)))
+    fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (record.rationale !== null && (typeof record.rationale !== "string" || !record.rationale.trim() || record.rationale.length > 2000))
+    fail("PRODUCT_GRAPH_RUN_INVALID");
+  const reader = record.reader;
+  if (!reader || typeof reader !== "object" || Array.isArray(reader) || Object.keys(reader).sort().join(",") !== "generator,graphVersion,sourceAnalysis")
+    fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (![reader.generator, reader.graphVersion, reader.sourceAnalysis].every(readerValue)) fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (!Array.isArray(record.runs) || !record.runs.length || record.runs.length > PRODUCT_GRAPH_RUN_MAX_RUNS) fail("PRODUCT_GRAPH_RUN_INVALID");
+  return {
+    schemaVersion: 1,
+    kind: "ProductGraphRunRecord",
+    protocol: { name: PRODUCT_GRAPH_RUN_PROTOCOL, version: PRODUCT_GRAPH_RUN_VERSION },
+    projectId: record.projectId,
+    recordedAt: record.recordedAt,
+    rationale: record.rationale === null ? null : record.rationale.trim(),
+    reader: { generator: reader.generator ?? null, graphVersion: reader.graphVersion ?? null, sourceAnalysis: reader.sourceAnalysis ?? null },
+    runs: record.runs.map(runEntry),
+    lodeRan: false,
+    authority: "project-supplied-run-evidence-not-lode-execution",
+    instructionAuthority: false,
+    executionAuthority: false,
+  };
+}
+
+export function productGraphRunRecord({ projectId, recordedAt, rationale = null, reader, runs }) {
+  const payload = runPayload({ projectId, recordedAt, rationale, reader, runs });
+  const runHash = sha256Hex(canonicalJson(payload));
+  return { ...payload, runId: `product-graph-run-${runHash.slice(0, 24)}`, runHash };
+}
+
+// A record whose name, fields or content address do not match is not a run record.
+export function verifyProductGraphRun(document, { projectId = null, runId = null } = {}) {
+  const fields = [
+    "schemaVersion",
+    "kind",
+    "protocol",
+    "projectId",
+    "recordedAt",
+    "rationale",
+    "reader",
+    "runs",
+    "lodeRan",
+    "authority",
+    "instructionAuthority",
+    "executionAuthority",
+    "runId",
+    "runHash",
+  ];
+  if (
+    !document ||
+    typeof document !== "object" ||
+    Array.isArray(document) ||
+    JSON.stringify(Object.keys(document).sort()) !== JSON.stringify([...fields].sort())
+  )
+    fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (document.kind !== "ProductGraphRunRecord" || document.schemaVersion !== 1) fail("PRODUCT_GRAPH_RUN_INVALID");
+  const expected = productGraphRunRecord(document);
+  if (canonicalJson(expected) !== canonicalJson(document)) fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (projectId !== null && document.projectId !== projectId) fail("PRODUCT_GRAPH_RUN_PROJECT_MISMATCH");
+  if (runId !== null && document.runId !== runId) fail("PRODUCT_GRAPH_RUN_INVALID");
+  return document;
+}
+
 const HANDLINGS = ["따라간다", "경계로 둔다", "범위 밖"];
 const RULE_KINDS = ["hook", "command", "tool", "cli", "프론트"];
+const ENTRY_CODE_MAX = 64;
+const HAND_RULES_MAX = 2000;
 
 const UI_ENTRY_KEYS = [
   "이름",
@@ -421,7 +533,57 @@ export function verifyUiBindingPattern(entry, where = "UI 연결 패턴", { allo
 export function verifyProductGraphRules(document) {
   const invalid = (detail) => fail("PRODUCT_GRAPH_RULES_INVALID", `호출 방식 표가 올바르지 않다: ${detail}`);
   if (!document || typeof document !== "object" || Array.isArray(document)) invalid("JSON 객체가 아니다");
-  const allowedTop = ["schemaVersion", "kind", "rules", "source", "화면 코드 표시", "화면 파일", "내장 이름"];
+  const allowedTop = ["schemaVersion", "kind", "rules", "source", "화면 코드 표시", "화면 파일", "내장 이름", "손으로 적는 연결", "빼는 연결", "바깥"];
+  // What is on the other side of outside calls (2.8): named, judged.
+  const outside = document["바깥"];
+  if (outside !== undefined) {
+    if (!Array.isArray(outside) || outside.length > HAND_RULES_MAX) invalid(`바깥은 배열이다 (${HAND_RULES_MAX}개까지)`);
+    for (const [index, rule] of outside.entries()) {
+      const where = `바깥[${index}]`;
+      if (!rule || typeof rule !== "object" || Array.isArray(rule)) invalid(`${where}가 객체가 아니다`);
+      for (const key of Object.keys(rule)) if (!["판단", "이름", "종류", "닿는 곳", "설명"].includes(key)) invalid(`${where}에 모르는 항목 ${key}`);
+      if (rule["판단"] !== true) invalid(`${where}.판단은 true여야 한다`);
+      if (typeof rule["이름"] !== "string" || !/^[^\s:][^:]{0,199}$/.test(rule["이름"])) invalid(`${where}.이름은 200자 이하 글이다 (: 없이)`);
+      if (!["데이터", "외부 연결"].includes(rule["종류"])) invalid(`${where}.종류는 데이터 또는 외부 연결이다`);
+      if (rule["설명"] !== undefined && (typeof rule["설명"] !== "string" || rule["설명"].length > 500)) invalid(`${where}.설명은 글자다`);
+      const places = rule["닿는 곳"];
+      if (!Array.isArray(places) || !places.length || places.length > ENTRY_CODE_MAX) invalid(`${where}.닿는 곳은 1~${ENTRY_CODE_MAX}개의 배열이다`);
+      for (const [at, place] of places.entries()) {
+        const spot = `${where}.닿는 곳[${at}]`;
+        if (!place || typeof place !== "object" || Array.isArray(place)) invalid(`${spot}가 객체가 아니다`);
+        for (const key of Object.keys(place)) if (!["모듈", "파일", "줄", "선언"].includes(key)) invalid(`${spot}에 모르는 항목 ${key}`);
+        if (typeof place["모듈"] !== "string" || !/^[A-Za-z_][\w.:/-]{0,199}$/.test(place["모듈"])) invalid(`${spot}.모듈은 모듈 이름이다`);
+        if (place["파일"] !== undefined && (!Array.isArray(place["파일"]) || !place["파일"].length || place["파일"].some((item) => !safeRelative(item))))
+          invalid(`${spot}.파일은 소스 루트 기준 상대 경로 배열이다`);
+        if (
+          place["줄"] !== undefined &&
+          (!Array.isArray(place["줄"]) ||
+            place["줄"].length !== 2 ||
+            !place["줄"].every((item) => Number.isSafeInteger(item) && item > 0) ||
+            place["줄"][0] > place["줄"][1])
+        )
+          invalid(`${spot}.줄은 [시작, 끝] 줄 번호다`);
+        if (
+          place["선언"] !== undefined &&
+          (!Array.isArray(place["선언"]) || !place["선언"].length || place["선언"].some((item) => typeof item !== "string" || !item))
+        )
+          invalid(`${spot}.선언은 코드 ID 배열이다`);
+      }
+    }
+  }
+  // A machine-made 기능→화면요소 edge judged wrong (2.6).
+  const removals = document["빼는 연결"];
+  if (removals !== undefined) {
+    if (!Array.isArray(removals) || removals.length > HAND_RULES_MAX) invalid(`빼는 연결은 배열이다 (${HAND_RULES_MAX}개까지)`);
+    for (const [index, rule] of removals.entries()) {
+      const where = `빼는 연결[${index}]`;
+      if (!rule || typeof rule !== "object" || Array.isArray(rule)) invalid(`${where}가 객체가 아니다`);
+      for (const key of Object.keys(rule)) if (!["판단", "기능", "화면요소", "이유"].includes(key)) invalid(`${where}에 모르는 항목 ${key}`);
+      if (rule["판단"] !== true) invalid(`${where}.판단은 true여야 한다`);
+      for (const key of ["기능", "화면요소"]) if (typeof rule[key] !== "string" || !rule[key] || rule[key].length > 1024) invalid(`${where}.${key}는 ID다`);
+      if (typeof rule["이유"] !== "string" || !rule["이유"].trim() || rule["이유"].length > 500) invalid(`${where}.이유가 필요하다`);
+    }
+  }
   for (const key of Object.keys(document)) if (!allowedTop.includes(key)) invalid(`모르는 항목 ${key}`);
   if (document.schemaVersion !== 1 || document.kind !== "LodeProductGraphEntryRules") invalid("schemaVersion 1, kind LodeProductGraphEntryRules 이어야 한다");
   if (!Array.isArray(document.rules ?? [])) invalid("rules는 배열이어야 한다");
@@ -434,11 +596,24 @@ export function verifyProductGraphRules(document) {
       continue;
     }
     for (const key of Object.keys(rule))
-      if (!["종류", "처리", "판단", "설명", "파일", "패턴", "처리 코드"].includes(key)) invalid(`${where}에 모르는 항목 ${key}`);
+      if (!["종류", "처리", "판단", "설명", "파일", "패턴", "처리 코드", "입구", "분기"].includes(key)) invalid(`${where}에 모르는 항목 ${key}`);
+    // 분기 (2.9): only on a pattern rule whose 처리 코드 is the enclosing code.
+    if (rule["분기"] !== undefined && (rule["분기"] !== true || rule["패턴"] === undefined || ![undefined, "줄을 감싼 코드"].includes(rule["처리 코드"])))
+      invalid(`${where}.분기는 true이고, 처리 코드가 줄을 감싼 코드인 패턴 규칙에만 쓴다`);
     if (rule["처리"] !== undefined && !HANDLINGS.includes(rule["처리"])) invalid(`${where}.처리는 ${HANDLINGS.join(", ")} 중 하나여야 한다`);
     if (rule["판단"] !== undefined && rule["판단"] !== true) invalid(`${where}.판단은 true만 쓸 수 있다`);
+    // 입구 (entry code): the 코드 IDs every 기능 of this rule passes through
+    // besides its 처리 코드. Whether each is a 코드 node is the build's to say.
+    if (
+      rule["입구"] !== undefined &&
+      (!Array.isArray(rule["입구"]) ||
+        !rule["입구"].length ||
+        rule["입구"].length > ENTRY_CODE_MAX ||
+        rule["입구"].some((item) => typeof item !== "string" || !item || item.length > 1024))
+    )
+      invalid(`${where}.입구는 코드 ID 배열이다 (1~${ENTRY_CODE_MAX}개)`);
     if (rule["종류"] === "tool" || rule["종류"] === "cli") {
-      if (rule["패턴"] === undefined && rule["처리"] !== undefined && rule["파일"] === undefined) continue;
+      if (rule["패턴"] === undefined && rule["파일"] === undefined && (rule["처리"] !== undefined || rule["입구"] !== undefined)) continue;
       if (!Array.isArray(rule["파일"]) || !rule["파일"].length || rule["파일"].some((item) => typeof item !== "string" || !safeRelative(item)))
         invalid(`${where}.파일은 소스 루트 기준 상대 경로 배열이어야 한다`);
       if (typeof rule["패턴"] !== "string" || !rule["패턴"]) invalid(`${where}.패턴이 필요하다`);
@@ -475,6 +650,29 @@ export function verifyProductGraphRules(document) {
         if (!Array.isArray(names) || names.some((name) => typeof name !== "string" || !/^[A-Za-z_$][\w$]*$/.test(name)))
           invalid(`내장 이름.${language}.${key}는 이름 배열이다`);
       }
+    }
+  }
+  // Connections a person or an agent writes for what no scan sees (2.4):
+  // judged, each with the file and the text that marks the place.
+  const handWritten = document["손으로 적는 연결"];
+  if (handWritten !== undefined) {
+    if (!Array.isArray(handWritten) || handWritten.length > HAND_RULES_MAX) invalid(`손으로 적는 연결은 배열이다 (${HAND_RULES_MAX}개까지)`);
+    for (const [index, rule] of handWritten.entries()) {
+      const where = `손으로 적는 연결[${index}]`;
+      if (!rule || typeof rule !== "object" || Array.isArray(rule)) invalid(`${where}가 객체가 아니다`);
+      for (const key of Object.keys(rule)) if (!["판단", "종류", "파일", "글", "대상", "설명"].includes(key)) invalid(`${where}에 모르는 항목 ${key}`);
+      if (rule["판단"] !== true) invalid(`${where}.판단은 true여야 한다`);
+      if (!["framework-invoked", "경계"].includes(rule["종류"])) invalid(`${where}.종류는 framework-invoked 또는 경계다`);
+      if (!safeRelative(rule["파일"])) invalid(`${where}.파일은 소스 루트 기준 상대 경로다`);
+      if (typeof rule["글"] !== "string" || !rule["글"] || rule["글"].length > 500 || rule["글"].includes("\n")) invalid(`${where}.글은 한 줄 글자다`);
+      if (
+        !Array.isArray(rule["대상"]) ||
+        !rule["대상"].length ||
+        rule["대상"].length > ENTRY_CODE_MAX ||
+        rule["대상"].some((item) => typeof item !== "string" || !item || item.length > 1024)
+      )
+        invalid(`${where}.대상은 코드 ID 배열이다 (1~${ENTRY_CODE_MAX}개)`);
+      if (rule["설명"] !== undefined && (typeof rule["설명"] !== "string" || rule["설명"].length > 500)) invalid(`${where}.설명은 글자다`);
     }
   }
   const named = document["화면 파일"];
@@ -523,6 +721,14 @@ export function verifyProductGraphCanonFile(relative, bytes, { projectId = null 
       fail("PRODUCT_GRAPH_APPROVAL_INVALID");
     }
     verifyProductGraphApproval(document, { projectId, approvalId: target.approvalId });
+  } else if (target.role === "run") {
+    let document;
+    try {
+      document = JSON.parse(text);
+    } catch {
+      fail("PRODUCT_GRAPH_RUN_INVALID");
+    }
+    verifyProductGraphRun(document, { projectId, runId: target.runId });
   } else if (target.role === "check") {
     let document;
     try {
@@ -545,6 +751,7 @@ export function verifyProductGraphCanonOriginals({ directory, list, readBytes, p
   const verified = [],
     unrecognized = [];
   let checks = 0;
+  let runs = 0;
   const top = list(base);
   if (!top.length) return { verified, unrecognized };
   const visit = (prefix, names) => {
@@ -561,7 +768,14 @@ export function verifyProductGraphCanonOriginals({ directory, list, readBytes, p
         continue;
       }
       // Confirmation records are counted apart from the documents.
-      if (target.role === "check" ? ++checks > PRODUCT_GRAPH_CHECK_MAX_RECORDS : verified.length - checks >= PRODUCT_GRAPH_MAX_FILES)
+      // Run records too, each kind against its own bound.
+      if (
+        target.role === "check"
+          ? ++checks > PRODUCT_GRAPH_CHECK_MAX_RECORDS
+          : target.role === "run"
+            ? ++runs > PRODUCT_GRAPH_RUN_MAX_RECORDS
+            : verified.length - checks - runs >= PRODUCT_GRAPH_MAX_FILES
+      )
         fail("PRODUCT_GRAPH_TOO_MANY_FILES");
       verifyProductGraphCanonFile(within, readBytes(`${base}/${within}`), { projectId });
       verified.push(`${base}/${within}`);
@@ -612,6 +826,7 @@ export function summarizeProductGraphTransfer({ directory, verified = [], notRec
     documents: roles.filter(([, target]) => target?.role === "document").length,
     approvalRecords: roles.filter(([, target]) => target?.role === "approval").length,
     checkRecords: roles.filter(([, target]) => target?.role === "check").length,
+    runRecords: roles.filter(([, target]) => target?.role === "run").length,
     otherUserFiles: roles
       .filter(([, target]) => ["policy", "meaning", "rules"].includes(target?.role))
       .map(([file]) => file)

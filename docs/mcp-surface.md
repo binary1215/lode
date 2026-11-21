@@ -282,6 +282,14 @@ with `inventory_page` the rows are `inventoryPage.rows` and the next call
 tool can be an inner call. For a grouped tool, each action with a shape carries
 it.
 
+The product graph query shape also names the row fields its answers may carry
+and their values: `via` and `역할` (`처리` or `입구`), `judgement` (an edge
+written by hand), `boundary` (where reach stopped at a 경계), `role` and
+`notExpanded` (a `tree` answer), and `step`, `relation` and `evidence` (a
+`user` answer). The product graph actions `sample` and `coverage` are
+read-only and `runs_add` writes run records; none of them is an inner call, so
+the tools a read chain allows are unchanged.
+
 ## Deprecated names
 
 The operation names a group replaced remain callable for two minor versions:
@@ -367,8 +375,11 @@ directly, through `lode_tools_read` / `lode_tools_call`, and in their historical
 | `lode_product_graph` | `build` | `lode_tools_call` | `lode_product_graph_build` |
 | `lode_product_graph` | `check` | `lode_tools_read` | `lode_product_graph_check` |
 | `lode_product_graph` | `query` | `lode_tools_read` | `lode_product_graph_query` |
+| `lode_product_graph` | `sample` | `lode_tools_read` | `lode_product_graph_sample` |
+| `lode_product_graph` | `coverage` | `lode_tools_read` | `lode_product_graph_coverage` |
 | `lode_product_graph` | `baseline` | `lode_tools_call` | `lode_product_graph_baseline` |
 | `lode_product_graph` | `confirm` | `lode_tools_call` | `lode_product_graph_confirm` |
+| `lode_product_graph` | `runs_add` | `lode_tools_call` | `lode_product_graph_runs_add` |
 | `lode_product_graph` | `approve` | `lode_tools_call` | `lode_product_graph_approve` |
 | `lode_vcs` | `change_set_status` | `lode_tools_read` | `lode_change_set_status` |
 | `lode_vcs` | `evidence` | `lode_tools_read` | `lode_vcs_evidence` |
