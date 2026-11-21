@@ -832,8 +832,10 @@ test("2.7: V8 coverage maps run functions to declarations; it lists what ran out
   assert.equal(answer.status, "compared");
   assert.deepEqual(answer.comparedFiles, ["src/server.js", "src/tools.js"]);
   // read ran but tool:save does not reach it (it is tool:load's); route is 입구, inside the range.
-  assert.deepEqual(answer.ranOutsideReach, ["src/tools.js#read"]);
-  assert(answer.ranOutsideReach.includes("src/tools.js#read"));
+  // read ran behind the stop at load (tool:load's 처리 코드): its own heading, not a missing edge.
+  assert.deepEqual(answer.ranOutsideReach, []);
+  assert.deepEqual(answer.ranBehindEntryStop, ["src/tools.js#read"]);
+  assert.match(answer.text, /\n실행됐는데 입구에서 멈춘 곳 뒤에 있음: 1개 /);
   assert(!answer.ranOutsideReach.includes("src/server.js#route"));
   assert.deepEqual(answer.reachedNotRun, ["src/server.js#guard", "src/tools.js#write"]);
   assert.match(answer.text, /\n읽은 형식: V8 coverage/);
@@ -1083,4 +1085,197 @@ test("section 3: against a version-1 baseline, reader-caused reach differences a
     [["cli:other", "reach"]],
   );
   assert.deepEqual(second.changes.readerChanged.reach, ["cli:start"]);
+});
+
+// ---------- 2.1 the stop of the walk from 입구 (answer of 2026-11-22) ----------
+
+const DISPATCH = {
+  "src/registry.js": lines(
+    'import { save, load, log } from "./tools.js";',
+    "export const TOOLS = [",
+    '  { name: "save", run: save },',
+    '  { name: "load", run: load },',
+    '  { name: "log", run: log },',
+    "];",
+  ),
+  "src/tools.js": lines(
+    "export function save() { return 1; }",
+    "export function load() { return 2; }",
+    "export function log() { return note(); }",
+    "function note() { return 3; }",
+  ),
+  "src/server.js": lines(
+    'import { save, load, log } from "./tools.js";',
+    "export function route(name) {",
+    "  log();",
+    '  if (name === "save") return save();',
+    "  return load();",
+    "}",
+  ),
+};
+
+test("2.1 stop (a): a dispatcher that calls every handler directly: each 기능 reaches only its own handler; a changed handler marks one 기능", (t) => {
+  const base = temporary(t);
+  const source = path.join(base, "source");
+  for (const [name, text] of Object.entries(DISPATCH)) {
+    fs.mkdirSync(path.dirname(path.join(source, name)), { recursive: true });
+    fs.writeFileSync(path.join(source, name), text);
+  }
+  fs.mkdirSync(path.join(base, "documents"));
+  const rulesFile = path.join(base, "rules.json");
+  fs.writeFileSync(rulesFile, JSON.stringify({ ...RULES_HEAD, rules: [toolRule({ 입구: ["src/server.js#route"] })] }));
+  const out = path.join(base, "out");
+  const build = () => buildProductGraph({ sourceRoot: source, documentsDirectory: path.join(base, "documents"), rulesFile, outputDirectory: out });
+  build();
+  const graph = JSON.parse(fs.readFileSync(path.join(out, "graph.json"), "utf8"));
+  const save = reachOf(graph, "tool:save");
+  assert(save.has("src/tools.js#save") && save.has("src/server.js#route"));
+  assert(!save.has("src/tools.js#load") && !save.has("src/tools.js#log") && !save.has("src/tools.js#note"));
+  assert.deepEqual(save.stops, [
+    { id: "src/tools.js#load", functions: ["tool:load"] },
+    { id: "src/tools.js#log", functions: ["tool:log"] },
+  ]);
+  fs.writeFileSync(path.join(source, "src/tools.js"), DISPATCH["src/tools.js"].replace("return 2;", "return 22;"));
+  const changed = build();
+  assert.deepEqual(
+    changed.changes.reachChanged.map((item) => item.id),
+    ["tool:load"],
+  );
+});
+
+test("2.1 stop (b): a handler the dispatcher calls as a shared step is a counted, named stop in reach, node and tree answers and in the limits block", (t) => {
+  const p = product(t, DISPATCH, { rules: [toolRule({ 입구: ["src/server.js#route"] })] });
+  const { result } = p.build();
+  assert.match(result.text, /\n- 닿는 범위는 처리 코드와 입구 둘 다에서 시작하고, 입구에서 걷는 길은 다른 기능의 처리 코드인 노드 앞에서 멈춘다[^\n]*공통 단계로 정말 부르면 그 길은 보이지 않는다\.\n/);
+  p.ask({ question: "overview" });
+  const reach = p.ask({ question: "reach", id: "tool:save" });
+  const row = reach.rows.find((item) => item.entryStops);
+  assert.equal(row.text, "입구에서 다른 기능의 처리 코드 앞에서 멈춤 2곳: src/tools.js#load (tool:load), src/tools.js#log (tool:log)");
+  assert.deepEqual(
+    reach.reach.entryStops.map((item) => item.id),
+    ["src/tools.js#load", "src/tools.js#log"],
+  );
+  assert(p.ask({ question: "node", id: "tool:save" }).rows.some((item) => item.text === row.text));
+  const tree = p.ask({ question: "tree", id: "tool:save" });
+  assert(tree.rows.some((item) => item.id === "src/tools.js#log" && / — tool:log의 처리 코드라 펼치지 않음$/.test(item.text)));
+  // The log 기능 itself reaches its handler through 처리 and is stopped at the others.
+  const log = p.ask({ question: "reach", id: "tool:log" });
+  assert.equal(log.reach.via["src/tools.js#log"], "처리");
+  assert.equal(log.reach.via["src/tools.js#note"], "처리");
+  // Without 입구 there is no stop line.
+  const q = product(t, DISPATCH, { rules: [toolRule()] });
+  q.build();
+  q.ask({ question: "overview" });
+  assert(!q.ask({ question: "reach", id: "tool:save" }).rows.some((item) => item.entryStops));
+});
+
+test("2.1 stop (c): a node that is 처리 코드 of two 기능 stops a third 기능's 입구 walk and names both; each owner reaches it through 처리", (t) => {
+  const shared = {
+    "src/a.js": lines("export function shared() { return deep(); }", "function deep() { return 1; }", "export function other() { return 2; }"),
+    "src/front.js": lines('import { shared, other } from "./a.js";', "export function gate() { shared(); return other(); }"),
+  };
+  const p = product(t, shared, {
+    rules: [
+      { 종류: "tool", 판단: true, 파일: ["src/a.js"], 패턴: "export function (shared)\\(" },
+      { 종류: "cli", 판단: true, 파일: ["src/a.js"], 패턴: "export function (shared)\\(" },
+      { 종류: "tool", 판단: true, 파일: ["src/a.js"], 패턴: "export function (other)\\(", 입구: ["src/front.js#gate"] },
+    ],
+  });
+  const { graph } = p.build();
+  const other = reachOf(graph, "tool:other");
+  assert.deepEqual(other.stops, [{ id: "src/a.js#shared", functions: ["cli:shared", "tool:shared"] }]);
+  assert(!other.has("src/a.js#deep"));
+  for (const id of ["tool:shared", "cli:shared"]) assert.equal(reachOf(graph, id).get("src/a.js#shared"), "처리");
+});
+
+// ---------- the baseline keeps what reach needs (answer of 2026-11-22) ----------
+
+test("baseline: 입구, 줄 ranges and reference lines are stored, so the before-side reach is rebuilt exactly", (t) => {
+  const base = temporary(t);
+  const source = path.join(base, "source");
+  const files = { ...DISPATCH, "src/cli.js": BRANCHES["src/cli.js"] };
+  for (const [name, text] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(source, name)), { recursive: true });
+    fs.writeFileSync(path.join(source, name), text);
+  }
+  fs.mkdirSync(path.join(base, "documents"));
+  const rulesFile = path.join(base, "rules.json");
+  fs.writeFileSync(
+    rulesFile,
+    JSON.stringify({ ...RULES_HEAD, rules: [toolRule({ 입구: ["src/server.js#route"] }), { 종류: "cli", 판단: true, 파일: ["src/cli.js"], 패턴: 'name === "(\\w+)"', 분기: true }] }),
+  );
+  const out = path.join(base, "out");
+  const build = () => buildProductGraph({ sourceRoot: source, documentsDirectory: path.join(base, "documents"), rulesFile, outputDirectory: out });
+  build();
+  const baseline = JSON.parse(fs.readFileSync(path.join(out, "baseline.json"), "utf8"));
+  const name = (end) => (typeof end === "number" ? baseline.nodes[end][0] : end);
+  const extra = (type, from, to) => baseline.edges.find((edge) => edge[0] === type && name(edge[1]) === from && name(edge[2]) === to)?.[3];
+  assert.deepEqual(extra("기능→코드", "tool:save", "src/server.js#route"), { 역할: "입구" });
+  assert.equal(extra("기능→코드", "tool:save", "src/tools.js#save"), undefined);
+  assert.deepEqual(extra("기능→코드", "cli:save", "src/cli.js#main"), {
+    줄: [
+      [1, 4],
+      [8, 9],
+    ],
+  });
+  assert.deepEqual(extra("call", "src/cli.js#main", "src/cli.js#loadIt"), { lines: [6] });
+  assert.equal(extra("call", "src/tools.js#log", "src/tools.js#note"), undefined);
+  // tool:save now also calls note: the only difference is note, newly reached.
+  // (Read without roles, the baseline would have tool:save reach load and log too.)
+  fs.writeFileSync(path.join(source, "src/tools.js"), DISPATCH["src/tools.js"].replace("export function save() { return 1; }", "export function save() { return note(); }"));
+  const changed = build();
+  const save = changed.changes.reachChanged.find((item) => item.id === "tool:save");
+  assert.deepEqual(save.nodes, [
+    { id: "src/tools.js#save", change: "changed" },
+    { id: "src/tools.js#note", change: "reached" },
+  ].sort((a, b) => (a.change < b.change ? -1 : 1)));
+  // Same input, same bytes.
+  const again = path.join(base, "again");
+  buildProductGraph({ sourceRoot: source, documentsDirectory: path.join(base, "documents"), rulesFile, outputDirectory: again });
+  const masked = (file) => fs.readFileSync(file, "utf8").replace(/"setAt":"[^"]+"/, "");
+  const third = path.join(base, "third");
+  buildProductGraph({ sourceRoot: source, documentsDirectory: path.join(base, "documents"), rulesFile, outputDirectory: third });
+  assert.equal(masked(path.join(again, "baseline.json")), masked(path.join(third, "baseline.json")));
+});
+
+// ---------- cases the mutation run asked for ----------
+
+test("2.3: a parameter named like a function is not a value use of it", (t) => {
+  const p = product(t, { "src/a.js": lines("export function wrap(stop) { return stop; }", "function stop() { return 1; }", "export function keep() { return stop; }") });
+  const { graph } = p.build();
+  const values = graph.edges.filter((edge) => edge.type === "callback").map((edge) => `${edge.from} -> ${edge.to}`);
+  assert.deepEqual(values, ["src/a.js#keep -> src/a.js#stop"]);
+});
+
+test("2.4: a boundary stops reach across a call the scan resolved", (t) => {
+  const p = product(
+    t,
+    {
+      "src/server.js": lines('import { work } from "./worker.js";', "export function delegate() {", "  return work();", "}"),
+      "src/worker.js": lines("export function work() { return heavy(); }", "function heavy() { return 1; }"),
+    },
+    {
+      rules: [{ 종류: "cli", 판단: true, 파일: ["src/server.js"], 패턴: "export function (delegate)" }],
+      "손으로 적는 연결": [{ 판단: true, 종류: "경계", 파일: "src/server.js", 글: "return work();", 대상: ["src/worker.js#work"], 설명: "another process" }],
+    },
+  );
+  const { graph, result } = p.build();
+  assert(graph.edges.some((edge) => edge.type === "call" && edge.from === "src/server.js#delegate" && edge.to === "src/worker.js#work"));
+  const reached = reachOf(graph, "cli:delegate");
+  assert(!reached.has("src/worker.js#work") && !reached.has("src/worker.js#heavy"));
+  assert(result.lists.unreachedCode.files.flatMap((file) => file.declarations).includes("src/worker.js#heavy"));
+});
+
+test("2.6: a row with a specific phrase does not use its shorter ones; <…> and … match any text", async () => {
+  const { rowPhrases } = await import("../scripts/lib/world/product-graph-runs.mjs");
+  assert.deepEqual(
+    rowPhrases("알림 `저장함` 또는 `파일을 저장했습니다`").map((phrase) => phrase.text),
+    ["파일을 저장했습니다"],
+  );
+  assert.deepEqual(
+    rowPhrases("`abc` `ab<x>cd` `a…b`").map((phrase) => phrase.text),
+    ["ab<x>cd"],
+  );
+  const [phrase] = rowPhrases("`<name>을 저장했습니다`");
+  assert(phrase.pattern.test("report.txt을 저장했습니다"));
 });

@@ -125,6 +125,12 @@ export const productGraphWalk = (() => {
     for (const id of whole) limited.delete(id);
     return limited;
   }
+  const entryStopRow = (stops, depth) => ({
+    depth,
+    kind: "text",
+    text: `입구에서 다른 기능의 처리 코드 앞에서 멈춤 ${stops.length}곳${stops.length ? `: ${stops.slice(0, 10).map((item) => `${item.id} (${item.functions.join(", ")})`).join(", ")}${stops.length > 10 ? ` 외 ${stops.length - 10}곳` : ""}` : ""}`,
+    entryStops: stops,
+  });
   const boundariesOf = (ix, id) => (ix.out.get(id) || []).filter((edge) => edge.type === "경계");
   const boundaryLine = (edge) => `경계에서 멈춤: ${edge.설명 || "설명 없음"} → ${edge.to}`;
 
@@ -174,11 +180,21 @@ export const productGraphWalk = (() => {
     ))
       via.set(id, "처리");
     const entries = [...new Set(functions.flatMap((item) => entriesOf(ix, item)))].filter((id) => !via.has(id));
+    // Where the walk from 입구 stopped: the exact node that is another 기능's
+    // 처리 코드, with those 기능. Never silent: answers count and carry them.
+    const stops = new Map();
     if (entries.length) {
       const owners = handledBy(ix);
-      const stop = (id) => via.has(id) || (owners.get(id) || []).some((owner) => !own.has(owner));
+      const stop = (id) => {
+        if (via.has(id)) return true;
+        const others = (owners.get(id) || []).filter((owner) => !own.has(owner));
+        if (others.length) stops.set(id, others);
+        return others.length > 0;
+      };
       for (const id of closure(ix, entries, stop)) if (!via.has(id)) via.set(id, "입구");
     }
+    via.stops = [...stops].map(([id, owners]) => ({ id, functions: [...owners].sort(compare) })).sort((a, b) => compare(a.id, b.id));
+    via.entries = functions.flatMap((item) => entriesOf(ix, item)).length;
     return via;
   }
 
@@ -701,7 +717,13 @@ export const productGraphWalk = (() => {
     if (!functions.length && node.type !== "기능") return { direction: "down", ids: [], functions, via: {} };
     const reached = reachOf(ctx.ix, functions);
     const ids = [...reached.keys()].filter((item) => ctx.ix.nodes.get(item)?.type === "코드").sort(compare);
-    return { direction: "down", ids, functions, via: Object.fromEntries(ids.map((item) => [item, reached.get(item)])) };
+    return {
+      direction: "down",
+      ids,
+      functions,
+      via: Object.fromEntries(ids.map((item) => [item, reached.get(item)])),
+      ...(reached.entries ? { entryStops: reached.stops } : {}),
+    };
   }
 
   // What reach answers for a node: the code it reaches, or the 기능 that
@@ -845,6 +867,7 @@ export const productGraphWalk = (() => {
     const mark = ctx.marks.get(id);
     if (ctx.changes?.status === "compared") add(1, `기준 뒤: ${mark ? CHANGE_WORDS[mark] : "변화 없음"}`);
     for (const edge of boundariesOf(ctx.ix, id)) rows.push({ depth: 1, kind: "text", text: boundaryLine(edge), boundary: { from: edge.from, to: edge.to, 설명: edge.설명 || null } });
+    if (node.type === "기능" && entriesOf(ctx.ix, id).length) rows.push(entryStopRow(reachOf(ctx.ix, [id]).stops, 1));
     return rows;
   }
 
@@ -954,6 +977,8 @@ export const productGraphWalk = (() => {
           rows.push({ depth: 3, kind: "text", text: boundaryLine(edge), boundary: { from: edge.from, to: edge.to, 설명: edge.설명 || null } });
     }
     if (paged.remaining) rows.push(moreRow(1, paged, `reach ${id} --cursor ${paged.nextCursor}`, true));
+    // The walk from 입구 stopped before another 기능's 처리 코드: counted on every page.
+    if (reached.entryStops) rows.push(repeated(paged, entryStopRow(reached.entryStops, 1)));
     // On the last page: the 기능 a crossed boundary would add.
     if (!paged.remaining)
       for (const item of reached.acrossBoundary || [])
@@ -1147,6 +1172,7 @@ export const productGraphWalk = (() => {
       ...(limits.callReading || []).map((line) => `- ${line}`),
       `- reference 종류는 ${limits.referenceKinds.emitted.join(", ")}만 적는다. ${limits.referenceKinds.notToldApart.join(", ")}는 구별하지 못해 적지 않는다.`,
       ...(limits.runByPath ? [`- ${limits.runByPath}`] : []),
+      ...(limits.entries ? [`- ${limits.entries.rule}`] : []),
       ...(limits.valueUses
         ? [`- 값으로 쓴 함수 ${limits.valueUses.sites}곳(이름 ${limits.valueUses.plain}, 멤버 ${limits.valueUses.members}). 호출 수와 따로 센다. ${limits.valueUses.reading}`]
         : []),

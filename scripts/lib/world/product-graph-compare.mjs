@@ -262,9 +262,40 @@ export function readRetainedContent(file, { baseline, baselineBytes }) {
 
 const edgeKey = (type, from, to) => `${type}\u0000${from}\u0000${to}`;
 
+// What reach needs of an edge beyond [type, from, to], kept as an optional
+// fourth tuple element so the baseline's closure can be rebuilt exactly: 역할
+// when it is 입구, the 줄 ranges of a 기능→코드 edge, and the lines of a
+// reference from a handler those ranges split (2.1, 2.9). A boundary is an
+// edge of its own type (2.4). Absent means none, so a common edge costs nothing.
+function reachExtra(edge, ranged) {
+  const extra = {};
+  if (edge.type === "기능→코드" && edge.역할 === "입구") extra.역할 = "입구";
+  if (edge.type === "기능→코드" && edge.줄) extra.줄 = edge.줄;
+  if (ranged.has(edge.from) && edge.type !== "기능→코드") extra.lines = edge.lines || (edge.at?.line ? [edge.at.line] : []);
+  return Object.keys(extra).length ? extra : null;
+}
+const EXTRA_KEYS = new Set(["역할", "줄", "lines"]);
+const validExtra = (extra) =>
+  Boolean(extra) &&
+  typeof extra === "object" &&
+  !Array.isArray(extra) &&
+  Object.keys(extra).length > 0 &&
+  Object.keys(extra).every((key) => EXTRA_KEYS.has(key)) &&
+  (extra.역할 === undefined || extra.역할 === "입구") &&
+  (extra.줄 === undefined ||
+    (Array.isArray(extra.줄) && extra.줄.every((range) => Array.isArray(range) && range.length === 2 && range.every(Number.isSafeInteger)))) &&
+  (extra.lines === undefined || (Array.isArray(extra.lines) && extra.lines.every(Number.isSafeInteger)));
+
 export function baselineFromGraph(graph, { setAt, previous = null }) {
   const edges = new Set();
-  for (const edge of graph.edges) edges.add(edgeKey(edge.type, edge.from, edge.to));
+  const extras = new Map();
+  const ranged = new Set(graph.edges.filter((edge) => edge.type === "기능→코드" && edge.줄).map((edge) => edge.to));
+  for (const edge of graph.edges) {
+    const key = edgeKey(edge.type, edge.from, edge.to);
+    edges.add(key);
+    const extra = reachExtra(edge, ranged);
+    if (extra) extras.set(key, extra);
+  }
   const positions = new Map(graph.nodes.map((node, position) => [node.id, position]));
   return {
     schemaVersion: 1,
@@ -287,10 +318,12 @@ export function baselineFromGraph(graph, { setAt, previous = null }) {
       node.contentSha256 ?? null,
       node.reachSha256 ?? null,
     ]),
-    // [type, from, to]; an end that is a node is its position in nodes.
+    // [type, from, to] or [type, from, to, { 역할?, 줄?, lines? }]: an end that is a
+    // node is its position in nodes; the fourth element is what reach needs.
     edges: [...edges].sort(compare).map((key) => {
       const [type, from, to] = key.split("\u0000");
-      return [type, positions.get(from) ?? from, positions.get(to) ?? to];
+      const tuple = [type, positions.get(from) ?? from, positions.get(to) ?? to];
+      return extras.has(key) ? [...tuple, extras.get(key)] : tuple;
     }),
   };
 }
@@ -333,9 +366,9 @@ export function readBaseline(file) {
     value.edges.every(
       (edge) =>
         Array.isArray(edge) &&
-        edge.length === 3 &&
+        (edge.length === 3 || (edge.length === 4 && validExtra(edge[3]))) &&
         typeof edge[0] === "string" &&
-        edge.slice(1).every((part) => typeof part === "string" || (Number.isInteger(part) && part >= 0 && part < value.nodes.length)),
+        edge.slice(1, 3).every((part) => typeof part === "string" || (Number.isInteger(part) && part >= 0 && part < value.nodes.length)),
     );
   if (!shaped) return { reason: "기준 파일의 모양이 맞지 않는다" };
   return { baseline: value };
@@ -357,7 +390,8 @@ export function baselineGraph(baseline) {
   return {
     nodeTypes: [],
     nodes: baseline.nodes.map(([id, type, kind, file, lines, contentSha256, reachSha256]) => ({ id, type, kind, file, lines, contentSha256, reachSha256 })),
-    edges: baseline.edges.map(([type, from, to]) => ({ type, from: endpoint(from), to: endpoint(to) })),
+    // A baseline of 0.3.0-beta.133 has three-element tuples: no 입구, ranges or lines.
+    edges: baseline.edges.map(([type, from, to, extra]) => ({ type, from: endpoint(from), to: endpoint(to), ...(extra || {}) })),
   };
 }
 

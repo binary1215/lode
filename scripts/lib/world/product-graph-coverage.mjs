@@ -140,7 +140,14 @@ export function coverageProductGraph(options = {}) {
       : !compared.size
         ? "커버리지의 스크립트 가운데 지금 소스와 같은 제품 코드 파일이 없다"
         : null;
-  const ranOutside = reason ? null : [...executed].filter((id) => !reached.has(id)).sort(compare);
+  // Code that ran behind a stop of the walk from 입구 (another 기능's 처리
+  // 코드) is told apart from code behind a missing edge.
+  const behindStops = walk.closure(
+    ctx.ix,
+    (reached.stops || []).map((item) => item.id),
+  );
+  const ranBehindStop = reason ? null : [...executed].filter((id) => !reached.has(id) && behindStops.has(id)).sort(compare);
+  const ranOutside = reason ? null : [...executed].filter((id) => !reached.has(id) && !behindStops.has(id)).sort(compare);
   const notRun = reason
     ? null
     : [...reached.keys()]
@@ -173,6 +180,12 @@ export function coverageProductGraph(options = {}) {
       : [
           `실행됐는데 닿는 범위 밖: ${ranOutside.length}개 (그래프가 놓친 경로다. 입구로 닿는 코드는 범위 안이다)`,
           ...listed(ranOutside),
+          ...(ranBehindStop.length
+            ? [
+                `실행됐는데 입구에서 멈춘 곳 뒤에 있음: ${ranBehindStop.length}개 (닿는 범위는 입구에서 다른 기능의 처리 코드 앞에서 멈춘다. 빠진 연결이 아니다)`,
+                ...listed(ranBehindStop),
+              ]
+            : []),
           `닿는다고 했는데 돌지 않음: ${notRun.length}개 (가지 않은 분기와 오류 경로도 여기에 든다. 비교한 파일의 선언만 센다)`,
           ...listed(notRun),
         ]),
@@ -196,6 +209,8 @@ export function coverageProductGraph(options = {}) {
     differs: differsSorted,
     outsideSourceRoot: outside.size,
     ranOutsideReach: ranOutside,
+    ranBehindEntryStop: ranBehindStop,
+    entryStops: reached.stops || [],
     reachedNotRun: notRun,
     text: `${lines.join("\n")}\n`,
   };
