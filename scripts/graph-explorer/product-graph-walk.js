@@ -1593,6 +1593,12 @@ export const productGraphWalk = (() => {
       );
     if (moved.documentList?.length) lines.push(`  바뀐 문서: ${moved.documentList.join(", ")}`);
     if (moved.rules || moved.reader) lines.push("- 호출 방식 표나 읽는 방식이 바뀌어, 아래 차이는 제품이 아니라 코드를 읽는 방식에서 왔을 수 있다.");
+    // What the reader alone changed (bundle after beta.133, section 3).
+    if (changes.readerChanged) {
+      lines.push(`- 읽는 방식이 달라져 닿는 범위가 달라진 기능 ${changes.readerChanged.reach.length}개 (그 코드의 파일이 기준과 같다. 닿는 코드가 바뀜과 다시 볼 것에 넣지 않는다)`);
+      if (changes.readerChanged.newNodes.length)
+        lines.push(`- 읽는 방식이 달라져 새로 생긴 노드 ${changes.readerChanged.newNodes.length}개 (${changes.readerChanged.newNodeTypes.join(", ")}. 신규로 세지 않는다)`);
+    }
     lines.push("- 노드 종류별 (ID 기준):");
     for (const group of changes.byType || [])
       lines.push(`  - ${group.type}: 변화 없음 ${group.unchanged}, 변경 ${group.changed.length}, 신규 ${group.added.length}, 사라짐 ${group.removed.length}`);

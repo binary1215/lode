@@ -1047,3 +1047,40 @@ test("2.9: without 분기 nothing changes: no line ranges, no line lists, the wh
   const r = product(t, BRANCHES, { rules: [{ 종류: "cli", 판단: true, 파일: ["src/cli.js"], 패턴: 'name === "(\\w+)"', "처리 코드": "파일", 분기: true }] });
   assert.throws(() => r.build(), { code: "PRODUCT_GRAPH_RULES_INVALID" });
 });
+
+// ---------- section 3: the first build after the reader changes ----------
+
+test("section 3: against a version-1 baseline, reader-caused reach differences are counted apart; a really changed file lists exactly the 기능 that reach it", (t) => {
+  const fixture = path.join(fixtures, "reader-v1");
+  const base = temporary(t);
+  for (const name of ["source", "documents"]) fs.cpSync(path.join(fixture, name), path.join(base, name), { recursive: true });
+  const out = path.join(base, "out");
+  fs.mkdirSync(out);
+  fs.copyFileSync(path.join(fixture, "baseline.json"), path.join(out, "baseline.json"));
+  const build = () => buildProductGraph({ sourceRoot: path.join(base, "source"), documentsDirectory: path.join(base, "documents"), rulesFile: path.join(fixture, "rules.json"), outputDirectory: out });
+  const first = build();
+  const changes = first.changes;
+  assert.equal(changes.moved.reader, true);
+  // cli:start now reaches format (a value use) and format reads data:env:SUFFIX: both from the reader.
+  assert.deepEqual(changes.reachChanged, []);
+  assert.deepEqual(changes.readerChanged, { reach: ["cli:start"], newNodes: ["data:env:SUFFIX"], newNodeTypes: ["DB", "데이터", "외부 연결"] });
+  assert.equal(changes.counts.added, 0);
+  assert.deepEqual(changes.reviewAgain.meaningLines, []);
+  assert.equal(changes.counts.reviewAgain, 0);
+  assert.match(first.text, /\n- 읽는 방식이 달라져 닿는 범위가 달라진 기능 1개 \(그 코드의 파일이 기준과 같다\. 닿는 코드가 바뀜과 다시 볼 것에 넣지 않는다\)\n- 읽는 방식이 달라져 새로 생긴 노드 1개 \(DB, 데이터, 외부 연결\. 신규로 세지 않는다\)\n/);
+  // The structured answer agrees: no node says reachChanged.
+  const answer = queryProductGraph({ buildDirectory: out, question: "node", id: "cli:start" });
+  assert.equal(answer.rows[0].changedSinceBaseline, "unchanged");
+  // One really changed file: exactly the 기능 that reach it.
+  fs.writeFileSync(path.join(base, "source/src/other.js"), fs.readFileSync(path.join(base, "source/src/other.js"), "utf8").replace("return 2;", "return 3;"));
+  const second = build();
+  assert.deepEqual(
+    second.changes.reachChanged.map((item) => item.id),
+    ["cli:other"],
+  );
+  assert.deepEqual(
+    second.changes.reviewAgain.meaningLines.map((item) => [item.id, item.change]),
+    [["cli:other", "reach"]],
+  );
+  assert.deepEqual(second.changes.readerChanged.reach, ["cli:start"]);
+});

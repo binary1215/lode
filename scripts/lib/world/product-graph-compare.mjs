@@ -14,6 +14,8 @@ const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const LODE_VERSION = JSON.parse(fs.readFileSync(new URL("../../../package.json", import.meta.url), "utf8")).version;
 export const PRODUCT_GRAPH_BASELINE_FILE = "baseline.json";
 const REACH_NODES_SHOWN = 20;
+// Node types a reader older than PRODUCT_GRAPH_VERSION 2 did not produce.
+const READER_NEW_TYPES = Object.freeze(["데이터", "외부 연결", "DB"]);
 
 // UTF-8 text, a leading BOM dropped, CR LF and lone CR turned into LF.
 // Nothing else, so another checkout's line endings give the same hashes.
@@ -405,11 +407,16 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
   const types = [
     ...new Set([...(graph.nodeTypes || []).map((item) => item.type), ...graph.nodes.map((node) => node.type), ...before.nodes.map((node) => node.type)]),
   ];
+  // Node types the baseline's reader did not produce (2.8): under another
+  // reader their nodes are new to the reading, not to the product.
+  const readerNewTypes = new Set(sameReader ? [] : READER_NEW_TYPES.filter((type) => !(beforeIx.byType.get(type) || []).length));
+  const readerNewNodes = [];
   for (const type of types) {
     const group = { type, unchanged: 0, changed: [], added: [], removed: [] };
     for (const node of afterIx.byType.get(type) || []) {
       const old = beforeIx.nodes.get(node.id);
-      if (!old) {
+      if (!old && readerNewTypes.has(type)) readerNewNodes.push(node.id);
+      else if (!old) {
         group.added.push(node.id);
         status.set(node.id, "added");
       } else if (old.contentSha256 !== node.contentSha256) {
@@ -426,8 +433,12 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
     if (group.unchanged || group.changed.length || group.added.length || group.removed.length) byType.push(group);
   }
 
-  // 기능 whose own content is the same and whose reached code differs.
+  // 기능 whose own content is the same and whose reached code differs. Under
+  // another reader, a difference whose nodes (reached now or in the baseline,
+  // and differing) all lie in files whose text is the baseline's comes from
+  // the reader: counted apart, not listed, not 다시 볼 것.
   const reachChanged = [];
+  const readerReach = [];
   for (const node of afterIx.byType.get("기능") || []) {
     const old = beforeIx.nodes.get(node.id);
     if (!old || status.has(node.id) || !old.reachSha256 || old.reachSha256 === node.reachSha256) continue;
@@ -443,6 +454,11 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
       if (change) nodes.push({ id, change });
     }
     nodes.sort((a, b) => compare(a.change, b.change) || compare(a.id, b.id));
+    const fileOfNode = (id) => afterIx.nodes.get(id)?.file || beforeIx.nodes.get(id)?.file || null;
+    if (!sameReader && nodes.every((item) => fileSame(fileOfNode(item.id)))) {
+      readerReach.push(node.id);
+      continue;
+    }
     reachChanged.push({ id: node.id, nodes: nodes.slice(0, REACH_NODES_SHOWN), total: nodes.length });
   }
   const reach = new Set(reachChanged.map((item) => item.id));
@@ -551,6 +567,10 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
     },
     byType,
     reachChanged,
+    // What the reader alone changed (section 3): counted, never listed as 신규 or 닿는 코드가 바뀜.
+    ...(sameReader
+      ? {}
+      : { readerChanged: { reach: readerReach.sort(compare), newNodes: readerNewNodes.sort(compare), newNodeTypes: [...readerNewTypes].sort(compare) } }),
     edges: edgeChanges,
     maybeMoved,
     unexplained,
