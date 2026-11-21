@@ -78,6 +78,49 @@ lode-agent product-graph-query <source-root> overview --build <folder>   # a sta
 
 MCP에서는 묶은 도구 `lode_product_graph`의 `query` 동작(`lode_product_graph_query`)이 같은 질문입니다. 사용자 동작이 어떤 코드에 닿는지, 무엇이 한 파일에 닿는지, 빈 곳이 어디인지 알아야 할 때 도움이 됩니다. 타입 없는 스캔이고, 보통 작업의 전제가 아닙니다.
 
+구조화된 답(`--json`, MCP `structuredContent`)은 줄을 데이터로 싣습니다. 그래프 노드를 나타내는 줄에는 `nodeType`(노드 종류), `changedSinceBaseline`(`changed`, `added`, `reachChanged`, `unchanged`. 빌드가 기준과 비교했을 때만), `confirmation`(그 노드를 가리키는 확인 기록 목록: `neverChecked`, `changedSinceCheck`, `textChanged`, `otherReader`)도 붙습니다. 뜻 줄은 그 기능을, 문서 줄은 양 끝을 모두 가리키므로 화면과 화면요소에도 붙습니다. 모든 답에는 `baselineComparison`(`compared`, 빌드 뒤에 기준을 옮겨 앞의 기준과 비교한 것이면 `baseline-moved`, `no-baseline`, `absent`)과 `confirmationComparison`이 있습니다: `compared`, `partial`(빌드가 확인 기록을 파일 이름 순으로 앞부분만 읽음. 모든 목록과 `confirmation`이 그것에서 나옴), `not-read`(독립 실행 빌드는 확인 기록을 읽지 않음), `absent`(확인 기록이 생기기 전에 만든 빌드). 뒤의 쪽이 앞의 쪽에서 되풀이하는 줄(뿌리, 머리 줄, 첫 항목이 이어 가는 묶음 줄)에는 `repeats: "earlierPage"`가 붙고, 글은 그대로입니다. `confirmationComparison`이 `compared`일 때만 `confirmation`이 없다는 것이 확인이 그대로이거나 확인할 것이 없다는 뜻입니다. 빌드는 그대로인 확인의 개수만 갖고 있습니다. 시작점(`@…`)에는 이 필드가 없습니다. 답에는 무엇에서 읽었는지를 가리키는 `buildSha256`(읽은 모든 빌드의 `graph.json`과 `check.json` 바이트, 그리고 기준. 저장하지 않음)도 있습니다. MCP에서 `lode_product_graph_query`, `_check`, `_build`, `_baseline`의 `structuredContent`는 구조화된 부분으로 전체 `text`가 그대로 되살아날 때 그 글을 싣지 않습니다(`changes --list content`의 전후 항목은 `rows[].detail`에서, check는 그 결과에서). 도구가 돌려주는 내용 글은 여전히 그 글로 시작하고, CLI의 `--json`도 그대로 싣습니다. 줄이 없는 답은 `text`를 그대로 둡니다. 빌드 없음, 읽지 못한 빌드, 거부(그 문장은 `message`에도 있음), 그리고 기준 바뀜(그 문장은 `text`에만 있음)입니다.
+
+## 여러 질문을 한 번에
+
+`lode_tools_read_chain`(CLI `tools-read-chain <project> --input chain.json`)은 여러 질문을 한 번에 묻고 요청한 줄만 개수와 함께 돌려줍니다. 단계, 상한, 상태는 [MCP 도구 표면](mcp-surface.md#연쇄-읽기)에 있습니다. 읽기 전용이고, 아무 권한도 주지 않고, 아무것도 쓰지 않습니다. 답 여러 개를 받아 그중 몇 줄만 고를 때 도움이 됩니다. 질문 하나이거나, 답의 모든 줄을 어차피 읽어야 하면 직접 묻습니다. 안쪽 호출은 제품 그래프 질문과 `lode_project_graph`입니다. 빠졌다고 Lode가 아는 것은 `knownMissing`에 있습니다. 목록이 비어 있다고 줄이 전부라는 뜻은 아닙니다.
+
+다시 볼 것 목록, 그다음 항목마다 무엇이 가리키는지 세기:
+
+```json
+{
+  "project_root": "<project>",
+  "steps": [
+    { "id": "todo", "read": { "name": "lode_product_graph_query", "arguments": { "question": "changes", "list": "reviewAgain" } }, "pages": 3 },
+    { "id": "nodes", "from": "todo", "where": { "field": "kind", "eq": "node" } },
+    { "id": "one", "from": "nodes", "unique": { "by": "id" } },
+    { "id": "callers", "each": { "from": "one", "value": "id" },
+      "read": { "name": "lode_product_graph_query", "arguments": { "question": "up", "id": { "$item": true } } } },
+    { "id": "pointing", "from": "callers", "where": { "all": [{ "field": "kind", "eq": "node" }, { "field": "depth", "gte": 1 }] } },
+    { "id": "busy", "from": "pointing", "count": { "by": "item" } },
+    { "id": "top", "from": "busy", "sort": { "by": "count", "order": "desc" } }
+  ],
+  "return": [{ "from": "top", "limit": 10 }]
+}
+```
+
+찾기, 기준 뒤 바뀐 코드 노드만 남기기, 앞의 두 개 읽기:
+
+```json
+{
+  "project_root": "<project>",
+  "steps": [
+    { "id": "found", "read": { "name": "lode_product_graph_query", "arguments": { "question": "find", "text": "save" } } },
+    { "id": "code", "from": "found", "where": { "all": [{ "field": "nodeType", "eq": "코드" }, { "field": "changedSinceBaseline", "ne": "unchanged" }] } },
+    { "id": "two", "from": "code", "limit": 2 },
+    { "id": "nodes", "each": { "from": "two", "value": "id" },
+      "read": { "name": "lode_product_graph_query", "arguments": { "question": "node", "id": { "$item": true } } } }
+  ],
+  "return": [{ "from": "nodes" }]
+}
+```
+
+연쇄 읽기는 두 빌드의 줄을 함께 돌려주지 않습니다. 변화를 막는 것이 아니라 호출마다 뒤에서 알아챕니다. 두 호출 사이에 빌드나 기준이 바뀌면 연쇄 읽기는 `CHAIN_BUILD_CHANGED`로 멈추고 줄을 하나도 돌려주지 않습니다. 빌드가 원하는 상태가 된 뒤 다시 묻습니다.
+
 ## 기준 뒤 바뀐 것
 
 빌드는 읽은 것을 해시합니다. 코드 노드마다 그 글(파일은 전체, 선언은 줄 범위), 기능마다 종류·처리·처리 코드(그리고 닿는 코드 전체에 대한 두 번째 해시), 문서 노드마다 적힌 값, 읽은 소스 파일마다 그 글(`inputs.sourceFiles`)입니다. 글은 BOM을 빼고 CR LF와 CR을 LF로 바꾼 뒤 비교하므로, 다른 체크아웃의 줄 끝은 아무것도 바꾸지 않고, 선언을 글을 바꾸지 않은 채 파일 안에서 옮겨도 해시는 그대로입니다. 선언은 범위 끝의 빈 줄을 뺀 글로 해시하므로, 파일의 마지막 선언 뒤에 코드를 붙이면 그 파일과 새 선언만 바뀝니다. 줄 끝이 CR뿐인 파일은 파일 전체로는 LF 사본과 같은 해시이지만, 공유 스캔이 한 줄로 읽어서 선언의 줄 범위와 해시는 LF 사본과 다릅니다. 이 해시는 생성된 `build/` 폴더에만 있고, ID는 바뀌지 않습니다. 읽는 방식은 생성기, 그 그래프 버전, 소스 분석 버전으로 비교합니다. Lode 버전은 참고로만 적으므로, 코드를 똑같이 읽는 업그레이드는 바뀐 것으로 치지 않습니다.

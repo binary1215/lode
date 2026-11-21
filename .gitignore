@@ -100,6 +100,7 @@ test/*
 !test/worker-integration-surface.test.mjs
 !test/product-graph.test.mjs
 !test/product-graph-flow.test.mjs
+!test/tools-read-chain.test.mjs
 !test/source-scan-lexer.test.mjs
 !test/call-precision.test.mjs
 !test/viewer-bundle2.test.mjs

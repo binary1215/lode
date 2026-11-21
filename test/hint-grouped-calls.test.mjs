@@ -62,6 +62,8 @@ const ROUTING_FILES = new Set([
   "scripts/lib/session/session-routing.mjs",
   "scripts/lib/world/work-document-surface.mjs",
   "scripts/lib/session/managed-maintenance-surface.mjs",
+  // Result shapes keyed by operation name, like the registry.
+  "scripts/lib/core/tool-result-shapes.mjs",
 ]);
 // Line-level dispatch: formatter selection by operation name, and the MCP
 // server's per-operation cancellation hook.

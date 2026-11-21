@@ -322,8 +322,36 @@ export const productGraphWalk = (() => {
     return { slice, total: items.length, cursor: start, limit: size, remaining, nextCursor: remaining ? start + slice.length : null };
   }
 
-  function moreRow(level, paged, hint) {
-    return { depth: level, kind: "more", hint, text: `외 ${paged.remaining}개 — 다음: ${hint}` };
+  // A later page (cursor past 0) repeats rows an earlier page of the same
+  // question already gave: its root, its headings, the group line its first
+  // item continues. The walk says which (repeats: "earlierPage"); the text is
+  // the same.
+  const REPEATS = Object.freeze({ repeats: "earlierPage" });
+  const repeated = (paged, row) => (paged.cursor > 0 ? { ...row, ...REPEATS } : row);
+
+  // A page continuation says so as data (continues: "nextPage"); a row that
+  // stands for a cut below the first level says what it left out (missing).
+  function moreRow(level, paged, hint, nextPage) {
+    return {
+      depth: level,
+      kind: "more",
+      hint,
+      text: `외 ${paged.remaining}개 — 다음: ${hint}`,
+      ...(nextPage ? { continues: "nextPage" } : { missing: { kind: "cut", site: "subList", left: paged.remaining } }),
+    };
+  }
+
+  // A prose line that says a list was cut or something was not compared is
+  // noted where it is written, as the whole line; ask() gives the row whose
+  // text is exactly that line (trimmed) its structured mark (missing). Every
+  // mark names its site. Collected only while ask() runs.
+  let notes = null;
+  function note(line, mark) {
+    if (notes && mark) notes.set(line.trim(), mark);
+    return line;
+  }
+  function noteFor(text) {
+    return notes && typeof text === "string" ? (notes.get(text.trim()) ?? null) : null;
   }
 
   function nearest(ctx, id) {
@@ -380,6 +408,8 @@ export const productGraphWalk = (() => {
     return (ctx.searchIndex = { documents, postings, average: average || 1, stats });
   }
 
+  const connectionCount = (ctx, id) =>
+    [...(ctx.ix.into.get(id) || []), ...(ctx.ix.out.get(id) || [])].filter((edge) => ctx.ix.nodes.has(edge.from) && ctx.ix.nodes.has(edge.to)).length;
   function connections(ctx, id, limit = 6) {
     return [...(ctx.ix.into.get(id) || []), ...(ctx.ix.out.get(id) || [])]
       .filter((edge) => ctx.ix.nodes.has(edge.from) && ctx.ix.nodes.has(edge.to))
@@ -534,9 +564,9 @@ export const productGraphWalk = (() => {
       ...(result.affected || []).map((id) => ({ id, text: `확인할 실제 연결: ${id}` })),
     ];
     const paged = page(items, { limit, cursor });
-    const rows = [{ depth: 0, kind: "text", text: `구조적 미리보기 (${result.status}). 충돌 없음은 제품 승인이 아니다. ${result.reason || result.basis || ""}${result.compatibility?.reasons?.length ? ` — ${result.compatibility.reasons.join(" / ")}` : ""}` },
+    const rows = [repeated(paged, { depth: 0, kind: "text", text: `구조적 미리보기 (${result.status}). 충돌 없음은 제품 승인이 아니다. ${result.reason || result.basis || ""}${result.compatibility?.reasons?.length ? ` — ${result.compatibility.reasons.join(" / ")}` : ""}` }),
       ...paged.slice.map((item) => ({ depth: 1, kind: item.id ? "node" : "text", ...item }))];
-    if (paged.remaining) rows.push(moreRow(1, paged, `impact --cursor ${paged.nextCursor}`));
+    if (paged.remaining) rows.push(moreRow(1, paged, `impact --cursor ${paged.nextCursor}`, true));
     const { conflicts, ambiguousRelations, affected, edgeChanges, currentChanges, proposedChanges, remainingReferences, ...summary } = result;
     return answer("반영 전 영향 미리보기", rows, { impact: { ...summary, counts: { conflicts: conflicts?.length || 0, ambiguousRelations: ambiguousRelations?.length || 0, affected: affected?.length || 0, edgeChanges: edgeChanges?.length || 0, currentChanges: currentChanges?.length || 0, proposedChanges: proposedChanges?.length || 0, remainingReferences: remainingReferences?.length || 0 }, conflicts: paged.slice.filter((item) => item.detail?.kind).map((item) => item.detail), ambiguousRelations: paged.slice.filter((item) => item.detail?.reason).map((item) => item.detail), affected: paged.slice.filter((item) => item.id).map((item) => item.id), coverage: paged.remaining ? "partial-page" : "complete-page" }, page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor } });
   }
@@ -587,23 +617,47 @@ export const productGraphWalk = (() => {
       // first level is paged by --limit and always shown.
       if (level > 1 && budget.left <= 0) {
         budget.cut += 1;
+        // Its own next level is hidden too and not counted: the count is then a lower bound.
+        if (!path.includes(item.to) && depth > 1) budget.inexact = true;
         continue;
       }
       if (item.group !== lastGroup) {
-        rows.push({ depth: level, kind: "group", text: WORDS.groupCount(item.group, counts.get(item.group)) });
+        const group = { depth: level, kind: "group", text: WORDS.groupCount(item.group, counts.get(item.group)) };
+        // The first item of a later page continues the group the page before ended in.
+        const continued = level === 1 && item === paged.slice[0] && paged.cursor > 0 && items[paged.cursor - 1].group === item.group;
+        rows.push(continued ? { ...group, ...REPEATS } : group);
         lastGroup = item.group;
       }
       const onPath = path.includes(item.to);
       rows.push({ depth: level + 1, kind: "node", id: item.to, text: childText(ctx, item) + (onPath ? ` ${WORDS.onPath}` : ""), onPath, group: item.group });
       budget.left -= 1;
-      if (!onPath && depth > 1 && budget.left > 0 && (item.to.startsWith("@") || ctx.ix.nodes.has(item.to)))
+      const expandable = !onPath && depth > 1 && (item.to.startsWith("@") || ctx.ix.nodes.has(item.to));
+      if (expandable && budget.left > 0)
         rows.push(
           ...stepRows(ctx, item.to, direction, { depth: depth - 1, limit, cursor: 0, path: [...path, item.to], level: level + 2, hint: `${direction} ${item.to}`, budget }),
         );
+      // The bound reached: this item's own next level is hidden, uncounted.
+      else if (expandable && step(ctx, item.to, direction).length) budget.hidden = true;
     }
-    if (paged.remaining && (level === 1 || budget.left > 0)) rows.push(moreRow(level, paged, level === 1 ? `${hint} --cursor ${paged.nextCursor}` : hint));
+    if (paged.remaining && level > 1 && budget.left <= 0) budget.hidden = true;
+    if (paged.remaining && (level === 1 || budget.left > 0)) rows.push(moreRow(level, paged, level === 1 ? `${hint} --cursor ${paged.nextCursor}` : hint, level === 1));
+    // The line main printed, unchanged; left only when that count is every hidden row.
     if (level === 1 && budget.cut)
-      rows.push({ depth: level, kind: "more", text: `외 ${budget.cut}개 줄은 보이지 않았다 — 한 답의 줄 수 한도(${MAX_ROWS})에 닿았다. 다음: 그 줄에서 down <ID>` });
+      rows.push({
+        depth: level,
+        kind: "more",
+        text: `외 ${budget.cut}개 줄은 보이지 않았다 — 한 답의 줄 수 한도(${MAX_ROWS})에 닿았다. 다음: 그 줄에서 down <ID>`,
+        missing: { kind: "rowCap", site: "rowCap", rows: MAX_ROWS, ...(budget.hidden || budget.inexact ? {} : { left: budget.cut }) },
+      });
+    // Rows hidden although nothing was counted (the bound met at the end of a
+    // sub-list): said without a number.
+    else if (level === 1 && budget.hidden)
+      rows.push({
+        depth: level,
+        kind: "more",
+        text: `일부 줄은 보이지 않았다 — 한 답의 줄 수 한도(${MAX_ROWS})에 닿았다. 다음: 그 줄에서 down <ID>`,
+        missing: { kind: "rowCap", site: "rowCapUncounted", rows: MAX_ROWS },
+      });
     return rows;
   }
 
@@ -683,12 +737,25 @@ export const productGraphWalk = (() => {
 
   // One answer. question: overview | node | down | up | reach | find | gaps | changes.
   function ask(ctx, request = {}) {
+    notes = new Map();
+    try {
+      return askNoted(ctx, request);
+    } finally {
+      notes = null;
+    }
+  }
+
+  function askNoted(ctx, request) {
     const { question = "overview", text = "", list = null, limit = LIMIT, cursor = 0, depth = 1 } = request;
     const id = resolveId(ctx, request.id ?? "");
     const header = headerLines(ctx);
     const answer = (title, rows, extra = {}) => {
       const lines = [...header, title, ...rows.map((row) => `${"  ".repeat(row.depth)}${row.text}`)];
-      return { ok: true, question, header, title, rows, text: lines.join("\n") + "\n", ...extra };
+      const marked = rows.map((row) => {
+        const mark = row.missing ? null : noteFor(row.text);
+        return mark ? { ...row, missing: mark } : row;
+      });
+      return { ok: true, question, header, title, rows: marked, text: lines.join("\n") + "\n", ...extra };
     };
     const notFound = () => {
       const near = nearest(ctx, id);
@@ -701,11 +768,22 @@ export const productGraphWalk = (() => {
       const paged = page(matches, { limit, cursor });
       for (const item of paged.slice) item.connections = connections(ctx, item.node.id);
       const rows = paged.slice.flatMap((item) => [
-        { depth: 1, kind: "node", id: item.node.id, text: nodeLine(ctx, item.node.id), score: item.score, exact: item.exact, matchedTerms: item.matchedTerms },
+        {
+          depth: 1,
+          kind: "node",
+          id: item.node.id,
+          text: nodeLine(ctx, item.node.id),
+          score: item.score,
+          exact: item.exact,
+          matchedTerms: item.matchedTerms,
+          ...(connectionCount(ctx, item.node.id) > item.connections.length
+            ? { missing: { kind: "connectionsCut", site: "findConnections", shown: item.connections.length, total: connectionCount(ctx, item.node.id) } }
+            : {}),
+        },
         ...item.connections.map((edge) => ({ depth: 2, kind: "text", text: `${edge.from} —${edge.type}→ ${edge.to}${edge.at ? ` (${where(edge.at)})` : ""}`, edge })),
       ]);
-      rows.unshift({ depth: 0, kind: "text", text: "관련 단어순(BM25); 검색 점수는 승인·현재성·인과가 아니다. 아래 연결은 기록된 edge만이다." });
-      if (paged.remaining) rows.push(moreRow(1, paged, `find ${JSON.stringify(String(text))} --cursor ${paged.nextCursor}`));
+      rows.unshift(repeated(paged, { depth: 0, kind: "text", text: "관련 단어순(BM25); 검색 점수는 승인·현재성·인과가 아니다. 아래 연결은 기록된 edge만이다." }));
+      if (paged.remaining) rows.push(moreRow(1, paged, `find ${JSON.stringify(String(text))} --cursor ${paged.nextCursor}`, true));
       return answer(`찾기: ${text} — ${matches.length}개`, rows, { search: { algorithm: "BM25", semanticJudgment: false, indexing: ctx.searchIndex?.stats, results: paged.slice.map(({ node, ...item }) => ({ id: node.id, ...item })) }, page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor } });
     }
     if (question === "gaps") return gapsAnswer(ctx, { list, limit, cursor, answer });
@@ -718,9 +796,9 @@ export const productGraphWalk = (() => {
     if (question === "node") return answer(pathLine(ctx, [id]), [root, ...nodeRows(ctx, id)]);
     if (question === "down" || question === "up") {
       const items = step(ctx, id, question);
-      const rows = [root, ...stepRows(ctx, id, question, { depth: Math.max(1, Number(depth) || 1), limit, cursor, path: [id], level: 1, hint: `${question} ${id}` })];
-      if (!items.length) rows.push({ depth: 1, kind: "text", text: question === "down" ? "아래로 이어지는 연결 없음" : "이것을 가리키는 것 없음" });
       const paged = page(items, { limit, cursor });
+      const rows = [repeated(paged, root), ...stepRows(ctx, id, question, { depth: Math.max(1, Number(depth) || 1), limit, cursor, path: [id], level: 1, hint: `${question} ${id}` })];
+      if (!items.length) rows.push({ depth: 1, kind: "text", text: question === "down" ? "아래로 이어지는 연결 없음" : "이것을 가리키는 것 없음" });
       return answer(pathLine(ctx, [id]), rows, { page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor } });
     }
     if (!reachDirection(ctx, id))
@@ -730,15 +808,15 @@ export const productGraphWalk = (() => {
       ]);
     const reached = reach(ctx, id);
     const paged = page(reached.ids, { limit, cursor });
-    const rows = [root];
+    const rows = [repeated(paged, root)];
     const note = "풀린 call·callback 참조만 따라간다. 어느 기능에서도 닿지 않는 코드 검사와 같은 닫힘이다";
-    if (reached.direction === "up") rows.push({ depth: 1, kind: "group", text: `이 코드에 닿는 기능 ${reached.ids.length}개 (${note})` });
+    if (reached.direction === "up") rows.push(repeated(paged, { depth: 1, kind: "group", text: `이 코드에 닿는 기능 ${reached.ids.length}개 (${note})` }));
     else {
-      if (ctx.ix.nodes.get(id).type !== "기능") rows.push({ depth: 1, kind: "text", text: `거치는 기능 ${reached.functions.length}개: ${reached.functions.join(", ") || "없음"}` });
-      rows.push({ depth: 1, kind: "group", text: `닿는 코드 ${reached.ids.length}개 (${note})` });
+      if (ctx.ix.nodes.get(id).type !== "기능") rows.push(repeated(paged, { depth: 1, kind: "text", text: `거치는 기능 ${reached.functions.length}개: ${reached.functions.join(", ") || "없음"}` }));
+      rows.push(repeated(paged, { depth: 1, kind: "group", text: `닿는 코드 ${reached.ids.length}개 (${note})` }));
     }
     for (const target of paged.slice) rows.push({ depth: 2, kind: "node", id: target, text: nodeLine(ctx, target) });
-    if (paged.remaining) rows.push(moreRow(1, paged, `reach ${id} --cursor ${paged.nextCursor}`));
+    if (paged.remaining) rows.push(moreRow(1, paged, `reach ${id} --cursor ${paged.nextCursor}`, true));
     return answer(pathLine(ctx, [id]), rows, {
       reach: reached,
       page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor },
@@ -748,8 +826,9 @@ export const productGraphWalk = (() => {
   // ---------- check.txt parts ----------
 
   const listLines = (items) => {
-    const lines = items.slice(0, LIST_LIMIT).map((item) => `  - ${item.text}`);
-    if (items.length > LIST_LIMIT) lines.push(`  - 외 ${items.length - LIST_LIMIT}개 (구조화된 결과에 모두 있다)`);
+    const lines = items.slice(0, LIST_LIMIT).map((item) => note(`  - ${item.text}`, item.missing));
+    if (items.length > LIST_LIMIT)
+      lines.push(note(`  - 외 ${items.length - LIST_LIMIT}개 (구조화된 결과에 모두 있다)`, { kind: "cut", site: "listLimit", shown: LIST_LIMIT, total: items.length }));
     return lines;
   };
 
@@ -860,10 +939,13 @@ export const productGraphWalk = (() => {
       [`문서가 가리키는데 없는 ID: ${lists.missingIds.length}건`],
       lists.missingIds.map((item) => ({ text: `${item.kind} ${item.id} (${where(item.at)})${item.note ? ` — ${item.note}` : ""}${labelText(item.labels)}` })),
     );
-    if (lists.unpointedFunctionsReason)
+    if (lists.unpointedFunctionsReason) {
       add("unpointedFunctions", lists.unpointedFunctions.length, [
         `어떤 화면요소·화면도 가리키지 않는 기능: 기능 ${lists.unpointedFunctions.length}개 중 — 검사 못 함: ${lists.unpointedFunctionsReason}`,
       ]);
+      const unchecked = entries.find((entry) => entry.key === "unpointedFunctions");
+      if (unchecked) unchecked.missing = { kind: "notChecked", site: "unpointedFunctions", list: "unpointedFunctions" };
+    }
     else
       add(
         "unpointedFunctions",
@@ -1030,6 +1112,14 @@ export const productGraphWalk = (() => {
     return `${label} (${side.format}${side.status === "partial" ? ", 앞부분만" : ""}${left}):\n${shown.join("\n")}${lines.length > 40 ? `\n… ${lines.length - 40}줄 더 — --json의 rows[].detail에 이 페이지 한도 안의 전체가 있다` : ""}`;
   }
 
+  // The whole text of one content item, from its detail alone: the answer's
+  // structured part carries the detail, and this text is a rendering of it.
+  function contentItemText(detail) {
+    const head = `${detail.type} ${detail.id} (${CHANGE_WORDS[detail.change] || detail.change})`;
+    const headline = contentHeadline(detail);
+    return `${head}${headline ? `\n${headline}` : ""}\n${contentSide("이전", detail.before)}\n${contentSide("현재", detail.after)}`;
+  }
+
   function contentHeadline(item) {
     const read = (side) => { try { return side?.status === "available" && side.format === "stated-fields" ? JSON.parse(side.text) : null; } catch { return null; } };
     const before = read(item.before), after = read(item.after);
@@ -1048,16 +1138,15 @@ export const productGraphWalk = (() => {
       const head = `${item.type} ${item.id} (${CHANGE_WORDS[item.change] || item.change})`;
       if (!sides) return { text: `${head} — 이전 본문 ${item.beforeRetained ? "보관됨" : "없음"}. 본문은 product-graph-query <project> changes --list content 로만 본다.`, nodeId: item.change === "removed" ? null : item.id };
       const detail = { ...item, before: sides.before, after: sides.after };
-      const headline = contentHeadline(detail);
-      return { text: `${head}${headline ? `\n${headline}` : ""}\n${contentSide("이전", sides.before)}\n${contentSide("현재", sides.after)}`, nodeId: sides.after.status === "absent" ? null : item.id, detail };
+      return { text: contentItemText(detail), nodeId: sides.after.status === "absent" ? null : item.id, detail };
     });
     const flat = (field) => (changes.byType || []).flatMap((group) => (group[field] || []).map((id) => ({ text: `${group.type} ${id}`, nodeId: field === "removed" ? null : id })));
     if (key === "changed" || key === "added" || key === "removed") return flat(key);
     if (key === "reachChanged")
-      return (changes.reachChanged || []).map((item) => ({
-        text: `기능 ${item.id} — ${item.nodes.map((node) => `${node.id} (${CHANGE_WORDS[node.change]})`).join(", ")}${item.total > item.nodes.length ? ` 외 ${item.total - item.nodes.length}개` : ""}`,
-        nodeId: item.id,
-      }));
+      return (changes.reachChanged || []).map((item) => {
+        const text = `기능 ${item.id} — ${item.nodes.map((node) => `${node.id} (${CHANGE_WORDS[node.change]})`).join(", ")}${item.total > item.nodes.length ? ` 외 ${item.total - item.nodes.length}개` : ""}`;
+        return { text, nodeId: item.id, ...(item.total > item.nodes.length ? { missing: { kind: "cut", site: "reachChangedNodes", shown: item.nodes.length, total: item.total } } : {}) };
+      });
     if (key === "edges")
       return [
         ...(changes.edges?.added || []).map((edge) => ({ text: `신규 ${edge.type} ${edge.from} → ${edge.to}`, nodeId: edge.from })),
@@ -1092,7 +1181,7 @@ export const productGraphWalk = (() => {
   function renderChanges(changes) {
     if (!changes) return [];
     const lines = [WORDS.comparison];
-    if (changes.status !== "compared") return [...lines, `- 기준 없음 — ${changes.reason}`, ""];
+    if (changes.status !== "compared") return [...lines, note(`- 기준 없음 — ${changes.reason}`, { kind: "notCompared", site: "baselineNone", with: "baseline" }), ""];
     const moved = changes.moved;
     const parts = [
       `소스 파일 ${moved.sourceFiles}개`,
@@ -1102,7 +1191,12 @@ export const productGraphWalk = (() => {
     ];
     lines.push(`- 기준: ${changes.baseline.setAt}에 잡음. 그 뒤 움직인 것: ${parts.join(", ")}.`);
     if (moved.sourceFileList?.length)
-      lines.push(`  바뀐 소스 파일: ${moved.sourceFileList.slice(0, 10).join(", ")}${moved.sourceFiles > 10 ? ` 외 ${moved.sourceFiles - 10}개` : ""}`);
+      lines.push(
+        note(
+          `  바뀐 소스 파일: ${moved.sourceFileList.slice(0, 10).join(", ")}${moved.sourceFiles > 10 ? ` 외 ${moved.sourceFiles - 10}개` : ""}`,
+          moved.sourceFiles > 10 ? { kind: "cut", site: "sourceFiles", shown: 10, total: moved.sourceFiles } : null,
+        ),
+      );
     if (moved.documentList?.length) lines.push(`  바뀐 문서: ${moved.documentList.join(", ")}`);
     if (moved.rules || moved.reader) lines.push("- 호출 방식 표나 읽는 방식이 바뀌어, 아래 차이는 제품이 아니라 코드를 읽는 방식에서 왔을 수 있다.");
     lines.push("- 노드 종류별 (ID 기준):");
@@ -1122,7 +1216,10 @@ export const productGraphWalk = (() => {
     );
     section("그 밖의 연결 신규·사라짐", changeItems(changes, "edges"));
     section("옮겨졌을 수 있음 (같은 종류·이름·내용 해시. 두 ID는 그대로 둘이다)", changeItems(changes, "maybeMoved"));
-    if (changes.unexplained?.compared === false) lines.push(`- 소스가 그대로인 곳에서 달라진 것: 비교하지 않음 — ${changes.unexplained.reason}`);
+    if (changes.unexplained?.compared === false)
+      lines.push(
+        note(`- 소스가 그대로인 곳에서 달라진 것: 비교하지 않음 — ${changes.unexplained.reason}`, { kind: "notCompared", site: "unexplainedLine", list: "unexplained" }),
+      );
     else section("소스가 그대로인 곳에서 달라진 것 (원인은 적지 않는다)", changeItems(changes, "unexplained"));
     section("다시 볼 것 (보고만 한다. 문서·뜻 줄·승인은 바꾸지 않는다)", changeItems(changes, "reviewAgain"));
     if (changes.content?.changed)
@@ -1137,7 +1234,11 @@ export const productGraphWalk = (() => {
 
   function confirmationItems(confirmations, key) {
     if (!confirmations || confirmations.status !== "compared") return [];
-    if (key === "issues") return (confirmations.issues || []).map((issue) => ({ text: `${issue.path} — ${issue.reason} (${issue.code})` }));
+    if (key === "issues")
+      return (confirmations.issues || []).map((issue) => ({
+        text: `${issue.path} — ${issue.reason} (${issue.code})`,
+        missing: { kind: "recordUnread", site: "confirmationIssue", code: issue.code },
+      }));
     return (confirmations[key] || []).map((item) => {
       const what =
         item.kind === "meaning"
@@ -1154,7 +1255,8 @@ export const productGraphWalk = (() => {
 
   // The summary lines of the block (counts, what the records are, a note).
   function confirmationHead(confirmations) {
-    if (!confirmations || confirmations.status !== "compared") return confirmations ? [`- 읽지 않음 — ${confirmations.reason}`] : [];
+    if (!confirmations || confirmations.status !== "compared")
+      return confirmations ? [`- 읽지 않음 — ${confirmations.reason}`] : [];
     const lines = [];
     const c = confirmations.counts;
     lines.push(
@@ -1162,7 +1264,14 @@ export const productGraphWalk = (() => {
     );
     lines.push("- 에이전트 확인은 에이전트가 코드를 다시 읽은 기록이고, 사용자 승인은 문서를 승인할 때 함께 남은 기록이다. 어느 것도 권한을 주지 않는다.");
     if (confirmations.recordLimit)
-      lines.push(`- 확인 기록 ${confirmations.recordLimit.present}개 가운데 파일 이름 순으로 앞의 ${confirmations.recordLimit.read}개만 읽었다. 나머지는 읽지 못한 확인 기록에 있다.`);
+      lines.push(
+        note(`- 확인 기록 ${confirmations.recordLimit.present}개 가운데 파일 이름 순으로 앞의 ${confirmations.recordLimit.read}개만 읽었다. 나머지는 읽지 못한 확인 기록에 있다.`, {
+          kind: "recordLimit",
+          site: "recordLimit",
+          present: confirmations.recordLimit.present,
+          read: confirmations.recordLimit.read,
+        }),
+      );
     if (confirmations.note) lines.push(`- ${confirmations.note}`);
     return lines;
   }
@@ -1172,7 +1281,8 @@ export const productGraphWalk = (() => {
   function renderConfirmations(confirmations) {
     if (!confirmations) return [];
     const lines = [WORDS.confirmations];
-    if (confirmations.status !== "compared") return [...lines, `- 읽지 않음 — ${confirmations.reason}`, ""];
+    if (confirmations.status !== "compared")
+      return [...lines, note(`- 읽지 않음 — ${confirmations.reason}`, { kind: "notCompared", site: "confirmationsBlock", with: "confirmations" }), ""];
     lines.push(...confirmationHead(confirmations));
     for (const key of ["issues", "changedSinceCheck", "textChanged", "otherReader", "neverChecked"]) {
       const items = confirmationItems(confirmations, key);
@@ -1188,13 +1298,15 @@ export const productGraphWalk = (() => {
     const confirmations = ctx.confirmations;
     const known = CONFIRMATION_LISTS.find((item) => item.key === list);
     if (!confirmations || confirmations.status !== "compared")
-      return answer(`확인 기록 — ${known.title}: 비교하지 않음`, [
-        { depth: 1, kind: "text", text: `비교하지 않음 — ${confirmations?.reason || "이 빌드에는 확인 기록 비교가 없다(다시 빌드한다)"}` },
-      ]);
+      return answer(
+        `확인 기록 — ${known.title}: 비교하지 않음`,
+        [{ depth: 1, kind: "text", text: `비교하지 않음 — ${confirmations?.reason || "이 빌드에는 확인 기록 비교가 없다(다시 빌드한다)"}` }],
+        { missing: [{ kind: "notCompared", site: "confirmationsList", with: "confirmations" }] },
+      );
     const items = confirmationItems(confirmations, list);
     const paged = page(items, { limit, cursor });
-    const rows = paged.slice.map((item) => ({ depth: 1, kind: item.nodeId ? "node" : "text", id: item.nodeId || undefined, text: item.text }));
-    if (paged.remaining) rows.push(moreRow(1, paged, `changes --list ${list} --cursor ${paged.nextCursor}`));
+    const rows = paged.slice.map((item) => ({ depth: 1, kind: item.nodeId ? "node" : "text", id: item.nodeId || undefined, text: item.text, ...(item.missing ? { missing: item.missing } : {}) }));
+    if (paged.remaining) rows.push(moreRow(1, paged, `changes --list ${list} --cursor ${paged.nextCursor}`, true));
     return answer(`확인 기록 — ${known.title} ${items.length}개`, rows, {
       page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor },
     });
@@ -1217,15 +1329,24 @@ export const productGraphWalk = (() => {
     if (!known)
       return fail("PRODUCT_GRAPH_QUERY_INVALID", `모르는 목록: ${list}. 있는 것: ${[...CHANGE_LISTS, ...CONFIRMATION_LISTS].map((item) => item.key).join(", ")}`);
     if (!changes || changes.status !== "compared")
-      return answer(`기준과 비교 — ${known.title}: 비교하지 않음`, [
-        { depth: 1, kind: "text", text: `비교하지 않음 — ${changes?.reason || "이 빌드에는 기준 비교가 없다"}` },
-      ]);
+      return answer(`기준과 비교 — ${known.title}: 비교하지 않음`, [{ depth: 1, kind: "text", text: `비교하지 않음 — ${changes?.reason || "이 빌드에는 기준 비교가 없다"}` }], {
+        missing: [{ kind: "notCompared", site: "changesList", with: "baseline" }],
+      });
     if (list === "unexplained" && changes.unexplained?.compared === false)
-      return answer(`기준과 비교 — ${known.title}: 비교하지 않음`, [{ depth: 1, kind: "text", text: `비교하지 않음 — ${changes.unexplained.reason}` }]);
+      return answer(`기준과 비교 — ${known.title}: 비교하지 않음`, [{ depth: 1, kind: "text", text: `비교하지 않음 — ${changes.unexplained.reason}` }], {
+        missing: [{ kind: "notCompared", site: "unexplainedList", list: "unexplained" }],
+      });
     const items = changeItems(changes, list, ctx.content);
     const paged = page(items, { limit, cursor });
-    const rows = paged.slice.map((item) => ({ depth: 1, kind: item.nodeId ? "node" : "text", id: item.nodeId || undefined, text: item.text, ...(item.detail ? { detail: item.detail } : {}) }));
-    if (paged.remaining) rows.push(moreRow(1, paged, `changes --list ${list} --cursor ${paged.nextCursor}`));
+    const rows = paged.slice.map((item) => ({
+      depth: 1,
+      kind: item.nodeId ? "node" : "text",
+      id: item.nodeId || undefined,
+      text: item.text,
+      ...(item.detail ? { detail: item.detail } : {}),
+      ...(item.missing ? { missing: item.missing } : {}),
+    }));
+    if (paged.remaining) rows.push(moreRow(1, paged, `changes --list ${list} --cursor ${paged.nextCursor}`, true));
     return answer(`기준과 비교 — ${known.title} ${items.length}개`, rows, {
       page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor },
     });
@@ -1244,10 +1365,16 @@ export const productGraphWalk = (() => {
       rows.push({ depth: 0, kind: "text", text: "제품 그래프 정합성 검사" });
       check.checks.forEach((item, position) => {
         const outcome = item.outcome === "검사 못 함" ? `검사 못 함: ${item.reason}` : item.outcome === "0건" ? "0건" : `${item.findings.length}건`;
-        rows.push({ depth: 1, kind: "text", text: `${position + 1}. ${item.heading} — ${outcome}` });
+        rows.push({
+          depth: 1,
+          kind: "text",
+          text: `${position + 1}. ${item.heading} — ${outcome}`,
+          ...(item.outcome === "검사 못 함" ? { missing: { kind: "notChecked", site: "gapsCheck", check: item.key } } : {}),
+        });
       });
       rows.push({ depth: 0, kind: "text", text: "목록 (gaps --list <key>):" });
-      for (const entry of entries) if (entry.key !== "counts") rows.push({ depth: 1, kind: "text", text: `${entry.key}: ${entry.head[0]}` });
+      for (const entry of entries)
+        if (entry.key !== "counts") rows.push({ depth: 1, kind: "text", text: `${entry.key}: ${entry.head[0]}`, ...(entry.missing ? { missing: entry.missing } : {}) });
       return answer("빈 곳", rows);
     }
     const entry = entries.find((item) => item.key === list);
@@ -1257,14 +1384,21 @@ export const productGraphWalk = (() => {
       const items = findingItems(findings);
       const paged = page(items, { limit, cursor });
       const rows = paged.slice.map((item) => ({ depth: 1, kind: "node", id: item.nodeId, text: item.text }));
-      if (paged.remaining) rows.push(moreRow(1, paged, `gaps --list ${list} --cursor ${paged.nextCursor}`));
-      return answer(`빈 곳 — ${findings.heading}`, rows, { page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor } });
+      if (paged.remaining) rows.push(moreRow(1, paged, `gaps --list ${list} --cursor ${paged.nextCursor}`, true));
+      return answer(`빈 곳 — ${findings.heading}`, rows, {
+        // A check that could not run has no findings: the empty list is not "none found".
+        ...(findings.outcome === "검사 못 함" ? { missing: [{ kind: "notChecked", site: "gapsCheckList", check: findings.key }] } : {}),
+        page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor },
+      });
     }
     const paged = page(entry.items, { limit, cursor });
-    const rows = [...entry.head.slice(1).map((text) => ({ depth: 0, kind: "text", text: text.trim() }))];
+    const rows = [...entry.head.slice(1).map((text) => repeated(paged, { depth: 0, kind: "text", text: text.trim() }))];
     for (const item of paged.slice) rows.push({ depth: 1, kind: item.nodeId ? "node" : "text", id: item.nodeId, text: item.text });
-    if (paged.remaining) rows.push(moreRow(1, paged, `gaps --list ${list} --cursor ${paged.nextCursor}`));
-    return answer(`빈 곳 — ${entry.head[0]}`, rows, { page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor } });
+    if (paged.remaining) rows.push(moreRow(1, paged, `gaps --list ${list} --cursor ${paged.nextCursor}`, true));
+    return answer(`빈 곳 — ${entry.head[0]}`, rows, {
+      ...(entry.missing ? { missing: [entry.missing] } : {}),
+      page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor },
+    });
   }
 
   return Object.freeze({
@@ -1307,6 +1441,7 @@ export const productGraphWalk = (() => {
     confirmationItems,
     changeItems,
     contentHeadline,
+    contentItemText,
     changeCount,
   });
 })();

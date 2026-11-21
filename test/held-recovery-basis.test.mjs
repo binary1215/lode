@@ -50,11 +50,11 @@ const value = (response) => {
   return response.result.structuredContent;
 };
 
-test("schema: only the basis id leaves required; the default list keeps 22 tools", () => {
+test("schema: only the basis id leaves required; the default list keeps 23 tools", () => {
   const sync = tools.find((tool) => tool.name === "lode_checkpoint_sync");
   assert.deepEqual(sync.inputSchema.required, ["project_root", "purpose", "approved_decisions", "current_position", "next_expected_result"]);
   assert.ok(sync.inputSchema.properties.expected_recovery_basis_id);
-  assert.equal(tools.length, 22);
+  assert.equal(tools.length, 23);
 });
 
 test("verified caller: read the basis, then save in one call exactly as with the explicit id", async (t) => {

@@ -76,6 +76,49 @@ The query reads the existing build and never builds, checks, approves or writes.
 
 Through MCP the same question is the grouped tool `lode_product_graph` with action `query` (`lode_product_graph_query`). The graph helps when you need which code a user action reaches, what reaches a file, or where the gaps are; it is a scan without types and never a prerequisite of ordinary work.
 
+The structured answer (`--json`, MCP `structuredContent`) carries the rows as data. A row that stands for a graph node also carries `nodeType` (the node's type), `changedSinceBaseline` (`changed`, `added`, `reachChanged` or `unchanged`; only when the build was compared with a baseline) and `confirmation` (the confirmation lists that name the node: `neverChecked`, `changedSinceCheck`, `textChanged`, `otherReader`). A 뜻 line names its 기능 and a document row names both of its ends, so screens and screen elements carry it too. Every answer says `baselineComparison` (`compared`, `baseline-moved` when the baseline was moved after the build so the comparison is with the earlier one, `no-baseline` or `absent`) and `confirmationComparison`: `compared`, `partial` (the build read only the first confirmation records by name; every list and `confirmation` comes from those), `not-read` (a stand-alone build reads no confirmation records) or `absent` (a build made before confirmation records existed). A row a later page repeats from an earlier page (its root, a heading, the group line its first item continues) carries `repeats: "earlierPage"`; its text is unchanged. Only when `confirmationComparison` is `compared` does an absent `confirmation` mean either still current or nothing to check: the build keeps only a count of current ones. The starts (`@…`) carry none of these. The answer also carries `buildSha256`, which names what it was read from (the bytes of `graph.json` and `check.json` of every build it read, and the baseline; nothing is stored). Through MCP, the `structuredContent` of `lode_product_graph_query`, `_check`, `_build` and `_baseline` leaves out the whole `text` when the structured part gives it back exactly (a before/after item of `changes --list content` from its `rows[].detail`, check from its result); the content text the tool returns still starts with it, and the CLI keeps it in `--json`. An answer without rows keeps `text`: no build, an unreadable build and a refusal (their sentence is also in `message`), and a basis change (whose sentence is only in `text`).
+
+## Several questions in one call
+
+`lode_tools_read_chain` (CLI `tools-read-chain <project> --input chain.json`) asks several questions in one call and returns only the rows asked for, counted; see [MCP tool surface](mcp-surface.md#read-chain) for the steps, bounds and statuses. It is read-only, grants nothing and writes nothing. It helps when many answers would each be read only to pick a few lines out of them; for a single question, or when every line of the answers has to be read anyway, ask the questions directly. Its inner calls are product graph questions and `lode_project_graph`. Read `knownMissing` for what Lode knows is missing; an empty list does not prove the rows are all there is.
+
+The review list, then who points at each item, counted:
+
+```json
+{
+  "project_root": "<project>",
+  "steps": [
+    { "id": "todo", "read": { "name": "lode_product_graph_query", "arguments": { "question": "changes", "list": "reviewAgain" } }, "pages": 3 },
+    { "id": "nodes", "from": "todo", "where": { "field": "kind", "eq": "node" } },
+    { "id": "one", "from": "nodes", "unique": { "by": "id" } },
+    { "id": "callers", "each": { "from": "one", "value": "id" },
+      "read": { "name": "lode_product_graph_query", "arguments": { "question": "up", "id": { "$item": true } } } },
+    { "id": "pointing", "from": "callers", "where": { "all": [{ "field": "kind", "eq": "node" }, { "field": "depth", "gte": 1 }] } },
+    { "id": "busy", "from": "pointing", "count": { "by": "item" } },
+    { "id": "top", "from": "busy", "sort": { "by": "count", "order": "desc" } }
+  ],
+  "return": [{ "from": "top", "limit": 10 }]
+}
+```
+
+Find, keep the code nodes that changed since the baseline, and read the first two:
+
+```json
+{
+  "project_root": "<project>",
+  "steps": [
+    { "id": "found", "read": { "name": "lode_product_graph_query", "arguments": { "question": "find", "text": "save" } } },
+    { "id": "code", "from": "found", "where": { "all": [{ "field": "nodeType", "eq": "코드" }, { "field": "changedSinceBaseline", "ne": "unchanged" }] } },
+    { "id": "two", "from": "code", "limit": 2 },
+    { "id": "nodes", "each": { "from": "two", "value": "id" },
+      "read": { "name": "lode_product_graph_query", "arguments": { "question": "node", "id": { "$item": true } } } }
+  ],
+  "return": [{ "from": "nodes" }]
+}
+```
+
+A chain never returns rows from two builds. It detects a change after each call rather than preventing it: when the build or the baseline changes between two calls, the chain stops with `CHAIN_BUILD_CHANGED` and returns no rows. Ask again once the build is as you want it.
+
 ## Changes since the baseline
 
 Every build hashes what it read: each 코드 node's text (a file's whole text, a declaration's line range), each 기능's kind, handling and 처리 코드 (and a second hash over the code it reaches), each document node's stated fields, and every source file it read (`inputs.sourceFiles`). Text is compared after dropping a BOM and turning CR LF and CR into LF, so another checkout's line endings change nothing, and moving a declaration inside its file without changing its text keeps its hash. A declaration is hashed without the blank lines at the end of its range, so appending code after the last declaration of a file changes only the file and the new declaration. A file with lone CR line endings hashes like its LF copy as a whole, but the shared scan reads it as one line, so its declarations' ranges and hashes differ from those of an LF copy. These hashes live only in the generated `build/` folder; IDs do not change. The reader is compared by the generator, its graph version and the source analysis version; the Lode version is recorded for information only, so an upgrade that reads code the same way is not a change.

@@ -63,7 +63,7 @@ Lode 값은 `node scripts/audit-metrics.mjs`에서 왔습니다([규칙 표면
 | 세션마다 읽히는 core 글 | 6,909자(첫 실행 동의 뒤 HEAD Core) | 822자 진입 문단; 2,301자 프로젝트 지침은 루트 파일을 쓰거나 연결한 경우에만 | 커밋된 blob의 문자 수(`git show <commit>:packages/context/instructions/HEAD_CORE.md`, LF 줄바꿈) |
 | MCP 서버 instructions | 공용 1,314자, 여기에 Claude Code 241자 또는 Codex 337자 | 822자 | 커밋된 `packages/context/core/mcp.mjs`의 템플릿 리터럴 값의 문자 수(이스케이프된 백틱은 한 글자로 셈, 실행하지 않고 글로 읽음) |
 | Skill 목록의 Skill 설명 | Skill 1개, 76자 | Skill 3개, 969자 | 커밋된 `start-job` `description` 값의 문자 수 |
-| 기본 도구 수 | 9(Codex는 10) | 22 | `packages/context/README.md`의 도구 표 |
+| 기본 도구 수 | 9(Codex는 10) | 23 | `packages/context/README.md`의 도구 표 |
 | 저장 호출 수 | 1(`save`) | Host가 검증한 호출자 1, 그 밖에는 2 | 도구 표 |
 | 재개 호출 수 | 시작 hook이 작업 세션을 불러오면 0, 아니면 1(`load`) | 연결된 Host 대화에서 0, 검증되지 않은 호출자나 새 Codex 스레드는 1(`lode_conversation_enter`), 새 Claude Code 대화는 Session이 하나면 1(`lode_conversation_enter`), 여럿이면 2(`lode_session_list` 다음 `lode_conversation_enter`) | README hook 절 |
 | 위임 호출 수 | 플러그인 호출 0, Host의 fork나 agent 도구 사용 | 기본 경로에서 Lode 호출 0, managed 경로에서 4 + 4 | 서버 instructions |
@@ -90,7 +90,7 @@ Lode 값은 `node scripts/audit-metrics.mjs`에서 왔습니다([규칙 표면
   엽니다.
 - **core 글.** 원본은 원칙 뒤의 맥락 이론을 가르치는 더 긴 글을 로드합니다. Lode는
   짧은 진입 문단을 로드하고, 절차의 세부는 필요할 때 읽는 Skill과 참조로 옮깁니다.
-- **도구 표면.** 원본은 도구 아홉 개를 나열합니다. Lode는 기본 22개를 나열하고,
+- **도구 표면.** 원본은 도구 아홉 개를 나열합니다. Lode는 기본 23개를 나열하고,
   discovery는 카탈로그 50개를 나열하며 그중 19개는 기본 목록에도 있습니다.
 - **최근 대화.** `/clear`나 압축 뒤에 원본은 직전 다섯 번의 주고받기를 대화에 다시
   넣습니다. Lode는 기록된 방향과 사용자의 마지막 프롬프트에 대한 제한된 참조를

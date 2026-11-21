@@ -34,6 +34,8 @@ const PASS_THROUGH = new Map([
   ["context-budget", null],
   ["project-root-spelling", null],
   ["cli-presentation", new Set(["formatMcpToolContent"])],
+  // What MCP structuredContent carries for a product graph answer (presentation).
+  ["product-graph-answer", null],
   ["session-routing", new Set(["sessionCallRequiresBinding"])],
 ]);
 

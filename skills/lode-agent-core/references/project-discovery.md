@@ -124,6 +124,27 @@ inspect the affected imports and calls directly instead of activating World,
 refreshing everything or creating a Run. Verify retained links against current
 sources before an effect.
 
+**Several reads at once.** `lode_tools_read_chain` runs a declarative list of
+read-only calls (`read`, `each`+`read`, `where`, `pick`, `sort`, `limit`,
+`unique`, `count`) inside the server and returns only the rows asked for, with
+Lode-counted `total` / `returned` / `cut`, `notSeen` and `knownMissing`. Its
+inner calls are product graph questions and `lode_project_graph` (tools that
+declare their completeness); every other tool, Session-bound reads included, is
+refused before any call. Use it when many answers would each be read only to
+pick a few lines (a list, then one question per item, then counts). Do not use
+it for a single lookup, or for work whose content you must read anyway (node
+contents, before/after text): ask those directly. `lode_tools_discover` with
+`name: "lode_tools_read_chain"` returns the step reference and bounds (12
+steps, 40 inner calls including pages, 20 per `each` including pages, 16 KiB
+returned by default, 4 to 64 KiB); discovery by exact name returns
+`resultShape` for the main read tools, so `take` names a real list. A chain
+grants nothing, writes nothing and changes nothing a later call may do.
+`knownMissing` lists what Lode knows is missing; an empty list does not prove
+completeness (`lode_project_graph` always gives reasons; how much of the source
+the graph covers is in the header and `basis`). A `stopped` chain whose
+product graph build or baseline changed between calls returns no rows
+(detected after each call, not prevented).
+
 **Hidden originals.** If an inventory bound hides relevant originals, call
 `lode_project_graph` with `inventory_page: true`, optionally narrowed by
 `inventory_paths` to returned owned record files or directories (CLI

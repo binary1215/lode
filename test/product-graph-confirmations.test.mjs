@@ -630,7 +630,12 @@ test("C9: the 뜻 mark appears only when a check no longer holds; with no record
     { question: "up", id: SAVE },
     { question: "reach", id: SAVE },
   ];
-  const answers = () => questions.map((question) => JSON.stringify(queryProductGraph({ root: f.root, ...question })));
+  // The build identity follows check.json's bytes, the answer says whether it compared confirmations, and node rows name the
+  // confirmation lists they are in (R2); everything else is the same.
+  const raw = () => questions.map((question) => queryProductGraph({ root: f.root, ...question }));
+  const answers = () =>
+    raw().map(({ buildSha256: _build, confirmationComparison: _comparison, ...answer }) => JSON.stringify({ ...answer, rows: answer.rows?.map(({ confirmation: _list, ...row }) => row) }));
+  assert.deepEqual(raw()[0].rows[0].confirmation, ["neverChecked"]);
   const withRecordsBlock = answers();
   assert(withRecordsBlock.every((answer) => !answer.includes("{뜻:")), "never checked: no mark");
   // The same answers from a check.json without the confirmation block.
@@ -639,6 +644,7 @@ test("C9: the 뜻 mark appears only when a check no longer holds; with no record
   delete check.confirmations;
   fs.writeFileSync(checkFile, JSON.stringify(check, null, 2) + "\n");
   assert.deepEqual(answers(), withRecordsBlock);
+  assert.equal(raw()[0].rows[0].confirmation, undefined, "no block, no confirmation field");
   buildProductGraph({ root: f.root });
   confirmProductGraph({ root: f.root, features: [SAVE] });
   buildProductGraph({ root: f.root });

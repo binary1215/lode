@@ -205,6 +205,7 @@ const ROWS = [
   { canonicalName: "lode_tools_discover", router: false, sessionDependent: false, managedMutation: false, kind: "discovery", nativeRole: null },
   { canonicalName: "lode_tools_read", router: true, sessionDependent: false, managedMutation: false, kind: "router", nativeRole: null },
   { canonicalName: "lode_tools_call", router: true, sessionDependent: false, managedMutation: false, kind: "router", nativeRole: null },
+  { canonicalName: "lode_tools_read_chain", router: true, sessionDependent: false, managedMutation: false, kind: "router", nativeRole: null },
   { canonicalName: "lode_project_bundle_export", router: false, sessionDependent: true, managedMutation: false, kind: "operation", nativeRole: null },
   { canonicalName: "lode_project_bundle_read", router: false, sessionDependent: false, managedMutation: false, kind: "operation", nativeRole: null },
   { canonicalName: "lode_project_bundle_import", router: false, sessionDependent: false, managedMutation: false, kind: "operation", nativeRole: null },

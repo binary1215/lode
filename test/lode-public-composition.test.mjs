@@ -21,8 +21,8 @@ test("one fixed source composition exposes one finite tool vocabulary and exact 
     skills: { core: "lode-agent-core", onboarding: "lode-agent-onboarding", conversation: "lode-conversation" },
   });
   assert.ok(Object.isFrozen(ARTIFACT_COMPOSITION)); assert.ok(Object.isFrozen(ARTIFACT_COMPOSITION.skills));
-  assert.equal(OPERATION_DESCRIPTORS.length, 153);
-  assert.equal(new Set(OPERATION_DESCRIPTORS.flatMap(item => [item.legacyName, item.canonicalName])).size, 306);
+  assert.equal(OPERATION_DESCRIPTORS.length, 154);
+  assert.equal(new Set(OPERATION_DESCRIPTORS.flatMap(item => [item.legacyName, item.canonicalName])).size, 308);
   for (const item of OPERATION_DESCRIPTORS) {
     assert.equal(resolveOperation(item.legacyName), item); assert.equal(resolveOperation(item.canonicalName), item);
     assert.equal(item.semanticName, item.canonicalName);
@@ -31,7 +31,7 @@ test("one fixed source composition exposes one finite tool vocabulary and exact 
   for (const unknown of ["lode_unknown_mutation", "head_unknown_mutation", "lode_head_core_contract", "HEAD_core_contract", "head_core_contract_typo"]) {
     assert.equal(resolveOperation(unknown), null); assert.equal(publicToolName(unknown), unknown);
   }
-  assert.equal(tools.length, 22);
+  assert.equal(tools.length, 23);
   assert.ok(tools.some(tool => tool.name === "lode_session_list"), "the entry's advertised discovery call is directly callable");
   assert.ok(tools.every(tool => tool.name.startsWith("lode_")));
   assert.ok(catalogTools.every(tool => tool.name.startsWith("lode_")));
@@ -40,7 +40,7 @@ test("one fixed source composition exposes one finite tool vocabulary and exact 
   // Stage 3-F: grouped tools replace their member operations in the listed catalog.
   assert.equal(catalogTools.length, 51);
   assert.deepEqual(catalogTools.filter(tool => tool.name.startsWith("lode_work_document")).map(tool => tool.name), ["lode_work_document"]);
-  const routingSurface = new Map([["lode_tools_discover", false], ["lode_tools_read", true], ["lode_tools_call", true]]);
+  const routingSurface = new Map([["lode_tools_discover", false], ["lode_tools_read", true], ["lode_tools_call", true], ["lode_tools_read_chain", true]]);
   const stableSurface = toolsForSurface();
   for (const tool of tools) {
     if (!routingSurface.has(tool.name)) assert.equal(catalogTools.find(item => item.name === tool.name), tool);
