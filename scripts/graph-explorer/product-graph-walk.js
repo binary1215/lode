@@ -917,6 +917,9 @@ export const productGraphWalk = (() => {
       ...(limits.callReading || []).map((line) => `- ${line}`),
       `- reference 종류는 ${limits.referenceKinds.emitted.join(", ")}만 적는다. ${limits.referenceKinds.notToldApart.join(", ")}는 구별하지 못해 적지 않는다.`,
       ...(limits.runByPath ? [`- ${limits.runByPath}`] : []),
+      ...(limits.valueUses
+        ? [`- 값으로 쓴 함수 ${limits.valueUses.sites}곳(이름 ${limits.valueUses.plain}, 멤버 ${limits.valueUses.members}). 호출 수와 따로 센다. ${limits.valueUses.reading}`]
+        : []),
       `- 뽑지 않은 것: ${limits.notExtracted.nodeTypes.join(", ")} 노드, ${limits.notExtracted.edges.join(", ")} 연결, ${limits.notExtracted.grouping}.`,
       ...limits.uiBindingScan.map((line) => `- ${line}`),
       ...(limits.tableRows ? [`- ${limits.tableRows}`] : []),

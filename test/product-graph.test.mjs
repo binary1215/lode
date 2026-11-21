@@ -874,7 +874,12 @@ test("F4: an ordinary property that starts with 'on' is not a DOM event", (t) =>
     "page.js": ['document.getElementById("x");', "state.online = true;", "state.only = save;", "button.onclick = save;", "function save() {}", ""].join("\n"),
   }).build();
   assert.deepEqual(result.lists.notTakenBindings, []);
-  assert(!graph.edges.some((edge) => edge.type === "callback"));
+  // The only callback is save used as a value (two sites, one edge), not a
+  // binding taken from the "on…" property.
+  assert.deepEqual(
+    graph.edges.filter((edge) => edge.type === "callback").map((edge) => [edge.from, edge.to, edge.count]),
+    [["page.js", "page.js#save", 2]],
+  );
   assert.deepEqual(
     graph.nodes.filter((node) => node.type === "기능").map((node) => node.id),
     ["fe/page/page@click:save"],

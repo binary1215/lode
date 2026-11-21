@@ -488,6 +488,7 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
         for (let index = 0; index < analysis.text.length; index += 1)
           view += !lineMask.trusted || lineMask[index] || analysis.text[index] === "\n" ? analysis.text[index] : " ";
         analysis.prepared = {
+          trusted: lineMask.trusted,
           maskedLines: view.split("\n"),
           dynamic: analysis.language !== "python" ? dynamicImports(analysis.text, lineMask) : [],
           receivers: new Map(),
@@ -1349,6 +1350,14 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
       code.references.set(key, { type: "framework-invoked", from: site.from, to: site.to, source: { path: site.path, line: site.line }, count: 0 });
     code.references.get(key).count += 1;
   }
+  // callback: a function or class used as a value (2.3).
+  const values = valueUses(code);
+  for (const site of values.sites) {
+    const key = `${site.from}\0${site.to}\0callback`;
+    if (!code.references.has(key))
+      code.references.set(key, { type: "callback", from: site.from, to: site.to, source: { path: site.path, line: site.line }, count: 0 });
+    code.references.get(key).count += 1;
+  }
   // Files that look like UI code but no pattern read: a gap, not zero 기능.
   const uiWithoutRule = [];
   const namedUiFiles = new Set(uiFiles);
@@ -1415,6 +1424,7 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     ),
     untrustedMaskFiles: ui.untrustedMask,
     runByPath: { sites: runByPath.sites, ambiguous: runByPath.ambiguous },
+    valueUses: { sites: values.sites.length, plain: values.plain, members: values.members },
     notTakenBindings: ui.notTaken.sort((a, b) => compare(a.path, b.path) || a.line - b.line || compare(a.pattern, b.pattern)),
     uiWithoutRule: uiWithoutRule.sort((a, b) => compare(a.path, b.path)),
     outOfScope: outOfScope.sort((a, b) => compare(a.id, b.id)),
@@ -1597,6 +1607,121 @@ function pathReferences(code) {
   }
   sites.sort((a, b) => compare(a.path, b.path) || a.line - b.line || compare(a.to, b.to));
   return { sites, ambiguous };
+}
+
+// A function or class used as a value (2.3): an identifier in code that is not
+// called, declared, imported, exported in a list, a property key or the member
+// after a dot, and that resolves to one function or class declaration by the
+// rules calls use (nested scope, same file, import binding, re-export chain).
+// A member used as a value resolves only where a call would: this.x / self.x
+// in a class, C.x on a product class (JavaScript: a static member), name.x on
+// a module-level object literal or a namespace import. A shorthand property
+// ({ run, stop }) is a value use of each name. A name bound to a parameter or
+// local is not resolved, and nothing is resolved because its name is unique.
+const VALUE_KINDS = new Set(["function", "binding", "class"]);
+const IDENTIFIER = /[A-Za-z_$][\w$]*/g;
+const NOT_VALUE_BEFORE =
+  /(?:\b(?:function|class|const|let|var|new|import|export|from|as|def|extends|implements|typeof|instanceof|delete|void|interface|type|enum|namespace|lambda|global|nonlocal|async|await)\s+|\.\s*|<\s*|@\s*|\*\s*)$/;
+const TYPE_BEFORE = /(?::|\bsatisfies)\s*$/;
+// Statements whose names are not uses: import lines, export lists, Python imports.
+const NAME_STATEMENTS = Object.freeze({
+  javascript: [
+    /\bimport\b[^;]*?\bfrom\b|\bimport\s*\{[^}]*\}|\bimport\s+[\w$]+\s*,?/g,
+    /\bexport\s*\{[^}]*\}/g,
+    // const { a, b } = require(...) / await import(...): an import by another spelling.
+    /\b(?:const|let|var)\s*\{[^}]*\}\s*=\s*(?:await\s+)?(?:require|import)\s*\(/g,
+  ],
+  python: [/^[ \t]*(?:from\s+[\w.]+\s+)?import\b[^\n]*(?:\([^)]*\))?/gm],
+});
+
+function valueUses(code) {
+  const sites = [];
+  let plain = 0,
+    members = 0;
+  for (const [relative, analysis] of code.analyses) {
+    const python = analysis.language === "python";
+    const typed = analysis.language === "typescript";
+    // Code only: comments, string contents and the "${" that opens a template
+    // expression blanked. A file whose mask is not trusted is not read.
+    const mask = codeMask(analysis.text, python ? "python" : "javascript");
+    if (!mask.trusted) continue;
+    let view = "";
+    for (let index = 0; index < analysis.text.length; index += 1) view += mask[index] === 1 || analysis.text[index] === "\n" ? analysis.text[index] : " ";
+    const skip = [];
+    for (const pattern of NAME_STATEMENTS[python ? "python" : "javascript"])
+      for (const match of view.matchAll(pattern)) skip.push([match.index, match.index + match[0].length]);
+    const skipped = (index) => skip.some(([start, end]) => start <= index && index < end);
+    const symbolAt = (line) => {
+      let best = null;
+      for (const symbol of analysis.symbols) {
+        const end = symbol.endLine ?? symbol.line;
+        if (symbol.line <= line && line <= end && (!best || end - symbol.line < (best.endLine ?? best.line) - best.line)) best = symbol;
+      }
+      return best;
+    };
+    const accept = (target) => target && VALUE_KINDS.has(target.kind);
+    const add = (index, target, kind) => {
+      const line = lineOfStarts(analysis.starts, index);
+      const from = symbolAt(line);
+      const fromId = from ? symbolId(relative, from) : relative;
+      if (fromId === target.id) return;
+      sites.push({ from: fromId, to: target.id, path: relative, line });
+      if (kind === "member") members += 1;
+      else plain += 1;
+    };
+    // The innermost declaration's scope chain, for a nested name. A class
+    // member is not visible by its bare name.
+    const classNames = new Set(analysis.symbols.filter((symbol) => symbol.kind === "class").map((symbol) => symbol.qualifiedName));
+    const nested = (line, name) => {
+      const scope = symbolAt(line)?.qualifiedName?.split(".") || [];
+      for (let length = scope.length; length >= 1; length -= 1) {
+        const owner = scope.slice(0, length).join(".");
+        if (classNames.has(owner)) continue;
+        const target = code.unique(relative, `${owner}.${name}`);
+        if (target) return target;
+      }
+      return null;
+    };
+    const isStatic = (target) => python || /(^|\s)static\s/.test(target.signature || "");
+    for (const match of view.matchAll(IDENTIFIER)) {
+      const index = match.index;
+      const name = match[0];
+      if (index > 0 && /[\w$]/.test(view[index - 1])) continue;
+      const before = view.slice(Math.max(0, index - 40), index);
+      const after = view.slice(index + name.length, index + name.length + 4);
+      const rest = view.slice(index + name.length);
+      if (skipped(index)) continue;
+      // this.x / self.x / head.x used as a value.
+      const member = /^\s*\.\s*([A-Za-z_$][\w$]*)/.exec(rest);
+      if (member) {
+        const tail = rest.slice(member[0].length);
+        if (/^\s*(?:\(|\?\.\s*\(|`|=(?![=>])|\.)/.test(tail) || NOT_VALUE_BEFORE.test(before) || (typed && TYPE_BEFORE.test(before))) continue;
+        const line = lineOfStarts(analysis.starts, index);
+        let target = null;
+        if (name === (python ? "self" : "this")) {
+          const owner = enclosingClass(analysis, symbolAt(line)?.qualifiedName);
+          target = owner ? code.unique(relative, `${owner}.${member[1]}`) : null;
+        } else if (!bindingAt(analysis.facts, index, name)) {
+          const head = code.unique(relative, name) || code.resolveName(relative, name);
+          if (head?.kind === "class") {
+            const found = code.unique(head.id.slice(0, head.id.indexOf("#")), `${head.qualifiedName}.${member[1]}`);
+            target = found && isStatic(found) ? found : null;
+          } else if (!head) target = code.resolveMember(relative, name, member[1]);
+        }
+        if (accept(target)) add(index, target, "member");
+        continue;
+      }
+      if (/^\s*(?:\(|\?\.\s*\(|`|=(?![=>])|=>|:)/.test(rest) || /^\s*<[\w$,\s]*>\s*\(/.test(after + rest.slice(4, 60))) continue;
+      if (NOT_VALUE_BEFORE.test(before) || (typed && TYPE_BEFORE.test(before))) continue;
+      // A parameter or local holds whatever it is given: not resolved.
+      if (bindingAt(analysis.facts, index, name)) continue;
+      const line = lineOfStarts(analysis.starts, index);
+      const target = nested(line, name) || code.resolveName(relative, name);
+      if (accept(target)) add(index, target, "plain");
+    }
+  }
+  sites.sort((a, b) => compare(a.path, b.path) || a.line - b.line || compare(a.to, b.to));
+  return { sites, plain, members };
 }
 
 // Files under the source root that were not read as code, kept apart from

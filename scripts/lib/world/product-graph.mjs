@@ -1056,6 +1056,8 @@ const NOT_TOLD_APART = Object.freeze(["render", "type reference", "re-render", "
 // The shapes of framework-invoked this reading sees, and what it still does not.
 const RUN_BY_PATH_LIMITS =
   "framework-invoked는 두 모양만 읽는다: 코드의 문자열·템플릿 리터럴이 스캔한 코드 파일 하나의 경로(전체 상대 경로, 또는 / 경계에서 시작하는 그 뒷부분)로 끝나고 그 글자를 실행·적재하는 호출에 넘기는 곳(동적 import, spawn·fork·exec 같은 프로세스 시작, Worker, 언어의 실행 파일(process.execPath, sys.executable)도 함께 넘기는 호출. 경로를 만드는 join·resolve·URL과 배열·객체는 건너 본다), 그리고 이름 없이 들여오는 JS·TS import \"<상대 경로>\". 경로가 여러 파일에 맞으면 잇지 않고 센다. 경로를 상수에 담아 뒤에서 넘기는 곳, import·export·require의 경로, 주입, 데코레이터, 파일 이름으로 정하는 경로는 보지 못한다. 읽은 곳은 모두 '경로로 실행으로 읽은 곳'에 적는다.";
+const VALUE_USE_LIMITS =
+  '부르지 않고 넘기거나 담은 이름(.map(f), { run }, process.on("x", f), 기본값 = f)이 호출과 같은 규칙(안쪽 선언, 같은 파일, import, 다시 내보내기)으로 함수·클래스 선언 하나로 풀린 곳이 callback 연결이 된다. 멤버는 호출이 풀리는 곳에서만 푼다: 클래스 안 this.x·self.x, 제품 클래스의 C.x(JS는 static), 모듈 수준 객체 리터럴이나 namespace import의 name.x. 매개변수·지역 변수에 담긴 이름, 이름이 제품에 하나뿐이라는 이유로는 풀지 않는다. 선언·import·export 목록·속성 이름·점 뒤 멤버는 쓰임으로 세지 않고, TypeScript의 타입 자리(:, satisfies 뒤)와 <…> 안, 데코레이터는 읽지 않는다.';
 const UI_SCAN_LIMITS = Object.freeze([
   "UI 연결은 패턴을 글자에 맞춰 찾는다. 여러 줄에 걸친 연결, 문자열로 만든 연결, 툴킷이 이름으로 자동으로 잇는 연결, 이벤트 이름을 실행 중에 계산하는 연결은 보지 못한다.",
   "코드인지는 글자 단위 lexer로 가린다. JS·TS·Python 파일에서는 주석과 문자열(여러 줄 문자열과 템플릿 문자열 포함) 안의 연결을 걸러내고, HTML·Vue·Svelte 파일에서는 <!-- --> 주석만 걸러낸다. JSX의 on<Event>={…} 속성은 주석과 문자열을 가리지 않는다. lexer는 파서가 아니어서 정규식 리터럴을 바로 앞 글자로만 알아본다.",
@@ -1104,6 +1106,8 @@ function limitsOf({ extraction, computed, includeEstimates, loaded, callbacks })
     callReading: CALL_READING_LIMITS,
     referenceKinds: { emitted: ["call", "callback", "framework-invoked"], notToldApart: NOT_TOLD_APART },
     runByPath: RUN_BY_PATH_LIMITS,
+    // Functions used as values (2.3), counted apart from calls.
+    valueUses: { ...extraction.valueUses, reading: VALUE_USE_LIMITS },
     notExtracted: { nodeTypes: NOT_EXTRACTED, edges: ["navigate"], grouping: "C4 묶음" },
     uiBindingScan: UI_SCAN_LIMITS,
     // Files whose lexer mask could not be trusted: 코드만 fell back to the
