@@ -477,8 +477,9 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
     const old = beforeIx.nodes.get(node.id);
     if (!old || status.has(node.id) || !old.reachSha256 || old.reachSha256 === node.reachSha256) continue;
     const now = new Set(walk.reachOf(afterIx, [node.id]).keys());
-    // The baseline keeps edges as [type, from, to]: its 기능→코드 edges have
-    // no role, so its reach is read as 처리 from every one of them.
+    // The baseline keeps what reach needs on its edges (역할 입구, 줄 ranges,
+    // reference lines; boundaries are edges), so its reach is rebuilt with the
+    // same rule. A beta.133 baseline has none of them by definition.
     const then = new Set(walk.reachOf(beforeIx, [node.id]).keys());
     const code = (ix, id) => ix.nodes.get(id)?.type === "코드";
     const nodes = [];

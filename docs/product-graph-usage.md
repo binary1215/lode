@@ -214,7 +214,7 @@ When every MCP tool call passes one dispatcher before its handler, name it as �
 { "종류": "tool", "판단": true, "입구": ["src/server.mjs#dispatch"] }
 ```
 
-A rule with only 종류 like this one gives 입구 to every 기능 of that kind; a rule with 파일 and 패턴 gives it to the 기능 it produces.
+A rule with only 종류 like this one gives 입구 to every 기능 of that kind; a rule with 파일 and 패턴 gives it to the 기능 it produces. Adding 입구 changes what each of those 기능 is stated to pass through, so after the next build every one of them is listed as 변경 (and as 닿는 코드가 바뀜 where its reach grew) against the baseline, and their 확인 records show 확인 뒤 코드가 바뀜 until they are checked again; `product-graph-baseline` takes the new state as the baseline once you have read the list.
 
 When one function handles several commands in branches, `"분기": true` on its pattern rule gives each 기능 only its own branch's lines:
 
@@ -281,7 +281,7 @@ NODE_V8_COVERAGE=<folder> <run the project so it does that one 기능>
 lode-agent product-graph-coverage <project> --feature cli:sync --v8 <folder>
 ```
 
-The comparison is read-only and stores nothing; Lode runs nothing, the project runs. It lists "실행됐는데 닿는 범위 밖" (code that ran outside the reach: a path the graph misses) and "닿는다고 했는데 돌지 않음" (reach that did not run, untaken branches and error paths included). 입구 code is inside the reach. Code that ran behind a stop of the walk from 입구 (another 기능's 처리 코드) is listed apart, under "실행됐는데 입구에서 멈춘 곳 뒤에 있음", so a stop is not mistaken for a missing edge. A file changed since the run is skipped and named under "실행한 파일이 지금 소스와 다름". When nothing could be compared, both lists say "비교하지 않음 — <reason>", never 0. Only V8 coverage JSON is read. V8 coverage carries no source text, so "the same source" is judged by script length and by the file not having changed after the coverage file was written. A file's top level (code run on module load) is not counted. MCP: `lode_product_graph` action `coverage` (`lode_product_graph_coverage`).
+The comparison is read-only and stores nothing; Lode runs nothing, the project runs. It lists "실행됐는데 닿는 범위 밖" (code that ran outside the reach: a path the graph misses) and "닿는다고 했는데 돌지 않음" (reach that did not run, untaken branches and error paths included). 입구 code is inside the reach. Code that ran behind a stop of the walk from 입구 (another 기능's 처리 코드) is listed apart, under "실행됐는데 입구에서 멈춘 곳 뒤에 있음", so a stop is not mistaken for a missing edge. A file changed since the run is skipped and named under "실행한 파일이 지금 소스와 다름". When nothing could be compared, both lists say "비교하지 않음 — <reason>", never 0. Only V8 coverage JSON is read. V8 coverage carries no source text, so "the same source" is judged by script length and by the file not having changed after the coverage file was written. The script's own whole-file range (its top level, run whenever the module is loaded) is not counted; a function that starts on the file's first line is. MCP: `lode_product_graph` action `coverage` (`lode_product_graph_coverage`).
 
 
 ## Find a flow, inspect its changes, preview a proposal

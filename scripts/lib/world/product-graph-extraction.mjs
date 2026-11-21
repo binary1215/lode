@@ -105,6 +105,34 @@ function walkSource(sourceRoot, excludes, skipped = new Map()) {
   return files;
 }
 
+// One code mask per code file per build (B3 of review round 1): every reader
+// of the product graph layer asks for it here, and the count says how many
+// were made. A view is the file with what is not code blanked: "code" keeps
+// every code character (an untrusted mask keeps the raw text), "strict" also
+// blanks the "${" that opens a template expression.
+let maskCount = 0;
+function maskOfAnalysis(analysis) {
+  if (!analysis.sharedMask) {
+    analysis.sharedMask = codeMask(analysis.text, analysis.language === "python" ? "python" : "javascript");
+    maskCount += 1;
+  }
+  return analysis.sharedMask;
+}
+function viewOfAnalysis(analysis, mode) {
+  analysis.sharedViews ??= {};
+  if (analysis.sharedViews[mode] === undefined) {
+    const mask = maskOfAnalysis(analysis);
+    const text = analysis.text;
+    const out = new Array(text.length);
+    for (let index = 0; index < text.length; index += 1) {
+      const keep = text[index] === "\n" || (mode === "strict" ? mask[index] === 1 : !mask.trusted || mask[index]);
+      out[index] = keep ? text[index] : " ";
+    }
+    analysis.sharedViews[mode] = out.join("");
+  }
+  return analysis.sharedViews[mode];
+}
+
 // Every file the build reads as text, by path: its text as read. The build
 // hashes these (inputs.sourceFiles) so a later reader can tell whether the
 // source moved since. Set only while extractProductGraphCode runs.
@@ -485,10 +513,8 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
       if (pass === "references") for (const value of valuesOf.get(relative).values()) if (calledValues.has(value.id)) callers.push(value);
       // Once per file: the line view and dynamic imports, kept for both passes.
       if (!analysis.prepared) {
-        const lineMask = codeMask(analysis.text, analysis.language === "python" ? "python" : "javascript");
-        let view = "";
-        for (let index = 0; index < analysis.text.length; index += 1)
-          view += !lineMask.trusted || lineMask[index] || analysis.text[index] === "\n" ? analysis.text[index] : " ";
+        const lineMask = maskOfAnalysis(analysis);
+        const view = viewOfAnalysis(analysis, "code");
         analysis.prepared = {
           trusted: lineMask.trusted,
           maskedLines: view.split("\n"),
@@ -958,7 +984,12 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
   // file sign or a wiring written in a comment or a string does not count.
   const maskOf = new Map();
   const maskFor = (relative, text) => {
-    if (!maskOf.has(relative)) maskOf.set(relative, codeMask(text, codeMaskKind(path.posix.extname(relative).toLowerCase())));
+    if (!maskOf.has(relative)) {
+      const kind = codeMaskKind(path.posix.extname(relative).toLowerCase());
+      const analysis = code.analyses.get(relative);
+      const shared = analysis && kind === (analysis.language === "python" ? "python" : "javascript") && analysis.text === text;
+      maskOf.set(relative, shared ? maskOfAnalysis(analysis) : codeMask(text, kind));
+    }
     return maskOf.get(relative);
   };
   // A file whose mask is not trusted (the lexer ended inside a string,
@@ -1123,12 +1154,15 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
 // Finds 기능 (entry points) and links each to the code that receives it.
 export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
   const previous = readLog;
+  const previousCount = maskCount;
   readLog = new Map();
+  maskCount = 0;
   try {
     const result = extractWithReadLog({ sourceRoot, projectRules });
-    return { ...result, readFiles: readLog };
+    return { ...result, readFiles: readLog, codeMasks: { computed: maskCount, codeFiles: result.codeFiles } };
   } finally {
     readLog = previous;
+    maskCount = previousCount;
   }
 }
 
@@ -1618,6 +1652,25 @@ function runSite(view, start, python) {
   return false;
 }
 
+// A literal with whitespace is a command line (S3): its path counts only
+// as the program itself or as the script after a language's own runner
+// (node, python and the like, flags skipped). Otherwise it gives nothing.
+const RUNNERS = new Set(["node", "nodejs", "deno", "bun", "tsx", "ts-node", "python", "python3", "py", "pypy", "pypy3"]);
+function commandPath(body) {
+  if (!/\s/.test(body.trim())) return body;
+  const tokens = body.trim().split(/\s+/);
+  const program = tokens[0].replace(/^["']|["']$/g, "");
+  if (RUN_PATH.test(program)) return program;
+  const runner = program
+    .split(/[\\/]/)
+    .pop()
+    .replace(/\.exe$/i, "")
+    .toLowerCase();
+  if (!RUNNERS.has(runner)) return "";
+  const script = tokens.slice(1).find((token) => !token.startsWith("-"));
+  return script ? script.replace(/^["']|["']$/g, "") : "";
+}
+
 function pathReferences(code) {
   const files = [...code.analyses.keys()].sort();
   const sites = [];
@@ -1625,10 +1678,9 @@ function pathReferences(code) {
   const bySuffix = (wanted) => files.filter((file) => file === wanted || file.endsWith(`/${wanted}`));
   for (const [relative, analysis] of code.analyses) {
     const python = analysis.language === "python";
-    const mask = codeMask(analysis.text, python ? "python" : "javascript");
+    const mask = maskOfAnalysis(analysis);
     if (!mask.trusted) continue;
-    let view = "";
-    for (let index = 0; index < analysis.text.length; index += 1) view += mask[index] || analysis.text[index] === "\n" ? analysis.text[index] : " ";
+    const view = viewOfAnalysis(analysis, "code");
     // For brackets: the "${" that opens a template expression is blanked too,
     // since its closing "}" is.
     let brackets = "";
@@ -1651,7 +1703,7 @@ function pathReferences(code) {
         continue;
       }
       if (!python && SPECIFIER_BEFORE.test(before)) continue;
-      const match = RUN_PATH.exec(span.body);
+      const match = RUN_PATH.exec(commandPath(span.body));
       if (!match) continue;
       const wanted = match[0].replace(/^(?:\.{1,2}\/)+/, "").replace(/^\/+/, "");
       if (!wanted || !/\w/.test(wanted)) continue;
@@ -1702,6 +1754,22 @@ const NAME_STATEMENTS = Object.freeze({
   python: [/^[ \t]*(?:from\s+[\w.]+\s+)?import\b[^\n]*(?:\([^)]*\))?/gm],
 });
 
+// The innermost declaration of every line of a file, made once: larger
+// declarations are painted first, so the smallest holding a line wins (ties
+// keep the first in source order, as the scan lists them).
+function innermostByLine(analysis) {
+  if (!analysis.lineOwner) {
+    const owner = new Array(analysis.starts.length + 2).fill(null);
+    const order = analysis.symbols
+      .map((symbol, position) => ({ symbol, position, size: (symbol.endLine ?? symbol.line) - symbol.line }))
+      .sort((a, b) => b.size - a.size || b.position - a.position);
+    for (const { symbol } of order)
+      for (let line = symbol.line; line <= (symbol.endLine ?? symbol.line) && line < owner.length; line += 1) owner[line] = symbol;
+    analysis.lineOwner = owner;
+  }
+  return (line) => analysis.lineOwner[line] ?? null;
+}
+
 function valueUses(code) {
   const sites = [];
   let plain = 0,
@@ -1711,22 +1779,21 @@ function valueUses(code) {
     const typed = analysis.language === "typescript";
     // Code only: comments, string contents and the "${" that opens a template
     // expression blanked. A file whose mask is not trusted is not read.
-    const mask = codeMask(analysis.text, python ? "python" : "javascript");
+    const mask = maskOfAnalysis(analysis);
     if (!mask.trusted) continue;
-    let view = "";
-    for (let index = 0; index < analysis.text.length; index += 1) view += mask[index] === 1 || analysis.text[index] === "\n" ? analysis.text[index] : " ";
+    const view = viewOfAnalysis(analysis, "strict");
     const skip = [];
     for (const pattern of NAME_STATEMENTS[python ? "python" : "javascript"])
       for (const match of view.matchAll(pattern)) skip.push([match.index, match.index + match[0].length]);
-    const skipped = (index) => skip.some(([start, end]) => start <= index && index < end);
-    const symbolAt = (line) => {
-      let best = null;
-      for (const symbol of analysis.symbols) {
-        const end = symbol.endLine ?? symbol.line;
-        if (symbol.line <= line && line <= end && (!best || end - symbol.line < (best.endLine ?? best.line) - best.line)) best = symbol;
-      }
-      return best;
+    // Identifiers come in index order: one pointer over the sorted spans.
+    skip.sort((a, b) => a[0] - b[0]);
+    let skipAt = 0;
+    const skipped = (index) => {
+      while (skipAt < skip.length && skip[skipAt][1] <= index) skipAt += 1;
+      for (let at = skipAt; at < skip.length && skip[at][0] <= index; at += 1) if (index < skip[at][1]) return true;
+      return false;
     };
+    const symbolAt = innermostByLine(analysis);
     const accept = (target) => target && VALUE_KINDS.has(target.kind);
     const add = (index, target, kind) => {
       const line = lineOfStarts(analysis.starts, index);
@@ -1798,6 +1865,17 @@ function valueUses(code) {
 // (boundary) edge: reach does not cross it. 글 on no line, a missing 파일 and
 // a 대상 that is not a 코드 node are rule issues ("규칙이 낡음"), never
 // skipped silently and never a build failure.
+// Whether a line holds code (S1 of review round 1): any character that is
+// code and not blank. A line wholly comment, or wholly inside a multi-line
+// string, holds none.
+function lineHoldsCode(analysis, line) {
+  const mask = maskOfAnalysis(analysis);
+  const start = analysis.starts[line - 1];
+  const end = line < analysis.starts.length ? analysis.starts[line] : analysis.text.length;
+  for (let index = start; index < end; index += 1) if (mask[index] && !/\s/.test(analysis.text[index])) return true;
+  return false;
+}
+
 function handWrittenConnections({ code, rules, codeIds }) {
   const sites = [];
   const issues = [];
@@ -1812,10 +1890,10 @@ function handWrittenConnections({ code, rules, codeIds }) {
     const missing = rule["대상"].filter((id) => !codeIds.has(id));
     for (const id of missing) stale(rule, index, `대상 ${id}이 코드 노드가 아님`);
     const targets = rule["대상"].filter((id) => codeIds.has(id));
-    const mask = codeMask(analysis.text, analysis.language === "python" ? "python" : "javascript");
+    const mask = maskOfAnalysis(analysis);
     const lines = new Set();
     for (let at = analysis.text.indexOf(rule["글"]); at >= 0; at = analysis.text.indexOf(rule["글"], at + 1))
-      if (!mask.trusted || mask[at]) lines.add(lineOfStarts(analysis.starts, at));
+      if (!mask.trusted || lineHoldsCode(analysis, lineOfStarts(analysis.starts, at))) lines.add(lineOfStarts(analysis.starts, at));
     if (!lines.size) {
       stale(rule, index, `글 "${rule["글"].slice(0, 80)}"이 코드 줄에 없음`);
       return;
@@ -1857,7 +1935,7 @@ function branchBlock(analysis, index) {
     }
     return end > line ? [line, end] : null;
   }
-  const mask = codeMask(text, "javascript");
+  const mask = maskOfAnalysis(analysis);
   if (!mask.trusted) return null;
   const code = (position) => mask[position] === 1;
   // A case label: to the line before the next case or default at its depth.
@@ -2067,12 +2145,28 @@ function outsideFacts({ code, root, files, rules }) {
   for (const [relative, analysis] of code.analyses) {
     const python = analysis.language === "python";
     const language = python ? "python" : "javascript";
-    const mask = codeMask(analysis.text, language);
+    const mask = maskOfAnalysis(analysis);
     const inCode = (index) => !mask.trusted || Boolean(mask[index]);
     const line = (index) => lineOfStarts(analysis.starts, index);
     for (const pattern of ENV_PATTERNS[language])
-      for (const match of analysis.text.matchAll(pattern))
-        if (inCode(match.index)) env.push({ name: match[1], path: relative, line: line(match.index), from: enclosingCode(code, relative, line(match.index)) });
+      for (const match of analysis.text.matchAll(pattern)) {
+        if (!inCode(match.index)) continue;
+        // An assignment to it or a delete of it writes it (S2).
+        const after = analysis.text.slice(match.index + match[0].length, match.index + match[0].length + 4);
+        const before = analysis.text.slice(Math.max(0, match.index - 8), match.index);
+        const write = /^\s*=(?!=)/.test(after) || /\bdelete\s+$/.test(before) || (language === "python" && /\bdel\s+$/.test(before));
+        env.push({ name: match[1], path: relative, line: line(match.index), from: enclosingCode(code, relative, line(match.index)), write });
+      }
+    // const { HOME, PORT: port = 1 } = process.env: a read of each name.
+    if (language === "javascript")
+      for (const match of analysis.text.matchAll(/\b(?:const|let|var)\s*\{([^{}]*)\}\s*=\s*process\.env\b/g)) {
+        if (!inCode(match.index)) continue;
+        for (const part of match[1].split(",")) {
+          const name = /^\s*([A-Za-z_][A-Za-z0-9_]*)/.exec(part)?.[1];
+          if (name && !part.trim().startsWith("..."))
+            env.push({ name, path: relative, line: line(match.index), from: enclosingCode(code, relative, line(match.index)), write: false });
+        }
+      }
     // Calls on names bound to an outside module.
     const bindings = new Map(analysis.semanticFacts.bindings.map((binding) => [binding.local, binding]));
     const rawLines = analysis.text.split("\n");
@@ -2138,7 +2232,7 @@ function outsideLayer({ code, root, files, rules, codeIds }) {
   // Environment: a 데이터 node per name, read from the enclosing declaration.
   for (const item of facts.env) {
     node(`data:env:${item.name}`, { type: "데이터", kind: "env", name: item.name });
-    ref("read", item.from, `data:env:${item.name}`, item);
+    ref(item.write ? "write" : "read", item.from, `data:env:${item.name}`, item);
   }
   // DB: tables and columns (포함), and SQL that names a known table.
   const known = new Map();
@@ -2154,8 +2248,39 @@ function outsideLayer({ code, root, files, rules, codeIds }) {
       ref("포함", id, `${id}.${column}`, item);
     }
   }
-  for (const item of facts.sqlUses)
-    for (const [lower, id] of known) if (new RegExp(`\\b${lower}\\b`, "i").test(item.body)) ref(item.verb === "SELECT" ? "read" : "write", item.from, id, item);
+  // SQL (B2 of review round 1): a table counts only in its verb's own
+  // position, decided per table: FROM <t> / JOIN <t> reads; INSERT INTO <t>,
+  // REPLACE INTO <t>, UPDATE <t> … SET, DELETE FROM <t> write. Every string a
+  // verb word made a candidate is listed with what was read from it.
+  const sqlSites = [];
+  for (const item of facts.sqlUses) {
+    const reads = [],
+      writes = [];
+    for (const [lower, id] of known) {
+      const name = `["\`[]?${lower.replace(/[$]/g, "\\$")}["\`\\]]?(?![\\w$])`;
+      const write =
+        new RegExp(`\\b(?:INSERT|REPLACE)\\s+INTO\\s+${name}`, "i").test(item.body) ||
+        new RegExp(`\\bUPDATE\\s+${name}\\s+SET\\b`, "i").test(item.body) ||
+        new RegExp(`\\bDELETE\\s+FROM\\s+${name}`, "i").test(item.body);
+      const read = new RegExp(`(?<!\\bDELETE\\s+)\\b(?:FROM|JOIN)\\s+${name}`, "i").test(item.body);
+      if (write) {
+        writes.push(id);
+        ref("write", item.from, id, item);
+      }
+      if (read) {
+        reads.push(id);
+        ref("read", item.from, id, item);
+      }
+    }
+    sqlSites.push({
+      path: item.path,
+      line: item.line,
+      from: item.from,
+      reads: reads.sort(),
+      writes: writes.sort(),
+      text: item.body.replace(/\s+/g, " ").trim().slice(0, 120),
+    });
+  }
   // Outside calls: an edge only where a 바깥 rule names the other side.
   const claims = (place, fact) =>
     String(place["모듈"]).replace(/^node:/, "") === fact.module &&
@@ -2222,6 +2347,7 @@ function outsideLayer({ code, root, files, rules, codeIds }) {
     lists: {
       unnamedOutsideCalls: unnamedList,
       unnamedOutsideCount: unnamedList.reduce((sum, item) => sum + item.count, 0),
+      sqlSites: sqlSites.sort((a, b) => compare(a.path, b.path) || a.line - b.line),
       undecidedAccess: unknownAccess.sort((a, b) => compare(a.path, b.path) || a.line - b.line),
     },
     counts: {
@@ -2355,8 +2481,8 @@ function readTableRow(code, relative, text, index) {
   // dynamic imports. A file read for several rows reuses them.
   code.rowFiles ??= new Map();
   if (!code.rowFiles.has(relative)) {
-    const mask = codeMask(text, python ? "python" : "javascript");
-    if (!mask.trusted) mask.fill(1);
+    const shared = analysis && analysis.text === text ? maskOfAnalysis(analysis) : codeMask(text, python ? "python" : "javascript");
+    const mask = shared.trusted ? shared : Object.assign(new Uint8Array(shared.length).fill(1), { trusted: false });
     const starts = lineStarts(text);
     code.rowFiles.set(relative, { mask, pairs: bracketPairs(text, mask), starts, dynamic: python ? [] : dynamicImports(text, mask, starts) });
   }

@@ -1448,6 +1448,18 @@ export const productGraphWalk = (() => {
         outside.unnamedOutsideCalls.map((item) => ({ text: `${item.module} ${item.path} — ${item.count}곳 (${item.apis.join(", ")})` })),
         { show: outside.unnamedOutsideCount > 0 },
       );
+      // Every string a SQL verb word made a candidate, with what was read (B2).
+      const sqlSites = outside.sqlSites || [];
+      add(
+        "sqlSites",
+        sqlSites.length,
+        [`SQL로 읽은 곳: ${sqlSites.length}곳 (SQL 동사 낱말이 있는 코드 문자열. 표 이름이 그 동사의 자리에 있을 때만 읽기·쓰기로 잇는다)`],
+        sqlSites.map((item) => ({
+          text: `${item.path}:${item.line} ${item.from} — ${[item.reads.length ? `읽기 ${item.reads.join(", ")}` : "", item.writes.length ? `쓰기 ${item.writes.join(", ")}` : ""].filter(Boolean).join(" · ") || "잇지 않음"} — "${item.text}"`,
+          nodeId: item.from,
+        })),
+        { show: sqlSites.length > 0 },
+      );
       add(
         "undecidedAccess",
         outside.undecidedAccess.length,

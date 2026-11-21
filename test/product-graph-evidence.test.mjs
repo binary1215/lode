@@ -1269,7 +1269,7 @@ test("2.4: a boundary stops reach across a call the scan resolved", (t) => {
 test("2.6: a row with a specific phrase does not use its shorter ones; <…> and … match any text", async () => {
   const { rowPhrases } = await import("../scripts/lib/world/product-graph-runs.mjs");
   assert.deepEqual(
-    rowPhrases("알림 `저장함` 또는 `파일을 저장했습니다`").map((phrase) => phrase.text),
+    rowPhrases("알림 `저장했어요` 또는 `파일을 저장했습니다`").map((phrase) => phrase.text),
     ["파일을 저장했습니다"],
   );
   assert.deepEqual(
@@ -1278,4 +1278,175 @@ test("2.6: a row with a specific phrase does not use its shorter ones; <…> and
   );
   const [phrase] = rowPhrases("`<name>을 저장했습니다`");
   assert(phrase.pattern.test("report.txt을 저장했습니다"));
+});
+
+// ---------- review round 1 ----------
+
+test("B1: a real NODE_V8_COVERAGE run: a function on a file's first line that ran is not 'did not run'; both lists hold what they should", async (t) => {
+  const { coverageProductGraph } = await import("../scripts/lib/world/product-graph-coverage.mjs");
+  const { spawnSync } = await import("node:child_process");
+  const p = product(
+    t,
+    {
+      "src/main.mjs": lines(
+        "// 시작 — 한국어 주석이 있는 첫 줄",
+        'import { createRequire } from "node:module";',
+        "const require = createRequire(import.meta.url);",
+        'const legacy = require("./legacy.cjs");',
+        "export function start(flag) {",
+        '  if (flag === "never") never();',
+        "  return legacy.stamp();",
+        "}",
+        "function never() { return 0; }",
+      ),
+      "src/legacy.cjs": "function stamp() { return hidden(); }\nfunction hidden() { return 1; }\nmodule.exports = { stamp };\n",
+      "src/other.mjs": lines("export function extra() { return 2; }"),
+      "src/run.mjs": lines('import { start } from "./main.mjs";', 'import { extra } from "./other.mjs";', 'start("go");', "extra();"),
+    },
+    { rules: [{ 종류: "cli", 판단: true, 파일: ["src/main.mjs"], 패턴: "export function (start)" }] },
+  );
+  const { out } = p.build();
+  const v8 = path.join(p.base, "v8");
+  const ran = spawnSync(process.execPath, [path.join(p.source, "src/run.mjs")], { env: { ...process.env, NODE_V8_COVERAGE: v8 }, encoding: "utf8" });
+  assert.equal(ran.status, 0, ran.stderr);
+  const answer = coverageProductGraph({ buildDirectory: out, sourceRoot: p.source, feature: "cli:start", v8 });
+  assert.equal(answer.status, "compared");
+  assert.deepEqual(answer.differs, []);
+  for (const file of ["src/main.mjs", "src/legacy.cjs", "src/other.mjs"]) assert(answer.comparedFiles.includes(file), file);
+  // stamp is on the first line of legacy.cjs and ran; hidden ran; never did not.
+  assert(!answer.reachedNotRun.includes("src/legacy.cjs#stamp"));
+  assert(!answer.reachedNotRun.includes("src/legacy.cjs#hidden"));
+  assert(answer.reachedNotRun.includes("src/main.mjs#never"));
+  assert(answer.ranOutsideReach.includes("src/other.mjs#extra"));
+  // Whatever ran is never also listed as not run.
+  for (const id of [...answer.ranOutsideReach, ...answer.ranBehindEntryStop]) assert(!answer.reachedNotRun.includes(id), id);
+});
+
+test("B2: SQL reads and writes need the table in the verb's own position, per table; English sentences give none; every SQL site is listed", (t) => {
+  const p = product(t, {
+    "src/db.js": lines(
+      'const SCHEMA = "CREATE TABLE users (id INTEGER, name TEXT)";',
+      'const OTHER = "CREATE TABLE archive (id INTEGER)";',
+      "export function talk(log) {",
+      '  log("Select the users you want to keep");',
+      '  log("Update: users can now log in");',
+      '  console.log("delete from the list of users");',
+      "  return SCHEMA + OTHER;",
+      "}",
+      "export function move(db) {",
+      '  db.run("INSERT INTO archive SELECT * FROM users WHERE id = ?");',
+      '  db.run("UPDATE users SET name = ? WHERE id = ?");',
+      '  return db.run("DELETE FROM users WHERE id = ?");',
+      "}",
+    ),
+  });
+  const { result, graph } = p.build();
+  const edges = graph.edges.filter((edge) => ["read", "write"].includes(edge.type)).map((edge) => `${edge.from} ${edge.type} ${edge.to}`);
+  assert.deepEqual(edges.sort(), ["src/db.js#move read db:users", "src/db.js#move write db:archive", "src/db.js#move write db:users"]);
+  const sites = result.lists.outside.sqlSites;
+  assert.deepEqual(
+    sites.map((site) => [site.line, site.reads, site.writes]),
+    [
+      [4, [], []],
+      [5, [], []],
+      [6, [], []],
+      [10, ["db:users"], ["db:archive"]],
+      [11, [], ["db:users"]],
+      [12, [], ["db:users"]],
+    ],
+  );
+  assert.match(result.text, /\nSQL로 읽은 곳: 6곳 [^\n]*\n {2}- src\/db\.js:4 src\/db\.js#talk — 잇지 않음 — "Select the users you want to keep"\n/);
+  assert.match(result.text, /\n {2}- src\/db\.js:10 src\/db\.js#move — 읽기 db:users · 쓰기 db:archive — /);
+});
+
+test("B3: each code file's mask is computed once per build, and the run evidence reads each file once", async (t) => {
+  const { extractProductGraphCode } = await import("../scripts/lib/world/product-graph-extraction.mjs");
+  const p = product(t, { ...OUTSIDE, ...BRANCHES, ...RUNNER });
+  const rules = { ...RULES_HEAD, ...outsideRules(), rules: [...outsideRules().rules, ...branchRules().rules], "손으로 적는 연결": [{ 판단: true, 종류: "경계", 파일: "src/peer.js", 글: "net.connect(4000)", 대상: ["src/store.js#load"] }] };
+  const extraction = extractProductGraphCode({ sourceRoot: p.source, projectRules: rules });
+  assert(extraction.codeMasks.codeFiles > 5);
+  assert.equal(extraction.codeMasks.computed, extraction.codeMasks.codeFiles);
+  const q = evidenceProject(t);
+  const built = q.build();
+  assert(built.lists.screenEvidence.filesRead <= 1, `${built.lists.screenEvidence.filesRead}`);
+});
+
+test("S1: a 글 that starts with a quote counts on a code line; a line wholly comment or wholly in a multi-line string does not", (t) => {
+  const p = product(
+    t,
+    {
+      "src/server.js": lines(
+        'import { spawnSync } from "node:child_process";',
+        "export function delegate() {",
+        '  return spawnSync(process.execPath, ["src/worker.js"]);',
+        "}",
+        '// a comment naming "src/later.js" only',
+        "const NOTE = `",
+        '"src/later.js" inside a template',
+        "`;",
+      ),
+      "src/worker.js": lines("export function work() { return 1; }"),
+      "src/later.js": lines("export function later() { return 2; }"),
+    },
+    {
+      rules: [{ 종류: "cli", 판단: true, 파일: ["src/server.js"], 패턴: "export function (delegate)" }],
+      "손으로 적는 연결": [
+        { 판단: true, 종류: "framework-invoked", 파일: "src/server.js", 글: '"src/worker.js"', 대상: ["src/worker.js#work"] },
+        { 판단: true, 종류: "framework-invoked", 파일: "src/server.js", 글: '"src/later.js"', 대상: ["src/later.js#later"] },
+      ],
+    },
+  );
+  const { result, graph } = p.build();
+  assert(graph.edges.some((edge) => edge.judgement && edge.from === "src/server.js#delegate" && edge.to === "src/worker.js#work"));
+  assert.deepEqual(
+    result.lists.ruleIssues.map((item) => [item.rule, item.reason]),
+    [[1, '규칙이 낡음 — 글 ""src/later.js""이 코드 줄에 없음']],
+  );
+});
+
+test("S2: an assignment to or a delete of an environment variable writes it; a destructured read of process.env reads each name", (t) => {
+  const p = product(t, {
+    "src/env.js": lines(
+      "export function setUp() {",
+      '  process.env.MODE = "x";',
+      "  delete process.env.OLD;",
+      "  const { HOME, PORT: port = 1, ...rest } = process.env;",
+      "  return HOME + port + rest + (process.env.MODE === \"x\");",
+      "}",
+    ),
+  });
+  const { graph } = p.build();
+  const edges = graph.edges.filter((edge) => edge.to.startsWith("data:env:")).map((edge) => `${edge.type} ${edge.to}`);
+  assert.deepEqual(edges.sort(), ["read data:env:HOME", "read data:env:MODE", "read data:env:PORT", "write data:env:MODE", "write data:env:OLD"]);
+});
+
+test("S3: a command line gives a path only as the program or as a language runner's script", (t) => {
+  const p = product(t, {
+    "src/main.js": lines(
+      'import { execSync, spawn } from "node:child_process";',
+      "export function start() {",
+      '  execSync("git add src/other.js");',
+      '  execSync("node --trace src/job.js --fast");',
+      '  spawn("src/tool.js --help");',
+      "}",
+    ),
+    "src/other.js": lines("export function other() { return 1; }"),
+    "src/job.js": lines("job();", "function job() { return 2; }"),
+    "src/tool.js": lines("tool();", "function tool() { return 3; }"),
+  });
+  const { graph } = p.build();
+  const targets = graph.edges.filter((edge) => edge.type === "framework-invoked").map((edge) => edge.to);
+  assert.deepEqual(targets.sort(), ["src/job.js", "src/tool.js"]);
+});
+
+test("S5: a row whose quoted text is too short says so", (t) => {
+  const p = evidenceProject(t, { rows: ["| MAIN-01#1 | 짧은 글 `저장` | | | |", "| MAIN-01#2 | 글 없음 | | | |"] });
+  const built = p.build();
+  assert.deepEqual(
+    built.lists.screenEvidence.unconnected.map((item) => [item.id, item.reason]),
+    [
+      ["MAIN-01#1", "따옴표로 묶은 글이 너무 짧음(글자 4개 미만)"],
+      ["MAIN-01#2", "따옴표로 묶은 글이 없음"],
+    ],
+  );
 });

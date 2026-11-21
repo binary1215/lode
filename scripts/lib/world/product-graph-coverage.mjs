@@ -117,8 +117,11 @@ export function coverageProductGraph(options = {}) {
         differs.push({ path: relative, reason: "지금 소스를 읽지 못함" });
         continue;
       }
-      const top = script.functions.find((item) => item.ranges?.[0]?.startOffset === 0);
-      const length = top?.ranges[0].endOffset;
+      // The script itself is the one entry whose first range is the whole
+      // file: the longest that starts at 0 (a function on the first line
+      // starts at 0 too, and is shorter).
+      const length = Math.max(-1, ...script.functions.filter((item) => item.ranges?.[0]?.startOffset === 0).map((item) => item.ranges[0].endOffset));
+      const top = script.functions.find((item) => item.ranges?.[0]?.startOffset === 0 && item.ranges[0].endOffset === length);
       if (length !== text.length || stat.mtimeMs > script.writtenAt) {
         differs.push({ path: relative, reason: length !== text.length ? "실행한 길이와 지금 길이가 다름" : "커버리지를 쓴 뒤 파일이 바뀜" });
         continue;
@@ -128,7 +131,7 @@ export function coverageProductGraph(options = {}) {
         const range = item.ranges?.[0];
         if (!range || !(range.count > 0)) continue;
         // A file's top level runs whenever the module is loaded: not counted.
-        if (range.startOffset === 0) continue;
+        if (item === top) continue;
         const declaration = innermost(relative, lineOfOffset(text, range.startOffset));
         if (declaration !== relative) executed.add(declaration);
       }
@@ -168,7 +171,7 @@ export function coverageProductGraph(options = {}) {
   const lines = [
     `커버리지와 닿는 범위: ${feature}`,
     `읽은 형식: ${COVERAGE_FORMAT}. 다른 형식은 읽지 않는다. Lode는 아무것도 실행하지 않았다. 아무것도 저장하지 않는다.`,
-    `커버리지 파일 ${coverage.files}개, 스크립트 ${coverage.scripts.length}개, 지금 소스와 비교한 제품 코드 파일 ${compared.size}개. 같은 소스인지는 실행한 길이와 파일을 바꾼 시각으로만 본다(V8 커버리지는 실행한 글을 담지 않는다). 선언만 견주고, 모듈을 불러올 때 도는 파일 맨 위는 세지 않는다.`,
+    `커버리지 파일 ${coverage.files}개, 스크립트 ${coverage.scripts.length}개, 지금 소스와 비교한 제품 코드 파일 ${compared.size}개. 같은 소스인지는 실행한 길이와 파일을 바꾼 시각으로만 본다(V8 커버리지는 실행한 글을 담지 않는다). 선언만 견주고, 스크립트 자체의 파일 전체 범위(모듈을 불러올 때 도는 맨 위)는 세지 않는다. 첫 줄에서 시작하는 함수는 센다.`,
     ...(differsSorted.length
       ? [
           `실행한 파일이 지금 소스와 다름: ${differsSorted.length}개 (건너뜀)`,

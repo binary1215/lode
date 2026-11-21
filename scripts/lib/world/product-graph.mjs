@@ -1167,11 +1167,11 @@ export const LIMITS_TITLE = "이 그래프가 답하지 못하는 것";
 const NOT_TOLD_APART = Object.freeze(["render", "type reference", "re-render", "response", "enqueue", "navigate", "http", "defines"]);
 // The shapes of framework-invoked this reading sees, and what it still does not.
 const RUN_BY_PATH_LIMITS =
-  "framework-invoked는 두 모양만 읽는다: 코드의 문자열·템플릿 리터럴이 스캔한 코드 파일 하나의 경로(전체 상대 경로, 또는 / 경계에서 시작하는 그 뒷부분)로 끝나고 그 글자를 실행·적재하는 호출에 넘기는 곳(동적 import, spawn·fork·exec 같은 프로세스 시작, Worker, 언어의 실행 파일(process.execPath, sys.executable)도 함께 넘기는 호출. 경로를 만드는 join·resolve·URL과 배열·객체는 건너 본다), 그리고 이름 없이 들여오는 JS·TS import \"<상대 경로>\". 경로가 여러 파일에 맞으면 잇지 않고 센다. 경로를 상수에 담아 뒤에서 넘기는 곳, import·export·require의 경로, 주입, 데코레이터, 파일 이름으로 정하는 경로는 보지 못한다. 읽은 곳은 모두 '경로로 실행으로 읽은 곳'에 적는다.";
+  "framework-invoked는 두 모양만 읽는다: 코드의 문자열·템플릿 리터럴이 스캔한 코드 파일 하나의 경로(전체 상대 경로, 또는 / 경계에서 시작하는 그 뒷부분)로 끝나고 그 글자를 실행·적재하는 호출에 넘기는 곳(동적 import, spawn·fork·exec 같은 프로세스 시작, Worker, 언어의 실행 파일(process.execPath, sys.executable)도 함께 넘기는 호출. 경로를 만드는 join·resolve·URL과 배열·객체는 건너 본다. 공백이 있는 글자는 명령 줄이라, 그 경로는 프로그램 자체이거나 언어 실행기(node, python 같은 것) 뒤의 스크립트일 때만 센다), 그리고 이름 없이 들여오는 JS·TS import \"<상대 경로>\". 경로가 여러 파일에 맞으면 잇지 않고 센다. 경로를 상수에 담아 뒤에서 넘기는 곳, import·export·require의 경로, 주입, 데코레이터, 파일 이름으로 정하는 경로는 보지 못한다. 읽은 곳은 모두 '경로로 실행으로 읽은 곳'에 적는다.";
 const ENTRY_STOP_RULE =
   "닿는 범위는 처리 코드와 입구 둘 다에서 시작하고, 입구에서 걷는 길은 다른 기능의 처리 코드인 노드 앞에서 멈춘다(그 노드만. 멈춘 곳은 답마다 센다). 그래서 분배 코드가 한 기능의 처리 코드를 다른 기능들의 공통 단계로 정말 부르면 그 길은 보이지 않는다.";
 const OUTSIDE_LIMITS =
-  '환경 변수는 process.env.NAME, process.env["NAME"], os.environ["NAME"], os.environ.get("NAME"), os.getenv("NAME")만 읽어 데이터 data:env:NAME을 읽는 연결로 적는다. 환경 객체를 다른 이름에 담아 넘기면 따라가지 않는다. 바깥 모듈 표(JS: fs, fs/promises, net, http, https, dgram, tls, child_process, readline. Python: 내장 open, os, shutil, pathlib, subprocess, socket, sqlite3, urllib, http.client. 바깥 규칙이 적은 모듈도 더한다)에서 들여온 이름으로 부른 호출은 사실로 적고, 프로젝트가 바깥 규칙으로 맞은편을 이름 붙인 것만 연결이 된다. 짐작하지 않는다. 표는 코드 문자열이나 .sql 파일의 CREATE TABLE로 만든 것만 보고, 다른 방법으로 만든 표는 보지 못한다. 표와 데이터의 뜻 줄은 없다.';
+  '환경 변수는 process.env.NAME, process.env["NAME"], os.environ["NAME"], os.environ.get("NAME"), os.getenv("NAME")만 읽어 데이터 data:env:NAME을 읽는 연결로 적고, 대입이나 delete는 쓰는 연결로 적는다. const { NAME } = process.env는 꺼내는 이름마다 읽음이다. 환경 객체를 다른 이름에 담아 넘기면 따라가지 않는다. 바깥 모듈 표(JS: fs, fs/promises, net, http, https, dgram, tls, child_process, readline. Python: 내장 open, os, shutil, pathlib, subprocess, socket, sqlite3, urllib, http.client. 바깥 규칙이 적은 모듈도 더한다)에서 들여온 이름으로 부른 호출은 사실로 적고, 프로젝트가 바깥 규칙으로 맞은편을 이름 붙인 것만 연결이 된다. 짐작하지 않는다. SQL은 표 이름이 동사의 자리에 있을 때만 읽기(FROM·JOIN <표>)나 쓰기(INSERT INTO·REPLACE INTO <표>, UPDATE <표> … SET, DELETE FROM <표>)로 잇고, SQL 동사 낱말이 있는 문자열은 모두 SQL로 읽은 곳에 적는다. 표는 코드 문자열이나 .sql 파일의 CREATE TABLE로 만든 것만 보고, 다른 방법으로 만든 표는 보지 못한다. 표와 데이터의 뜻 줄은 없다.';
 const VALUE_USE_LIMITS =
   '부르지 않고 넘기거나 담은 이름(.map(f), { run }, process.on("x", f), 기본값 = f)이 호출과 같은 규칙(안쪽 선언, 같은 파일, import, 다시 내보내기)으로 함수·클래스 선언 하나로 풀린 곳이 callback 연결이 된다. 멤버는 호출이 풀리는 곳에서만 푼다: 클래스 안 this.x·self.x, 제품 클래스의 C.x(JS는 static), 모듈 수준 객체 리터럴이나 namespace import의 name.x. 매개변수·지역 변수에 담긴 이름, 이름이 제품에 하나뿐이라는 이유로는 풀지 않는다. 선언·import·export 목록·속성 이름·점 뒤 멤버는 쓰임으로 세지 않고, TypeScript의 타입 자리(:, satisfies 뒤)와 <…> 안, 데코레이터는 읽지 않는다.';
 const UI_SCAN_LIMITS = Object.freeze([
@@ -1358,7 +1358,7 @@ function applyRunEvidence({ graph, computed, loaded, extraction, rules, result }
     ...(loaded.runRecordLimit ? { recordLimit: loaded.runRecordLimit } : {}),
     recordsListingSha256: loaded.runListingSha256 ?? null,
   };
-  result.lists.screenEvidence = { phrased: found.phrased, removed: found.removed, ...found.lists };
+  result.lists.screenEvidence = { phrased: found.phrased, removed: found.removed, filesRead: found.filesRead, ...found.lists };
   result.lists.ruleIssues.push(...found.ruleIssues);
   // The limits block: Lode ran nothing, and what it read of runs.
   if (states.records) {

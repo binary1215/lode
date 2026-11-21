@@ -106,25 +106,50 @@ function literals(text, python) {
   return spans;
 }
 
-const lineAt = (text, index) => {
-  let line = 1;
-  for (let position = text.indexOf("\n"); position >= 0 && position < index; position = text.indexOf("\n", position + 1)) line += 1;
-  return line;
-};
-
 // Where a phrase is in the code: every string literal holding it, and for a
 // module-level constant holding it, the places that use the constant (in its
 // own file, or a file importing it by name). A use that cannot be resolved is
 // kept apart.
-function codePositions({ phrase, files }) {
+// Each file read once per build (B3): its literals, lines and line starts.
+// The read count says how many files were read.
+export function fileReader(files) {
+  const cache = new Map();
+  const reader = (relative) => {
+    if (!cache.has(relative)) {
+      const text = files.get(relative);
+      const starts = [0];
+      for (let index = text.indexOf("\n"); index >= 0; index = text.indexOf("\n", index + 1)) starts.push(index + 1);
+      const lineOf = (offset) => {
+        let low = 0,
+          high = starts.length - 1;
+        while (low < high) {
+          const middle = (low + high + 1) >>> 1;
+          if (starts[middle] <= offset) low = middle;
+          else high = middle - 1;
+        }
+        return low + 1;
+      };
+      const lines = text.split("\n");
+      const spans = literals(text, relative.endsWith(".py")).map((span) => ({ ...span, line: lineOf(span.start) }));
+      cache.set(relative, { text, lines, lineOf, spans });
+      reader.reads += 1;
+    }
+    return cache.get(relative);
+  };
+  reader.reads = 0;
+  return reader;
+}
+
+function codePositions({ phrase, files, read }) {
   const positions = [],
     unresolved = [];
   for (const [relative, text] of files) {
     const python = relative.endsWith(".py");
-    for (const span of literals(text, python)) {
+    const file = read(relative);
+    for (const span of file.spans) {
       if (!phrase.pattern.test(span.body)) continue;
-      const line = lineAt(text, span.start);
-      const lineText = text.split("\n")[line - 1] || "";
+      const line = span.line;
+      const lineText = file.lines[line - 1] || "";
       const constant = python ? /^([A-Za-z_]\w*)\s*=/.exec(lineText)?.[1] : /^(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=/.exec(lineText)?.[1];
       if (!constant) {
         positions.push({ path: relative, line });
@@ -149,9 +174,9 @@ function codePositions({ phrase, files }) {
         const resolved = other === relative || byName.test(otherText);
         if (!resolved && !fromModule.test(otherText)) continue;
         for (const match of otherText.matchAll(word)) {
-          const at = lineAt(otherText, match.index);
+          const at = read(other).lineOf(match.index);
           if (other === relative && at === line) continue;
-          const statement = (otherText.split("\n")[at - 1] || "").trim();
+          const statement = (read(other).lines[at - 1] || "").trim();
           if (/^(?:import|from)\b/.test(statement)) continue;
           if (resolved) {
             positions.push({ path: other, line: at, constant });
@@ -169,6 +194,7 @@ function codePositions({ phrase, files }) {
 // screens: the 화면 documents in use (approved, or estimates with the option);
 // codeOf(path, line): the innermost code node there; files: the code texts.
 export function machineEdges({ graph, screens, states, files, codeOf, removals = [] }) {
+  const read = fileReader(files);
   const ctx = walk.context({ graph });
   const elements = [];
   for (const screen of screens)
@@ -190,7 +216,14 @@ export function machineEdges({ graph, screens, states, files, codeOf, removals =
   for (const { element, screen, phrases } of elements) {
     for (const id of element.shows) if (functionIds.has(id)) add(id, element, screen, { kind: "문서" });
     if (!phrases.length) {
-      if (!element.shows.length) unconnected.push({ id: element.id, at: { path: screen.path, line: element.line }, reason: "따옴표로 묶은 글이 없음" });
+      // S5: quoted text too short to use is said as such.
+      const quoted = /`[^`]+`/.test(element.oneLineCell ?? "");
+      if (!element.shows.length)
+        unconnected.push({
+          id: element.id,
+          at: { path: screen.path, line: element.line },
+          reason: quoted ? `따옴표로 묶은 글이 너무 짧음(글자 ${PHRASE_MIN}개 미만)` : "따옴표로 묶은 글이 없음",
+        });
       continue;
     }
     // Run evidence: the phrase in the output of a current run.
@@ -203,7 +236,7 @@ export function machineEdges({ graph, screens, states, files, codeOf, removals =
       codeReached = false;
     if (!byRun.size || element.shows.length) {
       for (const phrase of phrases) {
-        const found = codePositions({ phrase, files });
+        const found = codePositions({ phrase, files, read });
         unresolvedUses.push(...found.unresolved.map((item) => ({ ...item, element: element.id, phrase: phrase.text })));
         for (const position of found.positions) {
           codeFound = true;
@@ -272,6 +305,7 @@ export function machineEdges({ graph, screens, states, files, codeOf, removals =
       unresolvedConstantUses: unresolvedUses.sort((a, b) => compare(a.path, b.path) || a.line - b.line),
     },
     phrased: elements.filter((item) => item.phrases.length).length,
+    filesRead: read.reads,
   };
 }
 
