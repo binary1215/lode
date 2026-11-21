@@ -1453,9 +1453,9 @@ export const productGraphWalk = (() => {
       add(
         "sqlSites",
         sqlSites.length,
-        [`SQL로 읽은 곳: ${sqlSites.length}곳 (SQL 동사 낱말이 있는 코드 문자열. 표 이름이 그 동사의 자리에 있을 때만 읽기·쓰기로 잇는다)`],
+        [`SQL로 읽은 곳: ${sqlSites.length}곳 (SQL 동사가 제자리에서 이름을 받는 코드 문자열: FROM·JOIN <이름>은 읽기, INSERT INTO·REPLACE INTO <이름>, UPDATE <이름> … SET, DELETE FROM <이름>은 쓰기. CREATE TABLE이 만들지 않은 이름은 표를 모름)`],
         sqlSites.map((item) => ({
-          text: `${item.path}:${item.line} ${item.from} — ${[item.reads.length ? `읽기 ${item.reads.join(", ")}` : "", item.writes.length ? `쓰기 ${item.writes.join(", ")}` : ""].filter(Boolean).join(" · ") || "잇지 않음"} — "${item.text}"`,
+          text: `${item.path}:${item.line} ${item.from} — ${[item.reads.length ? `읽기 ${item.reads.join(", ")}` : "", item.writes.length ? `쓰기 ${item.writes.join(", ")}` : "", (item.unknownTables || []).length ? `표를 모름 ${item.unknownTables.map((entry) => `${entry.name}(${entry.access === "read" ? "읽기" : "쓰기"})`).join(", ")}` : ""].filter(Boolean).join(" · ")} — "${item.text}"`,
           nodeId: item.from,
         })),
         { show: sqlSites.length > 0 },

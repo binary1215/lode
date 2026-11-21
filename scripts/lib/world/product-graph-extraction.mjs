@@ -2113,6 +2113,19 @@ const ENV_PATTERNS = Object.freeze({
 });
 const SQL_CREATE = /\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`[]?([A-Za-z_]\w*)["`\]]?\s*\(([\s\S]*?)\)\s*(?:;|$|WITHOUT\b|STRICT\b)/gi;
 const SQL_VERB = /\b(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\b/i;
+// The positions that make a SQL site: a verb followed by an identifier,
+// and that identifier followed the way SQL goes on (the end, punctuation, or
+// a SQL keyword, after at most one alias word), so "delete from the list of
+// users" is not one.
+const SQL_IDENTIFIER = '["`[]?([A-Za-z_][\\w$]*)["`\\]]?';
+const SQL_GOES_ON =
+  "(?=\\s*(?:$|[,;()])|\\s+(?:AS\\s+)?(?:[A-Za-z_]\\w*\\s*(?:$|[,;()])|(?:[A-Za-z_]\\w*\\s+)?(?:WHERE|JOIN|INNER|LEFT|RIGHT|OUTER|CROSS|ON|SET|VALUES|SELECT|ORDER|GROUP|LIMIT|OFFSET|HAVING|UNION|RETURNING|USING|DEFAULT)\\b))";
+const SQL_WRITE_POSITIONS = [
+  new RegExp(`\\b(?:INSERT|REPLACE)\\s+INTO\\s+${SQL_IDENTIFIER}${SQL_GOES_ON}`, "gi"),
+  new RegExp(`\\bUPDATE\\s+${SQL_IDENTIFIER}\\s+SET\\b`, "gi"),
+  new RegExp(`\\bDELETE\\s+FROM\\s+${SQL_IDENTIFIER}${SQL_GOES_ON}`, "gi"),
+];
+const SQL_READ_POSITION = new RegExp(`(?<!\\bDELETE\\s+)\\b(?:FROM|JOIN)\\s+${SQL_IDENTIFIER}${SQL_GOES_ON}`, "gi");
 const SQL_NOT_COLUMN = /^(?:PRIMARY|FOREIGN|UNIQUE|CHECK|CONSTRAINT|KEY|INDEX)\b/i;
 
 const moduleOf = (specifier, language) => {
@@ -2252,32 +2265,29 @@ function outsideLayer({ code, root, files, rules, codeIds }) {
   // position, decided per table: FROM <t> / JOIN <t> reads; INSERT INTO <t>,
   // REPLACE INTO <t>, UPDATE <t> … SET, DELETE FROM <t> write. Every string a
   // verb word made a candidate is listed with what was read from it.
+  // A string is a SQL site only where a verb stands in its own position
+  // followed by an identifier (round 2): FROM / JOIN <id> read; INSERT INTO,
+  // REPLACE INTO, UPDATE <id> … SET, DELETE FROM <id> write. Each identifier
+  // is a known table (an edge) or a table no CREATE TABLE gave (표를 모름).
   const sqlSites = [];
   for (const item of facts.sqlUses) {
-    const reads = [],
-      writes = [];
-    for (const [lower, id] of known) {
-      const name = `["\`[]?${lower.replace(/[$]/g, "\\$")}["\`\\]]?(?![\\w$])`;
-      const write =
-        new RegExp(`\\b(?:INSERT|REPLACE)\\s+INTO\\s+${name}`, "i").test(item.body) ||
-        new RegExp(`\\bUPDATE\\s+${name}\\s+SET\\b`, "i").test(item.body) ||
-        new RegExp(`\\bDELETE\\s+FROM\\s+${name}`, "i").test(item.body);
-      const read = new RegExp(`(?<!\\bDELETE\\s+)\\b(?:FROM|JOIN)\\s+${name}`, "i").test(item.body);
-      if (write) {
-        writes.push(id);
-        ref("write", item.from, id, item);
-      }
-      if (read) {
-        reads.push(id);
-        ref("read", item.from, id, item);
-      }
-    }
+    const found = new Map();
+    const note = (name, access) => {
+      const key = `${name.toLowerCase()}\u0000${access}`;
+      if (!found.has(key)) found.set(key, { name, access, table: known.get(name.toLowerCase()) || null });
+    };
+    for (const pattern of SQL_WRITE_POSITIONS) for (const match of item.body.matchAll(pattern)) note(match[1], "write");
+    for (const match of item.body.matchAll(SQL_READ_POSITION)) note(match[1], "read");
+    if (!found.size) continue;
+    const entries = [...found.values()].sort((a, b) => compare(a.access, b.access) || compare(a.name, b.name));
+    for (const entry of entries) if (entry.table) ref(entry.access, item.from, entry.table, item);
     sqlSites.push({
       path: item.path,
       line: item.line,
       from: item.from,
-      reads: reads.sort(),
-      writes: writes.sort(),
+      reads: entries.filter((entry) => entry.access === "read" && entry.table).map((entry) => entry.table),
+      writes: entries.filter((entry) => entry.access === "write" && entry.table).map((entry) => entry.table),
+      unknownTables: entries.filter((entry) => !entry.table).map(({ name, access }) => ({ name, access })),
       text: item.body.replace(/\s+/g, " ").trim().slice(0, 120),
     });
   }

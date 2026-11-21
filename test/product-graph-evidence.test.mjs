@@ -1331,6 +1331,7 @@ test("B2: SQL reads and writes need the table in the verb's own position, per ta
       '  log("Select the users you want to keep");',
       '  log("Update: users can now log in");',
       '  console.log("delete from the list of users");',
+      '  db.get("SELECT topologyJson FROM GraphTopology");',
       "  return SCHEMA + OTHER;",
       "}",
       "export function move(db) {",
@@ -1345,18 +1346,18 @@ test("B2: SQL reads and writes need the table in the verb's own position, per ta
   assert.deepEqual(edges.sort(), ["src/db.js#move read db:users", "src/db.js#move write db:archive", "src/db.js#move write db:users"]);
   const sites = result.lists.outside.sqlSites;
   assert.deepEqual(
-    sites.map((site) => [site.line, site.reads, site.writes]),
+    sites.map((site) => [site.line, site.reads, site.writes, site.unknownTables]),
     [
-      [4, [], []],
-      [5, [], []],
-      [6, [], []],
-      [10, ["db:users"], ["db:archive"]],
-      [11, [], ["db:users"]],
-      [12, [], ["db:users"]],
+      [7, [], [], [{ name: "GraphTopology", access: "read" }]],
+      [11, ["db:users"], ["db:archive"], []],
+      [12, [], ["db:users"], []],
+      [13, [], ["db:users"], []],
     ],
   );
-  assert.match(result.text, /\nSQL로 읽은 곳: 6곳 [^\n]*\n {2}- src\/db\.js:4 src\/db\.js#talk — 잇지 않음 — "Select the users you want to keep"\n/);
-  assert.match(result.text, /\n {2}- src\/db\.js:10 src\/db\.js#move — 읽기 db:users · 쓰기 db:archive — /);
+  // The English sentences are not sites; the unknown table gives no edge.
+  assert.match(result.text, /\nSQL로 읽은 곳: 4곳 [^\n]*\n {2}- src\/db\.js:7 src\/db\.js#talk — 표를 모름 GraphTopology\(읽기\) — "SELECT topologyJson FROM GraphTopology"\n/);
+  assert.match(result.text, /\n {2}- src\/db\.js:11 src\/db\.js#move — 읽기 db:users · 쓰기 db:archive — /);
+  assert.doesNotMatch(result.text, /Select the users|Update: users|delete from the list/);
 });
 
 test("B3: each code file's mask is computed once per build, and the run evidence reads each file once", async (t) => {
