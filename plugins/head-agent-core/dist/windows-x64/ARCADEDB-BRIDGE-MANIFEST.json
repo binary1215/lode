@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "kind": "LodeAgentArcadeDbBridgeManifest",
+  "manifestVersion": "0.1.0",
+  "bridgeProtocolVersion": "0.1.0",
+  "target": {
+    "platform": "win32",
+    "arch": "x64",
+    "directory": "windows-x64"
+  },
+  "binary": {
+    "relativePath": "lode-agent-arcadedb-bridge.exe",
+    "sha256": "47cf9b026695e53fabfbd8e67c4c9d604d1c58db5bd28ffed1a61c9b1b683fcc",
+    "size": 6291968
+  },
+  "operations": [
+    "query-batch"
+  ],
+  "processModel": {
+    "stdio": "single-request-single-response-json",
+    "descendants": "forbidden",
+    "network": "request-selected-http-or-https-endpoint",
+    "databaseWrites": "forbidden-by-query-endpoint",
+    "projectWrites": "forbidden"
+  },
+  "authority": {
+    "kind": "read-only-transport",
+    "instructionAuthority": false,
+    "promotionAuthority": false,
+    "canonicalAuthority": false,
+    "mutatesProject": false,
+    "mutatesCanon": false
+  },
+  "manifestId": "arcadedb-bridge-manifest-05f7d7a78d459c3f91459131",
+  "manifestHash": "05f7d7a78d459c3f91459131b41d14fbb28fff747e72f1e68190c9cbaa3ce94a"
+}
