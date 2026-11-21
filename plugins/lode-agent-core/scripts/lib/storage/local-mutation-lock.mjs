@@ -1,0 +1,462 @@
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { setTimeout as delay } from "node:timers/promises";
+import { sha256Hex } from "../core/digest.mjs";
+import { renamePath } from "../core/fs-atomic.mjs";
+
+// Local P5 serialization only. These transient files never supply project
+// direction, survive as Canon, or lock ordinary read-only work.
+export const context = new AsyncLocalStorage();
+const pause = new Int32Array(new SharedArrayBuffer(4));
+export const WAIT_MS = 10_000;
+const READ_ATTEMPTS = 6;
+const READ_RETRY_MS = 10;
+const HOST = sha256Hex(os.hostname()).slice(0, 16);
+const OWNER = /^owner-([a-f0-9]{16})-([1-9][0-9]*)-([a-f0-9]{32})\.json$/;
+// Three cleanup attempts in all: two short pauses, at most 40 ms in total.
+const CLEANUP_RETRY_MS = [10, 30];
+const cleanupFailures = new WeakMap();
+// Owner entries of this process whose removal failed after their operation
+// completed, by lock directory. Only this process can prove such an entry is
+// its own (same file, same inode); it removes it at its next attempt on that
+// lock and, so another process is not held for this process's lifetime, on
+// two short timers. Each removal revalidates the exact entry first.
+const retainedOwners = new Map();
+const RECLAIM_AFTER_MS = [1_000, 10_000];
+// Known limit: a cleanup failure that settled before a later lock started,
+// and is only awaited inside that lock, has a tag set before the later lock
+// began; that lock's healthy cleanup clears it (no caller in this repository
+// awaits a settled failure that way).
+// One sequence orders invocation starts and cleanup tags. A tag set before an
+// invocation started cannot come from anything that invocation awaited: when
+// that invocation's own cleanup is healthy, such a tag on the error it rethrows
+// is stale (an error object reused from an earlier failure) and is cleared. A
+// tag set after it started (an inner or awaited lock, whenever that lock began)
+// is kept.
+let sequence = 0;
+const sameEntry = (left, right) => left.dev === right.dev && left.ino === right.ino && left.isFile() && !left.isSymbolicLink();
+
+// Cleanup classification and returned values stay in private process memory.
+// A returned value is never attached to an error (which an MCP host may
+// serialize); the thrown failure carries only its code and the cleanup
+// diagnostic. A returned value is never proof that an operation persisted.
+export function mutationCleanupFailure(error) {
+  return error !== null && (typeof error === "object" || typeof error === "function") ? (cleanupFailures.get(error) ?? null) : null;
+}
+
+// The same, for the one caller that answers for the failure: the tag is
+// removed as it is read, so the same error object thrown again later (outside
+// any lock) is not taken for this cleanup failure a second time.
+export function takeMutationCleanupFailure(error) {
+  const tag = mutationCleanupFailure(error);
+  if (tag) cleanupFailures.delete(error);
+  return tag;
+}
+
+function releaseCompletedOwner(owner) {
+  const validateNamespace = () => {
+    for (const [directory, identity] of owner.namespace) {
+      const current = safeDirectory(directory);
+      if (current.dev !== identity.dev || current.ino !== identity.ino) fail("Changed mutation namespace was preserved.", "INVALID_PROJECT_MUTATION_LOCK");
+    }
+  };
+  let first;
+  for (let index = 0; index <= CLEANUP_RETRY_MS.length; index += 1) {
+    // Revalidate the namespace and the exact inode before every cleanup attempt.
+    // A changed/unreadable namespace is never permission to remove anything.
+    try {
+      try {
+        validateNamespace();
+      } catch (error) {
+        // The owner entry lived inside this namespace: with it gone (the
+        // operation removed it), the entry is gone too.
+        if (error.code === "ENOENT" && index === 0) return;
+        throw error;
+      }
+      let current;
+      try {
+        safeDirectory(owner.directory);
+        const directory = fs.lstatSync(owner.directory);
+        if (directory.dev !== owner.directoryIdentity.dev || directory.ino !== owner.directoryIdentity.ino)
+          fail("Changed mutation directory was preserved.", "INVALID_PROJECT_MUTATION_LOCK");
+        current = fs.lstatSync(owner.file);
+      } catch (error) {
+        if (error.code === "ENOENT") return;
+        throw error;
+      }
+      if (!owner.identity || !sameEntry(current, owner.identity)) fail("Changed mutation owner was preserved.", "INVALID_PROJECT_MUTATION_LOCK");
+      release(owner);
+      return;
+    } catch (error) {
+      first ??= error;
+      // Readback distinguishes a retained nonce from a completed unlink. Do not
+      // retry rmdir or unlink after ownership has already been released.
+      validateNamespace();
+      const directory = fs.lstatSync(owner.directory, { throwIfNoEntry: false });
+      if (!directory) throw Object.assign(new Error("Lock cleanup failed after owner release."), { code: first.code, ownerReleased: true });
+      safeDirectory(owner.directory);
+      if (directory.dev !== owner.directoryIdentity.dev || directory.ino !== owner.directoryIdentity.ino) throw first;
+      const current = fs.lstatSync(owner.file, { throwIfNoEntry: false });
+      if (!current) throw Object.assign(new Error("Lock cleanup failed after owner release."), { code: first.code, ownerReleased: true });
+      if (!sameEntry(current, owner.identity)) throw first;
+      // The entry is still exactly this owner's: it can be removed later.
+      if (!new Set(["UNKNOWN", "EPERM", "EACCES", "EBUSY"]).has(error.code) || index === CLEANUP_RETRY_MS.length)
+        throw Object.assign(new Error("Lock cleanup failed; this process's owner entry remains."), { code: first.code, ownerRetained: true });
+      // A Windows scanner or indexer can hold the file open for a few
+      // milliseconds; an immediate retry would usually meet the same handle.
+      // The pauses are short and fixed so a committed operation is not held.
+      Atomics.wait(pause, 0, 0, CLEANUP_RETRY_MS[index]);
+    }
+  }
+}
+
+// A waiter's reclaim of this process's retained entry: at once, then with a
+// backoff (100 ms doubling to 1 s) while it waits, and at once again when a
+// new entry is retained during the wait. Bounded, so an entry that stays
+// unremovable costs a few attempts per second, not one per wait step.
+export function retainedReclaimer(directory) {
+  let tried = null,
+    next = 0,
+    gap = 100;
+  return () => {
+    const owner = retainedOwners.get(directory);
+    if (!owner) return;
+    if (owner !== tried) {
+      tried = owner;
+      next = 0;
+      gap = 100;
+    }
+    const now = Date.now();
+    if (now < next) return;
+    reclaimRetained(directory);
+    next = now + gap;
+    gap = Math.min(gap * 2, 1000);
+  };
+}
+
+// Also called by the timers.
+export function reclaimRetained(directory) {
+  const owner = retainedOwners.get(directory);
+  if (!owner) return;
+  try {
+    releaseCompletedOwner(owner);
+    retainedOwners.delete(directory);
+  } catch (error) {
+    // Gone after all, or no longer provably this process's entry: forget it.
+    if (error.ownerRetained !== true) retainedOwners.delete(directory);
+  }
+}
+
+function retain(owner) {
+  retainedOwners.set(owner.directory, owner);
+  for (const delayMs of RECLAIM_AFTER_MS) {
+    const timer = setTimeout(() => {
+      if (retainedOwners.get(owner.directory) === owner) reclaimRetained(owner.directory);
+    }, delayMs);
+    timer.unref?.();
+  }
+}
+
+// "Running" is a state of this process's invocation, never read from the
+// file system: an entry retained after a failed cleanup is not running, so a
+// callback that re-enters later is not nested in it.
+export function startMutation(owner) {
+  owner.startedAt = ++sequence;
+  owner.running = true;
+  return owner;
+}
+
+export function finishMutation(owner, failed, error, result) {
+  owner.running = false;
+  try {
+    releaseCompletedOwner(owner);
+    // A tag set before this invocation started is stale.
+    if (failed && error !== null && (typeof error === "object" || typeof error === "function")) {
+      const tag = cleanupFailures.get(error);
+      if (tag && tag.seq < (owner.startedAt ?? 0)) cleanupFailures.delete(error);
+    }
+  } catch (cleanup) {
+    if (cleanup.ownerRetained === true) retain(owner);
+    const diagnostic = Object.freeze({
+      code: /^[A-Z][A-Z0-9_]{0,63}$/.test(cleanup.code) ? cleanup.code : "UNKNOWN",
+      ownerReleased: cleanup.ownerReleased === true,
+    });
+    if (failed) {
+      // Frozen errors and primitive throws must survive with their identity.
+      // An inner lock's own cleanup failure keeps its entry (its step returned).
+      if (error !== null && (typeof error === "object" || typeof error === "function")) {
+        const tag = cleanupFailures.get(error);
+        if (!tag || tag.seq < (owner.startedAt ?? 0))
+          cleanupFailures.set(error, { diagnostic, operationReturned: false, directory: owner.directory, seq: ++sequence });
+      }
+    } else {
+      const failure = Object.assign(new Error("The operation returned, but its local lock cleanup could not be confirmed. Do not repeat the operation."), {
+        code: "LOCAL_MUTATION_CLEANUP_FAILED",
+        cleanup: diagnostic,
+        operationReturned: true,
+      });
+      cleanupFailures.set(failure, { diagnostic, operationReturned: true, result, directory: owner.directory, seq: ++sequence });
+      throw failure;
+    }
+  }
+  if (failed) throw error;
+  return result;
+}
+
+export function fail(message, code = "PROJECT_MUTATION_BUSY") {
+  throw Object.assign(new Error(message), { code });
+}
+
+export function safeDirectory(directory) {
+  const stat = fs.lstatSync(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) fail("Unsafe mutation lock path.", "INVALID_PROJECT_MUTATION_LOCK");
+  return stat;
+}
+
+export function retryLockRead(read) {
+  // Windows can deny an enumeration while a competing owner removes its
+  // directory. Errno alone cannot distinguish that from persistent ACL denial.
+  // Retry only pre-effect reads, finitely, preserving the first original error.
+  let firstError;
+  for (let attempt = 0; attempt < READ_ATTEMPTS; attempt += 1) {
+    try {
+      return read();
+    } catch (error) {
+      if (error.code !== "EPERM" && error.code !== "EACCES") throw error;
+      firstError ??= error;
+      if (attempt === READ_ATTEMPTS - 1) throw firstError;
+      Atomics.wait(pause, 0, 0, READ_RETRY_MS);
+    }
+  }
+}
+
+function readLockPath(directory, target, read) {
+  return retryLockRead(() => {
+    // Revalidate the complete lock namespace on every read attempt. Never
+    // convert an unsafe replacement into transient contention.
+    const parent = path.dirname(directory);
+    safeDirectory(path.dirname(parent));
+    safeDirectory(parent);
+    if (target !== parent) safeDirectory(target);
+    return read();
+  });
+}
+
+function lockEntries(directory, target = directory) {
+  return readLockPath(directory, target, () => fs.readdirSync(target));
+}
+
+function absent(pid) {
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (error) {
+    return error.code === "ESRCH";
+  }
+}
+
+export function release(owner) {
+  // Never unlink a generic owner path: another process may already have
+  // acquired a new directory after a stale-owner cleanup.
+  try {
+    fs.unlinkSync(owner.file);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    return;
+  }
+  try {
+    fs.rmdirSync(owner.directory);
+  } catch (error) {
+    // Ownership is already released by the exact nonce unlink. A succeeding
+    // writer (or a Windows enumeration handle) may prevent directory removal;
+    // never turn a committed operation into failure for this empty-shell cleanup.
+    if (!new Set(["ENOENT", "ENOTEMPTY", "EEXIST", "EPERM", "EACCES", "EBUSY"]).has(error.code)) throw error;
+  }
+  // The parent is a shared namespace, not this owner's lease. Keep its single
+  // empty directory: another process may already be creating a sibling lock.
+}
+
+export function attempt(directory) {
+  fs.mkdirSync(path.dirname(directory), { recursive: true });
+  try {
+    readLockPath(directory, path.dirname(directory), () => {});
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+  if (fs.existsSync(directory)) {
+    try {
+      const files = lockEntries(directory);
+      for (const name of files) {
+        const match = OWNER.exec(name);
+        if (!match) fail("Unexpected mutation lock entry.", "INVALID_PROJECT_MUTATION_LOCK");
+        if (match[1] === HOST && absent(Number(match[2]))) release({ directory, file: path.join(directory, name) });
+      }
+      if (files.length) return null;
+      // Empty means a released owner was removed before rmdir. A populated
+      // owner is always published atomically; rmdir cannot remove a new owner.
+      try {
+        fs.rmdirSync(directory);
+      } catch (error) {
+        if (!new Set(["ENOENT", "ENOTEMPTY", "EEXIST", "EPERM", "EACCES", "EBUSY"]).has(error.code)) throw error;
+      }
+      return null;
+    } catch (error) {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    }
+  }
+  const name = `owner-${HOST}-${process.pid}-${crypto.randomBytes(16).toString("hex")}.json`;
+  const staging = path.join(path.dirname(directory), `.${path.basename(directory)}-${name}.staging`);
+  const owner = { directory, file: path.join(directory, name) };
+  let publishing = false;
+  try {
+    fs.mkdirSync(staging);
+    fs.writeFileSync(
+      path.join(staging, name),
+      JSON.stringify({ pid: process.pid, parentPid: process.ppid, scope: path.basename(directory), authorityPlane: "P5", recoveryAuthority: false }),
+      { flag: "wx" },
+    );
+    // Publish a fully populated directory. The visible lock never has a gap
+    // without owner identity, even when the publishing process exits abruptly.
+    publishing = true;
+    owner.identity = fs.lstatSync(path.join(staging, name));
+    owner.directoryIdentity = fs.lstatSync(staging);
+    owner.namespace = [path.dirname(directory), path.dirname(path.dirname(directory))].map((entry) => [entry, safeDirectory(entry)]);
+    renamePath(staging, directory);
+    return owner;
+  } catch (error) {
+    if (error.code === "ENOENT" || (publishing && new Set(["EEXIST", "ENOTEMPTY", "EPERM", "EACCES"]).has(error.code)) || fs.existsSync(directory)) return null;
+    throw error;
+  } finally {
+    if (fs.existsSync(staging)) {
+      try {
+        fs.unlinkSync(path.join(staging, name));
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+      try {
+        fs.rmdirSync(staging);
+      } catch (error) {
+        if (error.code !== "ENOENT") throw error;
+      }
+    }
+  }
+}
+
+export function cleanInterruptedStaging(directory) {
+  const parent = path.dirname(directory);
+  if (!fs.existsSync(parent)) return;
+  let files;
+  try {
+    files = lockEntries(directory, parent);
+  } catch (error) {
+    if (error.code === "ENOENT") return;
+    throw error;
+  }
+  const prefix = `.${path.basename(directory)}-`;
+  for (const name of files) {
+    if (!name.startsWith(prefix) || !name.endsWith(".staging")) continue;
+    const ownerName = name.slice(prefix.length, -".staging".length);
+    const match = OWNER.exec(ownerName);
+    if (!match || match[1] !== HOST || !absent(Number(match[2]))) continue;
+    const staging = path.join(parent, name);
+    try {
+      const entries = lockEntries(directory, staging);
+      if (entries.some((entry) => entry !== ownerName)) fail("Unexpected staged mutation lock entry.", "INVALID_PROJECT_MUTATION_LOCK");
+      if (entries.length) release({ directory: staging, file: path.join(staging, ownerName) });
+      else fs.rmdirSync(staging);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
+}
+
+export function nestedOwner(directory) {
+  const owner = context.getStore()?.get(directory);
+  if (owner?.running === true && fs.existsSync(owner.file)) return owner;
+  return null;
+}
+
+// Private Host state can reuse the same nonce-owned serialization without
+// creating a Project operation or making optional delivery a recovery gate.
+export function withLocalMutation({ directory, timeoutMs = WAIT_MS }, operation) {
+  if (typeof directory !== "string" || !path.isAbsolute(directory) || !Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > WAIT_MS)
+    fail("Invalid local mutation lock.", "INVALID_PROJECT_MUTATION_SCOPE");
+  if (nestedOwner(directory)) return operation();
+  cleanInterruptedStaging(directory);
+  // This process's own entry left by a failed cleanup is removed first and,
+  // bounded, while waiting, so a healthy file system does not keep it busy.
+  const reclaim = retainedReclaimer(directory);
+  reclaim();
+  const deadline = Date.now() + timeoutMs;
+  let owner;
+  while ((reclaim(), !(owner = attempt(directory)))) {
+    // A synchronous caller cannot wait for an unrelated async owner in this
+    // event loop: doing so would prevent that owner from releasing its lock.
+    try {
+      if (
+        lockEntries(directory).some((name) => {
+          const match = OWNER.exec(name);
+          return match?.[1] === HOST && match[2] === String(process.pid);
+        })
+      ) {
+        fail(`The ${path.basename(directory, ".lock")} operation is active in this process; retry shortly.`);
+      }
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    if (Date.now() >= deadline) fail(`The ${path.basename(directory, ".lock")} operation is busy; retry this operation shortly.`);
+    Atomics.wait(pause, 0, 0, 10);
+  }
+  let result,
+    error,
+    failed = false;
+  try {
+    startMutation(owner);
+    const active = new Map(context.getStore() || []);
+    active.set(directory, owner);
+    result = context.run(active, operation);
+    if (result && typeof result.then === "function")
+      fail("Use the asynchronous mutation coordinator for asynchronous operations.", "INVALID_PROJECT_MUTATION_OPERATION");
+  } catch (caught) {
+    failed = true;
+    error = caught;
+  }
+  return finishMutation(owner, failed, error, result);
+}
+
+// Destination-local coordination. It deliberately does not acquire a Project
+// mutation/snapshot lock while an optional remote publication is in flight.
+export async function withLocalMutationAsync({ directory, timeoutMs = WAIT_MS }, operation) {
+  if (typeof directory !== "string" || !path.isAbsolute(directory) || !Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > WAIT_MS)
+    fail("Invalid local mutation lock.", "INVALID_PROJECT_MUTATION_SCOPE");
+  if (nestedOwner(directory)) return operation();
+  cleanInterruptedStaging(directory);
+  // This process's own entry left by a failed cleanup is removed first and,
+  // bounded, while waiting, so a healthy file system does not keep it busy.
+  const reclaim = retainedReclaimer(directory);
+  reclaim();
+  const deadline = Date.now() + timeoutMs;
+  let owner;
+  while ((reclaim(), !(owner = attempt(directory)))) {
+    if (Date.now() >= deadline) fail("This document destination is busy; ordinary work remains available.");
+    await delay(10);
+  }
+  let result,
+    error,
+    failed = false;
+  try {
+    startMutation(owner);
+    const active = new Map(context.getStore() || []);
+    active.set(directory, owner);
+    result = await context.run(active, operation);
+  } catch (caught) {
+    failed = true;
+    error = caught;
+  }
+  return finishMutation(owner, failed, error, result);
+}
