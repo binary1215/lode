@@ -26,6 +26,8 @@ const SHAPES = Object.freeze({
         "repeats",
         "via",
         "역할",
+        "judgement",
+        "boundary",
       ]),
     }),
     rowKinds: Object.freeze(["text", "node", "group", "more"]),
@@ -54,7 +56,7 @@ const SHAPES = Object.freeze({
       baselineComparison: "baselineComparison",
     }),
     notes:
-      "nodeType and changedSinceBaseline are on rows whose id is a graph node (not @ starts); changedSinceBaseline only when the build was compared with a baseline. confirmation names the confirmation lists that name the node (a 뜻 line of a 기능, or a document row from or to it). Only when confirmationComparison is compared does an absent confirmation mean either still current or nothing to check: the build keeps only a count of current ones; partial means the build read only the first confirmation records by name. baselineComparison baseline-moved means the baseline was moved after the build. A row a later page repeats from an earlier page carries repeats: earlierPage. A reach row says through which role of a 기능→코드 edge its node is reached (via: 처리 or 입구; on a reach <code> answer, via 입구 means only through 입구); a 기능→코드 child row carries 역할. buildSha256 names every build file and the baseline the answer read.",
+      "nodeType and changedSinceBaseline are on rows whose id is a graph node (not @ starts); changedSinceBaseline only when the build was compared with a baseline. confirmation names the confirmation lists that name the node (a 뜻 line of a 기능, or a document row from or to it). Only when confirmationComparison is compared does an absent confirmation mean either still current or nothing to check: the build keeps only a count of current ones; partial means the build read only the first confirmation records by name. baselineComparison baseline-moved means the baseline was moved after the build. A row a later page repeats from an earlier page carries repeats: earlierPage. A reach row says through which role of a 기능→코드 edge its node is reached (via: 처리 or 입구; on a reach <code> answer, via 입구 means only through 입구); a 기능→코드 child row carries 역할. A row of an edge written by hand carries judgement: true; a row that says where reach stopped at a boundary (경계에서 멈춤) or what a crossed boundary would add carries boundary {from, to, 설명}. buildSha256 names every build file and the baseline the answer read.",
     chain: Object.freeze({
       rows: "rows",
       answered: Object.freeze({ field: "status", in: Object.freeze(["answered"]) }),

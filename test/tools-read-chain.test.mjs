@@ -1856,7 +1856,11 @@ test("R3: resultShape is returned by exact name, every declared field occurs in 
   const notOnFixture = new Set(
     ["exact", "onPath", "marker", "group", "hint", "edge", "score", "matchedTerms", "detail"].filter((field) => !seenFields.has(field)),
   );
-  for (const field of known) assert.ok(seenFields.has(field) || notOnFixture.has(field), `declared field ${field} occurs`);
+  // Fields only a rule table this fixture does not have can give (hand-written
+  // connections and boundaries); test/product-graph-evidence.test.mjs asserts them.
+  const fromOtherRules = new Set(["judgement", "boundary"]);
+  for (const field of fromOtherRules) assert.ok(known.has(field), field);
+  for (const field of known) assert.ok(seenFields.has(field) || notOnFixture.has(field) || fromOtherRules.has(field), `declared field ${field} occurs`);
   assert.ok(notOnFixture.size <= 2, `${[...notOnFixture]}`);
   assert.deepEqual([...seenKinds].sort(), [...query.rowKinds].sort());
   const graph = answer(await read("lode_project_graph", { project_root: f.root }));

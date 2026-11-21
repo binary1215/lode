@@ -974,7 +974,16 @@ function graphDocument({ extraction, loaded, computed, inputs, rules, result }) 
   }
   for (const node of extraction.codeNodes) nodes.push(node);
   for (const reference of extraction.references)
-    edges.push({ type: reference.type, from: reference.from, to: reference.to, at: reference.source, count: reference.count });
+    edges.push({
+      type: reference.type,
+      from: reference.from,
+      to: reference.to,
+      at: reference.source,
+      count: reference.count,
+      // Written by hand (2.4): a judgement, and what the rule says.
+      ...(reference.judgement ? { judgement: true } : {}),
+      ...(reference.설명 ? { 설명: reference.설명 } : {}),
+    });
   // A 화면요소 or 정책 ID written twice in the documents is a 형식 문제
   // (listed by the check); the graph keeps its first occurrence.
   const kept = new Set();

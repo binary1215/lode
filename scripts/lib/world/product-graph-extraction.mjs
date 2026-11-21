@@ -1358,6 +1358,28 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
       code.references.set(key, { type: "callback", from: site.from, to: site.to, source: { path: site.path, line: site.line }, count: 0 });
     code.references.get(key).count += 1;
   }
+  // Connections written by hand (2.4): judged references and boundaries.
+  const handWritten = handWrittenConnections({
+    code,
+    rules: projectRules?.["손으로 적는 연결"] || [],
+    codeIds: new Set([...code.nodes, ...extraCodeNodes.values()].map((node) => node.id)),
+  });
+  for (const site of handWritten.sites) {
+    const key = `${site.from}\0${site.to}\0${site.type}`;
+    // A reference the scan already has stays the scan's (not judgement).
+    if (!code.references.has(key))
+      code.references.set(key, {
+        type: site.type,
+        from: site.from,
+        to: site.to,
+        source: { path: site.path, line: site.line },
+        count: 0,
+        judgement: true,
+        ...(site.설명 ? { 설명: site.설명 } : {}),
+      });
+    code.references.get(key).count += 1;
+  }
+  ruleIssues.push(...handWritten.issues);
   // Files that look like UI code but no pattern read: a gap, not zero 기능.
   const uiWithoutRule = [];
   const namedUiFiles = new Set(uiFiles);
@@ -1724,6 +1746,48 @@ function valueUses(code) {
   return { sites, plain, members };
 }
 
+// Rules of 손으로 적는 연결 (2.4). Every code line of 파일 holding 글 (by
+// the code mask, where it is trusted) gives, from its enclosing declaration
+// (or the file), a judged framework-invoked reference to each 대상, or a 경계
+// (boundary) edge: reach does not cross it. 글 on no line, a missing 파일 and
+// a 대상 that is not a 코드 node are rule issues ("규칙이 낡음"), never
+// skipped silently and never a build failure.
+function handWrittenConnections({ code, rules, codeIds }) {
+  const sites = [];
+  const issues = [];
+  const stale = (rule, index, detail) =>
+    issues.push({ 종류: `손으로 적는 연결[${index}] ${rule["종류"]}`, path: rule["파일"], reason: `규칙이 낡음 — ${detail}`, rule: index });
+  rules.forEach((rule, index) => {
+    const analysis = code.analyses.get(rule["파일"]);
+    if (!analysis) {
+      stale(rule, index, "파일이 스캔한 코드에 없음");
+      return;
+    }
+    const missing = rule["대상"].filter((id) => !codeIds.has(id));
+    for (const id of missing) stale(rule, index, `대상 ${id}이 코드 노드가 아님`);
+    const targets = rule["대상"].filter((id) => codeIds.has(id));
+    const mask = codeMask(analysis.text, analysis.language === "python" ? "python" : "javascript");
+    const lines = new Set();
+    for (let at = analysis.text.indexOf(rule["글"]); at >= 0; at = analysis.text.indexOf(rule["글"], at + 1))
+      if (!mask.trusted || mask[at]) lines.add(lineOfStarts(analysis.starts, at));
+    if (!lines.size) {
+      stale(rule, index, `글 "${rule["글"].slice(0, 80)}"이 코드 줄에 없음`);
+      return;
+    }
+    for (const line of [...lines].sort((a, b) => a - b))
+      for (const to of targets)
+        sites.push({
+          type: rule["종류"] === "경계" ? "경계" : "framework-invoked",
+          from: enclosingCode(code, rule["파일"], line),
+          to,
+          path: rule["파일"],
+          line,
+          ...(rule["설명"] ? { 설명: rule["설명"] } : {}),
+        });
+  });
+  return { sites, issues };
+}
+
 // Files under the source root that were not read as code, kept apart from
 // code that was read and left unresolved.
 function notLookedAt(files, code, skipped) {
@@ -1760,7 +1824,12 @@ function notLookedAt(files, code, skipped) {
 // resolved path was found, not that the code is dead.
 function unreachedCode(code, functionNodes, extraCodeNodes) {
   const edges = new Map();
+  // A boundary (경계) is not followed, nor any reference across it.
+  const crossing = new Set(
+    [...code.references.values()].filter((reference) => reference.type === "경계").map((reference) => `${reference.from}\0${reference.to}`),
+  );
   for (const reference of code.references.values()) {
+    if (reference.type === "경계" || crossing.has(`${reference.from}\0${reference.to}`)) continue;
     if (!edges.has(reference.from)) edges.set(reference.from, []);
     edges.get(reference.from).push(reference.to);
   }

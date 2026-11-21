@@ -90,11 +90,23 @@ export const productGraphWalk = (() => {
       const id = stack.pop();
       if (visited.has(id) || (stop && !begin.has(id) && stop(id))) continue;
       visited.add(id);
-      for (const edge of ix.out.get(id) || []) if (CODE_EDGES.has(edge.type)) stack.push(edge.to);
+      for (const edge of ix.out.get(id) || []) if (follows(ix, edge)) stack.push(edge.to);
       for (const target of ix.constructors.get(id) || []) stack.push(target);
     }
     return visited;
   }
+
+  // A code edge reach follows: not across a boundary (경계) written by hand.
+  function follows(ix, edge) {
+    if (!CODE_EDGES.has(edge.type)) return false;
+    if (!ix.crossing) {
+      ix.crossing = new Set();
+      for (const list of ix.out.values()) for (const item of list) if (item.type === "경계") ix.crossing.add(`${item.from}\u0000${item.to}`);
+    }
+    return !ix.crossing.has(`${edge.from}\u0000${edge.to}`);
+  }
+  const boundariesOf = (ix, id) => (ix.out.get(id) || []).filter((edge) => edge.type === "경계");
+  const boundaryLine = (edge) => `경계에서 멈춤: ${edge.설명 || "설명 없음"} → ${edge.to}`;
 
   // Everything from which one of targets is reached in that closure.
   function reverseClosure(ix, targets) {
@@ -104,7 +116,7 @@ export const productGraphWalk = (() => {
       const id = stack.pop();
       if (visited.has(id)) continue;
       visited.add(id);
-      for (const edge of ix.into.get(id) || []) if (CODE_EDGES.has(edge.type)) stack.push(edge.from);
+      for (const edge of ix.into.get(id) || []) if (follows(ix, edge)) stack.push(edge.from);
       const owner = ix.ownerOf.get(id);
       if (owner) stack.push(owner);
     }
@@ -319,6 +331,7 @@ export const productGraphWalk = (() => {
     let line = nodeLine(ctx, item.to);
     if (item.screen !== undefined) line += item.screen ? ` (화면 ${item.screen})` : " (화면 없음)";
     if (item.edge && isEntry(item.edge)) line += " (입구)";
+    if (item.edge?.judgement) line += " (판단)";
     if (item.edge?.basis) line += ` ← ${where(item.edge.at)}${basisMark(item.edge.basis)}`;
     if (item.edge && CODE_EDGES.has(item.edge.type) && item.count > 1) line += ` ×${item.count}`;
     return line;
@@ -637,7 +650,23 @@ export const productGraphWalk = (() => {
           if (targets.some((target) => reached.has(target))) via[item.id] = "입구";
         }
       }
-      return { direction: "up", ids: Object.keys(via).sort(compare), via };
+      // Code behind a boundary (경계): the 기능 that would reach it if the
+      // boundary were crossed, per boundary.
+      const acrossBoundary = [];
+      for (const list of ctx.ix.out.values())
+        for (const edge of list) {
+          if (edge.type !== "경계") continue;
+          const behind = closure(ctx.ix, [edge.to]);
+          if (!targets.some((target) => behind.has(target))) continue;
+          const before = reverseClosure(ctx.ix, [edge.from]);
+          const functions = (ctx.ix.byType.get("기능") || [])
+            .filter((item) => !via[item.id] && [...handlersOf(ctx.ix, item.id), ...entriesOf(ctx.ix, item.id)].some((start) => before.has(start)))
+            .map((item) => item.id)
+            .sort(compare);
+          acrossBoundary.push({ from: edge.from, to: edge.to, 설명: edge.설명 || null, functions });
+        }
+      acrossBoundary.sort((a, b) => compare(a.from, b.from) || compare(a.to, b.to));
+      return { direction: "up", ids: Object.keys(via).sort(compare), via, ...(acrossBoundary.length ? { acrossBoundary } : {}) };
     }
     const functions = functionsBehind(ctx.ix, node);
     if (!functions.length && node.type !== "기능") return { direction: "down", ids: [], functions, via: {} };
@@ -683,7 +712,10 @@ export const productGraphWalk = (() => {
         lastGroup = item.group;
       }
       const onPath = path.includes(item.to);
-      const role = item.edge?.type === "기능→코드" ? { 역할: isEntry(item.edge) ? "입구" : "처리" } : {};
+      const role = {
+        ...(item.edge?.type === "기능→코드" ? { 역할: isEntry(item.edge) ? "입구" : "처리" } : {}),
+        ...(item.edge?.judgement ? { judgement: true } : {}),
+      };
       rows.push({ depth: level + 1, kind: "node", id: item.to, text: childText(ctx, item) + (onPath ? ` ${WORDS.onPath}` : ""), onPath, group: item.group, ...role });
       budget.left -= 1;
       const expandable = !onPath && depth > 1 && (item.to.startsWith("@") || ctx.ix.nodes.has(item.to));
@@ -783,6 +815,7 @@ export const productGraphWalk = (() => {
     add(1, `들어오는 연결: ${up.length ? up.join(", ") : "없음"}`);
     const mark = ctx.marks.get(id);
     if (ctx.changes?.status === "compared") add(1, `기준 뒤: ${mark ? CHANGE_WORDS[mark] : "변화 없음"}`);
+    for (const edge of boundariesOf(ctx.ix, id)) rows.push({ depth: 1, kind: "text", text: boundaryLine(edge), boundary: { from: edge.from, to: edge.to, 설명: edge.설명 || null } });
     return rows;
   }
 
@@ -874,8 +907,21 @@ export const productGraphWalk = (() => {
     for (const target of paged.slice) {
       const via = reached.via[target];
       rows.push({ depth: 2, kind: "node", id: target, text: nodeLine(ctx, target) + (via === "입구" ? viaWords : ""), ...(via ? { via } : {}) });
+      // Where reach stopped at a boundary written by hand.
+      if (reached.direction === "down")
+        for (const edge of boundariesOf(ctx.ix, target))
+          rows.push({ depth: 3, kind: "text", text: boundaryLine(edge), boundary: { from: edge.from, to: edge.to, 설명: edge.설명 || null } });
     }
     if (paged.remaining) rows.push(moreRow(1, paged, `reach ${id} --cursor ${paged.nextCursor}`, true));
+    // On the last page: the 기능 a crossed boundary would add.
+    if (!paged.remaining)
+      for (const item of reached.acrossBoundary || [])
+        rows.push({
+          depth: 1,
+          kind: "text",
+          text: `경계를 넘으면 닿는 기능 ${item.functions.length}개 (${item.from}의 경계 → ${item.to}${item.설명 ? `: ${item.설명}` : ""}): ${item.functions.join(", ") || "없음"}`,
+          boundary: { from: item.from, to: item.to, 설명: item.설명 },
+        });
     return answer(pathLine(ctx, [id]), rows, {
       reach: reached,
       page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor },

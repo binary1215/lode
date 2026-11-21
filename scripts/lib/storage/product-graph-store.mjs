@@ -343,6 +343,7 @@ export function verifyProductGraphCheck(document, { projectId = null, checkId = 
 const HANDLINGS = ["따라간다", "경계로 둔다", "범위 밖"];
 const RULE_KINDS = ["hook", "command", "tool", "cli", "프론트"];
 const ENTRY_CODE_MAX = 64;
+const HAND_RULES_MAX = 2000;
 
 const UI_ENTRY_KEYS = [
   "이름",
@@ -422,7 +423,7 @@ export function verifyUiBindingPattern(entry, where = "UI 연결 패턴", { allo
 export function verifyProductGraphRules(document) {
   const invalid = (detail) => fail("PRODUCT_GRAPH_RULES_INVALID", `호출 방식 표가 올바르지 않다: ${detail}`);
   if (!document || typeof document !== "object" || Array.isArray(document)) invalid("JSON 객체가 아니다");
-  const allowedTop = ["schemaVersion", "kind", "rules", "source", "화면 코드 표시", "화면 파일", "내장 이름"];
+  const allowedTop = ["schemaVersion", "kind", "rules", "source", "화면 코드 표시", "화면 파일", "내장 이름", "손으로 적는 연결"];
   for (const key of Object.keys(document)) if (!allowedTop.includes(key)) invalid(`모르는 항목 ${key}`);
   if (document.schemaVersion !== 1 || document.kind !== "LodeProductGraphEntryRules") invalid("schemaVersion 1, kind LodeProductGraphEntryRules 이어야 한다");
   if (!Array.isArray(document.rules ?? [])) invalid("rules는 배열이어야 한다");
@@ -486,6 +487,29 @@ export function verifyProductGraphRules(document) {
         if (!Array.isArray(names) || names.some((name) => typeof name !== "string" || !/^[A-Za-z_$][\w$]*$/.test(name)))
           invalid(`내장 이름.${language}.${key}는 이름 배열이다`);
       }
+    }
+  }
+  // Connections a person or an agent writes for what no scan sees (2.4):
+  // judged, each with the file and the text that marks the place.
+  const handWritten = document["손으로 적는 연결"];
+  if (handWritten !== undefined) {
+    if (!Array.isArray(handWritten) || handWritten.length > HAND_RULES_MAX) invalid(`손으로 적는 연결은 배열이다 (${HAND_RULES_MAX}개까지)`);
+    for (const [index, rule] of handWritten.entries()) {
+      const where = `손으로 적는 연결[${index}]`;
+      if (!rule || typeof rule !== "object" || Array.isArray(rule)) invalid(`${where}가 객체가 아니다`);
+      for (const key of Object.keys(rule)) if (!["판단", "종류", "파일", "글", "대상", "설명"].includes(key)) invalid(`${where}에 모르는 항목 ${key}`);
+      if (rule["판단"] !== true) invalid(`${where}.판단은 true여야 한다`);
+      if (!["framework-invoked", "경계"].includes(rule["종류"])) invalid(`${where}.종류는 framework-invoked 또는 경계다`);
+      if (!safeRelative(rule["파일"])) invalid(`${where}.파일은 소스 루트 기준 상대 경로다`);
+      if (typeof rule["글"] !== "string" || !rule["글"] || rule["글"].length > 500 || rule["글"].includes("\n")) invalid(`${where}.글은 한 줄 글자다`);
+      if (
+        !Array.isArray(rule["대상"]) ||
+        !rule["대상"].length ||
+        rule["대상"].length > ENTRY_CODE_MAX ||
+        rule["대상"].some((item) => typeof item !== "string" || !item || item.length > 1024)
+      )
+        invalid(`${where}.대상은 코드 ID 배열이다 (1~${ENTRY_CODE_MAX}개)`);
+      if (rule["설명"] !== undefined && (typeof rule["설명"] !== "string" || rule["설명"].length > 500)) invalid(`${where}.설명은 글자다`);
     }
   }
   const named = document["화면 파일"];
