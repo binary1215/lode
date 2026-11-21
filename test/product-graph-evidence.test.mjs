@@ -802,3 +802,59 @@ test("2.6 acceptance 4: a seeded sample of machine edges on a product with share
     ["tool:load → MAIN-01#2", "tool:save → MAIN-01#1"],
   );
 });
+
+// ---------- 2.7 checking reach against a coverage run ----------
+
+test("2.7: V8 coverage maps run functions to declarations; it lists what ran outside the reach and what the reach says did not run", async (t) => {
+  const { coverageProductGraph } = await import("../scripts/lib/world/product-graph-coverage.mjs");
+  const { pathToFileURL } = await import("node:url");
+  const p = product(t, TOOLS, { rules: [toolRule({ 입구: ["src/server.js#route"] })] });
+  p.build();
+  const v8 = path.join(p.base, "v8");
+  fs.mkdirSync(v8);
+  const text = (name) => fs.readFileSync(path.join(p.source, name), "utf8");
+  const fn = (name, needle, count = 1) => {
+    const body = text(name);
+    const start = body.indexOf(needle);
+    return { functionName: needle, isBlockCoverage: false, ranges: [{ startOffset: start, endOffset: start + needle.length, count }] };
+  };
+  const script = (name, functions) => ({
+    scriptId: name,
+    url: pathToFileURL(path.join(p.source, name)).href,
+    functions: [{ functionName: "", isBlockCoverage: false, ranges: [{ startOffset: 0, endOffset: text(name).length, count: 1 }] }, ...functions],
+  });
+  const write = (scripts) => fs.writeFileSync(path.join(v8, "coverage-1.json"), JSON.stringify({ result: scripts }));
+  write([
+    script("src/tools.js", [fn("src/tools.js", "function save()"), fn("src/tools.js", "function read()"), fn("src/tools.js", "function write()", 0)]),
+    script("src/server.js", [fn("src/server.js", "export function route("), fn("src/server.js", "function guard(", 0)]),
+  ]);
+  const answer = coverageProductGraph({ buildDirectory: p.base + "/out-1", sourceRoot: p.source, feature: "tool:save", v8 });
+  assert.equal(answer.status, "compared");
+  assert.deepEqual(answer.comparedFiles, ["src/server.js", "src/tools.js"]);
+  // read ran but tool:save does not reach it (it is tool:load's); route is 입구, inside the range.
+  assert.deepEqual(answer.ranOutsideReach, ["src/tools.js#read"]);
+  assert(answer.ranOutsideReach.includes("src/tools.js#read"));
+  assert(!answer.ranOutsideReach.includes("src/server.js#route"));
+  assert.deepEqual(answer.reachedNotRun, ["src/server.js#guard", "src/tools.js#write"]);
+  assert.match(answer.text, /\n읽은 형식: V8 coverage/);
+  assert.match(answer.text, /\n닿는다고 했는데 돌지 않음: 2개 \(가지 않은 분기와 오류 경로도 여기에 든다/);
+  assert.equal(fs.readdirSync(v8).length, 1);
+  // A file changed since the run is skipped and named.
+  fs.writeFileSync(path.join(p.source, "src/server.js"), `${text("src/server.js")}// changed\n`);
+  const changed = coverageProductGraph({ buildDirectory: p.base + "/out-1", sourceRoot: p.source, feature: "tool:save", v8 });
+  assert.deepEqual(changed.differs, [{ path: "src/server.js", reason: "실행한 길이와 지금 길이가 다름" }]);
+  assert.match(changed.text, /\n실행한 파일이 지금 소스와 다름: 1개 \(건너뜀\)\n {2}- src\/server\.js — 실행한 길이와 지금 길이가 다름\n/);
+  assert.deepEqual(changed.comparedFiles, ["src/tools.js"]);
+  // Nothing compared: both lists say so, never 0.
+  write([{ ...script("src/server.js", []), functions: [{ functionName: "", isBlockCoverage: false, ranges: [{ startOffset: 0, endOffset: 5, count: 1 }] }] }]);
+  const none = coverageProductGraph({ buildDirectory: p.base + "/out-1", sourceRoot: p.source, feature: "tool:save", v8 });
+  assert.equal(none.status, "not-compared");
+  assert.equal(none.ranOutsideReach, null);
+  assert.equal(none.reachedNotRun, null);
+  assert.match(none.text, /\n실행됐는데 닿는 범위 밖: 비교하지 않음 — [^\n]+\n닿는다고 했는데 돌지 않음: 비교하지 않음 — /);
+  assert.doesNotMatch(none.text, /: 0개/);
+  assert.deepEqual(
+    none.missing.map((item) => item.list),
+    ["ranOutsideReach", "reachedNotRun"],
+  );
+});

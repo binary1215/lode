@@ -5822,6 +5822,30 @@
   },
   {
    "surface": "mcp",
+   "tool": "lode_product_graph_coverage",
+   "input": {
+    "project_root": "<root>",
+    "feature": "sample-feature",
+    "v8": "sample-v8"
+   },
+   "calls": [
+    {
+     "fn": "product-graph-coverage#coverageProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "feature": "sample-feature",
+       "v8": "sample-v8"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
    "tool": "lode_product_graph_query",
    "input": {
     "project_root": "<root>"
@@ -16471,6 +16495,65 @@
    "outcome": {
     "error": "Error",
     "message": "Product graph confirmation contains unsupported fields: lodeRecordingUnsupportedField"
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-coverage",
+   "argv": [
+    "product-graph-coverage",
+    "<root>"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph-coverage#coverageProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "feature": null,
+       "v8": null
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-coverage",
+   "argv": [
+    "product-graph-coverage",
+    "<root>",
+    "--build",
+    "sample-build",
+    "--documents",
+    "sample-documents",
+    "--feature",
+    "sample-feature",
+    "--rules",
+    "sample-rules",
+    "--v8",
+    "sample-v8"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph-coverage#coverageProductGraph",
+     "args": [
+      {
+       "buildDirectory": "sample-build",
+       "sourceRoot": "<root>",
+       "documentsDirectory": "sample-documents",
+       "rulesFile": "sample-rules",
+       "feature": "sample-feature",
+       "v8": "sample-v8"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
    }
   },
   {

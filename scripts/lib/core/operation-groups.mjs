@@ -100,8 +100,8 @@ const GROUPS = [
   {
     name: "lode_product_graph",
     summary:
-      "Build, check, query, sample, move the baseline of, record an agent's check of, record a project's runs for, or approve documents of the product graph (the original's 제품 그래프), apart from the Product Model.",
-    actions: ["build", "check", "query", "sample", "baseline", "confirm", "runs_add", "approve"],
+      "Build, check, query, sample, check against a coverage run, move the baseline of, record an agent's check of, record a project's runs for, or approve documents of the product graph (the original's 제품 그래프), apart from the Product Model.",
+    actions: ["build", "check", "query", "sample", "coverage", "baseline", "confirm", "runs_add", "approve"],
   },
   {
     name: "lode_vcs",

@@ -1748,6 +1748,39 @@ export const OPERATIONS = Object.freeze([
     impl: () => import("../world/product-graph-sample.mjs").then((module) => module.sampleProductGraph),
   },
   {
+    name: "lode_product_graph_coverage",
+    tool: {
+      name: "lode_product_graph_coverage",
+      description:
+        "Read-only check of one 기능's reach against a real run: v8 is the folder Node wrote with NODE_V8_COVERAGE while the project ran that 기능 (Lode runs nothing). Lists what ran outside the reach (a path the graph misses) and what the reach says that did not run (untaken branches and error paths included). A file changed since the run is skipped and named; when nothing could be compared both lists say so instead of a count. Reads only V8 coverage JSON and stores nothing.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          feature: { type: "string", minLength: 1, description: "The 기능 ID that was run." },
+          v8: { type: "string", minLength: 1, description: "The NODE_V8_COVERAGE folder of that run." },
+        },
+        required: ["project_root", "feature", "v8"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root, feature: args.feature, v8: args.v8 }] },
+    cli: {
+      command: "product-graph-coverage",
+      flags: ["build", "documents", "rules", "feature", "v8"],
+      args: ({ root, options }) => [
+        {
+          ...(options.build
+            ? { buildDirectory: options.build, sourceRoot: root, documentsDirectory: options.documents ?? null, rulesFile: options.rules ?? null }
+            : { root }),
+          feature: options.feature ?? null,
+          v8: options.v8 ?? null,
+        },
+      ],
+    },
+    impl: () => import("../world/product-graph-coverage.mjs").then((module) => module.coverageProductGraph),
+  },
+  {
     name: "lode_product_graph_baseline",
     tool: {
       name: "lode_product_graph_baseline",
@@ -6254,6 +6287,7 @@ const supplementalReadOnlyHints = {
   lode_product_graph_check: true,
   lode_product_graph_query: true,
   lode_product_graph_sample: true,
+  lode_product_graph_coverage: true,
   lode_product_graph_baseline: false,
   lode_product_graph_confirm: false,
   lode_product_graph_runs_add: false,

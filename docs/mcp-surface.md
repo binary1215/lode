@@ -368,6 +368,7 @@ directly, through `lode_tools_read` / `lode_tools_call`, and in their historical
 | `lode_product_graph` | `check` | `lode_tools_read` | `lode_product_graph_check` |
 | `lode_product_graph` | `query` | `lode_tools_read` | `lode_product_graph_query` |
 | `lode_product_graph` | `sample` | `lode_tools_read` | `lode_product_graph_sample` |
+| `lode_product_graph` | `coverage` | `lode_tools_read` | `lode_product_graph_coverage` |
 | `lode_product_graph` | `baseline` | `lode_tools_call` | `lode_product_graph_baseline` |
 | `lode_product_graph` | `confirm` | `lode_tools_call` | `lode_product_graph_confirm` |
 | `lode_product_graph` | `runs_add` | `lode_tools_call` | `lode_product_graph_runs_add` |
