@@ -5964,6 +5964,85 @@
   },
   {
    "surface": "mcp",
+   "tool": "lode_product_graph_sample",
+   "input": {
+    "project_root": "<root>"
+   },
+   "calls": [
+    {
+     "fn": "product-graph-sample#sampleProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "seed": null,
+       "count": 30,
+       "types": []
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_sample",
+   "input": {
+    "project_root": "<root>",
+    "seed": 0,
+    "count": 1,
+    "types": [
+     "sample-types"
+    ]
+   },
+   "calls": [
+    {
+     "fn": "product-graph-sample#sampleProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "seed": 0,
+       "count": 1,
+       "types": [
+        "sample-types"
+       ]
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_sample",
+   "input": {
+    "project_root": "<root>",
+    "seed": 0,
+    "count": 0,
+    "types": []
+   },
+   "calls": [
+    {
+     "fn": "product-graph-sample#sampleProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "seed": 0,
+       "count": 0,
+       "types": []
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
    "tool": "lode_product_hypothesis_record",
    "input": {
     "project_root": "<root>",
@@ -16378,6 +16457,71 @@
         "sample-basis-states"
        ],
        "expectedBasisSha256": "sample-expected-basis-sha256"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-sample",
+   "argv": [
+    "product-graph-sample",
+    "<root>"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph-sample#sampleProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "seed": null,
+       "count": 30,
+       "types": []
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-sample",
+   "argv": [
+    "product-graph-sample",
+    "<root>",
+    "--build",
+    "sample-build",
+    "--count",
+    "sample-count",
+    "--documents",
+    "sample-documents",
+    "--rules",
+    "sample-rules",
+    "--seed",
+    "sample-seed",
+    "--types",
+    "sample-types"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph-sample#sampleProductGraph",
+     "args": [
+      {
+       "buildDirectory": "sample-build",
+       "sourceRoot": "<root>",
+       "documentsDirectory": "sample-documents",
+       "rulesFile": "sample-rules",
+       "seed": null,
+       "count": null,
+       "types": [
+        "sample-types"
+       ]
       }
      ]
     }

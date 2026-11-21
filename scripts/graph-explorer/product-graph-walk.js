@@ -877,6 +877,18 @@ export const productGraphWalk = (() => {
     if (question === "gaps") return gapsAnswer(ctx, { list, limit, cursor, answer });
     if (question === "changes") return changesAnswer(ctx, { list, limit, cursor, answer });
     if (question === "impact") return impactAnswer(impact(ctx, request), { answer, limit, cursor });
+    if (question === "tree" || question === "user") {
+      const node = ctx.ix.nodes.get(id);
+      const wanted = question === "tree" ? "기능" : "유저 활동";
+      if (!node) return notFound();
+      if (node.type !== wanted)
+        return answer(pathLine(ctx, [id]), [
+          { depth: 0, kind: "node", id, text: nodeLine(ctx, id) },
+          { depth: 1, kind: "text", text: `${question}는 ${wanted}에 묻는다. 이 노드는 ${node.type}이다.` },
+        ]);
+      const built = question === "tree" ? treeRows(ctx, id) : userRows(ctx, id);
+      return pagedTree(ctx, { id, question, built, limit, cursor, answer });
+    }
     if (!["node", "down", "up", "reach"].includes(question)) return fail("PRODUCT_GRAPH_QUERY_INVALID", `모르는 질문: ${question}`);
     const pseudo = id.startsWith("@");
     if (pseudo ? !pseudoChildren(ctx, id) || question !== "down" : !ctx.ix.nodes.has(id)) return notFound();
@@ -926,6 +938,144 @@ export const productGraphWalk = (() => {
       reach: reached,
       page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor },
     });
+  }
+
+  // ---------- tree and user (2.5) ----------
+
+  // What a code node touches outside the code (2.8): its read, write and
+  // 외부 연결 edges, one text row each.
+  const OUTSIDE_EDGES = Object.freeze(["read", "write", "코드→외부 연결"]);
+  function outsideRows(ctx, id, depth) {
+    return (ctx.ix.out.get(id) || [])
+      .filter((edge) => OUTSIDE_EDGES.includes(edge.type))
+      .sort((a, b) => compare(a.type, b.type) || compare(a.to, b.to))
+      .map((edge) => ({ depth, kind: "text", text: `${edge.type} ${edge.to}${edge.at ? ` (${where(edge.at)})` : ""}${edge.judgement ? " (판단)" : ""}`, edge: { type: edge.type, from: edge.from, to: edge.to } }));
+  }
+
+  // tree <기능>: one indented tree per role (처리 first), following the edges
+  // reach follows. A node already expanded is named once more and not
+  // expanded; another 기능's 처리 코드 is named with that 기능 and not
+  // expanded; a boundary prints its line; under each code line come its read,
+  // write and 외부 연결. Rows past MAX_ROWS are not built and that is said.
+  function treeRows(ctx, featureId) {
+    const rows = [];
+    const owners = handledBy(ctx.ix);
+    const expanded = new Set();
+    const own = new Set(handlersOf(ctx.ix, featureId));
+    let hidden = false;
+    const visit = (id, depth, edge) => {
+      if (rows.length >= MAX_ROWS) {
+        hidden = true;
+        return;
+      }
+      const kind = edge && edge.type !== "call" ? ` ← ${edge.type}${edge.judgement ? " (판단)" : ""}` : "";
+      const others = (owners.get(id) || []).filter((owner) => owner !== featureId);
+      const row = { depth, kind: "node", id, text: nodeLine(ctx, id) + kind };
+      if (edge && others.length && !own.has(id)) {
+        rows.push({ ...row, text: `${row.text} — ${others.sort(compare).join(", ")}의 처리 코드라 펼치지 않음`, notExpanded: "otherFunction" });
+        return;
+      }
+      if (expanded.has(id)) {
+        rows.push({ ...row, text: `${row.text} — 위에서 펼침`, notExpanded: "expandedAbove" });
+        return;
+      }
+      expanded.add(id);
+      rows.push(row);
+      for (const boundary of boundariesOf(ctx.ix, id))
+        rows.push({ depth: depth + 1, kind: "text", text: boundaryLine(boundary), boundary: { from: boundary.from, to: boundary.to, 설명: boundary.설명 || null } });
+      rows.push(...outsideRows(ctx, id, depth + 1));
+      const children = (ctx.ix.out.get(id) || []).filter((item) => follows(ctx.ix, item)).sort((a, b) => compare(a.type, b.type) || compare(a.to, b.to));
+      const seen = new Set();
+      for (const child of children) {
+        if (seen.has(child.to)) continue;
+        seen.add(child.to);
+        visit(child.to, depth + 1, child);
+      }
+      for (const target of ctx.ix.constructors.get(id) || []) if (!seen.has(target)) visit(target, depth + 1, { type: "생성자" });
+    };
+    for (const [role, starts] of [
+      ["처리", handlersOf(ctx.ix, featureId).sort(compare)],
+      ["입구", entriesOf(ctx.ix, featureId).sort(compare)],
+    ]) {
+      if (!starts.length) continue;
+      rows.push({ depth: 1, kind: "group", text: WORDS.groupCount(`${role} 코드`, starts.length), role });
+      for (const start of starts) visit(start, 2, null);
+    }
+    if (!rows.length) rows.push({ depth: 1, kind: "text", text: "처리 코드도 입구도 없다" });
+    return { rows, hidden };
+  }
+
+  // user <유저 활동>: the steps in order (by the 유저 활동→화면요소 edges'
+  // lines), each with its 화면요소, the 기능 it calls, the 기능 that show a
+  // result there (with the edge's evidence), and each 기능's 처리 코드.
+  function userRows(ctx, activityId) {
+    const rows = [];
+    const steps = new Map();
+    for (const edge of ctx.ix.out.get(activityId) || []) {
+      if (edge.type !== "유저 활동→화면요소") continue;
+      const key = edge.at ? `${edge.at.path}\u0000${String(edge.at.line).padStart(9, "0")}` : "";
+      if (!steps.has(key)) steps.set(key, { at: edge.at, elements: [] });
+      steps.get(key).elements.push(edge.to);
+    }
+    const handlerRows = (functionId, depth) =>
+      handlersOf(ctx.ix, functionId)
+        .sort(compare)
+        .map((handler) => ({ depth, kind: "node", id: handler, text: `처리 코드: ${nodeLine(ctx, handler)}` }));
+    let number = 0;
+    for (const [, step] of [...steps].sort(([a], [b]) => compare(a, b))) {
+      number += 1;
+      rows.push({ depth: 1, kind: "group", text: `차례 ${number}${step.at ? ` (${where(step.at)})` : ""}`, step: number });
+      for (const element of [...new Set(step.elements)].sort(compare)) {
+        rows.push({ depth: 2, kind: "node", id: element, text: nodeLine(ctx, element) });
+        const calls = (ctx.ix.out.get(element) || []).filter((edge) => edge.type === "화면요소→기능").map((edge) => edge.to);
+        for (const functionId of [...new Set(calls)].sort(compare)) {
+          rows.push({ depth: 3, kind: "node", id: functionId, text: `부르는 기능: ${nodeLine(ctx, functionId)}`, relation: "calls" });
+          rows.push(...handlerRows(functionId, 4));
+        }
+        const shows = (ctx.ix.into.get(element) || []).filter((edge) => edge.type === "기능→화면요소");
+        const byFunction = new Map();
+        for (const edge of shows) push(byFunction, edge.from, edge);
+        for (const [functionId, edges] of [...byFunction].sort(([a], [b]) => compare(a, b))) {
+          const evidence = [...new Set(edges.flatMap((edge) => (edge.근거 ? [].concat(edge.근거) : edge.basis ? ["문서"] : [])))];
+          rows.push({
+            depth: 3,
+            kind: "node",
+            id: functionId,
+            text: `결과를 보여 주는 기능: ${nodeLine(ctx, functionId)}${evidence.length ? ` (근거: ${evidence.join(", ")})` : ""}`,
+            relation: "shows",
+            ...(evidence.length ? { evidence } : {}),
+          });
+          rows.push(...handlerRows(functionId, 4));
+        }
+      }
+    }
+    if (!rows.length) rows.push({ depth: 1, kind: "text", text: "차례가 가리키는 화면요소가 없다" });
+    return { rows, hidden: false };
+  }
+
+  // One page of a tree answer. A later page repeats the root and the group
+  // line (role or step) its first row continues, marked repeats.
+  function pagedTree(ctx, { id, question, built, limit, cursor, answer }) {
+    const paged = page(built.rows, { limit, cursor });
+    const rows = [repeated(paged, { depth: 0, kind: "node", id, text: nodeLine(ctx, id) })];
+    if (paged.cursor > 0 && paged.slice.length && paged.slice[0].kind !== "group") {
+      const head = built.rows.slice(0, paged.cursor).reverse().find((row) => row.kind === "group");
+      if (head) rows.push({ ...head, ...REPEATS });
+    }
+    rows.push(...paged.slice);
+    if (paged.remaining) rows.push(moreRow(1, paged, `${question} ${id} --cursor ${paged.nextCursor}`, true));
+    // The tree was not built past the bound: said on every page (a later page
+    // marks it as repeating).
+    if (built.hidden)
+      rows.push(
+        repeated(paged, {
+          depth: 1,
+          kind: "more",
+          text: `일부 줄은 보이지 않았다 — 한 답의 줄 수 한도(${MAX_ROWS})에 닿았다. 다음: 그 줄에서 tree 대신 down <ID>`,
+          missing: { kind: "rowCap", site: "treeRowCap", rows: MAX_ROWS },
+        }),
+      );
+    return answer(pathLine(ctx, [id]), rows, { page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor } });
   }
 
   // ---------- check.txt parts ----------

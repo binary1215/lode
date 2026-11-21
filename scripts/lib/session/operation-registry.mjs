@@ -1590,12 +1590,16 @@ export const OPERATIONS = Object.freeze([
     tool: {
       name: "lode_product_graph_query",
       description:
-        "Ask the existing product graph build one step at a time, read-only (never builds, checks or writes). Helps when you need which code a user action or 기능 reaches (reach), what reaches a file or function (reach on a 코드 node or file path), what points to a node (up), one step down from a node (down), where the gaps are (gaps) or what changed since the baseline (changes); overview lists the starts. find ranks words (BM25) and can be narrowed by node_types, basis_states, or related_to with edge_types. impact compares three existing builds (proposal_base_build, the current build, candidate_build) read-only. changes with list content returns product source text (before and after, bounded and paged); ask it only when the text itself is needed. A page with more items returns page.nextMcpArguments to send as they are. The graph is a text scan without types that follows resolved call and callback references only; every answer starts with whether the build is still the source as it is now and how many calls were resolved. Not a prerequisite of ordinary work. With no build the answer is PRODUCT_GRAPH_NOT_BUILT with the build command.",
+        "Ask the existing product graph build one step at a time, read-only (never builds, checks or writes). Helps when you need which code a user action or 기능 reaches (reach), what reaches a file or function (reach on a 코드 node or file path), what points to a node (up), one step down from a node (down), where the gaps are (gaps) or what changed since the baseline (changes); tree gives one indented tree of the code a 기능 runs (처리 first, then 입구); user gives a 유저 활동 step by step with its 화면요소, 기능 and 처리 코드; overview lists the starts. find ranks words (BM25) and can be narrowed by node_types, basis_states, or related_to with edge_types. impact compares three existing builds (proposal_base_build, the current build, candidate_build) read-only. changes with list content returns product source text (before and after, bounded and paged); ask it only when the text itself is needed. A page with more items returns page.nextMcpArguments to send as they are. The graph is a text scan without types that follows resolved call and callback references only; every answer starts with whether the build is still the source as it is now and how many calls were resolved. Not a prerequisite of ordinary work. With no build the answer is PRODUCT_GRAPH_NOT_BUILT with the build command.",
       inputSchema: {
         type: "object",
         properties: {
           project_root: { type: "string", minLength: 1 },
-          question: { type: "string", enum: ["overview", "node", "down", "up", "reach", "find", "gaps", "changes", "impact"], default: "overview" },
+          question: {
+            type: "string",
+            enum: ["overview", "node", "down", "up", "reach", "tree", "user", "find", "gaps", "changes", "impact"],
+            default: "overview",
+          },
           candidate_build: {
             type: "string",
             minLength: 1,
@@ -1626,7 +1630,8 @@ export const OPERATIONS = Object.freeze([
           id: {
             type: "string",
             minLength: 1,
-            description: "Node ID for node, down, up and reach (a file path for a file node); a start such as @기능 for down.",
+            description:
+              "Node ID for node, down, up and reach (a file path for a file node); a start such as @기능 for down; a 기능 for tree; a 유저 활동 for user.",
           },
           text: { type: "string", minLength: 1, description: "What find looks for in IDs, plain words and paths." },
           list: { type: "string", minLength: 1, description: "One list for gaps or changes, by its key." },
@@ -1688,7 +1693,7 @@ export const OPERATIONS = Object.freeze([
               ? { buildDirectory: options.build, sourceRoot: root, documentsDirectory: options.documents ?? null, rulesFile: options.rules ?? null }
               : { root }),
             question,
-            id: ["node", "down", "up", "reach"].includes(question) ? argument : null,
+            id: ["node", "down", "up", "reach", "tree", "user"].includes(question) ? argument : null,
             text: question === "find" ? argument : null,
             list: options.list ?? null,
             limit: options.limit ?? 50,
@@ -1706,6 +1711,41 @@ export const OPERATIONS = Object.freeze([
       },
     },
     impl: () => import("../world/product-graph-query.mjs").then((module) => module.queryProductGraph),
+  },
+  {
+    name: "lode_product_graph_sample",
+    tool: {
+      name: "lode_product_graph_sample",
+      description:
+        "Read-only seeded sample of the existing product graph build's edges for a person to check against the source: k edges (default 30) spread over the edge types present, each with both ends' file and line range, where it was read and its evidence. Prints the seed; without one the seed comes from the build, so the same build gives the same sample. Stores nothing and gives no verdict.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          seed: { type: "integer", minimum: 0, maximum: 4294967295 },
+          count: { type: "integer", minimum: 1, maximum: 500, default: 30 },
+          types: { type: "array", items: { type: "string", minLength: 1 }, description: "Only these edge types." },
+        },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root, seed: args.seed ?? null, count: args.count ?? 30, types: args.types ?? [] }] },
+    cli: {
+      command: "product-graph-sample",
+      flags: ["build", "documents", "rules", "seed", "count", "types"],
+      args: ({ root, options }) => [
+        {
+          ...(options.build
+            ? { buildDirectory: options.build, sourceRoot: root, documentsDirectory: options.documents ?? null, rulesFile: options.rules ?? null }
+            : { root }),
+          seed: options.seed === undefined ? null : Number(options.seed),
+          count: options.count === undefined ? 30 : Number(options.count),
+          types: options.types?.split(",") ?? [],
+        },
+      ],
+    },
+    impl: () => import("../world/product-graph-sample.mjs").then((module) => module.sampleProductGraph),
   },
   {
     name: "lode_product_graph_baseline",
@@ -6170,6 +6210,7 @@ const supplementalReadOnlyHints = {
   lode_product_graph_build: false,
   lode_product_graph_check: true,
   lode_product_graph_query: true,
+  lode_product_graph_sample: true,
   lode_product_graph_baseline: false,
   lode_product_graph_confirm: false,
   lode_product_graph_approve: false,
