@@ -11,6 +11,56 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.133 — publication tracked separately
+
+- Added: `lode_tools_read_chain` (CLI: `tools-read-chain <project> --input
+  chain.json`), a declarative list of read-only calls run inside the server, so
+  several product graph or project graph questions cost one call and only the
+  rows asked for come back.
+  - Steps: `read` (one call, optionally following the tool's own pages),
+    `each` with `read` (one call per earlier row), `where`, `pick`, `sort`,
+    `limit`, `unique`, `count`. No expressions, no code, nothing stored.
+  - Inner calls can be `lode_product_graph_query` (also as `lode_product_graph`
+    with action `query`) and `lode_project_graph` only. Every other tool, every
+    write and every router is refused before any call. Each inner call takes
+    the `lode_tools_read` route with the caller's own checks, and a chain
+    changes nothing a later call may do or is given.
+  - The answer counts what it holds (`total`, `returned`, `cut`, and `notSeen`
+    for pages, items and calls that were not reached) and lists in
+    `knownMissing` every reason something is known to be missing, including
+    what the tool itself said (a list cut in the text, a check that was not
+    made, a comparison that does not exist). An empty `knownMissing` means
+    nothing Lode can detect was missing; it does not prove completeness.
+  - A chain never returns rows from two product graph builds: every query
+    answer carries `buildSha256`, and a rebuild or a baseline move between two
+    inner calls stops the chain with `CHAIN_BUILD_CHANGED` and no rows. This is
+    detected after the call, not prevented.
+  - Bounds: 12 steps, 40 inner calls, 20 calls of one `each`, 10 pages of one
+    `read`, answers from 4 KiB to 64 KiB (16 KiB by default). The answer as
+    sent is never over `max_bytes`.
+- Changed: product graph answers over MCP are smaller and carry data next to
+  their text. Text answers, `graph.json`, `check.json` and `check.txt` are
+  unchanged.
+  - The structured part of an answer no longer repeats the whole text when its
+    rows, header and title give it back exactly; the content text still has
+    it.
+  - Rows that stand for a node carry `nodeType`, `changedSinceBaseline` and,
+    from the four lists the build keeps, `confirmation`. The answer says
+    whether the build holds a baseline comparison and a confirmation
+    comparison, also when only the first confirmation records were read
+    (`partial`) or the baseline was moved after the build (`baseline-moved`),
+    so an absent field is not read as "current".
+  - Where the text says rows were cut, a list was shortened, or something was
+    not checked, compared or read, the row or the answer carries a structured
+    mark (`missing`, `continues`). A row a later page repeats from an earlier
+    page carries `repeats`, so following pages gives the rows one large call
+    gives.
+  - `lode_tools_discover` by exact name returns a `resultShape` for
+    `lode_product_graph_query` and `lode_project_graph`.
+- Fixed: a `down` or `up` answer that reached the 2000-row bound exactly at the
+  end of a sub-list ended without saying rows were hidden. It now ends with a
+  line saying so.
+
 ## 0.3.0-beta.132 — publication tracked separately
 
 - Added: confirmation records for the product graph (확인 기록), which say what
