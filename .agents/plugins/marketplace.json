@@ -1,0 +1,20 @@
+{
+  "name": "lode-agent-plugin",
+  "interface": {
+    "displayName": "Lode Agent Plugin"
+  },
+  "plugins": [
+    {
+      "name": "lode-agent-core",
+      "source": {
+        "source": "local",
+        "path": "./plugins/lode-agent-core"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
