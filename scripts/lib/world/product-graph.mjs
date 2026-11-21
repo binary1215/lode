@@ -928,6 +928,8 @@ function compute({ extraction, loaded, includeEstimates }) {
       ruleIssues: extraction.ruleIssues,
       // framework-invoked as read (2.2): every site, and the paths more than one file matched.
       runByPath: extraction.runByPath,
+      // 분기 matches whose branch block could not be delimited (2.9).
+      branchUndelimited: extraction.branchUndelimited || [],
       // Outside calls no 바깥 rule names, and named 데이터 calls neither read nor write (2.8).
       outside: extraction.outside?.lists || null,
       formatIssues: formatIssues.sort((a, b) => compare(a.path, b.path) || a.line - b.line),
@@ -1057,12 +1059,21 @@ function graphDocument({ extraction, loaded, computed, inputs, rules, result }) 
   for (const entry of extraction.functionNodes) {
     nodes.push({ id: entry.id, type: "기능", kind: entry.kind, oneLine: meaning.get(entry.id) || "", handling: entry.handling, positions: entry.positions });
     for (const handler of entry.handlers)
-      edges.push({ type: "기능→코드", from: entry.id, to: handler, 역할: "처리", at: entry.handlerAt?.[handler] || entry.positions[0] || null });
+      edges.push({
+        type: "기능→코드",
+        from: entry.id,
+        to: handler,
+        역할: "처리",
+        at: entry.handlerAt?.[handler] || entry.positions[0] || null,
+        // 분기 (2.9): the lines of the shared handler this 기능 passes.
+        ...(entry.handlerRanges?.[handler] ? { 줄: entry.handlerRanges[handler] } : {}),
+      });
     // 입구: code the 기능 passes through that is not its handler (a rule says so).
     for (const code of entry.entries || []) edges.push({ type: "기능→코드", from: entry.id, to: code, 역할: "입구", at: entry.positions[0] || null });
   }
   for (const node of extraction.codeNodes) nodes.push(node);
   for (const node of extraction.outsideNodes || []) nodes.push(node);
+  const branchHandlers = new Set(extraction.branchHandlers || []);
   for (const reference of extraction.references)
     edges.push({
       type: reference.type,
@@ -1073,6 +1084,8 @@ function graphDocument({ extraction, loaded, computed, inputs, rules, result }) 
       // Written by hand (2.4): a judgement, and what the rule says.
       ...(reference.judgement ? { judgement: true } : {}),
       ...(reference.설명 ? { 설명: reference.설명 } : {}),
+      // Every line it occurs on, from a handler a 분기 rule splits (2.9).
+      ...(branchHandlers.has(reference.from) && reference.allLines?.size > 1 ? { lines: [...reference.allLines].sort((a, b) => a - b) } : {}),
     });
   // A 화면요소 or 정책 ID written twice in the documents is a 형식 문제
   // (listed by the check); the graph keeps its first occurrence.

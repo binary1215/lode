@@ -84,7 +84,7 @@ export const productGraphWalk = (() => {
   // class → constructor): the closure the check uses for 어느 기능에서도 닿지
   // 않는 코드. Starts are included. stop(id) keeps a node that is not a start
   // out (it is neither visited nor followed).
-  function closure(ix, starts, stop = null) {
+  function closure(ix, starts, stop = null, firstStep = null) {
     const visited = new Set(),
       stack = [...starts];
     const begin = new Set(starts);
@@ -92,7 +92,9 @@ export const productGraphWalk = (() => {
       const id = stack.pop();
       if (visited.has(id) || (stop && !begin.has(id) && stop(id))) continue;
       visited.add(id);
-      for (const edge of ix.out.get(id) || []) if (follows(ix, edge)) stack.push(edge.to);
+      // A start a 분기 rule splits follows only its own lines (2.9).
+      const lines = begin.has(id) ? firstStep?.get(id) : null;
+      for (const edge of ix.out.get(id) || []) if (follows(ix, edge) && (!lines || onLines(edge, lines))) stack.push(edge.to);
       for (const target of ix.constructors.get(id) || []) stack.push(target);
     }
     return visited;
@@ -106,6 +108,22 @@ export const productGraphWalk = (() => {
       for (const list of ix.out.values()) for (const item of list) if (item.type === "경계") ix.crossing.add(`${item.from}\u0000${item.to}`);
     }
     return !ix.crossing.has(`${edge.from}\u0000${edge.to}`);
+  }
+  // Whether an edge occurs on one of the line ranges (2.9).
+  const onLines = (edge, ranges) => (edge.lines || [edge.at?.line]).some((line) => ranges.some(([from, to]) => from <= line && line <= to));
+  // The line ranges the given 기능 pass in each handler a 분기 rule splits;
+  // a handler some 기능 passes whole is not limited.
+  function handlerLines(ix, functions) {
+    const limited = new Map(),
+      whole = new Set();
+    for (const id of functions)
+      for (const edge of ix.out.get(id) || []) {
+        if (edge.type !== "기능→코드" || isEntry(edge)) continue;
+        if (!edge.줄) whole.add(edge.to);
+        else limited.set(edge.to, [...(limited.get(edge.to) || []), ...edge.줄]);
+      }
+    for (const id of whole) limited.delete(id);
+    return limited;
   }
   const boundariesOf = (ix, id) => (ix.out.get(id) || []).filter((edge) => edge.type === "경계");
   const boundaryLine = (edge) => `경계에서 멈춤: ${edge.설명 || "설명 없음"} → ${edge.to}`;
@@ -151,6 +169,8 @@ export const productGraphWalk = (() => {
     for (const id of closure(
       ix,
       functions.flatMap((item) => handlersOf(ix, item)),
+      null,
+      handlerLines(ix, functions),
     ))
       via.set(id, "처리");
     const entries = [...new Set(functions.flatMap((item) => entriesOf(ix, item)))].filter((id) => !via.has(id));
@@ -647,7 +667,12 @@ export const productGraphWalk = (() => {
       const reachers = reverseClosure(ctx.ix, targets);
       const via = {};
       for (const item of ctx.ix.byType.get("기능") || []) {
-        if (handlersOf(ctx.ix, item.id).some((handler) => reachers.has(handler))) via[item.id] = "처리";
+        // A 기능 whose handler a 분기 rule splits reaches only its own lines: ask it.
+        if (handlerLines(ctx.ix, [item.id]).size && [...handlersOf(ctx.ix, item.id), ...entriesOf(ctx.ix, item.id)].some((start) => reachers.has(start))) {
+          const reached = reachOf(ctx.ix, [item.id]);
+          const hit = targets.find((target) => reached.has(target));
+          if (hit) via[item.id] = targets.some((target) => reached.get(target) === "처리") ? "처리" : "입구";
+        } else if (handlersOf(ctx.ix, item.id).some((handler) => reachers.has(handler))) via[item.id] = "처리";
         else if (entriesOf(ctx.ix, item.id).some((entry) => reachers.has(entry))) {
           // Through 입구 the walk may stop before the target; ask it.
           const reached = reachOf(ctx.ix, [item.id]);
@@ -966,6 +991,7 @@ export const productGraphWalk = (() => {
     const owners = handledBy(ctx.ix);
     const expanded = new Set();
     const own = new Set(handlersOf(ctx.ix, featureId));
+    const limited = handlerLines(ctx.ix, [featureId]);
     let hidden = false;
     const visit = (id, depth, edge) => {
       if (rows.length >= MAX_ROWS) {
@@ -988,7 +1014,11 @@ export const productGraphWalk = (() => {
       for (const boundary of boundariesOf(ctx.ix, id))
         rows.push({ depth: depth + 1, kind: "text", text: boundaryLine(boundary), boundary: { from: boundary.from, to: boundary.to, 설명: boundary.설명 || null } });
       rows.push(...outsideRows(ctx, id, depth + 1));
-      const children = (ctx.ix.out.get(id) || []).filter((item) => follows(ctx.ix, item)).sort((a, b) => compare(a.type, b.type) || compare(a.to, b.to));
+      // A 처리 start a 분기 rule splits shows only its own lines (2.9).
+      const lines = !edge && own.has(id) ? limited.get(id) : null;
+      const children = (ctx.ix.out.get(id) || [])
+        .filter((item) => follows(ctx.ix, item) && (!lines || onLines(item, lines)))
+        .sort((a, b) => compare(a.type, b.type) || compare(a.to, b.to));
       const seen = new Set();
       for (const child of children) {
         if (seen.has(child.to)) continue;
@@ -1374,6 +1404,14 @@ export const productGraphWalk = (() => {
         { show: evidence.removed.length > 0 },
       );
     }
+    // 분기 matches whose block could not be delimited (2.9).
+    add(
+      "branchUndelimited",
+      (lists.branchUndelimited || []).length,
+      [`분기를 정하지 못함: ${(lists.branchUndelimited || []).length}개 (그 기능은 함수 전체를 지난다고 본다)`],
+      (lists.branchUndelimited || []).map((item) => ({ text: `${item.id} (${where(item.position)}) → ${item.handler}`, nodeId: item.id })),
+      { show: (lists.branchUndelimited || []).length > 0 },
+    );
     // Outside calls (2.8): the gap shows, nothing is guessed.
     const outside = lists.outside;
     if (outside) {

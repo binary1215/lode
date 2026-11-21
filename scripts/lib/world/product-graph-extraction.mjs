@@ -472,6 +472,8 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
     const key = `${from}\0${to}\0${kind}`;
     if (!references.has(key)) references.set(key, { type: kind, from, to, source: { path: file, line }, count: 0 });
     references.get(key).count += 1;
+    // Every line it occurs on (2.9); written out only where a 분기 rule needs it.
+    (references.get(key).allLines ??= new Set()).add(line);
   };
   // Two passes: the first finds which value bindings are called (they become
   // nodes and callers); the second records references and reasons.
@@ -924,6 +926,7 @@ export function effectiveEntryRules(projectRules) {
         파일: [...rule["파일"]],
         패턴: rule["패턴"],
         "처리 코드": rule["처리 코드"] || "줄을 감싼 코드",
+        ...(rule["분기"] ? { 분기: true } : {}),
         ...(rule["입구"] ? { 입구: [...rule["입구"]] } : {}),
         출처: "프로젝트",
       });
@@ -1304,6 +1307,7 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
 
   // tool / cli by project pattern rules.
   const rowsOf = new Map();
+  const branchMatches = [];
   const partlyResolved = [];
   for (const rule of patterns) {
     for (const relative of rule.파일) {
@@ -1329,11 +1333,19 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
           continue;
         }
         const handler = rule["처리 코드"] === "파일" ? fileNode(relative) : enclosingCode(code, relative, line) || fileNode(relative);
+        // 분기 (2.9): the 기능 of this rule that share one function differ by a branch.
+        if (rule.분기 && rule["처리 코드"] === "줄을 감싼 코드" && handler !== relative)
+          branchMatches.push({ rule, id, handler, relative, index: match.index || 0, line });
         addFunction({ id, kind: rule.종류, position, handler, rule });
       }
     }
   }
 
+  const branches = branchRanges(code, branchMatches);
+  for (const item of branches.ranges) {
+    const entry = functions.get(item.id);
+    if (entry) (entry.handlerRanges ??= {})[item.handler] = item.ranges;
+  }
   // 프론트: every UI binding pattern of the table, by one mechanism.
   const ui = extractUiBindings({ root, files: entryFiles, code, uiPatterns, addFunction });
   for (const callback of ui.callbacks) {
@@ -1341,6 +1353,7 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     if (!code.references.has(key))
       code.references.set(key, { type: "callback", from: callback.from, to: callback.to, source: { path: callback.file, line: callback.line }, count: 0 });
     code.references.get(key).count += 1;
+    (code.references.get(key).allLines ??= new Set()).add(callback.line);
   }
   // framework-invoked: a file run by its path, and a bare import.
   const runByPath = pathReferences(code);
@@ -1349,6 +1362,7 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     if (!code.references.has(key))
       code.references.set(key, { type: "framework-invoked", from: site.from, to: site.to, source: { path: site.path, line: site.line }, count: 0 });
     code.references.get(key).count += 1;
+    (code.references.get(key).allLines ??= new Set()).add(site.line);
   }
   // callback: a function or class used as a value (2.3).
   const values = valueUses(code);
@@ -1357,6 +1371,7 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     if (!code.references.has(key))
       code.references.set(key, { type: "callback", from: site.from, to: site.to, source: { path: site.path, line: site.line }, count: 0 });
     code.references.get(key).count += 1;
+    (code.references.get(key).allLines ??= new Set()).add(site.line);
   }
   // Connections written by hand (2.4): judged references and boundaries.
   const handWritten = handWrittenConnections({
@@ -1378,6 +1393,7 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
         ...(site.설명 ? { 설명: site.설명 } : {}),
       });
     code.references.get(key).count += 1;
+    (code.references.get(key).allLines ??= new Set()).add(site.line);
   }
   ruleIssues.push(...handWritten.issues);
   // 데이터, 외부 연결, DB (2.8).
@@ -1400,6 +1416,7 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
         ...(item.judgement ? { judgement: true } : {}),
       });
     code.references.get(key).count += 1;
+    (code.references.get(key).allLines ??= new Set()).add(item.line);
   }
   ruleIssues.push(...outside.issues);
   // Files that look like UI code but no pattern read: a gap, not zero 기능.
@@ -1446,6 +1463,7 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
       positions: entry.positions.sort((a, b) => compare(a.path, b.path) || a.line - b.line),
       handlers: entry.handlers.sort(),
       entries: entry.entries.filter((code) => !entry.handlers.includes(code)).sort(),
+      ...(entry.handlerRanges ? { handlerRanges: entry.handlerRanges } : {}),
     }))
     .sort((a, b) => compare(a.id, b.id));
   assertUniqueIds([...codeNodes, ...functionNodes]);
@@ -1468,6 +1486,10 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     ),
     untrustedMaskFiles: ui.untrustedMask,
     runByPath: { sites: runByPath.sites, ambiguous: runByPath.ambiguous },
+    // 분기 (2.9): the handlers whose references record every line, and the
+    // matches whose branch block could not be delimited.
+    branchHandlers: [...new Set(branches.ranges.map((item) => item.handler))].sort(),
+    branchUndelimited: branches.undelimited,
     valueUses: { sites: values.sites.length, plain: values.plain, members: values.members },
     outsideNodes: outside.nodes,
     outside: { lists: outside.lists, counts: outside.counts },
@@ -1810,6 +1832,118 @@ function handWrittenConnections({ code, rules, codeIds }) {
         });
   });
   return { sites, issues };
+}
+
+// ---------- the lines of a branch (2.9) ----------
+
+// The lines of the statement that holds a match: in brace languages to the
+// matching close bracket (by the code mask), or to the end of the statement
+// when it has no block; a `case x:` runs to the next case at its depth; in
+// Python to the end of the indented block. Null when it cannot be delimited.
+function branchBlock(analysis, index) {
+  const text = analysis.text;
+  const line = lineOfStarts(analysis.starts, index);
+  const lines = text.split("\n");
+  if (analysis.language === "python") {
+    const indent = (value) => /^[ \t]*/.exec(value)[0].length;
+    const own = indent(lines[line - 1]);
+    if (!/:\s*(?:#.*)?$/.test(lines[line - 1])) return null;
+    let end = line;
+    for (let next = line + 1; next <= lines.length; next += 1) {
+      const value = lines[next - 1];
+      if (!value.trim()) continue;
+      if (indent(value) <= own) break;
+      end = next;
+    }
+    return end > line ? [line, end] : null;
+  }
+  const mask = codeMask(text, "javascript");
+  if (!mask.trusted) return null;
+  const code = (position) => mask[position] === 1;
+  // A case label: to the line before the next case or default at its depth.
+  const lineText = lines[line - 1].trim();
+  if (/^case\b|^default\s*:/.test(lineText)) {
+    let depth = 0;
+    let end = line;
+    for (let next = line + 1; next <= lines.length; next += 1) {
+      const value = lines[next - 1];
+      const start = analysis.starts[next - 1];
+      for (let offset = 0; offset < value.length; offset += 1) {
+        if (!code(start + offset)) continue;
+        if (value[offset] === "{") depth += 1;
+        else if (value[offset] === "}") depth -= 1;
+      }
+      if (depth < 0) break;
+      if (depth === 0 && /^\s*(?:case\b|default\s*:)/.test(value)) break;
+      end = next;
+    }
+    return [line, end];
+  }
+  // The statement starts on the match's line (an if, a case, a call).
+  let parens = 0;
+  for (let position = analysis.starts[line - 1]; position < text.length; position += 1) {
+    if (!code(position)) continue;
+    const character = text[position];
+    if (character === "(" || character === "[") parens += 1;
+    else if (character === ")" || character === "]") parens -= 1;
+    else if (character === "{" && parens === 0) {
+      let depth = 0;
+      for (let close = position; close < text.length; close += 1) {
+        if (!code(close)) continue;
+        if (text[close] === "{") depth += 1;
+        else if (text[close] === "}" && --depth === 0) return [line, lineOfStarts(analysis.starts, close)];
+      }
+      return null;
+    } else if (character === ";" && parens === 0) return [line, lineOfStarts(analysis.starts, position)];
+    if (parens < 0) return null;
+  }
+  return null;
+}
+
+// Per 기능 of a 분기 rule and its shared handler: the function's lines minus
+// the branch blocks of the other 기능 the same rule found there. A match whose
+// block cannot be delimited falls back to the whole function and is listed.
+function branchRanges(code, matches) {
+  const groups = new Map();
+  for (const match of matches) {
+    const key = `${match.rule.패턴}\u0000${match.handler}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(match);
+  }
+  const ranges = [],
+    undelimited = [];
+  for (const group of groups.values()) {
+    const { handler, relative } = group[0];
+    const analysis = code.analyses.get(relative);
+    const symbol = analysis?.symbols.find((item) => symbolId(relative, item) === handler);
+    if (!symbol) continue;
+    const whole = [symbol.line, symbol.endLine ?? symbol.line];
+    const blocks = new Map();
+    for (const match of group) {
+      const block = branchBlock(analysis, match.index);
+      if (!block) undelimited.push({ id: match.id, handler, position: { path: relative, line: match.line }, reason: "분기를 정하지 못함" });
+      if (!blocks.has(match.id)) blocks.set(match.id, []);
+      blocks.get(match.id).push(block);
+    }
+    for (const [id, own] of blocks) {
+      if (own.some((block) => !block)) {
+        ranges.push({ id, handler, ranges: [whole] });
+        continue;
+      }
+      // The function's lines minus every other 기능's (delimited) blocks.
+      const removed = [...blocks].filter(([other]) => other !== id).flatMap(([, list]) => list.filter(Boolean));
+      const kept = [];
+      let start = whole[0];
+      for (const [from, to] of removed.sort((a, b) => a[0] - b[0])) {
+        if (from > start) kept.push([start, Math.min(from - 1, whole[1])]);
+        start = Math.max(start, to + 1);
+      }
+      if (start <= whole[1]) kept.push([start, whole[1]]);
+      ranges.push({ id, handler, ranges: kept });
+    }
+  }
+  ranges.sort((a, b) => compare(a.id, b.id) || compare(a.handler, b.handler));
+  return { ranges, undelimited: undelimited.sort((a, b) => compare(a.id, b.id)) };
 }
 
 // ---------- 데이터, 외부 연결, DB (2.8) ----------

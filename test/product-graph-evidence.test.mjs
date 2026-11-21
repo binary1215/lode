@@ -950,3 +950,100 @@ test("2.8: two rules claiming one call are a rule issue unless one narrows; no o
   assert(!plain.graph.nodes.some((node) => ["데이터", "외부 연결", "DB"].includes(node.type)));
   assert.doesNotMatch(plain.result.text, /이름 없는 바깥 호출|읽기·쓰기를 정하지 못함/);
 });
+
+// ---------- 2.9 the lines of a branch ----------
+
+const BRANCHES = {
+  "src/cli.js": lines(
+    "export function main(name) {",
+    '  if (name === "save") {',
+    "    saveIt();",
+    "  }",
+    '  if (name === "load") {',
+    "    loadIt();",
+    "  }",
+    "  common();",
+    "}",
+    "function saveIt() { return deepSave(); }",
+    "function loadIt() { return 1; }",
+    "function common() { return 2; }",
+    "function deepSave() { return common(); }",
+  ),
+  "tool.py": lines(
+    "def run(name):",
+    '    if name == "zip":',
+    "        zip_it()",
+    '    elif name == "tar":',
+    "        tar_it()",
+    '    table = {"cut": cut_it}',
+    "    shared()",
+    "",
+    "def zip_it():",
+    "    return 1",
+    "",
+    "def tar_it():",
+    "    return 2",
+    "",
+    "def cut_it():",
+    "    return 3",
+    "",
+    "def shared():",
+    "    return 4",
+  ),
+};
+const branchRules = (branch = true) => ({
+  rules: [
+    { 종류: "cli", 판단: true, 파일: ["src/cli.js"], 패턴: 'name === "(\\w+)"', ...(branch ? { 분기: true } : {}) },
+    { 종류: "tool", 판단: true, 파일: ["tool.py"], 패턴: '"(zip|tar|cut)"', ...(branch ? { 분기: true } : {}) },
+  ],
+});
+
+test("2.9: a 분기 rule gives each 기능 the function's lines minus the other 기능's branch blocks; reach follows only those lines", (t) => {
+  const p = product(t, BRANCHES, branchRules());
+  const { result, graph } = p.build();
+  const range = (id) => graph.edges.find((edge) => edge.type === "기능→코드" && edge.from === id).줄;
+  assert.deepEqual(range("cli:save"), [
+    [1, 4],
+    [8, 9],
+  ]);
+  assert.deepEqual(range("cli:load"), [
+    [1, 1],
+    [5, 9],
+  ]);
+  const save = reachOf(graph, "cli:save");
+  for (const id of ["src/cli.js#saveIt", "src/cli.js#deepSave", "src/cli.js#common"]) assert(save.has(id), id);
+  assert(!save.has("src/cli.js#loadIt"));
+  const load = reachOf(graph, "cli:load");
+  assert(load.has("src/cli.js#loadIt") && !load.has("src/cli.js#saveIt") && !load.has("src/cli.js#deepSave"));
+  // Python: to the end of the indented block. The cut match is in no block: whole function, listed.
+  const end = graph.nodes.find((node) => node.id === "tool.py#run").lines[1];
+  assert.deepEqual(range("tool:zip"), [
+    [1, 3],
+    [6, end],
+  ]);
+  assert(!reachOf(graph, "tool:zip").has("tool.py#tar_it"));
+  assert.deepEqual(range("tool:cut"), [[1, end]]);
+  assert.deepEqual(
+    result.lists.branchUndelimited.map((item) => [item.id, item.reason]),
+    [["tool:cut", "분기를 정하지 못함"]],
+  );
+  assert.match(result.text, /\n분기를 정하지 못함: 1개 [^\n]*\n {2}- tool:cut \(tool\.py:6\) → tool\.py#run\n/);
+  // reach <code> and tree follow the same lines.
+  p.ask({ question: "overview" });
+  assert.deepEqual(p.ask({ question: "reach", id: "src/cli.js#loadIt" }).reach.ids, ["cli:load"]);
+  const tree = p.ask({ question: "tree", id: "cli:save" });
+  assert(tree.rows.some((row) => row.id === "src/cli.js#saveIt") && !tree.rows.some((row) => row.id === "src/cli.js#loadIt"));
+  // A reference from a split handler records every line it occurs on.
+  assert(!graph.edges.some((edge) => edge.from === "src/cli.js#main" && edge.lines && edge.lines.length < 2));
+});
+
+test("2.9: without 분기 nothing changes: no line ranges, no line lists, the whole function is reached", (t) => {
+  const p = product(t, BRANCHES, branchRules(false));
+  const { graph, result } = p.build();
+  assert(!graph.edges.some((edge) => edge.줄 || edge.lines));
+  assert(reachOf(graph, "cli:save").has("src/cli.js#loadIt"));
+  assert.deepEqual(result.lists.branchUndelimited, []);
+  assert.doesNotMatch(result.text, /분기를 정하지 못함/);
+  const r = product(t, BRANCHES, { rules: [{ 종류: "cli", 판단: true, 파일: ["src/cli.js"], 패턴: 'name === "(\\w+)"', "처리 코드": "파일", 분기: true }] });
+  assert.throws(() => r.build(), { code: "PRODUCT_GRAPH_RULES_INVALID" });
+});

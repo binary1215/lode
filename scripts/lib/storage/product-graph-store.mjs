@@ -596,7 +596,10 @@ export function verifyProductGraphRules(document) {
       continue;
     }
     for (const key of Object.keys(rule))
-      if (!["종류", "처리", "판단", "설명", "파일", "패턴", "처리 코드", "입구"].includes(key)) invalid(`${where}에 모르는 항목 ${key}`);
+      if (!["종류", "처리", "판단", "설명", "파일", "패턴", "처리 코드", "입구", "분기"].includes(key)) invalid(`${where}에 모르는 항목 ${key}`);
+    // 분기 (2.9): only on a pattern rule whose 처리 코드 is the enclosing code.
+    if (rule["분기"] !== undefined && (rule["분기"] !== true || rule["패턴"] === undefined || ![undefined, "줄을 감싼 코드"].includes(rule["처리 코드"])))
+      invalid(`${where}.분기는 true이고, 처리 코드가 줄을 감싼 코드인 패턴 규칙에만 쓴다`);
     if (rule["처리"] !== undefined && !HANDLINGS.includes(rule["처리"])) invalid(`${where}.처리는 ${HANDLINGS.join(", ")} 중 하나여야 한다`);
     if (rule["판단"] !== undefined && rule["판단"] !== true) invalid(`${where}.판단은 true만 쓸 수 있다`);
     // 입구 (entry code): the 코드 IDs every 기능 of this rule passes through
