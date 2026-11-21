@@ -105,9 +105,9 @@ export const READ_CHAIN_REFERENCE = Object.freeze({
     inputNesting: READ_CHAIN_LIMITS.nestingDepth,
   },
   statuses: {
-    completed: "Every step ran; no inner call failed or was refused and no bound was reached.",
+    completed: "Every step ran; no inner call failed or was refused, no bound was reached and every notSeen count is zero.",
     partial:
-      "A bound was reached, a tool said its answer was cut, or an inner call failed or was refused; the answer holds what was reached and counts the rest.",
+      "A bound was reached, a tool said its answer was cut, an inner call failed or was refused, rows had no each value (notSeen.eachNoValue), or an answer had no list where take pointed (notSeen.takeNotAList); the answer holds what was reached and counts the rest.",
     stopped: "The product graph build or baseline changed between calls (no rows are returned), on_error stop met a failed call, or the request was cancelled.",
     refused: "The step list is invalid; no inner call ran.",
   },
@@ -613,10 +613,6 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
     let current = supplied(target, args);
     const completeness = target.completeness;
     let remainingBefore = null;
-    // Rows a later page repeats from earlier pages (a root, a heading, a group
-    // line) are not added again: following pages gives the rows one call with a
-    // large enough limit gives.
-    const earlier = new Set();
     for (let page = 1; ; page += 1) {
       // Lets a cancellation notice be read before the next inner call.
       await yieldToEvents();
@@ -692,11 +688,9 @@ export async function runReadChain(input, { resolveTarget, call, signal } = {}) 
       // A page marker is not a row: one that was followed brought its page; one
       // that was not is counted in notSeen.pagesLeft.
       let listed = completeness.pageMarker ? taken.rows.filter((row) => !matchesSpec(row, completeness.pageMarker)) : taken.rows;
-      if (completeness.pageRepeats) {
-        const frame = (row) => typeof row.depth === "number" && row.depth <= completeness.pageRepeats.depthAtMost;
-        if (page > 1) listed = listed.filter((row) => !(frame(row) && earlier.has(canonicalJson(row))));
-        for (const row of listed) if (frame(row)) earlier.add(canonicalJson(row));
-      }
+      // A row a later page repeats from an earlier page of this read is left
+      // out only because the tool says so, never because it looks like one.
+      if (completeness.pageRepeats && page > 1) listed = listed.filter((row) => !matchesSpec(row, completeness.pageRepeats));
       if (page === 1 && completeness.items) {
         const count = fieldValue(value, fieldPath(completeness.items));
         if (Number.isInteger(count)) toolItems.set(step.id, (toolItems.get(step.id) ?? 0) + count);

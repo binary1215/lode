@@ -690,7 +690,7 @@ test("F2: a product graph tree cut below the first level is known as missing", a
 // 2000-row cap), and every leaf file changes after the baseline (more than 50
 // changed nodes and more than 10 changed source files). No documents, so the
 // screen-pointing check is not run.
-function bigProject(t, { mids = 60, leaves = 39 } = {}) {
+function bigProject(t, { mids = 60, leaves = 39, fanIn = 0, keepStart = false } = {}) {
   const f = fixture(t);
   fs.cpSync(path.join(fixtures, "ui-signal"), f.root, { recursive: true });
   const gen = path.join(f.root, "station", "gen");
@@ -705,6 +705,14 @@ function bigProject(t, { mids = 60, leaves = 39 } = {}) {
     }
   };
   writeLeaves(0);
+  // fanIn callers of one target: an up answer with many rows.
+  if (fanIn)
+    fs.writeFileSync(
+      path.join(gen, "fan.py"),
+      ["def target():", "    return 0", "", "", ...Array.from({ length: fanIn }, (_, k) => [`def caller_${pad(k)}():`, "    target()", "", ""]).flat()].join(
+        "\n",
+      ),
+    );
   const midLines = [];
   for (let m = 0; m < mids; m += 1)
     midLines.push(`from station.gen.leaf${pad(m)} import ${Array.from({ length: leaves }, (_, k) => `leaf_${pad(m)}_${pad(k)}`).join(", ")}`);
@@ -736,9 +744,13 @@ function bigProject(t, { mids = 60, leaves = 39 } = {}) {
   );
   buildProductGraph({ root: f.root });
   moveProductGraphBaseline({ root: f.root });
+  const family = path.join(f.root, ".lode", "context", "product-graph");
+  // The first build, kept as an impact proposal's starting build.
+  const start = keepStart ? path.join(f.base, "start-build") : null;
+  if (start) fs.cpSync(path.join(family, "build"), start, { recursive: true });
   writeLeaves(1);
   buildProductGraph({ root: f.root });
-  return { ...f, mids, leaves, family: path.join(f.root, ".lode", "context", "product-graph") };
+  return { ...f, mids, leaves, start, family };
 }
 
 const HUB = "station/gen/hub.py#hub";
@@ -779,6 +791,7 @@ test("H5: every mark site of the walk is reached, its text says what its mark sa
     rowCap: () => ({ root: wide.root, args: { question: "down", id: HUB, depth: 2, limit: 50 } }),
     rowCapUncounted: () => ({ root: big.root, args: { question: "down", id: HUB, depth: 2, limit: 500 } }),
     gapsCheck: () => ({ root: big.root, args: { question: "gaps" } }),
+    gapsCheckList: () => ({ root: big.root, args: { question: "gaps", list: "screen-without-activity" } }),
     unpointedFunctions: () => ({ root: big.root, args: { question: "gaps", list: "unpointedFunctions" } }),
     baselineNone: () => {
       const { g } = edited((check) => delete check.changes);
@@ -819,6 +832,10 @@ test("H5: every mark site of the walk is reached, its text says what its mark sa
   assert.deepEqual(Object.keys(SCENARIOS).sort(), MARK_SITES, "every site the walk writes has a scenario here");
   // What each site's text must say, from its mark.
   const SAYS = {
+    gapsCheckList: (mark, row, value, check) => {
+      const named = check.checks.find((item) => item.key === mark.check);
+      return mark.kind === "notChecked" && named?.outcome === "검사 못 함" && value.title === `빈 곳 — ${named.heading}` && value.rows.length === 0;
+    },
     listLimit: (mark, row) => row.text.trim() === `- 외 ${mark.total - mark.shown}개 (구조화된 결과에 모두 있다)`,
     sourceFiles: (mark, row) =>
       row.text.trim().startsWith("바뀐 소스 파일: ") &&
@@ -827,11 +844,24 @@ test("H5: every mark site of the walk is reached, its text says what its mark sa
         .trim()
         .slice("바뀐 소스 파일: ".length, -` 외 ${mark.total - mark.shown}개`.length)
         .split(", ").length === mark.shown,
-    reachChangedNodes: (mark, row) => row.text.endsWith(` 외 ${mark.total - mark.shown}개`),
-    findConnections: (mark, row, value) => value.rows.filter((entry, index) => index > value.rows.indexOf(row) && entry.depth === 2).length >= mark.shown,
+    reachChangedNodes: (mark, row, value, check) => {
+      const item = check.changes.reachChanged.find((entry) => entry.id === row.id);
+      return row.text.endsWith(` 외 ${mark.total - mark.shown}개`) && mark.shown === item.nodes.length && mark.total === item.total;
+    },
+    findConnections: (mark, row, value, check, graph) => {
+      const at = value.rows.indexOf(row);
+      const next = value.rows.findIndex((entry, index) => index > at && entry.depth !== 2);
+      const below = value.rows.slice(at + 1, next < 0 ? undefined : next);
+      const ids = new Set(graph.nodes.map((node) => node.id));
+      const total = graph.edges
+        .filter((edge) => ids.has(edge.from) && ids.has(edge.to))
+        .reduce((sum, edge) => sum + (edge.from === row.id) + (edge.to === row.id), 0);
+      return below.length === mark.shown && mark.total === total && mark.total > mark.shown;
+    },
     subList: (mark, row) => row.text.startsWith(`외 ${mark.left}개 — 다음: `),
     rowCap: (mark, row) => /^외 \d+개 줄은 보이지 않았다 — 한 답의 줄 수 한도\(2000\)에 닿았다/.test(row.text),
-    rowCapUncounted: (mark, row) => row.text.startsWith("일부 줄은 보이지 않았다 — 한 답의 줄 수 한도(2000)에 닿았다") && mark.left === undefined,
+    rowCapUncounted: (mark, row) =>
+      row.text === "일부 줄은 보이지 않았다 — 한 답의 줄 수 한도(2000)에 닿았다. 다음: 그 줄에서 down <ID>" && mark.left === undefined,
     gapsCheck: (mark, row, value, check) => {
       const named = check.checks.find((item) => item.key === mark.check);
       return Boolean(named) && row.text.includes(`${named.heading} — 검사 못 함: ${named.reason}`);
@@ -844,17 +874,18 @@ test("H5: every mark site of the walk is reached, its text says what its mark sa
     confirmationsBlock: (mark, row) => row.text === "- 읽지 않음 — test: not read",
     confirmationsList: (mark, row, value) => value.title.endsWith(": 비교하지 않음"),
     recordLimit: (mark, row) => row.text.includes(`확인 기록 ${mark.present}개 가운데`) && row.text.includes(`앞의 ${mark.read}개만 읽었다`),
-    confirmationIssue: (mark, row) => row.text.includes("그 밖에 확인 기록 7개를 더 읽지 않았다"),
+    confirmationIssue: (mark, row) => row.text.includes("그 밖에 확인 기록 7개를 더 읽지 않았다") && mark.code === "PRODUCT_GRAPH_CHECK_LIMIT",
   };
   for (const site of MARK_SITES) {
     const { root, args } = SCENARIOS[site]();
     const value = queryProductGraph({ root, ...args });
     assert.equal(value.status, "answered", `${site}: ${value.message}`);
     const check = JSON.parse(fs.readFileSync(path.join(root, ".lode", "context", "product-graph", "build", "check.json"), "utf8"));
+    const graph = JSON.parse(fs.readFileSync(path.join(root, ".lode", "context", "product-graph", "build", "graph.json"), "utf8"));
     const found = marksOf(value).filter(({ mark }) => mark.site === site);
     assert.ok(found.length > 0, `${site}: no mark`);
     for (const { mark, row } of found)
-      assert.ok(SAYS[site](mark, row, value, check), `${site}: the text does not say ${JSON.stringify(mark)}: ${row?.text ?? value.title}`);
+      assert.ok(SAYS[site](mark, row, value, check, graph), `${site}: the text does not say ${JSON.stringify(mark)}: ${row?.text ?? value.title}`);
     const chained = answer(await chain(single(root, QUERY, args)));
     assert.ok(
       chained.knownMissing.some((reason) => reason === `TOOL_SAID:${QUERY}:rows[].missing` || reason === `TOOL_SAID:${QUERY}:missing`),
@@ -878,18 +909,23 @@ test("H3: a gaps row's mark names the check that produced it", (t) => {
   assert.deepEqual(unchecked.map((row) => row.missing.check).sort(), [...notRun].sort());
 });
 
-// The node rows a tree answer would have with no row cap, by the same rules
-// (paged by limit at every level, a node on the path not expanded).
-function uncappedNodeRows(ctx, id, direction, depth, limit, trail) {
-  let count = 0;
-  const items = walk.step(ctx, id, direction).slice(0, limit);
-  for (const item of items) {
-    count += 1;
+// The rows a tree answer would have with no row cap, by the same rules (paged
+// by limit at every level, a node on the path not expanded): node rows, and the
+// "more" rows of sub-lists below the first level.
+function uncappedRows(ctx, id, direction, depth, limit, trail, level = 1) {
+  const counted = { nodes: 0, more: 0 };
+  const all = walk.step(ctx, id, direction);
+  if (level > 1 && all.length > limit) counted.more += 1;
+  for (const item of all.slice(0, limit)) {
+    counted.nodes += 1;
     const onPath = trail.includes(item.to);
-    if (!onPath && depth > 1 && (item.to.startsWith("@") || ctx.ix.nodes.has(item.to)))
-      count += uncappedNodeRows(ctx, item.to, direction, depth - 1, limit, [...trail, item.to]);
+    if (!onPath && depth > 1 && (item.to.startsWith("@") || ctx.ix.nodes.has(item.to))) {
+      const below = uncappedRows(ctx, item.to, direction, depth - 1, limit, [...trail, item.to], level + 2);
+      counted.nodes += below.nodes;
+      counted.more += below.more;
+    }
   }
-  return count;
+  return counted;
 }
 
 test("H1: the row cap is said whenever rows are hidden; its count is given only when exact", (t) => {
@@ -899,59 +935,221 @@ test("H1: the row cap is said whenever rows are hidden; its count is given only 
     { mids: 60, leaves: 33, depth: 2, limit: 500 },
     { mids: 40, leaves: 60, depth: 2, limit: 50 },
     { mids: 40, leaves: 60, depth: 2, limit: 70 },
+    // The bound met right after a sub-list's last shown row: only its "more" row is hidden.
+    { mids: 40, leaves: 60, depth: 2, limit: 49, onlyMore: true },
     { mids: 50, leaves: 40, depth: 2, limit: 39 },
+    // The bound met at the very last row, whose own next level is empty: nothing is hidden.
+    { mids: 50, leaves: 39, depth: 3, limit: 500, nothing: true },
     // The bound ends inside the last sub-list: the count main prints is every hidden row.
     { mids: 33, leaves: 60, depth: 2, limit: 60, exact: true },
   ];
+  const projects = new Map();
   for (const shape of shapes) {
-    const g = bigProject(t, shape);
+    const key = `${shape.mids}x${shape.leaves}`;
+    if (!projects.has(key)) projects.set(key, bigProject(t, shape));
+    const g = projects.get(key);
     const ctx = productGraphQueryContext(readProductGraphBuild({ root: g.root }));
     for (const [id, depth] of [
       [HUB, shape.depth],
       [SAVE_CODE, 3],
     ]) {
       const value = queryProductGraph({ root: g.root, question: "down", id, depth, limit: shape.limit });
-      const shown = value.rows.filter((row) => row.kind === "node" && row.depth > 0).length;
-      const hidden = uncappedNodeRows(ctx, id, "down", depth, shape.limit, [id]) - shown;
+      const shownNodes = value.rows.filter((row) => row.kind === "node" && row.depth > 0).length;
+      const shownMore = value.rows.filter((row) => row.kind === "more" && row.depth > 1).length;
+      const free = uncappedRows(ctx, id, "down", depth, shape.limit, [id]);
+      const hidden = free.nodes - shownNodes;
+      const hiddenMore = free.more - shownMore;
       const cap = value.rows.find((row) => row.missing?.kind === "rowCap");
       const label = `${JSON.stringify(shape)} ${id} depth ${depth}`;
-      assert.equal(Boolean(cap), hidden > 0, `${label}: hidden ${hidden}`);
+      assert.equal(Boolean(cap), hidden > 0 || hiddenMore > 0, `${label}: hidden ${hidden} node rows, ${hiddenMore} more rows`);
       if (cap && cap.missing.left !== undefined) assert.equal(cap.missing.left, hidden, `${label}: a count is given only when exact`);
       if (shape.exact && id === HUB) {
         assert.equal(cap.missing.left, hidden, `${label}: the exact count is given`);
         assert.ok(cap.text.startsWith(`외 ${hidden}개 줄은 보이지 않았다`));
       }
+      if (shape.onlyMore && id === HUB) {
+        assert.deepEqual([hidden, hiddenMore], [0, 1], label);
+        assert.equal(cap.missing.site, "rowCapUncounted", label);
+      }
+      if (shape.nothing && id === HUB) assert.deepEqual([shownNodes, hidden, hiddenMore, Boolean(cap)], [2000, 0, 0, false], label);
       if (cap?.missing.site === "rowCapUncounted") assert.doesNotMatch(cap.text, /\d+개 줄/, `${label}: the added line has no number`);
     }
   }
 });
 
+// Rows of one large-limit call against the rows a chain gathers over pages of
+// `limit` (a larger limit when ten pages would not reach the end).
+async function pagedLikeWhole(root, args, limits) {
+  // Through the same MCP read the chain makes (its argument names and its rows).
+  const whole = answer(await read(QUERY, { project_root: root, ...args, limit: 500 }));
+  assert.equal(whole.status, "answered", JSON.stringify(args));
+  assert.equal(whole.page.remaining, 0, `${JSON.stringify(args)} fits one call`);
+  const expected = whole.rows.filter((row) => row.continues !== "nextPage");
+  for (const asked of limits) {
+    const limit = Math.max(asked, Math.ceil(whole.page.total / 10));
+    const label = `${JSON.stringify(args)} limit ${limit}`;
+    const value = answer(await chain({ ...single(root, QUERY, { ...args, limit }, { pages: 10 }), max_bytes: READ_CHAIN_LIMITS.maxBytes }));
+    assert.equal(value.results.s.cut, 0, label);
+    assert.deepEqual(value.results.s.rows, expected, label);
+    assert.equal(value.results.s.toolItems, whole.page.total, label);
+    assert.equal(value.notSeen.pagesLeft, 0, label);
+  }
+  return whole;
+}
+
 test("H2: following pages gives the rows one large-limit call gives, and the tool's item count", async (t) => {
-  const g = bigProject(t, { mids: 8, leaves: 3 });
+  const g = bigProject(t, { mids: 8, leaves: 3, fanIn: 12, keepStart: true });
+  editCheck(g, (check) => {
+    // Findings for one check, so its own list pages.
+    const named = check.checks.find((item) => item.key === "screen-without-activity");
+    named.outcome = "6건";
+    delete named.reason;
+    named.findings = Array.from({ length: 6 }, (_, k) => ({ id: `fe/s${k}`, name: `화면 ${k}`, at: { path: "a.md", line: k + 1 } }));
+  });
   const cases = [
     { question: "gaps", list: "unreachedCode" },
+    { question: "gaps", list: "screen-without-activity" },
     { question: "changes", list: "changed" },
+    { question: "changes", list: "content" },
     { question: "find", text: "leaf" },
     { question: "down", id: HUB },
     { question: "down", id: "@파일" },
-    { question: "reach", id: SAVE },
-    // up pages exactly as down (the same stepRows); no node here has enough callers to page.
     { question: "down", id: "@기능" },
+    { question: "down", id: SAVE },
+    { question: "up", id: "station/gen/fan.py#target" },
+    { question: "up", id: SAVE_CODE },
+    { question: "reach", id: SAVE },
+    { question: "reach", id: "station/gen/fan.py" },
+    { question: "impact", candidate_build: path.join(g.family, "build"), proposal_base_build: g.start },
   ];
-  for (const args of cases) {
-    const whole = queryProductGraph({ root: g.root, ...args, limit: 500 });
-    assert.equal(whole.status, "answered", JSON.stringify(args));
-    // A limit that needs more than one page and at most ten.
-    const limit = Math.max(1, Math.ceil(whole.page.total / 9));
-    const small = queryProductGraph({ root: g.root, ...args, limit });
-    assert.ok(small.page.remaining > 0, `${JSON.stringify(args)} pages`);
-    const value = answer(await chain({ ...single(g.root, QUERY, { ...args, limit }, { pages: 10 }), max_bytes: READ_CHAIN_LIMITS.maxBytes }));
-    assert.equal(value.results.s.cut, 0, JSON.stringify(args));
-    const expected = whole.rows.filter((row) => row.continues !== "nextPage");
-    assert.deepEqual(value.results.s.rows, expected, JSON.stringify(args));
-    assert.equal(value.results.s.toolItems, small.page.total, JSON.stringify(args));
-    assert.equal(value.notSeen.pagesLeft, 0, JSON.stringify(args));
+  for (const args of cases) await pagedLikeWhole(g.root, args, [1, 2, 3]);
+  const up = queryProductGraph({ root: g.root, question: "up", id: "station/gen/fan.py#target", limit: 5 });
+  assert.equal(up.page.total, 12, "up pages");
+  // The confirmation lists page the same way.
+  const c = graphProject(t);
+  const listed = await pagedLikeWhole(c.root, { question: "changes", list: "neverChecked" }, [1, 2, 3]);
+  assert.ok(listed.page.total > 3);
+});
+
+test("J1: rows equal to rows of an earlier page are kept; only rows the tool marks as repeated are left out", async (t) => {
+  const g = graphProject(t);
+  // Five missing ids: two identical next to each other and one more equal to them at the end.
+  const same = { kind: "기능", id: "fe/missing", at: { path: "doc.md", line: 3 } };
+  editCheck(g, (check) => {
+    check.lists.missingIds = [
+      { kind: "기능", id: "fe/a", at: { path: "doc.md", line: 1 } },
+      same,
+      { ...same },
+      { kind: "기능", id: "fe/b", at: { path: "doc.md", line: 4 } },
+      { ...same },
+    ];
+  });
+  const args = { question: "gaps", list: "missingIds" };
+  const whole = await pagedLikeWhole(g.root, args, [1, 2, 3]);
+  assert.equal(whole.page.total, 5);
+  const twin = whole.rows.find((row) => row.text.includes("fe/missing")).text;
+  assert.equal(whole.rows.filter((row) => row.text === twin).length, 3);
+  // A count over the pages counts every row.
+  const counted = answer(
+    await chain({
+      project_root: g.root,
+      steps: [
+        { id: "s", read: { name: QUERY, arguments: { ...args, limit: 1 } }, pages: 10 },
+        { id: "c", from: "s", count: { by: "text" } },
+      ],
+      return: [{ from: "c" }],
+    }),
+  );
+  assert.equal(counted.status, "completed", JSON.stringify(counted.knownMissing));
+  assert.equal(counted.results.c.rows.find((row) => row.value === twin).count, 3);
+  // A page that starts a new group keeps that group line; one that continues a group leaves it out.
+  for (const args of [
+    { question: "down", id: "MAIN-01" },
+    { question: "up", id: "MAIN-01#4" },
+  ]) {
+    const grouped = await pagedLikeWhole(g.root, args, [1, 2, 3]);
+    assert.ok(grouped.rows.filter((row) => row.kind === "group").length > 1, JSON.stringify(args));
   }
+  // A later page marks only what it repeats: its root and the group line it continues.
+  const second = queryProductGraph({ root: g.root, question: "down", id: "@파일", limit: 1, cursor: 1 });
+  assert.deepEqual(
+    second.rows.filter((row) => row.repeats).map((row) => [row.depth, row.kind, row.repeats]),
+    [
+      [0, "node", "earlierPage"],
+      [1, "group", "earlierPage"],
+    ],
+  );
+  assert.ok(
+    queryProductGraph({ root: g.root, question: "down", id: "@파일", limit: 1 }).rows.every((row) => !row.repeats),
+    "a first page repeats nothing",
+  );
+  // The text is what it was: the mark is data only.
+  assert.equal(second.text, [...second.header, second.title, ...second.rows.map((row) => `${"  ".repeat(row.depth)}${row.text}`)].join("\n") + "\n");
+  // A chain that starts at a later page keeps that page's repeated rows (it read no earlier page).
+  const started = answer(await chain(single(g.root, QUERY, { question: "down", id: "@파일", limit: 1, cursor: 1 })));
+  assert.equal(started.results.s.rows.filter((row) => row.repeats).length, 2);
+});
+
+test("J1: the row-cap lines of two pages are both kept", async (t) => {
+  const g = bigProject(t, { mids: 120, leaves: 39 });
+  const args = { question: "down", id: HUB, depth: 2, limit: 55 };
+  const capRows = [];
+  for (let cursor = 0; ;) {
+    const value = queryProductGraph({ root: g.root, ...args, cursor });
+    capRows.push(...value.rows.filter((row) => row.missing?.kind === "rowCap"));
+    if (!value.page.remaining) break;
+    cursor = value.page.nextCursor;
+  }
+  assert.ok(capRows.length >= 2, `${capRows.length} cap rows over the pages`);
+  const value = answer(
+    await chain({
+      project_root: g.root,
+      steps: [
+        { id: "s", read: { name: QUERY, arguments: args }, pages: 10 },
+        { id: "cap", from: "s", where: { field: "missing.kind", eq: "rowCap" } },
+      ],
+      return: [{ from: "cap" }],
+      max_bytes: READ_CHAIN_LIMITS.maxBytes,
+    }),
+  );
+  assert.equal(value.results.cap.total, capRows.length);
+});
+
+test("J2: an unrun check asked as its own list, a record limit, and a baseline moved after the build are reasons", async (t) => {
+  // A check that could not run, asked as its own list: the empty list is not "none found".
+  const g = graphProject(t);
+  const unrun = queryProductGraph({ root: g.root, question: "gaps", list: "screen-without-activity" });
+  assert.deepEqual(unrun.missing, [{ kind: "notChecked", site: "gapsCheckList", check: "screen-without-activity" }]);
+  const unrunChain = answer(await chain(single(g.root, QUERY, { question: "gaps", list: "screen-without-activity" })));
+  assert.equal(unrunChain.status, "partial");
+  assert.ok(unrunChain.knownMissing.includes(`TOOL_SAID:${QUERY}:missing`), JSON.stringify(unrunChain.knownMissing));
+  // The confirmation records read only in part: every answer says so.
+  const r = graphProject(t);
+  editCheck(r, (check) => (check.confirmations.recordLimit = { present: 2151, read: 2000 }));
+  for (const args of [
+    { question: "changes", list: "neverChecked" },
+    { question: "node", id: SAVE },
+    { question: "down", id: SAVE },
+  ]) {
+    const value = queryProductGraph({ root: r.root, ...args });
+    assert.equal(value.confirmationComparison, "partial", JSON.stringify(args));
+    const chained = answer(await chain(single(r.root, QUERY, args)));
+    assert.ok(chained.knownMissing.includes(`TOOL_SAID:${QUERY}:confirmationComparison`), JSON.stringify(chained.knownMissing));
+  }
+  // A baseline moved after the build: the comparison is with the earlier baseline.
+  const b = graphProject(t);
+  assert.equal(queryProductGraph({ root: b.root, question: "changes", list: "changed" }).baselineComparison, "compared");
+  moveProductGraphBaseline({ root: b.root });
+  for (const args of [{ question: "changes", list: "changed" }, { question: "changes" }, { question: "down", id: SAVE }]) {
+    const value = queryProductGraph({ root: b.root, ...args });
+    assert.equal(value.baselineComparison, "baseline-moved", JSON.stringify(args));
+    assert.match(value.header[2], /기준이 그 뒤 .*로 옮겨졌다/);
+    const chained = answer(await chain(single(b.root, QUERY, args)));
+    assert.ok(chained.knownMissing.includes(`TOOL_SAID:${QUERY}:baselineComparison`), JSON.stringify(chained.knownMissing));
+  }
+  // Built again against the new baseline, it is compared again.
+  buildProductGraph({ root: b.root });
+  assert.equal(queryProductGraph({ root: b.root, question: "changes" }).baselineComparison, "compared");
 });
 
 test("G5: a followed page's marker is not a row; a page not followed is counted, not listed", async (t) => {
@@ -1634,6 +1832,7 @@ test("R3: resultShape is returned by exact name, every declared field occurs in 
     { question: "changes", list: "content" },
     { question: "changes", list: "neverChecked", limit: 2 },
     { question: "impact" },
+    { question: "down", id: "@파일", limit: 1, cursor: 1 },
   ];
   for (const args of questions) {
     const value = answer(await read(QUERY, { project_root: f.root, ...args }));
@@ -1650,6 +1849,7 @@ test("R3: resultShape is returned by exact name, every declared field occurs in 
       for (const key of row.confirmation || []) assert.ok(query.fieldValues.confirmation.includes(key));
     }
     assert.ok(query.fieldValues.confirmationComparison.includes(value.confirmationComparison));
+    assert.ok(query.fieldValues.baselineComparison.includes(value.baselineComparison));
     if (value.page?.remaining) for (const dotted of Object.values(query.paging)) assert.notEqual(at(value, dotted), undefined, dotted);
   }
   // Fields that only other questions or other projects give are named here.

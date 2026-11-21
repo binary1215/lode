@@ -255,9 +255,9 @@ export function queryProductGraph(options = {}) {
     question,
     builtAt: read.builtAt,
     buildSha256: identity(),
-    confirmationComparison: ctx.confirmations ? (ctx.confirmations.status === "compared" ? "compared" : "not-read") : "absent",
+    confirmationComparison: confirmationComparison(ctx),
     // Whether the build was compared with a baseline (changedSinceBaseline is on rows only then).
-    baselineComparison: ctx.changes ? (ctx.changes.status === "compared" ? "compared" : String(ctx.changes.status ?? "absent")) : "absent",
+    baselineComparison: baselineComparison(ctx),
     ...(basisSha256 ? { basisSha256 } : {}),
     freshness: { state: read.freshness.state, text: read.freshness.text },
     ...(proposalFreshness ? { proposalFreshness } : {}),
@@ -297,6 +297,22 @@ function buildIdentity(read, { candidateRead = null, baseRead = null } = {}) {
 // (so screens and screen elements carry it too). Pseudo starts (@…) carry none.
 const CONFIRMATION_KEYS = Object.freeze(["neverChecked", "changedSinceCheck", "textChanged", "otherReader"]);
 const CHANGE_FIELD = Object.freeze({ changed: "changed", added: "added", reach: "reachChanged" });
+// Whether the confirmation lists (and every row's confirmation) come from all
+// the records: partial when the build read only the first records by name.
+function confirmationComparison(ctx) {
+  if (!ctx.confirmations) return "absent";
+  if (ctx.confirmations.status !== "compared") return "not-read";
+  return ctx.confirmations.recordLimit ? "partial" : "compared";
+}
+
+// Whether the build was compared with the baseline that is set now: a baseline
+// moved after the build makes the comparison one with the earlier baseline.
+function baselineComparison(ctx) {
+  if (!ctx.changes) return "absent";
+  if (ctx.changes.status !== "compared") return String(ctx.changes.status ?? "absent");
+  return ctx.baselineNow && ctx.baselineNow.setAt !== ctx.changes.baseline?.setAt ? "baseline-moved" : "compared";
+}
+
 function nodeRowFields(ctx) {
   const compared = ctx.changes?.status === "compared";
   const confirmed = new Map();

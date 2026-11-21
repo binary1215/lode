@@ -168,7 +168,8 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
 ```
 
 - `status`: `completed`, `partial`(상한에 닿았거나, 도구가 답에 줄이나 내용이
-  빠졌다고 했거나, 안쪽 호출이 실패·거부됨), `stopped`(빌드나 기준이 바뀜,
+  빠졌다고 했거나, 안쪽 호출이 실패·거부됐거나, `each` 값이 없는 줄이 있었거나,
+  `take`가 가리킨 곳에 목록이 없던 답이 있음. 곧 0이 아닌 `notSeen` 항목), `stopped`(빌드나 기준이 바뀜,
   `on_error: "stop"`, 요청 취소), `refused`(프로그램이 틀림).
 - `knownMissing`은 이 답들의 줄과 내용에서 무언가 빠졌다고 Lode가 아는 이유
   목록입니다. `STATUS_PARTIAL`이나 `STATUS_STOPPED`, `INNER_CALL_FAILED`,
@@ -185,7 +186,10 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
   아래에서 잘린 트리, 한 답의 줄 상한, 여섯 개로 잘린 찾기 결과의 연결, 하지 못한
   검사, 하지 않은 비교, 확인 기록 개수 한도, 읽지 못한 확인 기록), 상태가 `partial`이나
   `unavailable`인 전후 본문 한쪽, `compared`가 아닌 `confirmationComparison`이나
-  `baselineComparison`, `impact.status`가 `unavailable`이나 `partial`인 영향
+  `baselineComparison`(빌드가 확인 기록을 파일 이름 순으로 앞부분만 읽었으면
+  `confirmationComparison`은 `partial`이고 모든 목록과 줄의 `confirmation`이 그것에서
+  나옵니다. 빌드 뒤에 기준을 옮겼으면 `baselineComparison`은 `baseline-moved`입니다),
+  `impact.status`가 `unavailable`이나 `partial`인 영향
   미리보기입니다.
   `lode_project_graph`는 `status` `source-fallback`(그래프에 맞는 것이 없음),
   `truncated`, `omittedMatchCount`, `boundary.items`, `boundary.omittedCount`,
@@ -198,16 +202,26 @@ Claude 네이티브 Hook helper `lode_session_host_request_prepare`는 카탈로
   커버리지는 설계상 partial이므로 이 도구를 부르는 연쇄 읽기에는 늘 이유가 있습니다.
 - 표시(`missing`)에는 `kind`(`cut`, `rowCap`, `connectionsCut`, `notChecked`,
   `notCompared`, `recordLimit`, `recordUnread`), 그 표시를 쓴 `site`, 그리고 아는
-  것(`left`, `shown`과 `total`, `present`와 `read`, `check`나 `list`)이 있습니다. 줄
-  상한 표시는 그 수가 숨은 줄 전부일 때만 `left`를 가집니다. 비교하지 않은 목록에
-  답하는 "비교하지 않음 — …" 줄에는 따로 표시가 없고, 표시는 답에 있습니다. 기능의
-  위치를 줄 글에서 줄인 "… 외 N곳"은 줄 하나의 글을 줄인 것이고 목록이 아니므로
-  알리지 않습니다.
+  것(`left`, `shown`과 `total`, `present`와 `read`, `check`(하지 못한 검사. 그 검사의
+  목록을 따로 물은 답에도 붙음), `list`, `with`(비교하지 않은 것: `baseline`이나
+  `confirmations`), `code`(읽지 못한 기록의 이유 코드), `rows`(줄 상한))이 있습니다.
+  줄 상한 표시는 숨은 노드 줄을 셉니다. 그 수가 숨은 노드 줄 전부일 때만 `left`를
+  가지며, 숨은 묶음 줄이나 "외 N개" 줄은 그 수에 들지 않습니다. 비교하지 않은 목록에
+  답하는 "비교하지 않음 — …" 줄에는 따로 표시가 없고, 표시는 답에 있습니다.
+- 다음은 답이 싣는 목록이 아니라 줄 하나나 한 덩어리의 글을 줄인 것이어서 빠졌다고
+  알리지 않습니다. 기능의 위치를 줄 글에서 줄인 "… 외 N곳", `changes` 요약의 "본문은
+  여기 넣지 않는다"(본문은 `changes --list content`에 있음), 빌드가 뽑지 않는 노드
+  종류(개요의 "뽑지 않음". 머리말의 한계 줄에 있음), 40줄·한 줄 240자까지만 보이는
+  내용 줄의 전후 본문(`rows[].detail`에 쪽 한도 안에서 전부 있음), 그리고
+  `check.txt`와 Graph Explorer 페이지에만 있는 것(그곳에서 줄인 파일 목록과 나란히
+  보기 글)입니다.
 - 제품 그래프의 쪽 이어짐 줄(`continues: "nextPage"`)은 줄이 아니라 표시입니다.
   따라간 쪽은 그 줄들을 가져오고, 따라가지 않은 쪽은 `notSeen.pagesLeft`로 셉니다.
   뒤의 쪽이 되풀이하는 줄(뿌리, 머리 줄, 묶음 줄)은 다시 넣지 않으므로, 쪽을
-  따라가면 충분히 큰 limit로 한 번 부른 것과 같은 줄이 나옵니다. 결과의
-  `toolItems`는 도구 자신이 센 항목 수(`page.total`)입니다.
+  따라가면 충분히 큰 limit로 한 번 부른 것과 같은 줄이 나옵니다. 도구가 그 줄에
+  표시를 달고(`repeats: "earlierPage"`) 표시된 줄만 뺍니다. 앞의 줄과 같은 줄은
+  남습니다. 뒤의 쪽에서 시작한 연쇄 읽기는 그 줄들을 남깁니다. 결과의 `toolItems`는
+  도구 자신이 센 항목 수(읽기마다 첫 쪽의 `page.total`, `each`면 그 호출들의 합)입니다.
 - `basis`는 안쪽 도구마다 한 번씩 적습니다. `pinned`, 제품 그래프는 첫 답의
   `builtAt`과 신선도, 그리고 `stated`한 것(`confirmationComparison`,
   `baselineComparison`, impact면 그 상태와 이유), `lode_project_graph`는 `stated`한

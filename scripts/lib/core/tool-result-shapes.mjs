@@ -11,18 +11,20 @@ const SHAPES = Object.freeze({
     rowFields: Object.freeze({
       always: Object.freeze(["depth", "kind", "text"]),
       nodeRows: Object.freeze(["id", "nodeType", "changedSinceBaseline", "confirmation"]),
-      sometimes: Object.freeze(["score", "exact", "matchedTerms", "edge", "onPath", "group", "hint", "detail", "marker", "missing", "continues"]),
+      sometimes: Object.freeze(["score", "exact", "matchedTerms", "edge", "onPath", "group", "hint", "detail", "marker", "missing", "continues", "repeats"]),
     }),
     rowKinds: Object.freeze(["text", "node", "group", "more"]),
     fieldValues: Object.freeze({
       changedSinceBaseline: Object.freeze(["changed", "added", "reachChanged", "unchanged"]),
       confirmation: Object.freeze(["neverChecked", "changedSinceCheck", "textChanged", "otherReader"]),
-      confirmationComparison: Object.freeze(["compared", "not-read", "absent"]),
-      baselineComparison: Object.freeze(["compared", "no-baseline", "absent"]),
+      confirmationComparison: Object.freeze(["compared", "partial", "not-read", "absent"]),
+      baselineComparison: Object.freeze(["compared", "baseline-moved", "no-baseline", "absent"]),
       // missing (on a row, or on the answer for its title): kind, the site that wrote it, and the
-      // numbers it knows (left, shown, total, present, read). rowCap has left only when it is exact.
+      // fields it knows (left, shown, total, present, read, check, list, with, code, rows). rowCap counts
+      // hidden node rows and has left only when that count is every hidden node row.
       missingKinds: Object.freeze(["cut", "rowCap", "connectionsCut", "notChecked", "notCompared", "recordLimit", "recordUnread"]),
       continues: Object.freeze(["nextPage"]),
+      repeats: Object.freeze(["earlierPage"]),
     }),
     header: "header",
     title: "title",
@@ -35,7 +37,7 @@ const SHAPES = Object.freeze({
       baselineComparison: "baselineComparison",
     }),
     notes:
-      "nodeType and changedSinceBaseline are on rows whose id is a graph node (not @ starts); changedSinceBaseline only when the build was compared with a baseline. confirmation names the confirmation lists that name the node (a 뜻 line of a 기능, or a document row from or to it). Only when confirmationComparison is compared does an absent confirmation mean either still current or nothing to check: the build keeps only a count of current ones. buildSha256 names every build file and the baseline the answer read.",
+      "nodeType and changedSinceBaseline are on rows whose id is a graph node (not @ starts); changedSinceBaseline only when the build was compared with a baseline. confirmation names the confirmation lists that name the node (a 뜻 line of a 기능, or a document row from or to it). Only when confirmationComparison is compared does an absent confirmation mean either still current or nothing to check: the build keeps only a count of current ones; partial means the build read only the first confirmation records by name. baselineComparison baseline-moved means the baseline was moved after the build. A row a later page repeats from an earlier page carries repeats: earlierPage. buildSha256 names every build file and the baseline the answer read.",
     chain: Object.freeze({
       rows: "rows",
       answered: Object.freeze({ field: "status", in: Object.freeze(["answered"]) }),
@@ -46,8 +48,9 @@ const SHAPES = Object.freeze({
       pages: Object.freeze({ next: "page.nextMcpArguments", remaining: "page.remaining" }),
       // A page continuation row (continues: nextPage) is a marker, not a row.
       pageMarker: Object.freeze({ field: "continues", eq: "nextPage" }),
-      // A later page repeats its root, headings and group lines (depth 0 and 1).
-      pageRepeats: Object.freeze({ depthAtMost: 1 }),
+      // A later page marks the rows it repeats from an earlier page (its root,
+      // headings, the group line its first item continues).
+      pageRepeats: Object.freeze({ field: "repeats", eq: "earlierPage" }),
       // The tool's own item count for the paged list.
       items: "page.total",
       // The ways an answer says rows or content are missing from itself. The

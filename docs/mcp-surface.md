@@ -179,8 +179,9 @@ headers, then issues become counts by code, then `basis` keeps tool names.
 ```
 
 - `status`: `completed`; `partial` (a bound was reached, a tool said rows or
-  content were missing from its answer, or an inner call failed or was
-  refused); `stopped` (the build or baseline changed, `on_error: "stop"`, or
+  content were missing from its answer, an inner call failed or was refused,
+  rows had no `each` value, or an answer had no list where `take` pointed:
+  any non-zero `notSeen` count); `stopped` (the build or baseline changed, `on_error: "stop"`, or
   the request was cancelled); `refused` (the program is invalid).
 - `knownMissing` lists the reasons Lode knows something is missing from the
   rows and content of these answers: `STATUS_PARTIAL` or `STATUS_STOPPED`,
@@ -200,7 +201,10 @@ headers, then issues become counts by code, then `basis` keeps tool names.
   check not run, a comparison not made, the confirmation-record limit, an
   unread confirmation record), a before/after side whose status is `partial`
   or `unavailable`, `confirmationComparison` or `baselineComparison` other
-  than `compared`, and an impact preview whose `impact.status` is
+  than `compared` (`confirmationComparison` is `partial` when the build read
+  only the first confirmation records by name, which every list and row
+  `confirmation` then comes from; `baselineComparison` is `baseline-moved`
+  when the baseline was moved after the build), and an impact preview whose `impact.status` is
   `unavailable` or `partial`; for `lode_project_graph`,
   `status` `source-fallback` (no graph match), `truncated`, `omittedMatchCount`,
   `boundary.items`, `boundary.omittedCount`, `boundary.omittedAnchorCount`,
@@ -215,17 +219,30 @@ headers, then issues become counts by code, then `basis` keeps tool names.
 - A mark (`missing`) has a `kind` (`cut`, `rowCap`, `connectionsCut`,
   `notChecked`, `notCompared`, `recordLimit`, `recordUnread`), the `site` that
   wrote it, and what it knows: `left`, `shown` and `total`, `present` and
-  `read`, `check` or `list`. The row-cap mark has `left` only when that count is
-  every hidden row. A "비교하지 않음 — …" row answering a list that was not
-  compared has no mark of its own: the mark is on the answer. A 기능's
-  positions shortened in its line ("… 외 N곳") shorten one row's text, not the
-  list, and are not reported.
+  `read`, `check` (the check that did not run, also on the answer of that
+  check's own list), `list`, `with` (`baseline` or `confirmations`, what was
+  not compared), `code` (an unread record's reason code) and `rows` (the row
+  cap). The row-cap mark counts hidden node rows: it has `left` only when that
+  count is every hidden node row, and a hidden group line or "more" row is not
+  in it. A "비교하지 않음 — …" row answering a list that was not compared has
+  no mark of its own: the mark is on the answer.
+- Not reported as missing, because they shorten how one row or one block
+  reads, not what the answer lists: a 기능's positions shortened in its line
+  ("… 외 N곳"); "본문은 여기 넣지 않는다" in the `changes` summary (the
+  content is `changes --list content`); a node type the build does not extract
+  ("뽑지 않음" in the overview; the header's limits say so); the before/after
+  text of a content row shown up to 40 lines of 240 characters (`rows[].detail`
+  has it whole within the page bound); and what only `check.txt` and the Graph
+  Explorer page show (file lists and side-by-side text shortened there).
 - A page continuation row of the product graph (`continues: "nextPage"`) is a
   marker, not a row: a followed page brings its rows, and a page not followed
   is counted in `notSeen.pagesLeft`. Rows a later page repeats (its root, its
   headings, a group line) are not added again, so following pages gives the
-  rows one call with a large enough limit gives; `toolItems` in a result is
-  the tool's own item count (`page.total`).
+  rows one call with a large enough limit gives. The tool marks those rows
+  (`repeats: "earlierPage"`) and only marked rows are left out: a row equal to
+  an earlier one is kept. A chain that starts at a later page keeps them.
+  `toolItems` in a result is the tool's own item count (`page.total` of each
+  read's first page, summed over the calls of an `each`).
 - `basis` names each inner tool once: `pinned`; for the product graph the first
   answer's `builtAt` and freshness and what it `stated`
   (`confirmationComparison`, `baselineComparison`, and for impact its status
