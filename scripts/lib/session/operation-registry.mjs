@@ -1843,6 +1843,49 @@ export const OPERATIONS = Object.freeze([
     impl: () => import("../world/product-graph.mjs").then((module) => module.confirmProductGraph),
   },
   {
+    name: "lode_product_graph_runs_add",
+    tool: {
+      name: "lode_product_graph_runs_add",
+      description:
+        "Record runs the project made (Lode runs nothing): per run the 기능, what was run, a state label, the raw output and the exit code. Lode adds the 기능's content and reach hashes from the current build and the way code is read, so a run made on older code never becomes evidence for today's code. A later build makes 기능→화면요소 edges from phrases of 화면요소 rows found in current runs' output, with the evidence stated. Refused with PRODUCT_GRAPH_BUILD_STALE when the build is not the current source, PRODUCT_GRAPH_RUN_TARGET_MISSING when a 기능 is not in the graph, PRODUCT_GRAPH_RUN_LIMIT for an output over 16 KiB (refused, not cut) or past 2000 records; a refusal writes nothing. Writes run records under 실행 기록/ and nothing else. The output text is stored as given and travels with a portable export; Lode does not inspect it for secrets.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          runs: {
+            type: "array",
+            minItems: 1,
+            items: {
+              type: "object",
+              properties: {
+                기능: { type: "string", minLength: 1 },
+                실행: { type: "string", minLength: 1, maxLength: 2000, description: "What was run." },
+                상태: { type: "string", maxLength: 2000, description: "A state label." },
+                출력: { type: "string", description: "The raw output text (16 KiB at most)." },
+                종료: { type: "integer", description: "The exit code." },
+              },
+              required: ["기능", "실행", "출력"],
+              additionalProperties: false,
+            },
+          },
+          rationale: { type: "string", minLength: 1, maxLength: 2000, description: "Why these runs were made." },
+        },
+        required: ["project_root", "runs"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root, runs: args.runs ?? [], rationale: args.rationale ?? null }] },
+    cli: {
+      command: "product-graph-runs-add",
+      flags: ["input"],
+      args: ({ root, options, inputJson }) => {
+        const input = onlyFields(inputJson(options, "Product graph runs"), ["runs", "rationale"], "Product graph runs");
+        return [{ root, runs: input.runs ?? [], rationale: input.rationale ?? null }];
+      },
+    },
+    impl: () => import("../world/product-graph.mjs").then((module) => module.addProductGraphRuns),
+  },
+  {
     name: "lode_change_set_status",
     tool: {
       name: "lode_change_set_status",
@@ -6213,6 +6256,7 @@ const supplementalReadOnlyHints = {
   lode_product_graph_sample: true,
   lode_product_graph_baseline: false,
   lode_product_graph_confirm: false,
+  lode_product_graph_runs_add: false,
   lode_product_graph_approve: false,
   lode_conformance_propose: false,
   lode_conformance_disposition: false,

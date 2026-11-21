@@ -20,6 +20,8 @@ export const productGraphWalk = (() => {
     issues: "읽지 못한 확인 기록",
   });
   const CHECK_BY = Object.freeze({ "agent-checked": "에이전트 확인", "user-approved": "사용자 승인" });
+  // Run records (2.6).
+  const RUN_WORDS = Object.freeze({ stale: "실행 뒤 코드가 바뀜" });
   const CHECK_NODE_WORDS = Object.freeze({ changed: "내용이 바뀜", reachChanged: "닿는 코드가 바뀜", removed: "사라짐", unhashed: "내용 해시 없음" });
   // The build's own words, shared with the page so it never retypes them.
   const WORDS = Object.freeze({
@@ -178,6 +180,8 @@ export const productGraphWalk = (() => {
     ctx.confirmations = check?.confirmations || null;
     ctx.marks = changeMarks(ctx.changes);
     ctx.checkMarks = checkMarks(ctx.confirmations);
+    // 기능 whose newest run no longer holds (2.6).
+    ctx.runMarks = new Set((check?.lists?.runs?.stale || []).map((run) => run.기능));
     ctx.unresolved = new Map();
     for (const item of check?.lists?.unresolvedHandlers || []) if (!ctx.unresolved.has(item.id)) ctx.unresolved.set(item.id, item.reason);
     return ctx;
@@ -242,7 +246,7 @@ export const productGraphWalk = (() => {
     const at = position(node);
     const mark = ctx.marks.get(id);
     const checkMark = ctx.checkMarks?.get(id);
-    let line = `${node.type} ${id}${words ? ` — ${words}` : ""}${detail}${at ? ` ${at}` : ""}${basisMark(node.basis)}${mark ? ` {${CHANGE_WORDS[mark]}}` : ""}${checkMark ? ` {뜻: ${checkMark}}` : ""}`;
+    let line = `${node.type} ${id}${words ? ` — ${words}` : ""}${detail}${at ? ` ${at}` : ""}${basisMark(node.basis)}${mark ? ` {${CHANGE_WORDS[mark]}}` : ""}${checkMark ? ` {뜻: ${checkMark}}` : ""}${ctx.runMarks?.has(id) ? ` {실행: ${RUN_WORDS.stale}}` : ""}`;
     if (node.type === "기능" && !handlersOf(ctx.ix, id).length && node.handling === "따라간다")
       line += ` — 처리 코드 없음: ${ctx.unresolved.get(id) || "처리 코드를 찾지 못함"}`;
     return line;
@@ -1309,6 +1313,62 @@ export const productGraphWalk = (() => {
         byPath.sites.map((site) => ({ text: `${site.path}:${site.line} ${site.from} → ${site.to} — "${site.literal}"`, nodeId: site.from })),
         { show: byPath.sites.length > 0 || byPath.ambiguous > 0 },
       );
+    // Run records and the machine's 기능→화면요소 edges (2.6). Shown only
+    // when there is a run record or a quoted phrase in a 화면요소 row, so a
+    // project with neither reads as before.
+    const runs = lists.runs;
+    if (runs?.records) {
+      add(
+        "runsStale",
+        runs.stale.length,
+        [
+          `${RUN_WORDS.stale}: ${runs.stale.length}개 (실행 기록 ${runs.records}개, 기능 ${runs.functions}개 중 지금 코드에 그대로인 기능 ${runs.currentFunctions}개. 같은 기능·같은 실행 이름의 새 실행이 대신한 옛 실행 ${runs.replaced}개는 세지 않는다)`,
+        ],
+        runs.stale.map((run) => ({ text: runText(run), nodeId: run.기능 })),
+      );
+    }
+    if (runs?.issues?.length)
+      add(
+        "runIssues",
+        runs.issues.length,
+        [`실행 기록으로 읽지 못한 파일: ${runs.issues.length}개`],
+        runs.issues.map((item) => ({ text: `${item.path} — ${item.reason}` })),
+      );
+    const evidence = lists.screenEvidence;
+    if (evidence && (evidence.phrased || runs?.records)) {
+      add(
+        "documentOnly",
+        evidence.documentOnly.length,
+        [`문서에만 있음(실행·코드 근거 없음): ${evidence.documentOnly.length}개`],
+        evidence.documentOnly.map((item) => ({ text: `${item.from} → ${item.to} (${where(item.at)})`, nodeId: item.to })),
+      );
+      add(
+        "machineOnly",
+        evidence.machineOnly.length,
+        [`실행·코드에만 있음(문서에 없음): ${evidence.machineOnly.length}개 (기계가 찾은 연결이다. 승인이 아니고 문서를 바꾸지 않는다. 틀린 연결은 호출 방식 표의 빼는 연결로 뺀다)`],
+        evidence.machineOnly.map((item) => ({ text: `${item.from} → ${item.to} — 근거: ${item.근거.join("; ")}`, nodeId: item.to })),
+      );
+      add(
+        "unconnected",
+        evidence.unconnected.length,
+        [`이어지지 않은 화면요소: ${evidence.unconnected.length}개`],
+        evidence.unconnected.map((item) => ({ text: `${item.id} (${where(item.at)}) — ${item.reason}`, nodeId: item.id })),
+      );
+      add(
+        "unresolvedConstantUses",
+        evidence.unresolvedConstantUses.length,
+        [`화면요소 글을 담은 상수를 쓰는 곳을 풀지 못함: ${evidence.unresolvedConstantUses.length}곳`],
+        evidence.unresolvedConstantUses.map((item) => ({ text: `${item.path}:${item.line} ${item.constant} (정의 ${where(item.definedAt)}, ${item.element})` })),
+        { show: evidence.unresolvedConstantUses.length > 0 },
+      );
+      add(
+        "removedMachineEdges",
+        evidence.removed.length,
+        [`빼는 연결로 뺀 기계 연결: ${evidence.removed.length}개`],
+        evidence.removed.map((item) => ({ text: `${item.from} → ${item.to} — ${item.이유}` })),
+        { show: evidence.removed.length > 0 },
+      );
+    }
     add(
       "counts",
       null,
@@ -1597,9 +1657,13 @@ export const productGraphWalk = (() => {
       );
     }
     if (CONFIRMATION_LISTS.some((item) => item.key === list)) return confirmationsAnswer(ctx, { list, limit, cursor, answer });
+    if (RUN_LISTS.some((item) => item.key === list)) return runsAnswer(ctx, { list, limit, cursor, answer });
     const known = CHANGE_LISTS.find((item) => item.key === list);
     if (!known)
-      return fail("PRODUCT_GRAPH_QUERY_INVALID", `모르는 목록: ${list}. 있는 것: ${[...CHANGE_LISTS, ...CONFIRMATION_LISTS].map((item) => item.key).join(", ")}`);
+      return fail(
+        "PRODUCT_GRAPH_QUERY_INVALID",
+        `모르는 목록: ${list}. 있는 것: ${[...CHANGE_LISTS, ...CONFIRMATION_LISTS, ...RUN_LISTS].map((item) => item.key).join(", ")}`,
+      );
     if (!changes || changes.status !== "compared")
       return answer(`기준과 비교 — ${known.title}: 비교하지 않음`, [{ depth: 1, kind: "text", text: `비교하지 않음 — ${changes?.reason || "이 빌드에는 기준 비교가 없다"}` }], {
         missing: [{ kind: "notCompared", site: "changesList", with: "baseline" }],
@@ -1620,6 +1684,26 @@ export const productGraphWalk = (() => {
     }));
     if (paged.remaining) rows.push(moreRow(1, paged, `changes --list ${list} --cursor ${paged.nextCursor}`, true));
     return answer(`기준과 비교 — ${known.title} ${items.length}개`, rows, {
+      page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor },
+    });
+  }
+
+  // Run records (2.6), apart from the baseline: the runs that count now and
+  // those whose 기능 changed since (실행 뒤 코드가 바뀜).
+  const RUN_LISTS = Object.freeze([
+    { key: "runsCurrent", title: "지금 코드에 그대로인 실행" },
+    { key: "runsStale", title: RUN_WORDS.stale },
+  ]);
+  const runText = (run) => `${run.id} ${run.기능} "${run.실행}"${run.상태 ? ` [${run.상태}]` : ""}${run.종료 !== null && run.종료 !== undefined ? ` 종료 ${run.종료}` : ""}${run.reason ? ` — ${run.reason}` : ""}`;
+  function runsAnswer(ctx, { list, limit, cursor, answer }) {
+    const known = RUN_LISTS.find((item) => item.key === list);
+    const runs = ctx.check?.lists?.runs;
+    if (!runs) return answer(`실행 기록 — ${known.title}: 읽지 않음`, [{ depth: 1, kind: "text", text: "이 빌드는 실행 기록을 읽지 않았다(이전 버전의 빌드)" }], { missing: [{ kind: "notCompared", site: "runsList", list }] });
+    const items = (list === "runsCurrent" ? runs.current : runs.stale).map((run) => ({ nodeId: run.기능, text: runText(run) }));
+    const paged = page(items, { limit, cursor });
+    const rows = paged.slice.map((item) => ({ depth: 1, kind: "node", id: item.nodeId, text: item.text }));
+    if (paged.remaining) rows.push(moreRow(1, paged, `changes --list ${list} --cursor ${paged.nextCursor}`, true));
+    return answer(`실행 기록 — ${known.title} ${items.length}개`, rows, {
       page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor },
     });
   }

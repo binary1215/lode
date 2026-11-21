@@ -794,6 +794,10 @@ test("H5: every mark site of the walk is reached, its text says what its mark sa
     gapsCheck: () => ({ root: big.root, args: { question: "gaps" } }),
     gapsCheckList: () => ({ root: big.root, args: { question: "gaps", list: "screen-without-activity" } }),
     unpointedFunctions: () => ({ root: big.root, args: { question: "gaps", list: "unpointedFunctions" } }),
+    runsList: () => {
+      const { g } = edited((check) => delete check.lists.runs);
+      return { root: g.root, args: { question: "changes", list: "runsStale" } };
+    },
     baselineNone: () => {
       const { g } = edited((check) => delete check.changes);
       return { root: g.root, args: { question: "changes" } };
@@ -872,6 +876,8 @@ test("H5: every mark site of the walk is reached, its text says what its mark sa
       return Boolean(named) && row.text.includes(`${named.heading} — 검사 못 함: ${named.reason}`);
     },
     unpointedFunctions: (mark, row, value) => /검사 못 함: /.test(value.title),
+    runsList: (mark, row, value) =>
+      value.title.endsWith(": 읽지 않음") && value.rows[0].text === "이 빌드는 실행 기록을 읽지 않았다(이전 버전의 빌드)" && mark.list === "runsStale",
     baselineNone: (mark, row) => row.text === "- 기준 없음 — 이 빌드에는 기준 비교가 없다",
     changesList: (mark, row, value) => value.title.endsWith(": 비교하지 않음"),
     unexplainedLine: (mark, row) => row.text === "- 소스가 그대로인 곳에서 달라진 것: 비교하지 않음 — test: not compared",

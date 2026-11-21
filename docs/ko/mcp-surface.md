@@ -342,6 +342,7 @@ CLI에도 같은 연쇄 읽기가 있고, 검사와 답도 같습니다:
 | `lode_product_graph` | `sample` | `lode_tools_read` | `lode_product_graph_sample` |
 | `lode_product_graph` | `baseline` | `lode_tools_call` | `lode_product_graph_baseline` |
 | `lode_product_graph` | `confirm` | `lode_tools_call` | `lode_product_graph_confirm` |
+| `lode_product_graph` | `runs_add` | `lode_tools_call` | `lode_product_graph_runs_add` |
 | `lode_product_graph` | `approve` | `lode_tools_call` | `lode_product_graph_approve` |
 | `lode_vcs` | `change_set_status` | `lode_tools_read` | `lode_change_set_status` |
 | `lode_vcs` | `evidence` | `lode_tools_read` | `lode_vcs_evidence` |

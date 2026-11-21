@@ -515,7 +515,8 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
   };
   for (const edge of graph.edges) {
     const target = edge.type === "기능→화면요소" ? edge.from : ["화면요소→기능", "화면→코드"].includes(edge.type) ? edge.to : null;
-    if (!target || !edge.basis) continue;
+    // A machine-made edge (2.6) is evidence, not a document row.
+    if (!target || !edge.basis || edge.machine) continue;
     const change = changeOf(target);
     if (!change) continue;
     reviewAgain.documentRows.push({

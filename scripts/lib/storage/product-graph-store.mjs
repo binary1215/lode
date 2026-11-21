@@ -24,6 +24,9 @@ export const PRODUCT_GRAPH_BUILD_DIRECTORY = "build";
 export const PRODUCT_GRAPH_APPROVAL_DIRECTORY = "승인";
 // Confirmation records: what a 뜻 line or a document row was checked against.
 export const PRODUCT_GRAPH_CHECK_DIRECTORY = "확인";
+// Run records: what a project ran and what came back, written by
+// product-graph-runs-add with the code hashes of the build it was run on.
+export const PRODUCT_GRAPH_RUN_DIRECTORY = "실행 기록";
 export const PRODUCT_GRAPH_ACTIVITY_DIRECTORY = "유저플로우 기획서";
 export const PRODUCT_GRAPH_SCREEN_DIRECTORY = "화면설계서";
 export const PRODUCT_GRAPH_POLICY_FILE = "정책.md";
@@ -41,6 +44,7 @@ export const SCREEN_ID = /^[A-Z][A-Z0-9]*-[0-9]+$/;
 export const ACTIVITY_ID = /^UA-[A-Z][A-Z0-9]*-[0-9]+$/;
 const APPROVAL_NAME = /^(product-graph-approval-[a-f0-9]{24})\.json$/;
 const CHECK_NAME = /^(product-graph-check-[a-f0-9]{24})\.json$/;
+const RUN_NAME = /^(product-graph-run-[a-f0-9]{24})\.json$/;
 
 export const PRODUCT_GRAPH_APPROVAL_PROTOCOL = "lode-product-graph-approval";
 export const PRODUCT_GRAPH_APPROVAL_VERSION = 1;
@@ -74,6 +78,7 @@ export function classifyProductGraphPath(relative) {
   if (directory === PRODUCT_GRAPH_APPROVAL_DIRECTORY && APPROVAL_NAME.test(name))
     return { role: "approval", canon: true, approvalId: APPROVAL_NAME.exec(name)[1] };
   if (directory === PRODUCT_GRAPH_CHECK_DIRECTORY && CHECK_NAME.test(name)) return { role: "check", canon: true, checkId: CHECK_NAME.exec(name)[1] };
+  if (directory === PRODUCT_GRAPH_RUN_DIRECTORY && RUN_NAME.test(name)) return { role: "run", canon: true, runId: RUN_NAME.exec(name)[1] };
   return null;
 }
 
@@ -82,6 +87,7 @@ export const productGraphSubdirectories = Object.freeze([
   PRODUCT_GRAPH_SCREEN_DIRECTORY,
   PRODUCT_GRAPH_APPROVAL_DIRECTORY,
   PRODUCT_GRAPH_CHECK_DIRECTORY,
+  PRODUCT_GRAPH_RUN_DIRECTORY,
 ]);
 
 export function decodeProductGraphText(bytes) {
@@ -340,6 +346,110 @@ export function verifyProductGraphCheck(document, { projectId = null, checkId = 
   return document;
 }
 
+// ---------- run records ----------
+// What a project (its agent, its scripts) ran and what came back, one record
+// per product-graph-runs-add. Lode ran nothing: it adds, for every run, the
+// 기능's content and reach hashes from the present build and the way code was
+// read, so a run made on older code never makes an edge on today's code.
+// Append-only and content-addressed like confirmation records; never edited
+// or deleted by Lode. Lode does not inspect the output for secrets.
+export const PRODUCT_GRAPH_RUN_PROTOCOL = "lode-product-graph-run";
+export const PRODUCT_GRAPH_RUN_VERSION = 1;
+export const PRODUCT_GRAPH_RUN_MAX_RECORDS = 2000;
+export const PRODUCT_GRAPH_RUN_MAX_BYTES = 256 * 1024;
+export const PRODUCT_GRAPH_RUN_MAX_OUTPUT = 16 * 1024;
+export const PRODUCT_GRAPH_RUN_MAX_RUNS = 500;
+const RUN_TEXT_MAX = 2000;
+
+function runEntry(run, index) {
+  if (!run || typeof run !== "object" || Array.isArray(run)) fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (Object.keys(run).sort().join(",") !== "basis,기능,번호,상태,실행,종료,출력") fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (run.번호 !== index + 1) fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (!isId(run.기능) || typeof run.실행 !== "string" || !run.실행.trim() || run.실행.length > RUN_TEXT_MAX) fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (run.상태 !== null && (typeof run.상태 !== "string" || run.상태.length > RUN_TEXT_MAX)) fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (typeof run.출력 !== "string" || Buffer.byteLength(run.출력) > PRODUCT_GRAPH_RUN_MAX_OUTPUT) fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (run.종료 !== null && !Number.isSafeInteger(run.종료)) fail("PRODUCT_GRAPH_RUN_INVALID");
+  const basis = run.basis;
+  if (!basis || typeof basis !== "object" || Array.isArray(basis) || Object.keys(basis).sort().join(",") !== "contentSha256,id,reachSha256")
+    fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (basis.id !== run.기능 || !HEX64.test(basis.contentSha256) || !HEX64.test(basis.reachSha256)) fail("PRODUCT_GRAPH_RUN_INVALID");
+  return {
+    번호: run.번호,
+    기능: run.기능,
+    실행: run.실행,
+    상태: run.상태,
+    출력: run.출력,
+    종료: run.종료,
+    basis: { id: basis.id, contentSha256: basis.contentSha256, reachSha256: basis.reachSha256 },
+  };
+}
+
+function runPayload(record) {
+  if (typeof record.projectId !== "string" || !record.projectId) fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (typeof record.recordedAt !== "string" || !ISO_TIME.test(record.recordedAt) || !Number.isFinite(Date.parse(record.recordedAt)))
+    fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (record.rationale !== null && (typeof record.rationale !== "string" || !record.rationale.trim() || record.rationale.length > 2000))
+    fail("PRODUCT_GRAPH_RUN_INVALID");
+  const reader = record.reader;
+  if (!reader || typeof reader !== "object" || Array.isArray(reader) || Object.keys(reader).sort().join(",") !== "generator,graphVersion,sourceAnalysis")
+    fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (![reader.generator, reader.graphVersion, reader.sourceAnalysis].every(readerValue)) fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (!Array.isArray(record.runs) || !record.runs.length || record.runs.length > PRODUCT_GRAPH_RUN_MAX_RUNS) fail("PRODUCT_GRAPH_RUN_INVALID");
+  return {
+    schemaVersion: 1,
+    kind: "ProductGraphRunRecord",
+    protocol: { name: PRODUCT_GRAPH_RUN_PROTOCOL, version: PRODUCT_GRAPH_RUN_VERSION },
+    projectId: record.projectId,
+    recordedAt: record.recordedAt,
+    rationale: record.rationale === null ? null : record.rationale.trim(),
+    reader: { generator: reader.generator ?? null, graphVersion: reader.graphVersion ?? null, sourceAnalysis: reader.sourceAnalysis ?? null },
+    runs: record.runs.map(runEntry),
+    lodeRan: false,
+    authority: "project-supplied-run-evidence-not-lode-execution",
+    instructionAuthority: false,
+    executionAuthority: false,
+  };
+}
+
+export function productGraphRunRecord({ projectId, recordedAt, rationale = null, reader, runs }) {
+  const payload = runPayload({ projectId, recordedAt, rationale, reader, runs });
+  const runHash = sha256Hex(canonicalJson(payload));
+  return { ...payload, runId: `product-graph-run-${runHash.slice(0, 24)}`, runHash };
+}
+
+// A record whose name, fields or content address do not match is not a run record.
+export function verifyProductGraphRun(document, { projectId = null, runId = null } = {}) {
+  const fields = [
+    "schemaVersion",
+    "kind",
+    "protocol",
+    "projectId",
+    "recordedAt",
+    "rationale",
+    "reader",
+    "runs",
+    "lodeRan",
+    "authority",
+    "instructionAuthority",
+    "executionAuthority",
+    "runId",
+    "runHash",
+  ];
+  if (
+    !document ||
+    typeof document !== "object" ||
+    Array.isArray(document) ||
+    JSON.stringify(Object.keys(document).sort()) !== JSON.stringify([...fields].sort())
+  )
+    fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (document.kind !== "ProductGraphRunRecord" || document.schemaVersion !== 1) fail("PRODUCT_GRAPH_RUN_INVALID");
+  const expected = productGraphRunRecord(document);
+  if (canonicalJson(expected) !== canonicalJson(document)) fail("PRODUCT_GRAPH_RUN_INVALID");
+  if (projectId !== null && document.projectId !== projectId) fail("PRODUCT_GRAPH_RUN_PROJECT_MISMATCH");
+  if (runId !== null && document.runId !== runId) fail("PRODUCT_GRAPH_RUN_INVALID");
+  return document;
+}
+
 const HANDLINGS = ["따라간다", "경계로 둔다", "범위 밖"];
 const RULE_KINDS = ["hook", "command", "tool", "cli", "프론트"];
 const ENTRY_CODE_MAX = 64;
@@ -423,7 +533,20 @@ export function verifyUiBindingPattern(entry, where = "UI 연결 패턴", { allo
 export function verifyProductGraphRules(document) {
   const invalid = (detail) => fail("PRODUCT_GRAPH_RULES_INVALID", `호출 방식 표가 올바르지 않다: ${detail}`);
   if (!document || typeof document !== "object" || Array.isArray(document)) invalid("JSON 객체가 아니다");
-  const allowedTop = ["schemaVersion", "kind", "rules", "source", "화면 코드 표시", "화면 파일", "내장 이름", "손으로 적는 연결"];
+  const allowedTop = ["schemaVersion", "kind", "rules", "source", "화면 코드 표시", "화면 파일", "내장 이름", "손으로 적는 연결", "빼는 연결"];
+  // A machine-made 기능→화면요소 edge judged wrong (2.6).
+  const removals = document["빼는 연결"];
+  if (removals !== undefined) {
+    if (!Array.isArray(removals) || removals.length > HAND_RULES_MAX) invalid(`빼는 연결은 배열이다 (${HAND_RULES_MAX}개까지)`);
+    for (const [index, rule] of removals.entries()) {
+      const where = `빼는 연결[${index}]`;
+      if (!rule || typeof rule !== "object" || Array.isArray(rule)) invalid(`${where}가 객체가 아니다`);
+      for (const key of Object.keys(rule)) if (!["판단", "기능", "화면요소", "이유"].includes(key)) invalid(`${where}에 모르는 항목 ${key}`);
+      if (rule["판단"] !== true) invalid(`${where}.판단은 true여야 한다`);
+      for (const key of ["기능", "화면요소"]) if (typeof rule[key] !== "string" || !rule[key] || rule[key].length > 1024) invalid(`${where}.${key}는 ID다`);
+      if (typeof rule["이유"] !== "string" || !rule["이유"].trim() || rule["이유"].length > 500) invalid(`${where}.이유가 필요하다`);
+    }
+  }
   for (const key of Object.keys(document)) if (!allowedTop.includes(key)) invalid(`모르는 항목 ${key}`);
   if (document.schemaVersion !== 1 || document.kind !== "LodeProductGraphEntryRules") invalid("schemaVersion 1, kind LodeProductGraphEntryRules 이어야 한다");
   if (!Array.isArray(document.rules ?? [])) invalid("rules는 배열이어야 한다");
@@ -558,6 +681,14 @@ export function verifyProductGraphCanonFile(relative, bytes, { projectId = null 
       fail("PRODUCT_GRAPH_APPROVAL_INVALID");
     }
     verifyProductGraphApproval(document, { projectId, approvalId: target.approvalId });
+  } else if (target.role === "run") {
+    let document;
+    try {
+      document = JSON.parse(text);
+    } catch {
+      fail("PRODUCT_GRAPH_RUN_INVALID");
+    }
+    verifyProductGraphRun(document, { projectId, runId: target.runId });
   } else if (target.role === "check") {
     let document;
     try {
@@ -580,6 +711,7 @@ export function verifyProductGraphCanonOriginals({ directory, list, readBytes, p
   const verified = [],
     unrecognized = [];
   let checks = 0;
+  let runs = 0;
   const top = list(base);
   if (!top.length) return { verified, unrecognized };
   const visit = (prefix, names) => {
@@ -596,7 +728,14 @@ export function verifyProductGraphCanonOriginals({ directory, list, readBytes, p
         continue;
       }
       // Confirmation records are counted apart from the documents.
-      if (target.role === "check" ? ++checks > PRODUCT_GRAPH_CHECK_MAX_RECORDS : verified.length - checks >= PRODUCT_GRAPH_MAX_FILES)
+      // Run records too, each kind against its own bound.
+      if (
+        target.role === "check"
+          ? ++checks > PRODUCT_GRAPH_CHECK_MAX_RECORDS
+          : target.role === "run"
+            ? ++runs > PRODUCT_GRAPH_RUN_MAX_RECORDS
+            : verified.length - checks - runs >= PRODUCT_GRAPH_MAX_FILES
+      )
         fail("PRODUCT_GRAPH_TOO_MANY_FILES");
       verifyProductGraphCanonFile(within, readBytes(`${base}/${within}`), { projectId });
       verified.push(`${base}/${within}`);
@@ -647,6 +786,7 @@ export function summarizeProductGraphTransfer({ directory, verified = [], notRec
     documents: roles.filter(([, target]) => target?.role === "document").length,
     approvalRecords: roles.filter(([, target]) => target?.role === "approval").length,
     checkRecords: roles.filter(([, target]) => target?.role === "check").length,
+    runRecords: roles.filter(([, target]) => target?.role === "run").length,
     otherUserFiles: roles
       .filter(([, target]) => ["policy", "meaning", "rules"].includes(target?.role))
       .map(([file]) => file)
