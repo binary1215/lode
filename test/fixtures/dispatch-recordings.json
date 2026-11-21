@@ -5822,6 +5822,30 @@
   },
   {
    "surface": "mcp",
+   "tool": "lode_product_graph_coverage",
+   "input": {
+    "project_root": "<root>",
+    "feature": "sample-feature",
+    "v8": "sample-v8"
+   },
+   "calls": [
+    {
+     "fn": "product-graph-coverage#coverageProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "feature": "sample-feature",
+       "v8": "sample-v8"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
    "tool": "lode_product_graph_query",
    "input": {
     "project_root": "<root>"
@@ -5954,6 +5978,200 @@
        "edgeTypes": [],
        "basisStates": [],
        "expectedBasisSha256": ""
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_runs_add",
+   "input": {
+    "project_root": "<root>",
+    "runs": [
+     {
+      "기능": "sample-기능",
+      "실행": "sample-실행",
+      "출력": "sample-출력"
+     }
+    ]
+   },
+   "calls": [
+    {
+     "fn": "product-graph#addProductGraphRuns",
+     "args": [
+      {
+       "root": "<root>",
+       "runs": [
+        {
+         "기능": "sample-기능",
+         "실행": "sample-실행",
+         "출력": "sample-출력"
+        }
+       ],
+       "rationale": null
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_runs_add",
+   "input": {
+    "project_root": "<root>",
+    "runs": [
+     {
+      "기능": "sample-기능",
+      "실행": "sample-실행",
+      "상태": "sample-상태",
+      "출력": "sample-출력",
+      "종료": 1
+     }
+    ],
+    "rationale": "sample-rationale"
+   },
+   "calls": [
+    {
+     "fn": "product-graph#addProductGraphRuns",
+     "args": [
+      {
+       "root": "<root>",
+       "runs": [
+        {
+         "기능": "sample-기능",
+         "실행": "sample-실행",
+         "상태": "sample-상태",
+         "출력": "sample-출력",
+         "종료": 1
+        }
+       ],
+       "rationale": "sample-rationale"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_runs_add",
+   "input": {
+    "project_root": "<root>",
+    "runs": [
+     {
+      "기능": "sample-기능",
+      "실행": "sample-실행",
+      "상태": "sample-상태",
+      "출력": "sample-출력",
+      "종료": 1
+     }
+    ],
+    "rationale": ""
+   },
+   "calls": [
+    {
+     "fn": "product-graph#addProductGraphRuns",
+     "args": [
+      {
+       "root": "<root>",
+       "runs": [
+        {
+         "기능": "sample-기능",
+         "실행": "sample-실행",
+         "상태": "sample-상태",
+         "출력": "sample-출력",
+         "종료": 1
+        }
+       ],
+       "rationale": ""
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_sample",
+   "input": {
+    "project_root": "<root>"
+   },
+   "calls": [
+    {
+     "fn": "product-graph-sample#sampleProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "seed": null,
+       "count": 30,
+       "types": []
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_sample",
+   "input": {
+    "project_root": "<root>",
+    "seed": 0,
+    "count": 1,
+    "types": [
+     "sample-types"
+    ]
+   },
+   "calls": [
+    {
+     "fn": "product-graph-sample#sampleProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "seed": 0,
+       "count": 1,
+       "types": [
+        "sample-types"
+       ]
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "mcp",
+   "tool": "lode_product_graph_sample",
+   "input": {
+    "project_root": "<root>",
+    "seed": 0,
+    "count": 0,
+    "types": []
+   },
+   "calls": [
+    {
+     "fn": "product-graph-sample#sampleProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "seed": 0,
+       "count": 0,
+       "types": []
       }
      ]
     }
@@ -16281,6 +16499,65 @@
   },
   {
    "surface": "cli",
+   "command": "product-graph-coverage",
+   "argv": [
+    "product-graph-coverage",
+    "<root>"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph-coverage#coverageProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "feature": null,
+       "v8": null
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-coverage",
+   "argv": [
+    "product-graph-coverage",
+    "<root>",
+    "--build",
+    "sample-build",
+    "--documents",
+    "sample-documents",
+    "--feature",
+    "sample-feature",
+    "--rules",
+    "sample-rules",
+    "--v8",
+    "sample-v8"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph-coverage#coverageProductGraph",
+     "args": [
+      {
+       "buildDirectory": "sample-build",
+       "sourceRoot": "<root>",
+       "documentsDirectory": "sample-documents",
+       "rulesFile": "sample-rules",
+       "feature": "sample-feature",
+       "v8": "sample-v8"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
    "command": "product-graph-query",
    "argv": [
     "product-graph-query",
@@ -16378,6 +16655,124 @@
         "sample-basis-states"
        ],
        "expectedBasisSha256": "sample-expected-basis-sha256"
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-runs-add",
+   "argv": [
+    "product-graph-runs-add",
+    "<root>"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Product graph runs requires --input <json-file>."
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-runs-add",
+   "argv": [
+    "product-graph-runs-add",
+    "<root>",
+    "--input",
+    "<cwd>/input.json"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph#addProductGraphRuns",
+     "args": [
+      {
+       "root": "<root>",
+       "runs": [],
+       "rationale": null
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-runs-add",
+   "argv": [
+    "product-graph-runs-add",
+    "<root>",
+    "--input",
+    "<cwd>/input-extra-field.json"
+   ],
+   "calls": [],
+   "outcome": {
+    "error": "Error",
+    "message": "Product graph runs contains unsupported fields: lodeRecordingUnsupportedField"
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-sample",
+   "argv": [
+    "product-graph-sample",
+    "<root>"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph-sample#sampleProductGraph",
+     "args": [
+      {
+       "root": "<root>",
+       "seed": null,
+       "count": 30,
+       "types": []
+      }
+     ]
+    }
+   ],
+   "outcome": {
+    "ok": true
+   }
+  },
+  {
+   "surface": "cli",
+   "command": "product-graph-sample",
+   "argv": [
+    "product-graph-sample",
+    "<root>",
+    "--build",
+    "sample-build",
+    "--count",
+    "sample-count",
+    "--documents",
+    "sample-documents",
+    "--rules",
+    "sample-rules",
+    "--seed",
+    "sample-seed",
+    "--types",
+    "sample-types"
+   ],
+   "calls": [
+    {
+     "fn": "product-graph-sample#sampleProductGraph",
+     "args": [
+      {
+       "buildDirectory": "sample-build",
+       "sourceRoot": "<root>",
+       "documentsDirectory": "sample-documents",
+       "rulesFile": "sample-rules",
+       "seed": null,
+       "count": null,
+       "types": [
+        "sample-types"
+       ]
       }
      ]
     }

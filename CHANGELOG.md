@@ -11,6 +11,82 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.134 — publication tracked separately
+
+- Changed: the product graph reads code in more ways, so its reader version
+  goes from 1 to 2. The first build after the update compares against a
+  baseline taken by the old reader. That build tells apart what only the
+  reading changed: such 기능 are counted in one line ("읽는 방식이 달라져 닿는
+  범위가 달라진 기능 N개") and stay out of "닿는 코드가 바뀜" and "다시 볼 것";
+  nodes of the new types are counted as "읽는 방식이 달라져 새로 생긴 노드", not
+  as new. A 기능 that reaches code in a file that really changed is listed as
+  before. Confirmation records taken under the old reader read "다른 방식으로
+  읽은 때 확인함", as before. Take a new baseline with `product-graph-baseline`
+  when you have looked at the result. 0.3.0-beta.133 does not read a baseline
+  written by this version when it holds the new reach data; it says so and
+  leaves the file alone.
+- Added: entry code (`입구`). A rule in `호출 방식 표.json` may name code every
+  기능 of that rule passes through before its handler (a dispatcher, a request
+  loop). `기능→코드` edges carry a role, `처리` or `입구`; reach starts from
+  both. From 입구 the walk does not enter a node that is another 기능's 처리
+  코드, so a shared dispatcher does not make every 기능 reach every handler;
+  each stop is counted and named in the answer. Adding 입구 to a rule changes
+  the stated content of its 기능, so they show as 변경 once.
+- Added: two more reference kinds that reach follows.
+  - `framework-invoked`: a string that ends with the path of exactly one code
+    file and is handed to a call that runs or loads it (a dynamic import, a
+    process start, a worker, a call that also passes the language's own
+    executable), and a JavaScript or TypeScript `import "<relative path>"`
+    without bindings. Every site is listed under "경로로 실행으로 읽은 곳".
+  - `callback` for a function or class used as a value (passed, stored, given
+    as a default), resolved by the rules calls use. A name held in a parameter
+    or local is not resolved.
+- Added: connections written by hand, for what no scan sees. `"손으로 적는
+  연결"` in `호출 방식 표.json` takes judged rules: a `framework-invoked`
+  reference from the code line that holds a given text to named code, or a
+  `경계` (boundary) reach does not cross. A rule whose text, file or target is
+  no longer there is listed as "규칙이 낡음"; it never fails a build.
+- Added: `"분기": true` on a pattern rule. 기능 that share one function and
+  differ by a branch each pass only the function's lines outside the other
+  기능's branch blocks.
+- Added: 데이터, 외부 연결 and DB nodes.
+  - Environment reads and writes give `data:env:<NAME>`.
+  - Calls on outside modules (file system, network, child processes and the
+    like) are facts; they become edges only where a judged `"바깥"` rule names
+    what is on the other side (`data:<이름>`, `ext:<이름>`). Unnamed calls are
+    counted by module and file; nothing is guessed.
+  - `CREATE TABLE` in a code string or a `.sql` file gives `db:<table>` and its
+    columns. SQL gives a read or a write only where the table stands in the
+    verb's own position; every SQL site is listed, also when its table is not
+    known.
+- Added: run records (`실행 기록/`). Lode still runs nothing. A project hands
+  Lode what it ran and what came back with `product-graph-runs-add` (MCP:
+  `lode_product_graph` action `runs_add`); Lode stores it with the 기능's
+  content and reach hashes, so a run made on older code is never evidence for
+  today's code. The output text is stored as given and travels with a portable
+  export; Lode does not inspect it for secrets.
+- Added: the machine finds `기능→화면요소` edges from evidence. A phrase quoted
+  with backticks in a 화면요소 row is looked for in the output of current runs
+  and in code strings; an edge states its evidence ("실행 R…", "코드
+  file:line", "문서") wherever it is shown, and a machine-found edge says it
+  was found by the machine. These edges are evidence, not approval: they change
+  no document, approval or confirmation record. A wrong one is removed with a
+  judged `"빼는 연결"` rule. New lists: "문서에만 있음", "실행·코드에만 있음",
+  "이어지지 않은 화면요소".
+- Added: `product-graph-coverage <project> --feature <기능> --v8 <folder>` (MCP
+  action `coverage`), read-only. It compares one 기능's reach with a V8
+  coverage folder the project made (`NODE_V8_COVERAGE`) and lists what ran
+  outside the reach and what the reach says that did not run. Nothing is
+  stored.
+- Added: `product-graph-sample` (MCP action `sample`), a seeded, read-only
+  sample of edges for a person to check against the source, and two query
+  questions: `tree <기능>` (one indented tree per role, with what each code
+  reads and writes) and `user <유저 활동>` (the steps with their 화면요소, 기능
+  and handlers).
+- Not seen, as before: there is still no syntax tree and no type information;
+  injection, decorators and routes by file name are not read; 계측 이벤트,
+  navigate and C4 grouping are not extracted.
+
 ## 0.3.0-beta.133 — publication tracked separately
 
 - Added: `lode_tools_read_chain` (CLI: `tools-read-chain <project> --input

@@ -1590,12 +1590,16 @@ export const OPERATIONS = Object.freeze([
     tool: {
       name: "lode_product_graph_query",
       description:
-        "Ask the existing product graph build one step at a time, read-only (never builds, checks or writes). Helps when you need which code a user action or 기능 reaches (reach), what reaches a file or function (reach on a 코드 node or file path), what points to a node (up), one step down from a node (down), where the gaps are (gaps) or what changed since the baseline (changes); overview lists the starts. find ranks words (BM25) and can be narrowed by node_types, basis_states, or related_to with edge_types. impact compares three existing builds (proposal_base_build, the current build, candidate_build) read-only. changes with list content returns product source text (before and after, bounded and paged); ask it only when the text itself is needed. A page with more items returns page.nextMcpArguments to send as they are. The graph is a text scan without types that follows resolved call and callback references only; every answer starts with whether the build is still the source as it is now and how many calls were resolved. Not a prerequisite of ordinary work. With no build the answer is PRODUCT_GRAPH_NOT_BUILT with the build command.",
+        "Ask the existing product graph build one step at a time, read-only (never builds, checks or writes). Helps when you need which code a user action or 기능 reaches (reach), what reaches a file or function (reach on a 코드 node or file path), what points to a node (up), one step down from a node (down), where the gaps are (gaps) or what changed since the baseline (changes); tree gives one indented tree of the code a 기능 runs (처리 first, then 입구); user gives a 유저 활동 step by step with its 화면요소, 기능 and 처리 코드; overview lists the starts. find ranks words (BM25) and can be narrowed by node_types, basis_states, or related_to with edge_types. impact compares three existing builds (proposal_base_build, the current build, candidate_build) read-only. changes with list content returns product source text (before and after, bounded and paged); ask it only when the text itself is needed. A page with more items returns page.nextMcpArguments to send as they are. The graph is a text scan without types that follows resolved call, callback and framework-invoked references (judged ones included) only; every answer starts with whether the build is still the source as it is now and how many calls were resolved. Not a prerequisite of ordinary work. With no build the answer is PRODUCT_GRAPH_NOT_BUILT with the build command.",
       inputSchema: {
         type: "object",
         properties: {
           project_root: { type: "string", minLength: 1 },
-          question: { type: "string", enum: ["overview", "node", "down", "up", "reach", "find", "gaps", "changes", "impact"], default: "overview" },
+          question: {
+            type: "string",
+            enum: ["overview", "node", "down", "up", "reach", "tree", "user", "find", "gaps", "changes", "impact"],
+            default: "overview",
+          },
           candidate_build: {
             type: "string",
             minLength: 1,
@@ -1626,7 +1630,8 @@ export const OPERATIONS = Object.freeze([
           id: {
             type: "string",
             minLength: 1,
-            description: "Node ID for node, down, up and reach (a file path for a file node); a start such as @기능 for down.",
+            description:
+              "Node ID for node, down, up and reach (a file path for a file node); a start such as @기능 for down; a 기능 for tree; a 유저 활동 for user.",
           },
           text: { type: "string", minLength: 1, description: "What find looks for in IDs, plain words and paths." },
           list: { type: "string", minLength: 1, description: "One list for gaps or changes, by its key." },
@@ -1688,7 +1693,7 @@ export const OPERATIONS = Object.freeze([
               ? { buildDirectory: options.build, sourceRoot: root, documentsDirectory: options.documents ?? null, rulesFile: options.rules ?? null }
               : { root }),
             question,
-            id: ["node", "down", "up", "reach"].includes(question) ? argument : null,
+            id: ["node", "down", "up", "reach", "tree", "user"].includes(question) ? argument : null,
             text: question === "find" ? argument : null,
             list: options.list ?? null,
             limit: options.limit ?? 50,
@@ -1706,6 +1711,74 @@ export const OPERATIONS = Object.freeze([
       },
     },
     impl: () => import("../world/product-graph-query.mjs").then((module) => module.queryProductGraph),
+  },
+  {
+    name: "lode_product_graph_sample",
+    tool: {
+      name: "lode_product_graph_sample",
+      description:
+        "Read-only seeded sample of the existing product graph build's edges for a person to check against the source: k edges (default 30) spread over the edge types present, each with both ends' file and line range, where it was read and its evidence. Prints the seed; without one the seed comes from the build, so the same build gives the same sample. Stores nothing and gives no verdict.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          seed: { type: "integer", minimum: 0, maximum: 4294967295 },
+          count: { type: "integer", minimum: 1, maximum: 500, default: 30 },
+          types: { type: "array", items: { type: "string", minLength: 1 }, description: "Only these edge types." },
+        },
+        required: ["project_root"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root, seed: args.seed ?? null, count: args.count ?? 30, types: args.types ?? [] }] },
+    cli: {
+      command: "product-graph-sample",
+      flags: ["build", "documents", "rules", "seed", "count", "types"],
+      args: ({ root, options }) => [
+        {
+          ...(options.build
+            ? { buildDirectory: options.build, sourceRoot: root, documentsDirectory: options.documents ?? null, rulesFile: options.rules ?? null }
+            : { root }),
+          seed: options.seed === undefined ? null : Number(options.seed),
+          count: options.count === undefined ? 30 : Number(options.count),
+          types: options.types?.split(",") ?? [],
+        },
+      ],
+    },
+    impl: () => import("../world/product-graph-sample.mjs").then((module) => module.sampleProductGraph),
+  },
+  {
+    name: "lode_product_graph_coverage",
+    tool: {
+      name: "lode_product_graph_coverage",
+      description:
+        "Read-only check of one 기능's reach against a real run: v8 is the folder Node wrote with NODE_V8_COVERAGE while the project ran that 기능 (Lode runs nothing). Lists what ran outside the reach (a path the graph misses) and what the reach says that did not run (untaken branches and error paths included). A file changed since the run is skipped and named; when nothing could be compared both lists say so instead of a count. Reads only V8 coverage JSON and stores nothing.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          feature: { type: "string", minLength: 1, description: "The 기능 ID that was run." },
+          v8: { type: "string", minLength: 1, description: "The NODE_V8_COVERAGE folder of that run." },
+        },
+        required: ["project_root", "feature", "v8"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root, feature: args.feature, v8: args.v8 }] },
+    cli: {
+      command: "product-graph-coverage",
+      flags: ["build", "documents", "rules", "feature", "v8"],
+      args: ({ root, options }) => [
+        {
+          ...(options.build
+            ? { buildDirectory: options.build, sourceRoot: root, documentsDirectory: options.documents ?? null, rulesFile: options.rules ?? null }
+            : { root }),
+          feature: options.feature ?? null,
+          v8: options.v8 ?? null,
+        },
+      ],
+    },
+    impl: () => import("../world/product-graph-coverage.mjs").then((module) => module.coverageProductGraph),
   },
   {
     name: "lode_product_graph_baseline",
@@ -1801,6 +1874,49 @@ export const OPERATIONS = Object.freeze([
       },
     },
     impl: () => import("../world/product-graph.mjs").then((module) => module.confirmProductGraph),
+  },
+  {
+    name: "lode_product_graph_runs_add",
+    tool: {
+      name: "lode_product_graph_runs_add",
+      description:
+        "Record runs the project made (Lode runs nothing): per run the 기능, what was run, a state label, the raw output and the exit code. Lode adds the 기능's content and reach hashes from the current build and the way code is read, so a run made on older code never becomes evidence for today's code. A later build makes 기능→화면요소 edges from phrases of 화면요소 rows found in current runs' output, with the evidence stated. Refused with PRODUCT_GRAPH_BUILD_STALE when the build is not the current source, PRODUCT_GRAPH_RUN_TARGET_MISSING when a 기능 is not in the graph, PRODUCT_GRAPH_RUN_LIMIT for an output over 16 KiB (refused, not cut) or past 2000 records; a refusal writes nothing. Writes run records under 실행 기록/ and nothing else. The output text is stored as given and travels with a portable export; Lode does not inspect it for secrets.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          project_root: { type: "string", minLength: 1 },
+          runs: {
+            type: "array",
+            minItems: 1,
+            items: {
+              type: "object",
+              properties: {
+                기능: { type: "string", minLength: 1 },
+                실행: { type: "string", minLength: 1, maxLength: 2000, description: "What was run." },
+                상태: { type: "string", maxLength: 2000, description: "A state label." },
+                출력: { type: "string", description: "The raw output text (16 KiB at most)." },
+                종료: { type: "integer", description: "The exit code." },
+              },
+              required: ["기능", "실행", "출력"],
+              additionalProperties: false,
+            },
+          },
+          rationale: { type: "string", minLength: 1, maxLength: 2000, description: "Why these runs were made." },
+        },
+        required: ["project_root", "runs"],
+        additionalProperties: false,
+      },
+    },
+    mcp: { args: (args) => [{ root: args.project_root, runs: args.runs ?? [], rationale: args.rationale ?? null }] },
+    cli: {
+      command: "product-graph-runs-add",
+      flags: ["input"],
+      args: ({ root, options, inputJson }) => {
+        const input = onlyFields(inputJson(options, "Product graph runs"), ["runs", "rationale"], "Product graph runs");
+        return [{ root, runs: input.runs ?? [], rationale: input.rationale ?? null }];
+      },
+    },
+    impl: () => import("../world/product-graph.mjs").then((module) => module.addProductGraphRuns),
   },
   {
     name: "lode_change_set_status",
@@ -6170,8 +6286,11 @@ const supplementalReadOnlyHints = {
   lode_product_graph_build: false,
   lode_product_graph_check: true,
   lode_product_graph_query: true,
+  lode_product_graph_sample: true,
+  lode_product_graph_coverage: true,
   lode_product_graph_baseline: false,
   lode_product_graph_confirm: false,
+  lode_product_graph_runs_add: false,
   lode_product_graph_approve: false,
   lode_conformance_propose: false,
   lode_conformance_disposition: false,

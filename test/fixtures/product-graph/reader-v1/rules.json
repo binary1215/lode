@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "kind": "LodeProductGraphEntryRules",
+  "rules": [
+    {
+      "종류": "cli",
+      "판단": true,
+      "파일": [
+        "src/app.js",
+        "src/other.js"
+      ],
+      "패턴": "^export function (start|stop|other)\\(",
+      "처리 코드": "줄을 감싼 코드"
+    }
+  ]
+}

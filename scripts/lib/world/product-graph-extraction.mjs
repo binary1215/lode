@@ -105,6 +105,34 @@ function walkSource(sourceRoot, excludes, skipped = new Map()) {
   return files;
 }
 
+// One code mask per code file per build (B3 of review round 1): every reader
+// of the product graph layer asks for it here, and the count says how many
+// were made. A view is the file with what is not code blanked: "code" keeps
+// every code character (an untrusted mask keeps the raw text), "strict" also
+// blanks the "${" that opens a template expression.
+let maskCount = 0;
+function maskOfAnalysis(analysis) {
+  if (!analysis.sharedMask) {
+    analysis.sharedMask = codeMask(analysis.text, analysis.language === "python" ? "python" : "javascript");
+    maskCount += 1;
+  }
+  return analysis.sharedMask;
+}
+function viewOfAnalysis(analysis, mode) {
+  analysis.sharedViews ??= {};
+  if (analysis.sharedViews[mode] === undefined) {
+    const mask = maskOfAnalysis(analysis);
+    const text = analysis.text;
+    const out = new Array(text.length);
+    for (let index = 0; index < text.length; index += 1) {
+      const keep = text[index] === "\n" || (mode === "strict" ? mask[index] === 1 : !mask.trusted || mask[index]);
+      out[index] = keep ? text[index] : " ";
+    }
+    analysis.sharedViews[mode] = out.join("");
+  }
+  return analysis.sharedViews[mode];
+}
+
 // Every file the build reads as text, by path: its text as read. The build
 // hashes these (inputs.sourceFiles) so a later reader can tell whether the
 // source moved since. Set only while extractProductGraphCode runs.
@@ -472,6 +500,8 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
     const key = `${from}\0${to}\0${kind}`;
     if (!references.has(key)) references.set(key, { type: kind, from, to, source: { path: file, line }, count: 0 });
     references.get(key).count += 1;
+    // Every line it occurs on (2.9); written out only where a 분기 rule needs it.
+    (references.get(key).allLines ??= new Set()).add(line);
   };
   // Two passes: the first finds which value bindings are called (they become
   // nodes and callers); the second records references and reasons.
@@ -483,11 +513,10 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
       if (pass === "references") for (const value of valuesOf.get(relative).values()) if (calledValues.has(value.id)) callers.push(value);
       // Once per file: the line view and dynamic imports, kept for both passes.
       if (!analysis.prepared) {
-        const lineMask = codeMask(analysis.text, analysis.language === "python" ? "python" : "javascript");
-        let view = "";
-        for (let index = 0; index < analysis.text.length; index += 1)
-          view += !lineMask.trusted || lineMask[index] || analysis.text[index] === "\n" ? analysis.text[index] : " ";
+        const lineMask = maskOfAnalysis(analysis);
+        const view = viewOfAnalysis(analysis, "code");
         analysis.prepared = {
+          trusted: lineMask.trusted,
           maskedLines: view.split("\n"),
           dynamic: analysis.language !== "python" ? dynamicImports(analysis.text, lineMask) : [],
           receivers: new Map(),
@@ -923,6 +952,8 @@ export function effectiveEntryRules(projectRules) {
         파일: [...rule["파일"]],
         패턴: rule["패턴"],
         "처리 코드": rule["처리 코드"] || "줄을 감싼 코드",
+        ...(rule["분기"] ? { 분기: true } : {}),
+        ...(rule["입구"] ? { 입구: [...rule["입구"]] } : {}),
         출처: "프로젝트",
       });
       continue;
@@ -930,6 +961,8 @@ export function effectiveEntryRules(projectRules) {
     const base = rules.find((item) => item.종류 === rule["종류"]);
     if (rule["처리"]) base.처리 = rule["처리"];
     if (rule["설명"]) base.설명 = rule["설명"];
+    // A kind-only rule's 입구 applies to every 기능 of that kind.
+    if (rule["입구"]) base.입구 = [...new Set([...(base.입구 || []), ...rule["입구"]])];
     base.출처 = "기본 + 프로젝트";
   }
   const markers = [...BUILT_IN_UI_MARKERS, ...(projectRules?.["화면 코드 표시"] || []).map((entry) => ({ ...entry, 출처: "프로젝트" }))];
@@ -951,7 +984,12 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
   // file sign or a wiring written in a comment or a string does not count.
   const maskOf = new Map();
   const maskFor = (relative, text) => {
-    if (!maskOf.has(relative)) maskOf.set(relative, codeMask(text, codeMaskKind(path.posix.extname(relative).toLowerCase())));
+    if (!maskOf.has(relative)) {
+      const kind = codeMaskKind(path.posix.extname(relative).toLowerCase());
+      const analysis = code.analyses.get(relative);
+      const shared = analysis && kind === (analysis.language === "python" ? "python" : "javascript") && analysis.text === text;
+      maskOf.set(relative, shared ? maskOfAnalysis(analysis) : codeMask(text, kind));
+    }
     return maskOf.get(relative);
   };
   // A file whose mask is not trusted (the lexer ended inside a string,
@@ -1116,12 +1154,15 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
 // Finds 기능 (entry points) and links each to the code that receives it.
 export function extractProductGraphCode({ sourceRoot, projectRules = null }) {
   const previous = readLog;
+  const previousCount = maskCount;
   readLog = new Map();
+  maskCount = 0;
   try {
     const result = extractWithReadLog({ sourceRoot, projectRules });
-    return { ...result, readFiles: readLog };
+    return { ...result, readFiles: readLog, codeMasks: { computed: maskCount, codeFiles: result.codeFiles } };
   } finally {
     readLog = previous;
+    maskCount = previousCount;
   }
 }
 
@@ -1139,6 +1180,8 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
   const unresolvedHandlers = [];
   const ruleIssues = [];
   const extraCodeNodes = new Map();
+  // 입구: (기능, 코드 ID, rule) as rules ask for them; checked once every 기능 is known.
+  const entryRequests = [];
   const entryFiles = files.filter((relative) => classifySourcePath(relative, path.posix.extname(relative).toLowerCase()) !== "test");
 
   const addFunction = ({ id, kind, oneLine, position, handler, handlerReason, rule }) => {
@@ -1148,10 +1191,11 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
       return;
     }
     if (!functions.has(id))
-      functions.set(id, { id, type: "기능", kind, oneLine: oneLine || "", handling: ruleHandling, positions: [], handlers: [], handlerAt: {} });
+      functions.set(id, { id, type: "기능", kind, oneLine: oneLine || "", handling: ruleHandling, positions: [], handlers: [], handlerAt: {}, entries: [] });
     const entry = functions.get(id);
     if (!entry.positions.some((item) => item.path === position.path && item.line === position.line)) entry.positions.push(position);
     if (ruleHandling === "경계로 둔다") return;
+    for (const code of rule?.입구 || []) entryRequests.push({ id, code, rule });
     if (handler) {
       if (!entry.handlers.includes(handler)) {
         entry.handlers.push(handler);
@@ -1297,6 +1341,7 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
 
   // tool / cli by project pattern rules.
   const rowsOf = new Map();
+  const branchMatches = [];
   const partlyResolved = [];
   for (const rule of patterns) {
     for (const relative of rule.파일) {
@@ -1322,11 +1367,19 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
           continue;
         }
         const handler = rule["처리 코드"] === "파일" ? fileNode(relative) : enclosingCode(code, relative, line) || fileNode(relative);
+        // 분기 (2.9): the 기능 of this rule that share one function differ by a branch.
+        if (rule.분기 && rule["처리 코드"] === "줄을 감싼 코드" && handler !== relative)
+          branchMatches.push({ rule, id, handler, relative, index: match.index || 0, line });
         addFunction({ id, kind: rule.종류, position, handler, rule });
       }
     }
   }
 
+  const branches = branchRanges(code, branchMatches);
+  for (const item of branches.ranges) {
+    const entry = functions.get(item.id);
+    if (entry) (entry.handlerRanges ??= {})[item.handler] = item.ranges;
+  }
   // 프론트: every UI binding pattern of the table, by one mechanism.
   const ui = extractUiBindings({ root, files: entryFiles, code, uiPatterns, addFunction });
   for (const callback of ui.callbacks) {
@@ -1334,7 +1387,72 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     if (!code.references.has(key))
       code.references.set(key, { type: "callback", from: callback.from, to: callback.to, source: { path: callback.file, line: callback.line }, count: 0 });
     code.references.get(key).count += 1;
+    (code.references.get(key).allLines ??= new Set()).add(callback.line);
   }
+  // framework-invoked: a file run by its path, and a bare import.
+  const runByPath = pathReferences(code);
+  for (const site of runByPath.sites) {
+    const key = `${site.from}\0${site.to}\0framework-invoked`;
+    if (!code.references.has(key))
+      code.references.set(key, { type: "framework-invoked", from: site.from, to: site.to, source: { path: site.path, line: site.line }, count: 0 });
+    code.references.get(key).count += 1;
+    (code.references.get(key).allLines ??= new Set()).add(site.line);
+  }
+  // callback: a function or class used as a value (2.3).
+  const values = valueUses(code);
+  for (const site of values.sites) {
+    const key = `${site.from}\0${site.to}\0callback`;
+    if (!code.references.has(key))
+      code.references.set(key, { type: "callback", from: site.from, to: site.to, source: { path: site.path, line: site.line }, count: 0 });
+    code.references.get(key).count += 1;
+    (code.references.get(key).allLines ??= new Set()).add(site.line);
+  }
+  // Connections written by hand (2.4): judged references and boundaries.
+  const handWritten = handWrittenConnections({
+    code,
+    rules: projectRules?.["손으로 적는 연결"] || [],
+    codeIds: new Set([...code.nodes, ...extraCodeNodes.values()].map((node) => node.id)),
+  });
+  for (const site of handWritten.sites) {
+    const key = `${site.from}\0${site.to}\0${site.type}`;
+    // A reference the scan already has stays the scan's (not judgement).
+    if (!code.references.has(key))
+      code.references.set(key, {
+        type: site.type,
+        from: site.from,
+        to: site.to,
+        source: { path: site.path, line: site.line },
+        count: 0,
+        judgement: true,
+        ...(site.설명 ? { 설명: site.설명 } : {}),
+      });
+    code.references.get(key).count += 1;
+    (code.references.get(key).allLines ??= new Set()).add(site.line);
+  }
+  ruleIssues.push(...handWritten.issues);
+  // 데이터, 외부 연결, DB (2.8).
+  const outside = outsideLayer({
+    code,
+    root,
+    files: entryFiles,
+    rules: projectRules?.["바깥"] || [],
+    codeIds: new Set([...code.nodes, ...extraCodeNodes.values()].map((node) => node.id)),
+  });
+  for (const item of outside.references) {
+    const key = `${item.from}\0${item.to}\0${item.type}`;
+    if (!code.references.has(key))
+      code.references.set(key, {
+        type: item.type,
+        from: item.from,
+        to: item.to,
+        source: { path: item.path, line: item.line },
+        count: 0,
+        ...(item.judgement ? { judgement: true } : {}),
+      });
+    code.references.get(key).count += 1;
+    (code.references.get(key).allLines ??= new Set()).add(item.line);
+  }
+  ruleIssues.push(...outside.issues);
   // Files that look like UI code but no pattern read: a gap, not zero 기능.
   const uiWithoutRule = [];
   const namedUiFiles = new Set(uiFiles);
@@ -1354,10 +1472,34 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     if (sign) uiWithoutRule.push({ path: relative, sign });
   }
 
-  const functionNodes = [...functions.values()]
-    .map((entry) => ({ ...entry, positions: entry.positions.sort((a, b) => compare(a.path, b.path) || a.line - b.line), handlers: entry.handlers.sort() }))
-    .sort((a, b) => compare(a.id, b.id));
   const codeNodes = [...code.nodes, ...extraCodeNodes.values()].sort((a, b) => compare(a.id, b.id));
+  // 입구 of kind-only rules: every 기능 of that kind that is followed.
+  for (const rule of rules)
+    for (const code of rule.입구 || [])
+      for (const entry of functions.values()) if (entry.kind === rule.종류 && entry.handling === "따라간다") entryRequests.push({ id: entry.id, code, rule });
+  const codeIdSet = new Set(codeNodes.map((node) => node.id));
+  const entryIssues = new Map();
+  for (const request of entryRequests) {
+    const entry = functions.get(request.id);
+    if (!codeIdSet.has(request.code)) {
+      const key = `${request.rule.종류}\0${request.code}`;
+      if (!entryIssues.has(key))
+        entryIssues.set(key, { 종류: request.rule.종류, path: request.code, 입구: request.code, reason: "규칙이 가리키는 코드가 없음" });
+      continue;
+    }
+    // Code that is already this 기능's 처리 코드 keeps that role.
+    if (!entry.handlers.includes(request.code) && !entry.entries.includes(request.code)) entry.entries.push(request.code);
+  }
+  ruleIssues.push(...[...entryIssues.values()].sort((a, b) => compare(a.종류, b.종류) || compare(a.path, b.path)));
+  const functionNodes = [...functions.values()]
+    .map((entry) => ({
+      ...entry,
+      positions: entry.positions.sort((a, b) => compare(a.path, b.path) || a.line - b.line),
+      handlers: entry.handlers.sort(),
+      entries: entry.entries.filter((code) => !entry.handlers.includes(code)).sort(),
+      ...(entry.handlerRanges ? { handlerRanges: entry.handlerRanges } : {}),
+    }))
+    .sort((a, b) => compare(a.id, b.id));
   assertUniqueIds([...codeNodes, ...functionNodes]);
   return {
     rules: { 기본과프로젝트: rules, 패턴: patterns, "UI 연결 패턴": uiPatterns, "화면 코드 표시": uiMarkers, "화면 파일": uiFiles },
@@ -1377,6 +1519,14 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
       (a, b) => compare(a.id, b.id) || compare(a.position.path, b.position.path) || a.position.line - b.position.line,
     ),
     untrustedMaskFiles: ui.untrustedMask,
+    runByPath: { sites: runByPath.sites, ambiguous: runByPath.ambiguous },
+    // 분기 (2.9): the handlers whose references record every line, and the
+    // matches whose branch block could not be delimited.
+    branchHandlers: [...new Set(branches.ranges.map((item) => item.handler))].sort(),
+    branchUndelimited: branches.undelimited,
+    valueUses: { sites: values.sites.length, plain: values.plain, members: values.members },
+    outsideNodes: outside.nodes,
+    outside: { lists: outside.lists, counts: outside.counts },
     notTakenBindings: ui.notTaken.sort((a, b) => compare(a.path, b.path) || a.line - b.line || compare(a.pattern, b.pattern)),
     uiWithoutRule: uiWithoutRule.sort((a, b) => compare(a.path, b.path)),
     outOfScope: outOfScope.sort((a, b) => compare(a.id, b.id)),
@@ -1386,6 +1536,838 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     scannedFiles: files.length,
     codeFiles: code.analyses.size,
     excludes: [...excludes].sort(),
+  };
+}
+
+// The two shapes of framework-invoked this reading sees (2.2). A string or
+// template literal in code (by the code mask: inside a literal, not a
+// comment) whose text ends with a path that names exactly one scanned code
+// file: the full relative path, or a suffix of it that starts at a "/", and
+// that is handed to a call that runs or loads it (runSite; narrowed from
+// "any literal" after a sample of Lode's own source found half of those were
+// mentions: lists, existence checks, reads and writes). Two candidate files
+// give no reference and one count. Import and export specifiers (and
+// require) are not read here, and a file never refers to itself. And a
+// JavaScript or TypeScript import "<relative path>" with no bindings. Each
+// gives a reference from the enclosing declaration (or the file) to that
+// file's node; every site is kept for the check list.
+// The extensions of CODE_LANGUAGES.
+const RUN_PATH = /[\w@.\-/]*\.(?:js|mjs|cjs|jsx|ts|tsx|mts|py)$/;
+const SPECIFIER_BEFORE = /(?:\bfrom|\bimport|\bimport\s*\(|\brequire\s*\(|\bexport\s*\*)\s*$/;
+const BARE_IMPORT_BEFORE = /(?:^|[;{}\n])\s*import\s*$/;
+
+function literalSpans(text, mask, python) {
+  const spans = [];
+  for (let index = 0; index < text.length; index += 1) {
+    if (mask[index] !== 0 || text[index] === "\n") continue;
+    let end = index;
+    while (end < text.length && mask[end] === 0 && text[end] !== "\n") end += 1;
+    // A literal may run over lines (template, triple quote): continue through
+    // newlines that are inside it (a newline is code only between runs).
+    while (end < text.length && text[end] === "\n" && mask[end] === 0) {
+      end += 1;
+      while (end < text.length && mask[end] === 0 && text[end] !== "\n") end += 1;
+    }
+    const first = text[index];
+    const comment = python ? first === "#" : first === "/" && (text[index + 1] === "/" || text[index + 1] === "*");
+    const regex = !python && first === "/" && !comment;
+    if (!comment && !regex && ['"', "'", "`", "}"].includes(first)) {
+      let body = text.slice(index, end);
+      const triple = python && (body.startsWith('"""') || body.startsWith("'''"));
+      body = body.slice(triple ? 3 : 1);
+      if (triple && (body.endsWith('"""') || body.endsWith("'''"))) body = body.slice(0, -3);
+      else if (body.endsWith(first === "}" ? "`" : first)) body = body.slice(0, -1);
+      spans.push({ start: index, body });
+    }
+    index = end;
+  }
+  return spans;
+}
+
+// The 1-based line of an index, from a file's line starts.
+function lineOfStarts(starts, index) {
+  let low = 0,
+    high = starts.length - 1;
+  while (low < high) {
+    const middle = (low + high + 1) >>> 1;
+    if (starts[middle] <= index) low = middle;
+    else high = middle - 1;
+  }
+  return low + 1;
+}
+
+// What runs or loads a file given its path (2.2, narrowed after the sample):
+// a dynamic import, a process start, a worker, or any call that also hands
+// over the language's own executable. Calls that only build a path (join,
+// resolve, URL) are looked through, as are arrays and objects.
+const RUN_CALLEES = Object.freeze({
+  javascript: new Set(["import", "spawn", "spawnSync", "fork", "exec", "execSync", "execFile", "execFileSync", "Worker"]),
+  python: new Set(["run", "Popen", "call", "check_call", "check_output", "system", "execv", "execvp", "execl", "execlp", "run_path", "run_module"]),
+});
+const PATH_BUILDERS = new Set(["join", "resolve", "normalize", "URL", "pathToFileURL", "fileURLToPath", "Path", "abspath", "realpath", "str", "fspath"]);
+const OWN_EXECUTABLE = { javascript: /\bprocess\.execPath\b/, python: /\bsys\.executable\b/ };
+const MAX_RUN_DEPTH = 6;
+
+// Whether the literal at start sits in the arguments of a call that runs or
+// loads a file. view is the file with comments and string contents blanked.
+function runSite(view, start, python) {
+  const language = python ? "python" : "javascript";
+  let position = start - 1;
+  for (let level = 0; level < MAX_RUN_DEPTH; level += 1) {
+    // The nearest unmatched opening bracket before position, in this statement.
+    let depth = 0;
+    let open = -1;
+    for (; position >= 0; position -= 1) {
+      const character = view[position];
+      if (character === ")" || character === "]" || character === "}") depth += 1;
+      else if (character === "(" || character === "[" || character === "{") {
+        if (depth === 0) {
+          open = position;
+          break;
+        }
+        depth -= 1;
+      } else if (character === ";" && depth === 0) return false;
+    }
+    if (open < 0) return false;
+    if (view[open] !== "(") {
+      position = open - 1;
+      continue;
+    }
+    const callee = /([A-Za-z_$][\w$]*)\s*$/.exec(view.slice(Math.max(0, open - 80), open))?.[1] || "";
+    if (RUN_CALLEES[language].has(callee)) return true;
+    // The call's own argument text, to its closing bracket.
+    let close = open + 1;
+    for (let inner = 0; close < view.length; close += 1) {
+      const character = view[close];
+      if (character === "(" || character === "[" || character === "{") inner += 1;
+      else if (character === ")" || character === "]" || character === "}") {
+        if (inner === 0) break;
+        inner -= 1;
+      }
+    }
+    if (OWN_EXECUTABLE[language].test(view.slice(open, close))) return true;
+    if (!PATH_BUILDERS.has(callee)) return false;
+    position = open - 1;
+  }
+  return false;
+}
+
+// A literal with whitespace is a command line (S3): its path counts only
+// as the program itself or as the script after a language's own runner
+// (node, python and the like, flags skipped). Otherwise it gives nothing.
+const RUNNERS = new Set(["node", "nodejs", "deno", "bun", "tsx", "ts-node", "python", "python3", "py", "pypy", "pypy3"]);
+function commandPath(body) {
+  if (!/\s/.test(body.trim())) return body;
+  const tokens = body.trim().split(/\s+/);
+  const program = tokens[0].replace(/^["']|["']$/g, "");
+  if (RUN_PATH.test(program)) return program;
+  const runner = program
+    .split(/[\\/]/)
+    .pop()
+    .replace(/\.exe$/i, "")
+    .toLowerCase();
+  if (!RUNNERS.has(runner)) return "";
+  const script = tokens.slice(1).find((token) => !token.startsWith("-"));
+  return script ? script.replace(/^["']|["']$/g, "") : "";
+}
+
+function pathReferences(code) {
+  const files = [...code.analyses.keys()].sort();
+  const sites = [];
+  let ambiguous = 0;
+  const bySuffix = (wanted) => files.filter((file) => file === wanted || file.endsWith(`/${wanted}`));
+  for (const [relative, analysis] of code.analyses) {
+    const python = analysis.language === "python";
+    const mask = maskOfAnalysis(analysis);
+    if (!mask.trusted) continue;
+    const view = viewOfAnalysis(analysis, "code");
+    // For brackets: the "${" that opens a template expression is blanked too,
+    // since its closing "}" is.
+    let brackets = "";
+    for (let index = 0; index < analysis.text.length; index += 1) brackets += mask[index] === 1 || analysis.text[index] === "\n" ? analysis.text[index] : " ";
+    for (const span of literalSpans(analysis.text, mask, python)) {
+      const before = view.slice(Math.max(0, span.start - 80), span.start);
+      const line = () => lineOfStarts(analysis.starts, span.start);
+      if (!python && BARE_IMPORT_BEFORE.test(before)) {
+        // import "<relative path>" with no bindings.
+        const target = span.body.startsWith(".") ? resolveModule(relative, span.body, "javascript", new Set(files)) : null;
+        if (target && target !== relative)
+          sites.push({
+            from: enclosingCode(code, relative, line()),
+            to: target,
+            path: relative,
+            line: line(),
+            shape: "bare-import",
+            literal: span.body.slice(0, 160),
+          });
+        continue;
+      }
+      if (!python && SPECIFIER_BEFORE.test(before)) continue;
+      const match = RUN_PATH.exec(commandPath(span.body));
+      if (!match) continue;
+      const wanted = match[0].replace(/^(?:\.{1,2}\/)+/, "").replace(/^\/+/, "");
+      if (!wanted || !/\w/.test(wanted)) continue;
+      // Only where the literal is handed to something that runs or loads it.
+      if (!runSite(brackets, span.start, python)) continue;
+      const candidates = bySuffix(wanted);
+      if (candidates.length > 1) {
+        ambiguous += 1;
+        continue;
+      }
+      if (candidates.length !== 1 || candidates[0] === relative) continue;
+      sites.push({
+        from: enclosingCode(code, relative, line()),
+        to: candidates[0],
+        path: relative,
+        line: line(),
+        shape: "path",
+        literal: span.body.slice(0, 160),
+      });
+    }
+  }
+  sites.sort((a, b) => compare(a.path, b.path) || a.line - b.line || compare(a.to, b.to));
+  return { sites, ambiguous };
+}
+
+// A function or class used as a value (2.3): an identifier in code that is not
+// called, declared, imported, exported in a list, a property key or the member
+// after a dot, and that resolves to one function or class declaration by the
+// rules calls use (nested scope, same file, import binding, re-export chain).
+// A member used as a value resolves only where a call would: this.x / self.x
+// in a class, C.x on a product class (JavaScript: a static member), name.x on
+// a module-level object literal or a namespace import. A shorthand property
+// ({ run, stop }) is a value use of each name. A name bound to a parameter or
+// local is not resolved, and nothing is resolved because its name is unique.
+const VALUE_KINDS = new Set(["function", "binding", "class"]);
+const IDENTIFIER = /[A-Za-z_$][\w$]*/g;
+const NOT_VALUE_BEFORE =
+  /(?:\b(?:function|class|const|let|var|new|import|export|from|as|def|extends|implements|typeof|instanceof|delete|void|interface|type|enum|namespace|lambda|global|nonlocal|async|await)\s+|\.\s*|<\s*|@\s*|\*\s*)$/;
+const TYPE_BEFORE = /(?::|\bsatisfies)\s*$/;
+// Statements whose names are not uses: import lines, export lists, Python imports.
+const NAME_STATEMENTS = Object.freeze({
+  javascript: [
+    /\bimport\b[^;]*?\bfrom\b|\bimport\s*\{[^}]*\}|\bimport\s+[\w$]+\s*,?/g,
+    /\bexport\s*\{[^}]*\}/g,
+    // const { a, b } = require(...) / await import(...): an import by another spelling.
+    // Written as a string: the repository's code lexer (scripts/codemods/js-scan.mjs)
+    // does not read this one as a regex literal.
+    new RegExp("\\b(?:const|let|var)\\s*\\{[^}]*\\}\\s*=\\s*(?:await\\s+)?(?:require|import)\\s*\\(", "g"),
+  ],
+  python: [/^[ \t]*(?:from\s+[\w.]+\s+)?import\b[^\n]*(?:\([^)]*\))?/gm],
+});
+
+// The innermost declaration of every line of a file, made once: larger
+// declarations are painted first, so the smallest holding a line wins (ties
+// keep the first in source order, as the scan lists them).
+function innermostByLine(analysis) {
+  if (!analysis.lineOwner) {
+    const owner = new Array(analysis.starts.length + 2).fill(null);
+    const order = analysis.symbols
+      .map((symbol, position) => ({ symbol, position, size: (symbol.endLine ?? symbol.line) - symbol.line }))
+      .sort((a, b) => b.size - a.size || b.position - a.position);
+    for (const { symbol } of order)
+      for (let line = symbol.line; line <= (symbol.endLine ?? symbol.line) && line < owner.length; line += 1) owner[line] = symbol;
+    analysis.lineOwner = owner;
+  }
+  return (line) => analysis.lineOwner[line] ?? null;
+}
+
+function valueUses(code) {
+  const sites = [];
+  let plain = 0,
+    members = 0;
+  for (const [relative, analysis] of code.analyses) {
+    const python = analysis.language === "python";
+    const typed = analysis.language === "typescript";
+    // Code only: comments, string contents and the "${" that opens a template
+    // expression blanked. A file whose mask is not trusted is not read.
+    const mask = maskOfAnalysis(analysis);
+    if (!mask.trusted) continue;
+    const view = viewOfAnalysis(analysis, "strict");
+    const skip = [];
+    for (const pattern of NAME_STATEMENTS[python ? "python" : "javascript"])
+      for (const match of view.matchAll(pattern)) skip.push([match.index, match.index + match[0].length]);
+    // Identifiers come in index order: one pointer over the sorted spans.
+    skip.sort((a, b) => a[0] - b[0]);
+    let skipAt = 0;
+    const skipped = (index) => {
+      while (skipAt < skip.length && skip[skipAt][1] <= index) skipAt += 1;
+      for (let at = skipAt; at < skip.length && skip[at][0] <= index; at += 1) if (index < skip[at][1]) return true;
+      return false;
+    };
+    const symbolAt = innermostByLine(analysis);
+    const accept = (target) => target && VALUE_KINDS.has(target.kind);
+    const add = (index, target, kind) => {
+      const line = lineOfStarts(analysis.starts, index);
+      const from = symbolAt(line);
+      const fromId = from ? symbolId(relative, from) : relative;
+      if (fromId === target.id) return;
+      sites.push({ from: fromId, to: target.id, path: relative, line });
+      if (kind === "member") members += 1;
+      else plain += 1;
+    };
+    // The innermost declaration's scope chain, for a nested name. A class
+    // member is not visible by its bare name.
+    const classNames = new Set(analysis.symbols.filter((symbol) => symbol.kind === "class").map((symbol) => symbol.qualifiedName));
+    const nested = (line, name) => {
+      const scope = symbolAt(line)?.qualifiedName?.split(".") || [];
+      for (let length = scope.length; length >= 1; length -= 1) {
+        const owner = scope.slice(0, length).join(".");
+        if (classNames.has(owner)) continue;
+        const target = code.unique(relative, `${owner}.${name}`);
+        if (target) return target;
+      }
+      return null;
+    };
+    const isStatic = (target) => python || /(^|\s)static\s/.test(target.signature || "");
+    for (const match of view.matchAll(IDENTIFIER)) {
+      const index = match.index;
+      const name = match[0];
+      if (index > 0 && /[\w$]/.test(view[index - 1])) continue;
+      const before = view.slice(Math.max(0, index - 40), index);
+      const after = view.slice(index + name.length, index + name.length + 4);
+      const rest = view.slice(index + name.length);
+      if (skipped(index)) continue;
+      // this.x / self.x / head.x used as a value.
+      const member = /^\s*\.\s*([A-Za-z_$][\w$]*)/.exec(rest);
+      if (member) {
+        const tail = rest.slice(member[0].length);
+        if (/^\s*(?:\(|\?\.\s*\(|`|=(?![=>])|\.)/.test(tail) || NOT_VALUE_BEFORE.test(before) || (typed && TYPE_BEFORE.test(before))) continue;
+        const line = lineOfStarts(analysis.starts, index);
+        let target = null;
+        if (name === (python ? "self" : "this")) {
+          const owner = enclosingClass(analysis, symbolAt(line)?.qualifiedName);
+          target = owner ? code.unique(relative, `${owner}.${member[1]}`) : null;
+        } else if (!bindingAt(analysis.facts, index, name)) {
+          const head = code.unique(relative, name) || code.resolveName(relative, name);
+          if (head?.kind === "class") {
+            const found = code.unique(head.id.slice(0, head.id.indexOf("#")), `${head.qualifiedName}.${member[1]}`);
+            target = found && isStatic(found) ? found : null;
+          } else if (!head) target = code.resolveMember(relative, name, member[1]);
+        }
+        if (accept(target)) add(index, target, "member");
+        continue;
+      }
+      if (/^\s*(?:\(|\?\.\s*\(|`|=(?![=>])|=>|:)/.test(rest) || /^\s*<[\w$,\s]*>\s*\(/.test(after + rest.slice(4, 60))) continue;
+      if (NOT_VALUE_BEFORE.test(before) || (typed && TYPE_BEFORE.test(before))) continue;
+      // A parameter or local holds whatever it is given: not resolved.
+      if (bindingAt(analysis.facts, index, name)) continue;
+      const line = lineOfStarts(analysis.starts, index);
+      const target = nested(line, name) || code.resolveName(relative, name);
+      if (accept(target)) add(index, target, "plain");
+    }
+  }
+  sites.sort((a, b) => compare(a.path, b.path) || a.line - b.line || compare(a.to, b.to));
+  return { sites, plain, members };
+}
+
+// Rules of 손으로 적는 연결 (2.4). Every code line of 파일 holding 글 (by
+// the code mask, where it is trusted) gives, from its enclosing declaration
+// (or the file), a judged framework-invoked reference to each 대상, or a 경계
+// (boundary) edge: reach does not cross it. 글 on no line, a missing 파일 and
+// a 대상 that is not a 코드 node are rule issues ("규칙이 낡음"), never
+// skipped silently and never a build failure.
+// Whether a line holds code (S1 of review round 1): any character that is
+// code and not blank. A line wholly comment, or wholly inside a multi-line
+// string, holds none.
+function lineHoldsCode(analysis, line) {
+  const mask = maskOfAnalysis(analysis);
+  const start = analysis.starts[line - 1];
+  const end = line < analysis.starts.length ? analysis.starts[line] : analysis.text.length;
+  for (let index = start; index < end; index += 1) if (mask[index] && !/\s/.test(analysis.text[index])) return true;
+  return false;
+}
+
+function handWrittenConnections({ code, rules, codeIds }) {
+  const sites = [];
+  const issues = [];
+  const stale = (rule, index, detail) =>
+    issues.push({ 종류: `손으로 적는 연결[${index}] ${rule["종류"]}`, path: rule["파일"], reason: `규칙이 낡음 — ${detail}`, rule: index });
+  rules.forEach((rule, index) => {
+    const analysis = code.analyses.get(rule["파일"]);
+    if (!analysis) {
+      stale(rule, index, "파일이 스캔한 코드에 없음");
+      return;
+    }
+    const missing = rule["대상"].filter((id) => !codeIds.has(id));
+    for (const id of missing) stale(rule, index, `대상 ${id}이 코드 노드가 아님`);
+    const targets = rule["대상"].filter((id) => codeIds.has(id));
+    const mask = maskOfAnalysis(analysis);
+    const lines = new Set();
+    for (let at = analysis.text.indexOf(rule["글"]); at >= 0; at = analysis.text.indexOf(rule["글"], at + 1))
+      if (!mask.trusted || lineHoldsCode(analysis, lineOfStarts(analysis.starts, at))) lines.add(lineOfStarts(analysis.starts, at));
+    if (!lines.size) {
+      stale(rule, index, `글 "${rule["글"].slice(0, 80)}"이 코드 줄에 없음`);
+      return;
+    }
+    for (const line of [...lines].sort((a, b) => a - b))
+      for (const to of targets)
+        sites.push({
+          type: rule["종류"] === "경계" ? "경계" : "framework-invoked",
+          from: enclosingCode(code, rule["파일"], line),
+          to,
+          path: rule["파일"],
+          line,
+          ...(rule["설명"] ? { 설명: rule["설명"] } : {}),
+        });
+  });
+  return { sites, issues };
+}
+
+// ---------- the lines of a branch (2.9) ----------
+
+// The lines of the statement that holds a match: in brace languages to the
+// matching close bracket (by the code mask), or to the end of the statement
+// when it has no block; a `case x:` runs to the next case at its depth; in
+// Python to the end of the indented block. Null when it cannot be delimited.
+function branchBlock(analysis, index) {
+  const text = analysis.text;
+  const line = lineOfStarts(analysis.starts, index);
+  const lines = text.split("\n");
+  if (analysis.language === "python") {
+    const indent = (value) => /^[ \t]*/.exec(value)[0].length;
+    const own = indent(lines[line - 1]);
+    if (!/:\s*(?:#.*)?$/.test(lines[line - 1])) return null;
+    let end = line;
+    for (let next = line + 1; next <= lines.length; next += 1) {
+      const value = lines[next - 1];
+      if (!value.trim()) continue;
+      if (indent(value) <= own) break;
+      end = next;
+    }
+    return end > line ? [line, end] : null;
+  }
+  const mask = maskOfAnalysis(analysis);
+  if (!mask.trusted) return null;
+  const code = (position) => mask[position] === 1;
+  // A case label: to the line before the next case or default at its depth.
+  const lineText = lines[line - 1].trim();
+  if (/^case\b|^default\s*:/.test(lineText)) {
+    let depth = 0;
+    let end = line;
+    for (let next = line + 1; next <= lines.length; next += 1) {
+      const value = lines[next - 1];
+      const start = analysis.starts[next - 1];
+      for (let offset = 0; offset < value.length; offset += 1) {
+        if (!code(start + offset)) continue;
+        if (value[offset] === "{") depth += 1;
+        else if (value[offset] === "}") depth -= 1;
+      }
+      if (depth < 0) break;
+      if (depth === 0 && /^\s*(?:case\b|default\s*:)/.test(value)) break;
+      end = next;
+    }
+    return [line, end];
+  }
+  // The statement starts on the match's line (an if, a case, a call).
+  let parens = 0;
+  for (let position = analysis.starts[line - 1]; position < text.length; position += 1) {
+    if (!code(position)) continue;
+    const character = text[position];
+    if (character === "(" || character === "[") parens += 1;
+    else if (character === ")" || character === "]") parens -= 1;
+    else if (character === "{" && parens === 0) {
+      let depth = 0;
+      for (let close = position; close < text.length; close += 1) {
+        if (!code(close)) continue;
+        if (text[close] === "{") depth += 1;
+        else if (text[close] === "}" && --depth === 0) return [line, lineOfStarts(analysis.starts, close)];
+      }
+      return null;
+    } else if (character === ";" && parens === 0) return [line, lineOfStarts(analysis.starts, position)];
+    if (parens < 0) return null;
+  }
+  return null;
+}
+
+// Per 기능 of a 분기 rule and its shared handler: the function's lines minus
+// the branch blocks of the other 기능 the same rule found there. A match whose
+// block cannot be delimited falls back to the whole function and is listed.
+function branchRanges(code, matches) {
+  const groups = new Map();
+  for (const match of matches) {
+    const key = `${match.rule.패턴}\u0000${match.handler}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(match);
+  }
+  const ranges = [],
+    undelimited = [];
+  for (const group of groups.values()) {
+    const { handler, relative } = group[0];
+    const analysis = code.analyses.get(relative);
+    const symbol = analysis?.symbols.find((item) => symbolId(relative, item) === handler);
+    if (!symbol) continue;
+    const whole = [symbol.line, symbol.endLine ?? symbol.line];
+    const blocks = new Map();
+    for (const match of group) {
+      const block = branchBlock(analysis, match.index);
+      if (!block) undelimited.push({ id: match.id, handler, position: { path: relative, line: match.line }, reason: "분기를 정하지 못함" });
+      if (!blocks.has(match.id)) blocks.set(match.id, []);
+      blocks.get(match.id).push(block);
+    }
+    for (const [id, own] of blocks) {
+      if (own.some((block) => !block)) {
+        ranges.push({ id, handler, ranges: [whole] });
+        continue;
+      }
+      // The function's lines minus every other 기능's (delimited) blocks.
+      const removed = [...blocks].filter(([other]) => other !== id).flatMap(([, list]) => list.filter(Boolean));
+      const kept = [];
+      let start = whole[0];
+      for (const [from, to] of removed.sort((a, b) => a[0] - b[0])) {
+        if (from > start) kept.push([start, Math.min(from - 1, whole[1])]);
+        start = Math.max(start, to + 1);
+      }
+      if (start <= whole[1]) kept.push([start, whole[1]]);
+      ranges.push({ id, handler, ranges: kept });
+    }
+  }
+  ranges.sort((a, b) => compare(a.id, b.id) || compare(a.handler, b.handler));
+  return { ranges, undelimited: undelimited.sort((a, b) => compare(a.id, b.id)) };
+}
+
+// ---------- 데이터, 외부 연결, DB (2.8) ----------
+
+// The modules whose calls reach outside the code. Data: a project's 바깥
+// rules name more (each 모듈 a rule names is read too).
+export const OUTSIDE_MODULES = Object.freeze({
+  javascript: Object.freeze(["fs", "fs/promises", "net", "http", "https", "dgram", "tls", "child_process", "readline"]),
+  python: Object.freeze(["builtins", "os", "shutil", "pathlib", "subprocess", "socket", "sqlite3", "urllib", "http.client"]),
+});
+// Whether an api reads or writes a 데이터 target, by its last name. An api in
+// neither list is listed ("읽기·쓰기를 정하지 못함"), never guessed.
+const READ_APIS = new Set([
+  "readFile",
+  "readFileSync",
+  "createReadStream",
+  "readdir",
+  "readdirSync",
+  "stat",
+  "statSync",
+  "lstat",
+  "lstatSync",
+  "existsSync",
+  "access",
+  "accessSync",
+  "readlink",
+  "readlinkSync",
+  "realpath",
+  "realpathSync",
+  "opendir",
+  "opendirSync",
+  "read_text",
+  "read_bytes",
+  "listdir",
+  "exists",
+  "isfile",
+  "isdir",
+  "scandir",
+  "walk",
+  "glob",
+  "iterdir",
+]);
+const WRITE_APIS = new Set([
+  "writeFile",
+  "writeFileSync",
+  "appendFile",
+  "appendFileSync",
+  "createWriteStream",
+  "mkdir",
+  "mkdirSync",
+  "rm",
+  "rmSync",
+  "rmdir",
+  "rmdirSync",
+  "unlink",
+  "unlinkSync",
+  "rename",
+  "renameSync",
+  "copyFile",
+  "copyFileSync",
+  "cp",
+  "cpSync",
+  "truncate",
+  "truncateSync",
+  "symlink",
+  "symlinkSync",
+  "chmod",
+  "chmodSync",
+  "utimes",
+  "utimesSync",
+  "mkdtemp",
+  "mkdtempSync",
+  "write_text",
+  "write_bytes",
+  "remove",
+  "replace",
+  "makedirs",
+  "rmtree",
+  "copy",
+  "copy2",
+  "copyfile",
+  "copytree",
+  "move",
+  "touch",
+]);
+const ENV_PATTERNS = Object.freeze({
+  javascript: [/\bprocess\.env\.([A-Za-z_][A-Za-z0-9_]*)/g, /\bprocess\.env\[\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]\s*\]/g],
+  python: [/\bos\.environ\[\s*["']([A-Za-z_]\w*)["']\s*\]/g, /\bos\.environ\.get\(\s*["']([A-Za-z_]\w*)["']/g, /\bos\.getenv\(\s*["']([A-Za-z_]\w*)["']/g],
+});
+const SQL_CREATE = /\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`[]?([A-Za-z_]\w*)["`\]]?\s*\(([\s\S]*?)\)\s*(?:;|$|WITHOUT\b|STRICT\b)/gi;
+const SQL_VERB = /\b(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\b/i;
+// The positions that make a SQL site: a verb followed by an identifier,
+// and that identifier followed the way SQL goes on (the end, punctuation, or
+// a SQL keyword, after at most one alias word), so "delete from the list of
+// users" is not one.
+const SQL_IDENTIFIER = '["`[]?([A-Za-z_][\\w$]*)["`\\]]?';
+const SQL_GOES_ON =
+  "(?=\\s*(?:$|[,;()])|\\s+(?:AS\\s+)?(?:[A-Za-z_]\\w*\\s*(?:$|[,;()])|(?:[A-Za-z_]\\w*\\s+)?(?:WHERE|JOIN|INNER|LEFT|RIGHT|OUTER|CROSS|ON|SET|VALUES|SELECT|ORDER|GROUP|LIMIT|OFFSET|HAVING|UNION|RETURNING|USING|DEFAULT)\\b))";
+const SQL_WRITE_POSITIONS = [
+  new RegExp(`\\b(?:INSERT|REPLACE)\\s+INTO\\s+${SQL_IDENTIFIER}${SQL_GOES_ON}`, "gi"),
+  new RegExp(`\\bUPDATE\\s+${SQL_IDENTIFIER}\\s+SET\\b`, "gi"),
+  new RegExp(`\\bDELETE\\s+FROM\\s+${SQL_IDENTIFIER}${SQL_GOES_ON}`, "gi"),
+];
+const SQL_READ_POSITION = new RegExp(`(?<!\\bDELETE\\s+)\\b(?:FROM|JOIN)\\s+${SQL_IDENTIFIER}${SQL_GOES_ON}`, "gi");
+const SQL_NOT_COLUMN = /^(?:PRIMARY|FOREIGN|UNIQUE|CHECK|CONSTRAINT|KEY|INDEX)\b/i;
+
+const moduleOf = (specifier, language) => {
+  const name = String(specifier).replace(/^node:/, "");
+  return name;
+};
+const inTable = (module, table) => table.some((entry) => module === entry || module.startsWith(`${entry}.`) || module.startsWith(`${entry}/`));
+
+// Every outside fact: environment reads, calls on names from an outside
+// module, tables made by CREATE TABLE, and SQL naming a known table. Facts
+// become edges only where the project names the other side (바깥 rules),
+// except environment reads and tables, which name themselves.
+function outsideFacts({ code, root, files, rules }) {
+  const named = (rules || []).flatMap((rule) => (rule["닿는 곳"] || []).map((place) => String(place["모듈"]).replace(/^node:/, "")));
+  const tables = {
+    javascript: [...OUTSIDE_MODULES.javascript, ...named],
+    python: [...OUTSIDE_MODULES.python, ...named],
+  };
+  const env = [],
+    calls = [],
+    created = [],
+    sqlUses = [];
+  // CREATE TABLE in .sql files (read as text only).
+  for (const relative of files.filter((item) => item.toLowerCase().endsWith(".sql"))) {
+    const text = readText(root, relative);
+    if (text === null) continue;
+    for (const match of text.matchAll(SQL_CREATE))
+      created.push({ table: match[1], body: match[2], path: relative, line: lineOf(text, match.index), from: null });
+  }
+  for (const [relative, analysis] of code.analyses) {
+    const python = analysis.language === "python";
+    const language = python ? "python" : "javascript";
+    const mask = maskOfAnalysis(analysis);
+    const inCode = (index) => !mask.trusted || Boolean(mask[index]);
+    const line = (index) => lineOfStarts(analysis.starts, index);
+    for (const pattern of ENV_PATTERNS[language])
+      for (const match of analysis.text.matchAll(pattern)) {
+        if (!inCode(match.index)) continue;
+        // An assignment to it or a delete of it writes it (S2).
+        const after = analysis.text.slice(match.index + match[0].length, match.index + match[0].length + 4);
+        const before = analysis.text.slice(Math.max(0, match.index - 8), match.index);
+        const write = /^\s*=(?!=)/.test(after) || /\bdelete\s+$/.test(before) || (language === "python" && /\bdel\s+$/.test(before));
+        env.push({ name: match[1], path: relative, line: line(match.index), from: enclosingCode(code, relative, line(match.index)), write });
+      }
+    // const { HOME, PORT: port = 1 } = process.env: a read of each name.
+    if (language === "javascript")
+      for (const match of analysis.text.matchAll(/\b(?:const|let|var)\s*\{([^{}]*)\}\s*=\s*process\.env\b/g)) {
+        if (!inCode(match.index)) continue;
+        for (const part of match[1].split(",")) {
+          const name = /^\s*([A-Za-z_][A-Za-z0-9_]*)/.exec(part)?.[1];
+          if (name && !part.trim().startsWith("..."))
+            env.push({ name, path: relative, line: line(match.index), from: enclosingCode(code, relative, line(match.index)), write: false });
+        }
+      }
+    // Calls on names bound to an outside module.
+    const bindings = new Map(analysis.semanticFacts.bindings.map((binding) => [binding.local, binding]));
+    const rawLines = analysis.text.split("\n");
+    for (const call of analysis.semanticFacts.calls) {
+      if (call.construction) continue;
+      let module = null,
+        api = null;
+      const [head, ...rest] = call.callee.split(".");
+      const binding = bindings.get(head);
+      if (binding && inTable(moduleOf(binding.specifier, language), tables[language])) {
+        module = moduleOf(binding.specifier, language);
+        api = rest.length ? rest.join(".") : binding.namespace ? head : binding.imported === "default" ? head : binding.imported;
+      } else if (rest.length && !binding) {
+        // fs.promises.readFile( keeps only "promises.readFile": its head is
+        // read from the line.
+        const before = new RegExp(
+          `\\b([A-Za-z_$][\\w$]*)\\s*\\.\\s*${head.replace(/[$]/g, "\\$")}\\s*\\.\\s*${rest.join("\\s*\\.\\s*").replace(/[$]/g, "\\$")}\\s*\\(`,
+        ).exec(rawLines[call.line - 1] || "");
+        const outer = before && bindings.get(before[1]);
+        if (outer && inTable(moduleOf(outer.specifier, language), tables[language])) {
+          module = moduleOf(outer.specifier, language);
+          api = call.callee;
+        }
+      } else if (python && !binding && !rest.length && call.callee === "open" && !analysis.boundNames?.has("open")) {
+        module = "builtins";
+        api = "open";
+      }
+      if (!module) continue;
+      // An environment read is a 데이터 read already, not an outside call.
+      if (module === "os" && ["getenv", "environ.get"].includes(api)) continue;
+      calls.push({ module, api, path: relative, line: call.line, from: enclosingCode(code, relative, call.line) });
+    }
+    // Tables made in code strings, and SQL naming tables.
+    for (const span of literalSpans(analysis.text, mask, python)) {
+      for (const match of span.body.matchAll(SQL_CREATE))
+        created.push({ table: match[1], body: match[2], path: relative, line: line(span.start), from: enclosingCode(code, relative, line(span.start)) });
+      const verb = SQL_VERB.exec(span.body);
+      if (verb)
+        sqlUses.push({
+          verb: verb[1].toUpperCase().split(/\s+/)[0],
+          body: span.body,
+          path: relative,
+          line: line(span.start),
+          from: enclosingCode(code, relative, line(span.start)),
+        });
+    }
+  }
+  return { env, calls, created, sqlUses };
+}
+
+// Nodes and edges from the facts and the project's 바깥 rules.
+function outsideLayer({ code, root, files, rules, codeIds }) {
+  const facts = outsideFacts({ code, root, files, rules });
+  const nodes = new Map();
+  const references = [];
+  const issues = [];
+  const node = (id, value) => {
+    if (!nodes.has(id)) nodes.set(id, { id, ...value });
+    return nodes.get(id);
+  };
+  const ref = (type, from, to, at, judgement = false) =>
+    references.push({ type, from, to, path: at.path, line: at.line, ...(judgement ? { judgement: true } : {}) });
+  // Environment: a 데이터 node per name, read from the enclosing declaration.
+  for (const item of facts.env) {
+    node(`data:env:${item.name}`, { type: "데이터", kind: "env", name: item.name });
+    ref(item.write ? "write" : "read", item.from, `data:env:${item.name}`, item);
+  }
+  // DB: tables and columns (포함), and SQL that names a known table.
+  const known = new Map();
+  for (const item of facts.created) {
+    const table = item.table;
+    const id = `db:${table}`;
+    if (!known.has(table.toLowerCase())) known.set(table.toLowerCase(), id);
+    node(id, { type: "DB", kind: "table", name: table, at: { path: item.path, line: item.line } });
+    for (const part of item.body.split(",")) {
+      const column = /^\s*["`[]?([A-Za-z_]\w*)/.exec(part)?.[1];
+      if (!column || SQL_NOT_COLUMN.test(part.trim())) continue;
+      node(`${id}.${column}`, { type: "DB", kind: "column", name: column, table, at: { path: item.path, line: item.line } });
+      ref("포함", id, `${id}.${column}`, item);
+    }
+  }
+  // SQL (B2 of review round 1): a table counts only in its verb's own
+  // position, decided per table: FROM <t> / JOIN <t> reads; INSERT INTO <t>,
+  // REPLACE INTO <t>, UPDATE <t> … SET, DELETE FROM <t> write. Every string a
+  // verb word made a candidate is listed with what was read from it.
+  // A string is a SQL site only where a verb stands in its own position
+  // followed by an identifier (round 2): FROM / JOIN <id> read; INSERT INTO,
+  // REPLACE INTO, UPDATE <id> … SET, DELETE FROM <id> write. Each identifier
+  // is a known table (an edge) or a table no CREATE TABLE gave (표를 모름).
+  const sqlSites = [];
+  for (const item of facts.sqlUses) {
+    const found = new Map();
+    const note = (name, access) => {
+      const key = `${name.toLowerCase()}\u0000${access}`;
+      if (!found.has(key)) found.set(key, { name, access, table: known.get(name.toLowerCase()) || null });
+    };
+    for (const pattern of SQL_WRITE_POSITIONS) for (const match of item.body.matchAll(pattern)) note(match[1], "write");
+    for (const match of item.body.matchAll(SQL_READ_POSITION)) note(match[1], "read");
+    if (!found.size) continue;
+    const entries = [...found.values()].sort((a, b) => compare(a.access, b.access) || compare(a.name, b.name));
+    for (const entry of entries) if (entry.table) ref(entry.access, item.from, entry.table, item);
+    sqlSites.push({
+      path: item.path,
+      line: item.line,
+      from: item.from,
+      reads: entries.filter((entry) => entry.access === "read" && entry.table).map((entry) => entry.table),
+      writes: entries.filter((entry) => entry.access === "write" && entry.table).map((entry) => entry.table),
+      unknownTables: entries.filter((entry) => !entry.table).map(({ name, access }) => ({ name, access })),
+      text: item.body.replace(/\s+/g, " ").trim().slice(0, 120),
+    });
+  }
+  // Outside calls: an edge only where a 바깥 rule names the other side.
+  const claims = (place, fact) =>
+    String(place["모듈"]).replace(/^node:/, "") === fact.module &&
+    (!place["파일"] || place["파일"].includes(fact.path)) &&
+    (!place["줄"] || (place["줄"][0] <= fact.line && fact.line <= place["줄"][1])) &&
+    (!place["선언"] || place["선언"].includes(fact.from));
+  const narrow = (place) => Boolean(place["줄"] || place["선언"]);
+  const unnamed = new Map();
+  const unknownAccess = [];
+  for (const fact of facts.calls) {
+    const holders = [];
+    (rules || []).forEach((rule, index) => {
+      const place = (rule["닿는 곳"] || []).find((item) => claims(item, fact));
+      if (place) holders.push({ rule, index, narrow: narrow(place) });
+    });
+    let holder = holders[0] || null;
+    if (holders.length > 1) {
+      const narrowed = holders.filter((item) => item.narrow);
+      if (narrowed.length === 1) holder = narrowed[0];
+      else {
+        issues.push({
+          종류: `바깥[${holders.map((item) => item.index).join(", ")}]`,
+          path: `${fact.path}:${fact.line}`,
+          reason: `규칙이 겹침 — ${fact.module}.${fact.api}를 바깥 규칙 둘 이상이 이름 붙였다(줄이나 선언으로 좁힌 것이 하나가 아니다)`,
+        });
+        continue;
+      }
+    }
+    if (!holder) {
+      const key = `${fact.module}\u0000${fact.path}`;
+      if (!unnamed.has(key)) unnamed.set(key, { module: fact.module, path: fact.path, count: 0, apis: new Set() });
+      unnamed.get(key).count += 1;
+      unnamed.get(key).apis.add(fact.api);
+      continue;
+    }
+    const rule = holder.rule;
+    if (rule["종류"] === "외부 연결") {
+      node(`ext:${rule["이름"]}`, { type: "외부 연결", kind: "named", name: rule["이름"], judgement: true });
+      ref("코드→외부 연결", fact.from, `ext:${rule["이름"]}`, fact, true);
+      continue;
+    }
+    node(`data:${rule["이름"]}`, { type: "데이터", kind: "named", name: rule["이름"], judgement: true });
+    const last = fact.api.split(".").pop();
+    if (READ_APIS.has(last)) ref("read", fact.from, `data:${rule["이름"]}`, fact, true);
+    else if (WRITE_APIS.has(last)) ref("write", fact.from, `data:${rule["이름"]}`, fact, true);
+    else unknownAccess.push({ ...fact, data: `data:${rule["이름"]}` });
+  }
+  // A 바깥 rule whose files are not scanned code is a rule issue.
+  (rules || []).forEach((rule, index) => {
+    for (const place of rule["닿는 곳"] || [])
+      for (const file of place["파일"] || [])
+        if (!code.analyses.has(file)) issues.push({ 종류: `바깥[${index}]`, path: file, reason: "규칙이 낡음 — 파일이 스캔한 코드에 없음", rule: index });
+    for (const place of rule["닿는 곳"] || [])
+      for (const id of place["선언"] || [])
+        if (!codeIds.has(id)) issues.push({ 종류: `바깥[${index}]`, path: id, reason: "규칙이 낡음 — 선언이 코드 노드가 아님", rule: index });
+  });
+  const unnamedList = [...unnamed.values()]
+    .map((item) => ({ module: item.module, path: item.path, count: item.count, apis: [...item.apis].sort() }))
+    .sort((a, b) => compare(a.module, b.module) || compare(a.path, b.path));
+  return {
+    nodes: [...nodes.values()].sort((a, b) => compare(a.id, b.id)),
+    references,
+    issues,
+    lists: {
+      unnamedOutsideCalls: unnamedList,
+      unnamedOutsideCount: unnamedList.reduce((sum, item) => sum + item.count, 0),
+      sqlSites: sqlSites.sort((a, b) => compare(a.path, b.path) || a.line - b.line),
+      undecidedAccess: unknownAccess.sort((a, b) => compare(a.path, b.path) || a.line - b.line),
+    },
+    counts: {
+      env: facts.env.length,
+      envNames: new Set(facts.env.map((item) => item.name)).size,
+      calls: facts.calls.length,
+      tables: [...nodes.values()].filter((item) => item.type === "DB" && item.kind === "table").length,
+    },
   };
 }
 
@@ -1425,7 +2407,12 @@ function notLookedAt(files, code, skipped) {
 // resolved path was found, not that the code is dead.
 function unreachedCode(code, functionNodes, extraCodeNodes) {
   const edges = new Map();
+  // A boundary (경계) is not followed, nor any reference across it.
+  const crossing = new Set(
+    [...code.references.values()].filter((reference) => reference.type === "경계").map((reference) => `${reference.from}\0${reference.to}`),
+  );
   for (const reference of code.references.values()) {
+    if (reference.type === "경계" || crossing.has(`${reference.from}\0${reference.to}`)) continue;
     if (!edges.has(reference.from)) edges.set(reference.from, []);
     edges.get(reference.from).push(reference.to);
   }
@@ -1437,7 +2424,10 @@ function unreachedCode(code, functionNodes, extraCodeNodes) {
         if (owner) constructors.set(owner.id, [...(constructors.get(owner.id) || []), symbol.id]);
       }
   const visited = new Set();
-  const queue = functionNodes.flatMap((entry) => entry.handlers);
+  // Reach starts from both roles: 처리 코드 and 입구. (A walk from 입구 that
+  // stops at another 기능's 처리 코드 reaches nothing that 기능's own walk
+  // does not, so the union is the same closure.)
+  const queue = functionNodes.flatMap((entry) => [...entry.handlers, ...entry.entries]);
   while (queue.length) {
     const id = queue.pop();
     if (visited.has(id)) continue;
@@ -1457,7 +2447,7 @@ function unreachedCode(code, functionNodes, extraCodeNodes) {
     filesNothingReached: files.filter((file) => file.nothingReached).length,
     filesPartlyReached: files.filter((file) => !file.nothingReached).length,
     files,
-    startedFrom: functionNodes.reduce((sum, entry) => sum + entry.handlers.length, 0),
+    startedFrom: functionNodes.reduce((sum, entry) => sum + entry.handlers.length + entry.entries.length, 0),
     extraCodeNodes: extraCodeNodes.size,
   };
 }
@@ -1503,8 +2493,8 @@ function readTableRow(code, relative, text, index) {
   // dynamic imports. A file read for several rows reuses them.
   code.rowFiles ??= new Map();
   if (!code.rowFiles.has(relative)) {
-    const mask = codeMask(text, python ? "python" : "javascript");
-    if (!mask.trusted) mask.fill(1);
+    const shared = analysis && analysis.text === text ? maskOfAnalysis(analysis) : codeMask(text, python ? "python" : "javascript");
+    const mask = shared.trusted ? shared : Object.assign(new Uint8Array(shared.length).fill(1), { trusted: false });
     const starts = lineStarts(text);
     code.rowFiles.set(relative, { mask, pairs: bracketPairs(text, mask), starts, dynamic: python ? [] : dynamicImports(text, mask, starts) });
   }

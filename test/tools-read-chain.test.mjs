@@ -790,9 +790,14 @@ test("H5: every mark site of the walk is reached, its text says what its mark sa
     subList: () => ({ root: big.root, args: { question: "down", id: HUB, depth: 2, limit: 10 } }),
     rowCap: () => ({ root: wide.root, args: { question: "down", id: HUB, depth: 2, limit: 50 } }),
     rowCapUncounted: () => ({ root: big.root, args: { question: "down", id: HUB, depth: 2, limit: 500 } }),
+    treeRowCap: () => ({ root: big.root, args: { question: "tree", id: SAVE, limit: 500 } }),
     gapsCheck: () => ({ root: big.root, args: { question: "gaps" } }),
     gapsCheckList: () => ({ root: big.root, args: { question: "gaps", list: "screen-without-activity" } }),
     unpointedFunctions: () => ({ root: big.root, args: { question: "gaps", list: "unpointedFunctions" } }),
+    runsList: () => {
+      const { g } = edited((check) => delete check.lists.runs);
+      return { root: g.root, args: { question: "changes", list: "runsStale" } };
+    },
     baselineNone: () => {
       const { g } = edited((check) => delete check.changes);
       return { root: g.root, args: { question: "changes" } };
@@ -860,6 +865,10 @@ test("H5: every mark site of the walk is reached, its text says what its mark sa
     },
     subList: (mark, row) => row.text.startsWith(`외 ${mark.left}개 — 다음: `),
     rowCap: (mark, row) => /^외 \d+개 줄은 보이지 않았다 — 한 답의 줄 수 한도\(2000\)에 닿았다/.test(row.text),
+    treeRowCap: (mark, row) =>
+      row.text === "일부 줄은 보이지 않았다 — 한 답의 줄 수 한도(2000)에 닿았다. 다음: 그 줄에서 tree 대신 down <ID>" &&
+      mark.left === undefined &&
+      mark.rows === 2000,
     rowCapUncounted: (mark, row) =>
       row.text === "일부 줄은 보이지 않았다 — 한 답의 줄 수 한도(2000)에 닿았다. 다음: 그 줄에서 down <ID>" && mark.left === undefined,
     gapsCheck: (mark, row, value, check) => {
@@ -867,6 +876,8 @@ test("H5: every mark site of the walk is reached, its text says what its mark sa
       return Boolean(named) && row.text.includes(`${named.heading} — 검사 못 함: ${named.reason}`);
     },
     unpointedFunctions: (mark, row, value) => /검사 못 함: /.test(value.title),
+    runsList: (mark, row, value) =>
+      value.title.endsWith(": 읽지 않음") && value.rows[0].text === "이 빌드는 실행 기록을 읽지 않았다(이전 버전의 빌드)" && mark.list === "runsStale",
     baselineNone: (mark, row) => row.text === "- 기준 없음 — 이 빌드에는 기준 비교가 없다",
     changesList: (mark, row, value) => value.title.endsWith(": 비교하지 않음"),
     unexplainedLine: (mark, row) => row.text === "- 소스가 그대로인 곳에서 달라진 것: 비교하지 않음 — test: not compared",
@@ -1833,6 +1844,8 @@ test("R3: resultShape is returned by exact name, every declared field occurs in 
     { question: "changes", list: "neverChecked", limit: 2 },
     { question: "impact" },
     { question: "down", id: "@파일", limit: 1, cursor: 1 },
+    { question: "tree", id: SAVE },
+    { question: "user", id: "UA-MAIN-01" },
   ];
   for (const args of questions) {
     const value = answer(await read(QUERY, { project_root: f.root, ...args }));
@@ -1856,7 +1869,11 @@ test("R3: resultShape is returned by exact name, every declared field occurs in 
   const notOnFixture = new Set(
     ["exact", "onPath", "marker", "group", "hint", "edge", "score", "matchedTerms", "detail"].filter((field) => !seenFields.has(field)),
   );
-  for (const field of known) assert.ok(seenFields.has(field) || notOnFixture.has(field), `declared field ${field} occurs`);
+  // Fields only a rule table this fixture does not have can give (hand-written
+  // connections and boundaries); test/product-graph-evidence.test.mjs asserts them.
+  const fromOtherRules = new Set(["judgement", "boundary", "notExpanded", "entryStops", "machine"]);
+  for (const field of fromOtherRules) assert.ok(known.has(field), field);
+  for (const field of known) assert.ok(seenFields.has(field) || notOnFixture.has(field) || fromOtherRules.has(field), `declared field ${field} occurs`);
   assert.ok(notOnFixture.size <= 2, `${[...notOnFixture]}`);
   assert.deepEqual([...seenKinds].sort(), [...query.rowKinds].sort());
   const graph = answer(await read("lode_project_graph", { project_root: f.root }));

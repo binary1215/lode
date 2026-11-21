@@ -177,6 +177,8 @@ export function parseScreenDocument({ id, path, text }) {
         id: elementId,
         line: row.line,
         oneLine: oneLine >= 0 ? plain(row.cells[oneLine]) : "",
+        // The cell as written, backticks kept: its quoted phrases (2.6).
+        oneLineCell: oneLine >= 0 ? String(row.cells[oneLine] || "") : "",
         location: location >= 0 ? plain(row.cells[location]) : "",
         parent: number.includes("-") ? `${match[1]}#${number.split("-").slice(0, -1).join("-")}` : null,
         operates: operates >= 0 ? citedIds(row.cells[operates]) : [],

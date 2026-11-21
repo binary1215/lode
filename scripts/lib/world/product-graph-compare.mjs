@@ -14,6 +14,8 @@ const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const LODE_VERSION = JSON.parse(fs.readFileSync(new URL("../../../package.json", import.meta.url), "utf8")).version;
 export const PRODUCT_GRAPH_BASELINE_FILE = "baseline.json";
 const REACH_NODES_SHOWN = 20;
+// Node types a reader older than PRODUCT_GRAPH_VERSION 2 did not produce.
+const READER_NEW_TYPES = Object.freeze(["데이터", "외부 연결", "DB"]);
 
 // UTF-8 text, a leading BOM dropped, CR LF and lone CR turned into LF.
 // Nothing else, so another checkout's line endings give the same hashes.
@@ -50,7 +52,15 @@ export function declarationText(fileLines, [start, end]) {
 function statedContent(node, ix, reasons) {
   if (node.type === "기능") {
     const handlers = walk.handlersOf(ix, node.id).sort(compare);
-    return { kind: node.kind, handling: node.handling, handlers, reasons: handlers.length ? [] : [...(reasons.get(node.id) || [])].sort(compare) };
+    const entries = walk.entriesOf(ix, node.id).sort(compare);
+    // 입구 is stated only when a rule gives one, so a 기능 without reads as before.
+    return {
+      kind: node.kind,
+      handling: node.handling,
+      handlers,
+      ...(entries.length ? { entries } : {}),
+      reasons: handlers.length ? [] : [...(reasons.get(node.id) || [])].sort(compare),
+    };
   }
   const { at, basis, contentSha256, reachSha256, ...stated } = node;
   return stated;
@@ -86,7 +96,7 @@ export function addContentHashes(graph, readFiles, unresolvedHandlers = []) {
   }
   for (const node of graph.nodes) {
     if (node.type !== "기능") continue;
-    const reached = [...walk.closure(ix, walk.handlersOf(ix, node.id))]
+    const reached = [...walk.reachOf(ix, [node.id]).keys()]
       .filter((id) => ix.nodes.get(id)?.type === "코드")
       .sort(compare)
       .map((id) => [id, ix.nodes.get(id).contentSha256]);
@@ -252,9 +262,40 @@ export function readRetainedContent(file, { baseline, baselineBytes }) {
 
 const edgeKey = (type, from, to) => `${type}\u0000${from}\u0000${to}`;
 
+// What reach needs of an edge beyond [type, from, to], kept as an optional
+// fourth tuple element so the baseline's closure can be rebuilt exactly: 역할
+// when it is 입구, the 줄 ranges of a 기능→코드 edge, and the lines of a
+// reference from a handler those ranges split (2.1, 2.9). A boundary is an
+// edge of its own type (2.4). Absent means none, so a common edge costs nothing.
+function reachExtra(edge, ranged) {
+  const extra = {};
+  if (edge.type === "기능→코드" && edge.역할 === "입구") extra.역할 = "입구";
+  if (edge.type === "기능→코드" && edge.줄) extra.줄 = edge.줄;
+  if (ranged.has(edge.from) && edge.type !== "기능→코드") extra.lines = edge.lines || (edge.at?.line ? [edge.at.line] : []);
+  return Object.keys(extra).length ? extra : null;
+}
+const EXTRA_KEYS = new Set(["역할", "줄", "lines"]);
+const validExtra = (extra) =>
+  Boolean(extra) &&
+  typeof extra === "object" &&
+  !Array.isArray(extra) &&
+  Object.keys(extra).length > 0 &&
+  Object.keys(extra).every((key) => EXTRA_KEYS.has(key)) &&
+  (extra.역할 === undefined || extra.역할 === "입구") &&
+  (extra.줄 === undefined ||
+    (Array.isArray(extra.줄) && extra.줄.every((range) => Array.isArray(range) && range.length === 2 && range.every(Number.isSafeInteger)))) &&
+  (extra.lines === undefined || (Array.isArray(extra.lines) && extra.lines.every(Number.isSafeInteger)));
+
 export function baselineFromGraph(graph, { setAt, previous = null }) {
   const edges = new Set();
-  for (const edge of graph.edges) edges.add(edgeKey(edge.type, edge.from, edge.to));
+  const extras = new Map();
+  const ranged = new Set(graph.edges.filter((edge) => edge.type === "기능→코드" && edge.줄).map((edge) => edge.to));
+  for (const edge of graph.edges) {
+    const key = edgeKey(edge.type, edge.from, edge.to);
+    edges.add(key);
+    const extra = reachExtra(edge, ranged);
+    if (extra) extras.set(key, extra);
+  }
   const positions = new Map(graph.nodes.map((node, position) => [node.id, position]));
   return {
     schemaVersion: 1,
@@ -277,10 +318,12 @@ export function baselineFromGraph(graph, { setAt, previous = null }) {
       node.contentSha256 ?? null,
       node.reachSha256 ?? null,
     ]),
-    // [type, from, to]; an end that is a node is its position in nodes.
+    // [type, from, to] or [type, from, to, { 역할?, 줄?, lines? }]: an end that is a
+    // node is its position in nodes; the fourth element is what reach needs.
     edges: [...edges].sort(compare).map((key) => {
       const [type, from, to] = key.split("\u0000");
-      return [type, positions.get(from) ?? from, positions.get(to) ?? to];
+      const tuple = [type, positions.get(from) ?? from, positions.get(to) ?? to];
+      return extras.has(key) ? [...tuple, extras.get(key)] : tuple;
     }),
   };
 }
@@ -323,9 +366,9 @@ export function readBaseline(file) {
     value.edges.every(
       (edge) =>
         Array.isArray(edge) &&
-        edge.length === 3 &&
+        (edge.length === 3 || (edge.length === 4 && validExtra(edge[3]))) &&
         typeof edge[0] === "string" &&
-        edge.slice(1).every((part) => typeof part === "string" || (Number.isInteger(part) && part >= 0 && part < value.nodes.length)),
+        edge.slice(1, 3).every((part) => typeof part === "string" || (Number.isInteger(part) && part >= 0 && part < value.nodes.length)),
     );
   if (!shaped) return { reason: "기준 파일의 모양이 맞지 않는다" };
   return { baseline: value };
@@ -347,7 +390,8 @@ export function baselineGraph(baseline) {
   return {
     nodeTypes: [],
     nodes: baseline.nodes.map(([id, type, kind, file, lines, contentSha256, reachSha256]) => ({ id, type, kind, file, lines, contentSha256, reachSha256 })),
-    edges: baseline.edges.map(([type, from, to]) => ({ type, from: endpoint(from), to: endpoint(to) })),
+    // A baseline of 0.3.0-beta.133 has three-element tuples: no 입구, ranges or lines.
+    edges: baseline.edges.map(([type, from, to, extra]) => ({ type, from: endpoint(from), to: endpoint(to), ...(extra || {}) })),
   };
 }
 
@@ -397,11 +441,16 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
   const types = [
     ...new Set([...(graph.nodeTypes || []).map((item) => item.type), ...graph.nodes.map((node) => node.type), ...before.nodes.map((node) => node.type)]),
   ];
+  // Node types the baseline's reader did not produce (2.8): under another
+  // reader their nodes are new to the reading, not to the product.
+  const readerNewTypes = new Set(sameReader ? [] : READER_NEW_TYPES.filter((type) => !(beforeIx.byType.get(type) || []).length));
+  const readerNewNodes = [];
   for (const type of types) {
     const group = { type, unchanged: 0, changed: [], added: [], removed: [] };
     for (const node of afterIx.byType.get(type) || []) {
       const old = beforeIx.nodes.get(node.id);
-      if (!old) {
+      if (!old && readerNewTypes.has(type)) readerNewNodes.push(node.id);
+      else if (!old) {
         group.added.push(node.id);
         status.set(node.id, "added");
       } else if (old.contentSha256 !== node.contentSha256) {
@@ -418,13 +467,20 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
     if (group.unchanged || group.changed.length || group.added.length || group.removed.length) byType.push(group);
   }
 
-  // 기능 whose own content is the same and whose reached code differs.
+  // 기능 whose own content is the same and whose reached code differs. Under
+  // another reader, a difference whose nodes (reached now or in the baseline,
+  // and differing) all lie in files whose text is the baseline's comes from
+  // the reader: counted apart, not listed, not 다시 볼 것.
   const reachChanged = [];
+  const readerReach = [];
   for (const node of afterIx.byType.get("기능") || []) {
     const old = beforeIx.nodes.get(node.id);
     if (!old || status.has(node.id) || !old.reachSha256 || old.reachSha256 === node.reachSha256) continue;
-    const now = walk.closure(afterIx, walk.handlersOf(afterIx, node.id));
-    const then = walk.closure(beforeIx, walk.handlersOf(beforeIx, node.id));
+    const now = new Set(walk.reachOf(afterIx, [node.id]).keys());
+    // The baseline keeps what reach needs on its edges (역할 입구, 줄 ranges,
+    // reference lines; boundaries are edges), so its reach is rebuilt with the
+    // same rule. A beta.133 baseline has none of them by definition.
+    const then = new Set(walk.reachOf(beforeIx, [node.id]).keys());
     const code = (ix, id) => ix.nodes.get(id)?.type === "코드";
     const nodes = [];
     for (const id of new Set([...now, ...then])) {
@@ -433,6 +489,11 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
       if (change) nodes.push({ id, change });
     }
     nodes.sort((a, b) => compare(a.change, b.change) || compare(a.id, b.id));
+    const fileOfNode = (id) => afterIx.nodes.get(id)?.file || beforeIx.nodes.get(id)?.file || null;
+    if (!sameReader && nodes.every((item) => fileSame(fileOfNode(item.id)))) {
+      readerReach.push(node.id);
+      continue;
+    }
     reachChanged.push({ id: node.id, nodes: nodes.slice(0, REACH_NODES_SHOWN), total: nodes.length });
   }
   const reach = new Set(reachChanged.map((item) => item.id));
@@ -505,7 +566,8 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
   };
   for (const edge of graph.edges) {
     const target = edge.type === "기능→화면요소" ? edge.from : ["화면요소→기능", "화면→코드"].includes(edge.type) ? edge.to : null;
-    if (!target || !edge.basis) continue;
+    // A machine-made edge (2.6) is evidence, not a document row.
+    if (!target || !edge.basis || edge.machine) continue;
     const change = changeOf(target);
     if (!change) continue;
     reviewAgain.documentRows.push({
@@ -540,6 +602,10 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
     },
     byType,
     reachChanged,
+    // What the reader alone changed (section 3): counted, never listed as 신규 or 닿는 코드가 바뀜.
+    ...(sameReader
+      ? {}
+      : { readerChanged: { reach: readerReach.sort(compare), newNodes: readerNewNodes.sort(compare), newNodeTypes: [...readerNewTypes].sort(compare) } }),
     edges: edgeChanges,
     maybeMoved,
     unexplained,
