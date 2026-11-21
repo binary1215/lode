@@ -702,7 +702,7 @@ test("acceptance 10: the limits block is the first block of build and check text
         ),
       ),
     );
-    assert.deepEqual(result.limits.referenceKinds.emitted, ["call", "callback"]);
+    assert.deepEqual(result.limits.referenceKinds.emitted, ["call", "callback", "framework-invoked"]);
     assert.deepEqual(result.limits.notExtracted.nodeTypes, ["데이터", "외부 연결", "DB", "계측 이벤트"]);
   }
   for (const directory of [path.join(base, "out"), path.join(f.family, "build")]) {

@@ -9,7 +9,7 @@
 export const productGraphWalk = (() => {
   const LIMIT = 50;
   const LIST_LIMIT = 50;
-  const CODE_EDGES = new Set(["call", "callback"]);
+  const CODE_EDGES = new Set(["call", "callback", "framework-invoked"]);
   const CHANGE_WORDS = Object.freeze({ changed: "변경", added: "신규", removed: "사라짐", reach: "닿는 코드가 바뀜", reached: "새로 닿음", unreached: "닿지 않게 됨" });
   // Confirmation records (independent of the baseline).
   const CHECK_WORDS = Object.freeze({
@@ -331,14 +331,25 @@ export const productGraphWalk = (() => {
     return `${built} — ${ctx.freshness?.text || "소스가 바뀌었는지 알 수 없음"}`;
   }
 
+  // The reference kinds reach follows, as the header and reach answers name
+  // them: call and callback, and the kinds of 2.2/2.3 only when the graph has
+  // such an edge (a graph without reads as before).
+  function followedWords(ctx) {
+    if (ctx.followedWords === undefined) {
+      const extra = [...CODE_EDGES].filter((type) => type !== "call" && type !== "callback" && (ctx.graph?.edges || []).some((edge) => edge.type === type));
+      ctx.followedWords = ["call", "callback", ...extra].join("·");
+    }
+    return ctx.followedWords;
+  }
+
   function limitsLine(ctx) {
     const calls = ctx.graph?.limits?.calls || ctx.check?.limits?.calls;
     if (calls?.canBeProduct !== undefined)
-      return `읽은 범위: 제품 코드일 수 있는 호출 ${calls.canBeProduct}개 중 ${calls.resolved}개를 풀었다. 풀린 call·callback만 따라간다. 타입 없는 글자 스캔이다.`;
+      return `읽은 범위: 제품 코드일 수 있는 호출 ${calls.canBeProduct}개 중 ${calls.resolved}개를 풀었다. 풀린 ${followedWords(ctx)}만 따라간다. 타입 없는 글자 스캔이다.`;
     const all = calls?.all ?? ctx.graph?.referenceSummary?.allCalls;
     const resolved = calls?.resolved ?? ctx.graph?.referenceSummary?.resolvedCalls;
-    if (all === undefined || resolved === undefined) return "읽은 범위: 이 빌드에는 호출 수가 없다(이전 버전의 빌드). 풀린 call·callback만 따라간다. 타입 없는 글자 스캔이다.";
-    return `읽은 범위: 호출 ${all}개 중 ${resolved}개를 풀었다(${OLDER_CALLS}). 풀린 call·callback만 따라간다. 타입 없는 글자 스캔이다.`;
+    if (all === undefined || resolved === undefined) return `읽은 범위: 이 빌드에는 호출 수가 없다(이전 버전의 빌드). 풀린 ${followedWords(ctx)}만 따라간다. 타입 없는 글자 스캔이다.`;
+    return `읽은 범위: 호출 ${all}개 중 ${resolved}개를 풀었다(${OLDER_CALLS}). 풀린 ${followedWords(ctx)}만 따라간다. 타입 없는 글자 스캔이다.`;
   }
 
   function changesLine(ctx) {
@@ -853,7 +864,7 @@ export const productGraphWalk = (() => {
     const reached = reach(ctx, id);
     const paged = page(reached.ids, { limit, cursor });
     const rows = [repeated(paged, root)];
-    const note = "풀린 call·callback 참조만 따라간다. 어느 기능에서도 닿지 않는 코드 검사와 같은 닫힘이다";
+    const note = `풀린 ${followedWords(ctx)} 참조만 따라간다. 어느 기능에서도 닿지 않는 코드 검사와 같은 닫힘이다`;
     if (reached.direction === "up") rows.push(repeated(paged, { depth: 1, kind: "group", text: `이 코드에 닿는 기능 ${reached.ids.length}개 (${note})` }));
     else {
       if (ctx.ix.nodes.get(id).type !== "기능") rows.push(repeated(paged, { depth: 1, kind: "text", text: `거치는 기능 ${reached.functions.length}개: ${reached.functions.join(", ") || "없음"}` }));
@@ -905,6 +916,7 @@ export const productGraphWalk = (() => {
       callsLine(limits.calls),
       ...(limits.callReading || []).map((line) => `- ${line}`),
       `- reference 종류는 ${limits.referenceKinds.emitted.join(", ")}만 적는다. ${limits.referenceKinds.notToldApart.join(", ")}는 구별하지 못해 적지 않는다.`,
+      ...(limits.runByPath ? [`- ${limits.runByPath}`] : []),
       `- 뽑지 않은 것: ${limits.notExtracted.nodeTypes.join(", ")} 노드, ${limits.notExtracted.edges.join(", ")} 연결, ${limits.notExtracted.grouping}.`,
       ...limits.uiBindingScan.map((line) => `- ${line}`),
       ...(limits.tableRows ? [`- ${limits.tableRows}`] : []),
@@ -1085,6 +1097,19 @@ export const productGraphWalk = (() => {
       lists.ruleIssues.map((item) => ({ text: `${item.종류}: ${item.path} — ${item.reason}` })),
       { show: lists.ruleIssues.length > 0 },
     );
+    // framework-invoked read from a path (2.2): every site, since a message
+    // that merely mentions a file reads the same way.
+    const byPath = lists.runByPath;
+    if (byPath)
+      add(
+        "runByPath",
+        byPath.sites.length,
+        [
+          `경로로 실행으로 읽은 곳: ${byPath.sites.length}곳 (실행·적재하는 호출에 넘긴 파일 하나의 경로, 또는 이름 없는 import. 글자로 읽은 것이니 읽어 보고 틀린 연결은 알린다)${byPath.ambiguous ? ` — 경로가 여러 파일에 맞음 ${byPath.ambiguous}곳은 잇지 않았다` : ""}`,
+        ],
+        byPath.sites.map((site) => ({ text: `${site.path}:${site.line} ${site.from} → ${site.to} — "${site.literal}"`, nodeId: site.from })),
+        { show: byPath.sites.length > 0 || byPath.ambiguous > 0 },
+      );
     add(
       "counts",
       null,

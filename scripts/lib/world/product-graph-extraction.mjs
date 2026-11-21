@@ -1341,6 +1341,14 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
       code.references.set(key, { type: "callback", from: callback.from, to: callback.to, source: { path: callback.file, line: callback.line }, count: 0 });
     code.references.get(key).count += 1;
   }
+  // framework-invoked: a file run by its path, and a bare import.
+  const runByPath = pathReferences(code);
+  for (const site of runByPath.sites) {
+    const key = `${site.from}\0${site.to}\0framework-invoked`;
+    if (!code.references.has(key))
+      code.references.set(key, { type: "framework-invoked", from: site.from, to: site.to, source: { path: site.path, line: site.line }, count: 0 });
+    code.references.get(key).count += 1;
+  }
   // Files that look like UI code but no pattern read: a gap, not zero 기능.
   const uiWithoutRule = [];
   const namedUiFiles = new Set(uiFiles);
@@ -1370,7 +1378,7 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
   for (const request of entryRequests) {
     const entry = functions.get(request.id);
     if (!codeIdSet.has(request.code)) {
-      const key = `${request.rule.종류} ${request.code}`;
+      const key = `${request.rule.종류}\0${request.code}`;
       if (!entryIssues.has(key))
         entryIssues.set(key, { 종류: request.rule.종류, path: request.code, 입구: request.code, reason: "규칙이 가리키는 코드가 없음" });
       continue;
@@ -1406,6 +1414,7 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
       (a, b) => compare(a.id, b.id) || compare(a.position.path, b.position.path) || a.position.line - b.position.line,
     ),
     untrustedMaskFiles: ui.untrustedMask,
+    runByPath: { sites: runByPath.sites, ambiguous: runByPath.ambiguous },
     notTakenBindings: ui.notTaken.sort((a, b) => compare(a.path, b.path) || a.line - b.line || compare(a.pattern, b.pattern)),
     uiWithoutRule: uiWithoutRule.sort((a, b) => compare(a.path, b.path)),
     outOfScope: outOfScope.sort((a, b) => compare(a.id, b.id)),
@@ -1416,6 +1425,178 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     codeFiles: code.analyses.size,
     excludes: [...excludes].sort(),
   };
+}
+
+// The two shapes of framework-invoked this reading sees (2.2). A string or
+// template literal in code (by the code mask: inside a literal, not a
+// comment) whose text ends with a path that names exactly one scanned code
+// file: the full relative path, or a suffix of it that starts at a "/", and
+// that is handed to a call that runs or loads it (runSite; narrowed from
+// "any literal" after a sample of Lode's own source found half of those were
+// mentions: lists, existence checks, reads and writes). Two candidate files
+// give no reference and one count. Import and export specifiers (and
+// require) are not read here, and a file never refers to itself. And a
+// JavaScript or TypeScript import "<relative path>" with no bindings. Each
+// gives a reference from the enclosing declaration (or the file) to that
+// file's node; every site is kept for the check list.
+// The extensions of CODE_LANGUAGES.
+const RUN_PATH = /[\w@.\-/]*\.(?:js|mjs|cjs|jsx|ts|tsx|mts|py)$/;
+const SPECIFIER_BEFORE = /(?:\bfrom|\bimport|\bimport\s*\(|\brequire\s*\(|\bexport\s*\*)\s*$/;
+const BARE_IMPORT_BEFORE = /(?:^|[;{}\n])\s*import\s*$/;
+
+function literalSpans(text, mask, python) {
+  const spans = [];
+  for (let index = 0; index < text.length; index += 1) {
+    if (mask[index] !== 0 || text[index] === "\n") continue;
+    let end = index;
+    while (end < text.length && mask[end] === 0 && text[end] !== "\n") end += 1;
+    // A literal may run over lines (template, triple quote): continue through
+    // newlines that are inside it (a newline is code only between runs).
+    while (end < text.length && text[end] === "\n" && mask[end] === 0) {
+      end += 1;
+      while (end < text.length && mask[end] === 0 && text[end] !== "\n") end += 1;
+    }
+    const first = text[index];
+    const comment = python ? first === "#" : first === "/" && (text[index + 1] === "/" || text[index + 1] === "*");
+    const regex = !python && first === "/" && !comment;
+    if (!comment && !regex && ['"', "'", "`", "}"].includes(first)) {
+      let body = text.slice(index, end);
+      const triple = python && (body.startsWith('"""') || body.startsWith("'''"));
+      body = body.slice(triple ? 3 : 1);
+      if (triple && (body.endsWith('"""') || body.endsWith("'''"))) body = body.slice(0, -3);
+      else if (body.endsWith(first === "}" ? "`" : first)) body = body.slice(0, -1);
+      spans.push({ start: index, body });
+    }
+    index = end;
+  }
+  return spans;
+}
+
+// The 1-based line of an index, from a file's line starts.
+function lineOfStarts(starts, index) {
+  let low = 0,
+    high = starts.length - 1;
+  while (low < high) {
+    const middle = (low + high + 1) >>> 1;
+    if (starts[middle] <= index) low = middle;
+    else high = middle - 1;
+  }
+  return low + 1;
+}
+
+// What runs or loads a file given its path (2.2, narrowed after the sample):
+// a dynamic import, a process start, a worker, or any call that also hands
+// over the language's own executable. Calls that only build a path (join,
+// resolve, URL) are looked through, as are arrays and objects.
+const RUN_CALLEES = Object.freeze({
+  javascript: new Set(["import", "spawn", "spawnSync", "fork", "exec", "execSync", "execFile", "execFileSync", "Worker"]),
+  python: new Set(["run", "Popen", "call", "check_call", "check_output", "system", "execv", "execvp", "execl", "execlp", "run_path", "run_module"]),
+});
+const PATH_BUILDERS = new Set(["join", "resolve", "normalize", "URL", "pathToFileURL", "fileURLToPath", "Path", "abspath", "realpath", "str", "fspath"]);
+const OWN_EXECUTABLE = { javascript: /\bprocess\.execPath\b/, python: /\bsys\.executable\b/ };
+const MAX_RUN_DEPTH = 6;
+
+// Whether the literal at start sits in the arguments of a call that runs or
+// loads a file. view is the file with comments and string contents blanked.
+function runSite(view, start, python) {
+  const language = python ? "python" : "javascript";
+  let position = start - 1;
+  for (let level = 0; level < MAX_RUN_DEPTH; level += 1) {
+    // The nearest unmatched opening bracket before position, in this statement.
+    let depth = 0;
+    let open = -1;
+    for (; position >= 0; position -= 1) {
+      const character = view[position];
+      if (character === ")" || character === "]" || character === "}") depth += 1;
+      else if (character === "(" || character === "[" || character === "{") {
+        if (depth === 0) {
+          open = position;
+          break;
+        }
+        depth -= 1;
+      } else if (character === ";" && depth === 0) return false;
+    }
+    if (open < 0) return false;
+    if (view[open] !== "(") {
+      position = open - 1;
+      continue;
+    }
+    const callee = /([A-Za-z_$][\w$]*)\s*$/.exec(view.slice(Math.max(0, open - 80), open))?.[1] || "";
+    if (RUN_CALLEES[language].has(callee)) return true;
+    // The call's own argument text, to its closing bracket.
+    let close = open + 1;
+    for (let inner = 0; close < view.length; close += 1) {
+      const character = view[close];
+      if (character === "(" || character === "[" || character === "{") inner += 1;
+      else if (character === ")" || character === "]" || character === "}") {
+        if (inner === 0) break;
+        inner -= 1;
+      }
+    }
+    if (OWN_EXECUTABLE[language].test(view.slice(open, close))) return true;
+    if (!PATH_BUILDERS.has(callee)) return false;
+    position = open - 1;
+  }
+  return false;
+}
+
+function pathReferences(code) {
+  const files = [...code.analyses.keys()].sort();
+  const sites = [];
+  let ambiguous = 0;
+  const bySuffix = (wanted) => files.filter((file) => file === wanted || file.endsWith(`/${wanted}`));
+  for (const [relative, analysis] of code.analyses) {
+    const python = analysis.language === "python";
+    const mask = codeMask(analysis.text, python ? "python" : "javascript");
+    if (!mask.trusted) continue;
+    let view = "";
+    for (let index = 0; index < analysis.text.length; index += 1) view += mask[index] || analysis.text[index] === "\n" ? analysis.text[index] : " ";
+    // For brackets: the "${" that opens a template expression is blanked too,
+    // since its closing "}" is.
+    let brackets = "";
+    for (let index = 0; index < analysis.text.length; index += 1) brackets += mask[index] === 1 || analysis.text[index] === "\n" ? analysis.text[index] : " ";
+    for (const span of literalSpans(analysis.text, mask, python)) {
+      const before = view.slice(Math.max(0, span.start - 80), span.start);
+      const line = () => lineOfStarts(analysis.starts, span.start);
+      if (!python && BARE_IMPORT_BEFORE.test(before)) {
+        // import "<relative path>" with no bindings.
+        const target = span.body.startsWith(".") ? resolveModule(relative, span.body, "javascript", new Set(files)) : null;
+        if (target && target !== relative)
+          sites.push({
+            from: enclosingCode(code, relative, line()),
+            to: target,
+            path: relative,
+            line: line(),
+            shape: "bare-import",
+            literal: span.body.slice(0, 160),
+          });
+        continue;
+      }
+      if (!python && SPECIFIER_BEFORE.test(before)) continue;
+      const match = RUN_PATH.exec(span.body);
+      if (!match) continue;
+      const wanted = match[0].replace(/^(?:\.{1,2}\/)+/, "").replace(/^\/+/, "");
+      if (!wanted || !/\w/.test(wanted)) continue;
+      // Only where the literal is handed to something that runs or loads it.
+      if (!runSite(brackets, span.start, python)) continue;
+      const candidates = bySuffix(wanted);
+      if (candidates.length > 1) {
+        ambiguous += 1;
+        continue;
+      }
+      if (candidates.length !== 1 || candidates[0] === relative) continue;
+      sites.push({
+        from: enclosingCode(code, relative, line()),
+        to: candidates[0],
+        path: relative,
+        line: line(),
+        shape: "path",
+        literal: span.body.slice(0, 160),
+      });
+    }
+  }
+  sites.sort((a, b) => compare(a.path, b.path) || a.line - b.line || compare(a.to, b.to));
+  return { sites, ambiguous };
 }
 
 // Files under the source root that were not read as code, kept apart from
