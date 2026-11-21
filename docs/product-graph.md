@@ -21,18 +21,19 @@ Node type names are used exactly as written below, in every language.
 | 정책 | One rule written as condition / actor / action, kind 처리 or 표시 | one line written directly into the graph |
 | 기능 | One request the system receives and handles (one entry point) | code, by script |
 | 코드 | A named unit of code (file, class, function) | code, by script |
-| 데이터 | A value code reads or writes that is not a database | code (뽑지 않음 in this version) |
-| 외부 연결 | A place where code calls a service outside the product | code (뽑지 않음 in this version) |
-| DB | Tables and columns | code (뽑지 않음 in this version) |
+| 데이터 | A value code reads or writes that is not a database | code: environment variable reads, and data a 바깥 rule names |
+| 외부 연결 | A place where code calls a service outside the product | code, where a 바깥 rule names the other side |
+| DB | Tables and columns | code: `CREATE TABLE` in a code string or a `.sql` file |
 | 계측 이벤트 | An event code sends to an analytics tool | code (뽑지 않음 in this version) |
 
 For a product without screens (a CLI, a plugin, a library), one kind of output the user receives (command output, a tool result, text a hook adds, an error message) is a 화면, and one part of that output is a 화면요소.
 
 ## Where each node comes from
 
-- Nodes from code (기능, 코드) are produced only from the source tree, by script. The same input gives byte-identical output.
+- Nodes from code (기능, 코드, 데이터, 외부 연결, DB) are produced only from the source tree and the entry-rule table, by script. The same input gives byte-identical output.
 - Nodes from documents (제품코어, 유저저니, IA, 유저 활동, 화면, 화면요소) come only from the documents the user writes.
 - Two things are written directly: one rule line per 정책, and one meaning line per 기능 (kept in its own file, apart from script output).
+- Run records (`실행 기록/`) hold what the project ran and what came back, handed to Lode; they make no node and are only evidence for 기능→화면요소 edges (see Run records below). Lode runs nothing.
 - The graph itself is a generated file. Nobody edits it.
 
 ## IDs
@@ -46,10 +47,13 @@ For a product without screens (a CLI, a plugin, a library), one kind of output t
 | 기능 (프론트) | `fe/<path without extension>/<component>@<event>:<target>` | `fe/app/ui/main_window/MainWindow@clicked:_save` |
 | 코드 | `<path>` for a file, `<path>#<qualified name>` for a declaration, with `~<n>` when the name repeats in the file | `app/ui/main_window.py#MainWindow._save`, `app/util.py#helper~2` |
 | 정책 | written in the policy file | `P1` |
+| 데이터 | `data:env:<NAME>` for an environment variable, `data:<이름>` for data a 바깥 rule names | `data:env:HOME`, `data:settings` |
+| 외부 연결 | `ext:<이름>`, the name a 바깥 rule gives | `ext:billing-api` |
+| DB | `db:<table>`, `db:<table>.<column>` | `db:notes`, `db:notes.title` |
 
 ## Edges
 
-An edge name is the two node types joined by `→`: 유저 활동→화면요소, 유저 활동→유저 활동, 화면→화면요소, 화면→화면, 화면→정책, 화면→코드, 화면→기능, 화면요소→화면요소, 화면요소→기능, 기능→화면요소, 정책→기능, 기능→코드. The original's three exceptions keep their own names: 포함, the 코드→코드 reference kinds (call, callback, framework-invoked, render, type reference, re-render, response, enqueue, navigate, http, defines), and read / write. No other edge name is used.
+An edge name is the two node types joined by `→`: 유저 활동→화면요소, 유저 활동→유저 활동, 화면→화면요소, 화면→화면, 화면→정책, 화면→코드, 화면→기능, 화면요소→화면요소, 화면요소→기능, 기능→화면요소, 정책→기능, 기능→코드, 코드→외부 연결. The original's three exceptions keep their own names: 포함, the 코드→코드 reference kinds (call, callback, framework-invoked, render, type reference, re-render, response, enqueue, navigate, http, defines), and read / write. One Lode name is added: 경계, a boundary written by hand in the entry-rule table (see 손으로 적는 연결 below). No other edge name is used.
 
 Every document edge comes from an ID cited in a document; nothing is inferred from wording.
 
@@ -57,7 +61,13 @@ Every document edge comes from an ID cited in a document; nothing is inferred fr
 - A 화면요소 row cites the 기능 it runs when operated (화면요소→기능) and the 기능 whose result it shows (기능→화면요소).
 - The 화면 정책 section cites 정책 IDs (화면→정책); 공통 영역 cites other 화면 (화면→화면); 그리는 코드 cites 코드 IDs (화면→코드).
 - 화면→기능 is added for each `@effect` 기능 of the class a 화면 cites as its drawing code.
-- 기능→코드 links each 기능 to the code that receives it, when that resolves.
+- 기능→코드 links each 기능 to the code that receives it, when that resolves, with 역할 "처리". A rule's 입구 adds 기능→코드 edges with 역할 "입구" (see below). A 기능 whose rule has 분기 carries the line ranges it passes on its edge.
+- Besides the rows of a 화면설계서, a build adds 기능→화면요소 edges it finds from evidence (run output and code string literals); each edge lists its 근거. These machine edges are evidence, not approval (see Run records below).
+
+Edges from code to 데이터, 외부 연결 and DB:
+
+- read (and write) from the code that reads an environment variable to `data:env:<NAME>`; read or write to named data, and 코드→외부 연결, only where a 바깥 rule names the other side.
+- 포함 from a table to each of its columns; read or write from code whose SQL names a known table.
 
 ## Store
 
@@ -75,6 +85,7 @@ The family lives in the Project store next to `context/product-model.json`:
   호출 방식 표.json
   승인/product-graph-approval-<id>.json
   확인/product-graph-check-<id>.json
+  실행 기록/product-graph-run-<id>.json
   build/graph.json
   build/check.json
   build/check.txt
@@ -83,10 +94,10 @@ The family lives in the Project store next to `context/product-model.json`:
   build/build-context.json
 ```
 
-- Documents, the policy file, the meaning file, the entry-rule table, approval records and confirmation records (`확인/`, see [Using the product graph](product-graph-usage.md)) are user-owned Canon, like `product-model.json`: Lode reads them and never rewrites them on its own, and they are not in the managed manifest digest.
+- Documents, the policy file, the meaning file, the entry-rule table, approval records, confirmation records (`확인/`) and run records (`실행 기록/`, both described in [Using the product graph](product-graph-usage.md)) are user-owned Canon, like `product-model.json`: Lode reads them and never rewrites them on its own, and they are not in the managed manifest digest.
 - `build/` is generated output. It is rebuilt from the files above and the source tree, and it is ignored by Git (a generated storage rule for new Projects, and its own `.gitignore` written on each build for existing ones). `build/baseline.json` is the baseline the build compares with: the first build takes it and only `product-graph-baseline` moves it (see [Using the product graph](product-graph-usage.md)). `build/baseline-content.json` keeps the bounded "before" text that only `changes --list content` shows, and `build/build-context.json` the scope the impact preview compares. Deleting `build/` loses only the list of changes since the baseline and that before/after display; Canon is preserved.
 - File names are the original's document names and the node IDs. Korean names are used as is.
-- Portable export and import carry the Canon files (not `build/`); importing into an existing Project archives them like other Canon instead of replacing the target's. Folder-copy adoption verifies them and requires them unchanged. Each of the three results says, under `productGraph`, how many documents and approval records it handled, which other user files, that `build/` is not carried, and which names it left out because Lode does not recognise them; a refusal on a differing existing file names that file. None of these files is a World input: World ids do not change when they change.
+- Portable export and import carry the Canon files (not `build/`); importing into an existing Project archives them like other Canon instead of replacing the target's. Folder-copy adoption verifies them and requires them unchanged. Each of the three results says, under `productGraph`, how many documents and approval records it handled, which other user files, that `build/` is not carried, and which names it left out because Lode does not recognise them; a refusal on a differing existing file names that file. Run records are handled like confirmation records in all three and in snapshot GC; a run's output text is stored as the project gave it and a portable export carries it (Lode does not inspect it for secrets). A Project without `실행 기록/` simply has no run evidence. None of these files is a World input: World ids do not change when they change.
 - Snapshot GC reads the Canon files as verified roots and skips `build/`. A file or folder in the family that Lode does not recognise is the user's own: never deleted, not a root, not an issue, and named as kept (`productGraphKept`). A recognised file that fails verification, or a link anywhere in the family, still stops the collection.
 
 ## Document formats
@@ -176,7 +187,36 @@ One 기능 per entry point. Built-in rules find them; a Project can add rules in
 | cli | `package.json` bin; `pyproject.toml` scripts; subcommand tables by a project rule | `cli:<name>` |
 | 프론트 | every place where a UI wires a user's signal to code, in any UI toolkit, by UI binding patterns | `fe/<path>/<component>@<event>:<target>` |
 
-A project rule has 종류, an optional 처리 and 설명, and, for tool and cli, 파일 (paths under the source root), 패턴 (a regular expression whose first group is the name) and an optional 처리 코드: `줄을 감싼 코드` (the default), `파일`, or `항목` (the code the table row names; Lode addition 9). A rule with only 종류 and 처리 changes the handling of the built-in rule, and `source` lists path prefixes to leave out.
+A project rule has 종류, an optional 처리 and 설명, and, for tool and cli, 파일 (paths under the source root), 패턴 (a regular expression whose first group is the name) and an optional 처리 코드: `줄을 감싼 코드` (the default), `파일`, or `항목` (the code the table row names; Lode addition 9). A rule with only 종류 and 처리 changes the handling of the built-in rule, and `source` lists path prefixes to leave out. Any rule may also carry 입구, and a pattern rule 분기 (both below).
+
+Besides `rules`, the table has optional top-level keys: `"내장 이름"` (addition 10), `"손으로 적는 연결"`, `"바깥"` and `"빼는 연결"` (below). A table without them reads as before; an unknown key is still refused. Every rule under these keys is marked 판단.
+
+### 입구 (entry code)
+
+A rule may carry `"입구": [<코드 IDs>]`: the code a 기능 enters through before its 처리 코드, such as a dispatcher that every tool call passes. Every 기능 the rule produces gets a 기능→코드 edge with 역할 "입구"; the handler edge says 역할 "처리". A rule with only 종류 (no 파일 or 패턴) may carry 입구 for every 기능 of its kind. An ID that is not a 코드 node is a rule issue, 규칙이 가리키는 코드가 없음. The rule table Lode's tests use for Lode's own source (`test/fixtures/product-graph/lode-entry-rules.json`) names the MCP and CLI dispatchers as 입구.
+
+Reach starts from both roles everywhere: the list of unreached code, `reach`, `changes`, `impact` and the reach hash. From 입구 the walk does not enter a node that is another 기능's 처리 코드 (that exact node only: a declaration inside a file that is a file-level handler is still entered), so a shared dispatcher does not make every 기능 reach every handler; code this 기능 also reaches through its own 처리 path is reached with via 처리. A stop is never silent: `reach <기능>` and the 기능's node answer print "입구에서 다른 기능의 처리 코드 앞에서 멈춤 N곳" with the stopped nodes and their 기능 (`entryStops` in the data), `tree` names the node and its 기능, and the limits block states the rule. What it can hide: a dispatcher that really calls one 기능's handler as a shared step for the others does not show that path. The baseline keeps each edge's 역할 when it is 입구, so the comparison rebuilds the earlier reach with the same rule.
+
+### 분기 (branches)
+
+A pattern rule whose 처리 코드 is the enclosing code (the default) may carry `"분기": true`, for a function that handles several 기능 in branches. Each 기능 then passes the function's lines minus the branch blocks of the other 기능. A branch block is the statement holding the match: to the matching close bracket in brace languages, from a `case` label to the next case, or to the end of the indented block in Python. The 기능→코드 edge carries those line ranges; reach from that handler follows only references on those lines (deeper code is reached whole), and the references of such a handler record every line they occur on. A match that cannot be delimited gives the whole function and is listed under 분기를 정하지 못함. Without 분기 nothing changes.
+
+### 손으로 적는 연결 (connections written by hand)
+
+Where the scan cannot see a connection, a person can write it as a judged rule: `{"판단": true, "종류": "framework-invoked" or "경계", "파일", "글", "대상": [<코드 IDs>], "설명"}`.
+
+- framework-invoked: every code line of 파일 holding 글 gives a reference from its enclosing code to each 대상, marked as a judgement (`judgement: true`, text "(판단)"). Reach follows it.
+- 경계: a boundary edge; reach does not cross it. Queries print "경계에서 멈춤: <설명> → <대상>" under the node where it stops, and `reach <code>` behind a boundary says "경계를 넘으면 닿는 기능 N개 (…)".
+
+글 on no code line, a missing 파일, or a 대상 that is not a 코드 node is a rule issue, "규칙이 낡음 — …", listed and never a build failure.
+
+### 바깥 (naming outside calls)
+
+Calls on names imported from a table of outside modules are recorded as facts: JavaScript `fs`, `fs/promises`, `net`, `http`, `https`, `dgram`, `tls`, `child_process`, `readline`; Python built-in `open`, `os`, `shutil`, `pathlib`, `subprocess`, `socket`, `sqlite3`, `urllib`, `http.client`; and any module a 바깥 rule names. A fact becomes an edge only through a judged rule: `"바깥": [{"판단": true, "이름", "종류": "데이터" or "외부 연결", "닿는 곳": [{"모듈", "파일"?, "줄"?, "선언"?}], "설명"?}]`.
+
+- 데이터: a node `data:<이름>` with read or write by the called api's name; an api in neither list is listed under 읽기·쓰기를 정하지 못함, never guessed.
+- 외부 연결: a node `ext:<이름>` and a 코드→외부 연결 edge.
+- Facts no rule claims are listed by module and file under 이름 없는 바깥 호출. A fact that two rules claim is a rule issue, unless exactly one of them narrows by 줄 or 선언.
 
 ### UI binding patterns (프론트)
 
@@ -218,7 +258,7 @@ Each row ends in exactly one of: findings with node IDs and positions, 0건, or 
 - The 화면 정책 row compares, by 정책 ID, the condition, actor and action written in the screen document with the policy line, and flags a 처리 policy listed as a screen policy.
 - The journey row needs a 유저 저니맵 that lists activity IDs per stage. It flags a 다음 활동 that sits in an earlier stage, or an activity missing from the journey.
 
-It also lists, with counts: IDs a document cites that do not exist; 기능 that no 화면요소 or 화면 points to; code no 기능 reaches (어느 기능에서도 닿지 않는 코드); unresolved calls by reason; files not read as code; 뜻 lines whose 기능 no longer exists (사라진 기능의 뜻); 기능 whose code did not resolve, with the reason; wiring not taken as 기능 (기능으로 삼지 않은 연결); files that look like UI code but match no pattern (화면 코드인데 규칙이 없음); node counts per type (뽑지 않음 where it applies); and each document's status. Before all of this comes one block, 이 그래프가 답하지 못하는 것 (Lode addition 6).
+It also lists, with counts: IDs a document cites that do not exist; 기능 that no 화면요소 or 화면 points to; code no 기능 reaches (어느 기능에서도 닿지 않는 코드); unresolved calls by reason; files not read as code; 뜻 lines whose 기능 no longer exists (사라진 기능의 뜻); 기능 whose code did not resolve, with the reason; wiring not taken as 기능 (기능으로 삼지 않은 연결); files that look like UI code but match no pattern (화면 코드인데 규칙이 없음); every site read as running a file by its path (경로로 실행으로 읽은 곳, with paths that match several files counted as 경로가 여러 파일에 맞음); rule issues (규칙이 가리키는 코드가 없음, 규칙이 낡음 — …); 기능 whose branch could not be delimited (분기를 정하지 못함); outside calls no 바깥 rule names (이름 없는 바깥 호출) and named data whose access could not be told (읽기·쓰기를 정하지 못함); the run and evidence lists (see Run records below); node counts per type, with what the 데이터, 외부 연결 and DB counts cover (뽑지 않음 only for 계측 이벤트); and each document's status. Before all of this comes one block, 이 그래프가 답하지 못하는 것 (Lode addition 6).
 
 ## Approval
 
@@ -231,20 +271,44 @@ The approval digest is taken over the document's text, not its bytes, because th
 The 코드 layer reuses Lode's regex-based source analysis (the same scan as the repository World Model): one node per file and per declaration, with line range and kind. It is not a syntax tree, so:
 
 - A 코드→코드 call is recorded only when the callee resolves to exactly one declaration or called value binding (same file, a `self.` or `this.` method of the enclosing class, or a name imported from a resolved module, with the further lexical rules of addition 10). Every other call is counted as unresolved.
-- Reference kinds the scan cannot tell apart (framework-invoked, render, type reference, re-render, response, enqueue, navigate, http, defines) are not recorded. callback is recorded only for UI wiring that is not taken as 기능.
+- Three reference kinds are recorded: call, callback and framework-invoked. The kinds the scan cannot tell apart (render, type reference, re-render, response, enqueue, navigate, http, defines) are not recorded.
+- callback is recorded for UI wiring that is not taken as 기능, and for a function used as a value. Such a use is an identifier that is not called, declared, imported, exported in a list, a property key or after a dot, and that resolves to one function or class declaration by the call rules. Members resolve only where a call would: `this.x` or `self.x` inside a class, static `C.x` on a product class, and `name.x` on a module-level object literal or a namespace import. Shorthand properties (`{ run }`) count. Parameters and locals are not resolved. TypeScript type positions (after `:` or `satisfies`), text inside `<…>`, decorators and `const { … } = require(…)` are not uses. The limits block counts "값으로 쓴 함수 N곳(이름 a, 멤버 b)" apart from calls.
+- framework-invoked is recorded in two shapes. First, a code string or template literal that ends with the path of exactly one scanned code file (the full relative path, or a suffix starting at `/`), only when that literal is handed to a call that runs or loads it: a dynamic import; a process start (`spawn`, `spawnSync`, `fork`, `exec`, `execFile` and their sync forms; Python `subprocess.run`, `Popen`, `call`, `check_call`, `check_output`, `os.system`, the `exec` family, `runpy`); a `Worker`; or any call that also passes `process.execPath` or `sys.executable`. Path builders (`join`, `resolve`, `URL` and the like), arrays and objects are looked through. Second, a JavaScript or TypeScript `import "<relative path>"` with no bindings. A path that fits two files gives no edge and is counted (경로가 여러 파일에 맞음). Import, export and require specifiers are not read this way, and a file never refers to itself. Paths held in a constant and passed later, injection, decorators and routes decided by file names are not seen. Every site is listed under 경로로 실행으로 읽은 곳, so a wrong one can be reported. (An earlier rule took any literal that names a file; a 30-edge sample on Lode's own code found 15 that were only mentions, so the rule was narrowed to literals that are run or loaded.)
 - JavaScript class methods are declarations (addition 10), but UI wiring inside one still takes the enclosing class as its component, and wiring inside a member of an object literal takes the enclosing function or the file name, so 프론트 IDs are what they were.
 - UI wiring is found only by the patterns' regular expressions. Wiring spread over several lines, built from strings, connected automatically by name by a toolkit, or whose event name is computed at run time is not seen. For an entry marked 코드만, a character-level lexer decides what is code: in JavaScript, TypeScript and Python files a match inside a comment or a string (multi-line strings and template literals included) is dropped; in HTML, Vue and Svelte files only `<!-- -->` comments are; JSX `on<Event>={…}` attributes are not filtered. The lexer is not a parser and recognises a regular expression literal from the character before it. The id of the same tag is looked for between the nearest `<` and `>`, so a `>` inside an attribute can mislead it. An overridden event method is recognised by its name; whether its class really inherits from a UI class is not checked.
 - Handlers in HTML, Vue and Svelte files are not resolved to code, because those files are not part of the source analysis; their 기능 are listed under 처리 코드를 찾지 못한 기능.
-- 데이터, 외부 연결, DB, 계측 이벤트, navigate and C4 grouping are not extracted; the output says 뽑지 않음 for them instead of zero.
+- 데이터 is read from environment variables only as `process.env.NAME`, `process.env["NAME"]`, `os.environ["NAME"]`, `os.environ.get("NAME")` and `os.getenv("NAME")`, each giving `data:env:NAME` with a read edge; an environment object passed on under another name is not followed. Other 데이터 and every 외부 연결 come only from 바깥 rules; nothing is guessed from a call alone.
+- DB is read from `CREATE TABLE` in a code string or a `.sql` file: `db:<table>` and `db:<table>.<column>` with 포함. SQL verbs in a code string that name a known table give read (`SELECT`) or write edges. Tables made any other way are not seen. Tables and data have no meaning lines.
+- The node counts print numbers for 데이터, 외부 연결 and DB with what each covers. 계측 이벤트, navigate and C4 grouping are not extracted; the output says 뽑지 않음 for them instead of zero.
 
 ### Code no 기능 reaches
 
 The original's 코드 definition asks for a list of the code that cannot be reached from the code handling any 기능 by following reference. Lode prints it as 어느 기능에서도 닿지 않는 코드:
 
-- The walk starts from every 기능's resolved handler and follows the resolved call and callback references, transitively.
+- The walk starts from every 기능's resolved 처리 코드 and its 입구 code, and follows the resolved call, callback and framework-invoked references (judged ones included), transitively. It does not cross a 경계, and from 입구 it does not enter another 기능's 처리 코드. From a handler with 분기 it follows only the references on that 기능's lines.
 - A handler that is a whole file (a hook script, a command file, a bin script) reaches that file and the calls made at its top level; a declaration in that file is reached only through a resolved reference. Reaching a class reaches its constructor (`__init__` or `constructor`).
 - Every declaration not visited is listed. Files where nothing is reached are told apart from unreached declarations inside a file that is otherwise reached.
 - The list is bounded by the references: its head gives the resolved calls out of all calls, and 닿지 않음 means that no resolved path was found, not that the code is dead. Whether an entry is a missing 기능 or dead code is a reader's judgement; the script gives no reason it did not find.
+
+## Run records and evidence for 기능→화면요소
+
+Lode runs nothing. A project can hand it what it ran (`product-graph-runs-add`, see [Using the product graph](product-graph-usage.md)); each run is stored with the 기능's content and reach hash from the build of that moment and the way code was read, so a run made on older code never becomes evidence for today's code. Runs are shown as `R<record short id>-<n>`.
+
+Each build derives 기능→화면요소 edges from evidence, next to the rows of the 화면설계서:
+
+- **Quoted phrases.** A 화면요소 row's phrases are the backtick segments of its 한 줄 cell with at least 4 literal characters; `<…>` and `…` inside one match any text. A row with a phrase of 10 or more literal characters ignores its shorter ones.
+- **Run evidence.** A phrase found in the output of a current run gives an edge from that run's 기능, with 근거 "실행 <ids>".
+- **Code evidence.** For an element no run matched, or whose row names a 보여 주는 기능 (the document then narrows the 기능 it may be, never widens), a phrase found in a code string literal, or at the uses of a module-level constant holding it, gives an edge from the 기능 that reach that code, with 근거 "코드 <file>:<line>". Uses of such a constant that do not resolve are listed.
+- The row's own 보여 주는 기능 keeps 근거 "문서". An edge lists every kind of evidence it has.
+- A judged rule `"빼는 연결": [{"판단": true, "기능", "화면요소", "이유"}]` in the entry-rule table removes a wrong machine edge (the document's own edge stays). A rule that matches no machine edge is a rule issue, 규칙이 낡음.
+
+Machine edges follow the document's status (승인 or 추정), are evidence and not approval, never change a document, an approval or a 확인 record, are in no 다시 볼 것 list, and are derived again on every build. The check lists 문서에만 있음(실행·코드 근거 없음), 실행·코드에만 있음(문서에 없음), 이어지지 않은 화면요소 with the reason, unresolved constant uses, and machine edges removed by a rule.
+
+A run whose 기능 changed since it was recorded (content, reach or the way code is read) gives no edge and is listed as 실행 뒤 코드가 바뀜; a newer run with the same 기능 and the same 실행 label replaces the older one. The limits block says that Lode ran nothing and which run records it read.
+
+## Reader version 2
+
+The 입구, framework-invoked, value-use, 데이터·외부 연결·DB and 분기 reading change how code is read (`PRODUCT_GRAPH_VERSION` 1 → 2), so the first build after the update compares with a baseline read the old way. That build tells the reader's differences apart from real changes; see [Using the product graph](product-graph-usage.md) for what it shows and how to take a new baseline.
 
 ## Lode additions approved by the user on 2026-11-15
 
@@ -252,10 +316,10 @@ These are additions to the original, approved by the user, and are not in the or
 
 1. **The 프론트 ID in any UI toolkit.** The original writes its 프론트 rule with React as the example. Lode applies the same rule to any UI toolkit: `<component>` is the enclosing component, class or function, or the file's own name for file-level wiring; `<event>` is the event or signal name as the toolkit spells it (`click` for `onClick`, `clicked`, `Button-1`), and for an overridden event method the method name without its `Event` suffix (`close`); `<target>` is the handler name, else the element's id or the emitting object's name, else `요소#순번`. What a screen runs by itself (`useEffect`, `DOMContentLoaded`, a timer) is `@effect:<name>`. The built-in pattern table above lists, per toolkit, examples of this one rule.
 2. **Machine peers.** A machine peer (another service, a controller, a device) is an 외부 연결, not a user.
-3. **Evidence for a product that was not run.** Evidence is a code position (file and line) only, the document is marked 코드만 보고 쓴 추정, and no run evidence is invented.
+3. **Evidence for a product that was not run.** Evidence is a code position (file and line) only, the document is marked 코드만 보고 쓴 추정, and no run evidence is invented. Run evidence comes only from run records the project hands over.
 4. **유저 활동 ID.** `UA-<묶음 앞머리>-<번호>`.
 5. **Skills.** Skills the user can invoke count as command.
-6. **이 그래프가 답하지 못하는 것.** Build and check text start with one fixed block, and the structured result and the generated files carry the same object (`limits`): how the code was read (a regex scan, no syntax tree, no types), the calls in three numbers (addition 10), the reference kinds written (call, callback) and those not told apart, the node types and edges not extracted, the limits of the UI binding scan, that nothing was run and no finding rests on execution, and how many documents are 승인 and 추정 and which this run used. These facts are not repeated elsewhere in the text.
+6. **이 그래프가 답하지 못하는 것.** Build and check text start with one fixed block, and the structured result and the generated files carry the same object (`limits`): how the code was read (a regex scan, no syntax tree, no types), the calls in three numbers (addition 10), the reference kinds written (call, callback, framework-invoked) and those not told apart, which framework-invoked shapes are read, the functions used as values (counted apart from calls), what is read for 데이터, 외부 연결 and DB with its counts, the node types and edges not extracted, the limits of the UI binding scan, that nothing was run (and, when there are run records, how many were read and how many still hold), and how many documents are 승인 and 추정 and which this run used. These facts are not repeated elsewhere in the text.
 7. **Unresolved calls by reason.** Each unresolved call is counted under exactly one reason the scan determined: several declarations of the same name; a language keyword read as a call; no declaration of that name anywhere in the scanned code; a name imported from outside the product; a receiver of unknown type (including a method called on an expression, read from the call's own line); a declaration only in another file with no import linking it; and an explicit rest reason for anything else. The reasons add up to the total, and each has one line saying what would settle it. Files under the source root that are not read as code are counted by extension as not looked at, apart from code that was read. A 기능 whose handler did not resolve says why.
 8. **Identity and preservation.** A node ID is the name structure and never contains a line number; file, line range and digest are attributes. A declaration whose qualified name repeats in its file, whatever its kind, gets `~<n>`, its order among those declarations in the file; it moves only when a same-named declaration is added, removed or reordered before it, and the first one gains `~1` when a second appears. `요소#순번` in a 프론트 ID is the original's own fallback and stays. `기능 뜻.md` and `정책.md` are never rewritten, reordered or trimmed by a build. A renamed 기능 gets a new ID: its old 뜻 line stays as written and is listed under 사라진 기능의 뜻 so a person can move it, and a 정책 line citing the old ID appears among the cited IDs that do not exist.
 9. **처리 코드 from a table row.** Many products register entry points as rows of a table: an array of objects, a name → handler map, or a chain of registration calls. A tool or cli rule with `"처리 코드": "항목"` takes the 기능's 처리 코드 from its own row. The row is found with the code mask: the direct element of the outermost list, object or dict literal that holds the match (not crossing a function, class or block body); without such a literal, the statement that holds it, including call-chain lines that start with `.`, never reaching outside the innermost function, class or block body (two registration calls in one callback are two rows); when the match's line is a decorator line (it starts with `@`, whether the pattern starts with `@` or after it), the definition it decorates, skipping blank lines and other decorators. A JavaScript or TypeScript decorator counts only when the scan has the decorated definition as a declaration (a class method is one). In a statement row, the statement's own call chain (the registering call, such as `registry.register(…)` or `program.command(…).action(…)`) is not read as a handler, even when it is product code; its arguments are. The row is read like a function body: a name that resolves to one declaration (a function named as a value, a call inside an inline function), a `namespace.member` through an import, and a member taken in the same expression from a dynamic import with a literal path (`import("./x.mjs").then((m) => m.run)`, `.then(({ run }) => …)`, `(await import("./x.mjs")).run`, `const { run } = await import("./x.mjs")`). That dynamic-import form is read as a call wherever calls are read; a dynamic import with a non-literal path or no member named is counted under its own unresolved reason. Python dynamic imports (`importlib`) are not read. A row in which nothing resolves puts the 기능 among those whose code did not resolve, with the reason. A row in which some names resolved but a dynamic import did not keeps the resolved handlers and is also listed as partly resolved, with the dynamic-import reason. Known weakness: two 기능 found in the same row share the row's code. A 기능 found in more than one row keeps every row's handlers and is listed with its positions, so a pattern that also matches a mention shows up.

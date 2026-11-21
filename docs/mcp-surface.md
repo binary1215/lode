@@ -282,6 +282,14 @@ with `inventory_page` the rows are `inventoryPage.rows` and the next call
 tool can be an inner call. For a grouped tool, each action with a shape carries
 it.
 
+The product graph query shape also names the row fields its answers may carry
+and their values: `via` and `역할` (`처리` or `입구`), `judgement` (an edge
+written by hand), `boundary` (where reach stopped at a 경계), `role` and
+`notExpanded` (a `tree` answer), and `step`, `relation` and `evidence` (a
+`user` answer). The product graph actions `sample` and `coverage` are
+read-only and `runs_add` writes run records; none of them is an inner call, so
+the tools a read chain allows are unchanged.
+
 ## Deprecated names
 
 The operation names a group replaced remain callable for two minor versions:
