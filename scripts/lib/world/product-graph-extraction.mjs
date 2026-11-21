@@ -923,6 +923,7 @@ export function effectiveEntryRules(projectRules) {
         파일: [...rule["파일"]],
         패턴: rule["패턴"],
         "처리 코드": rule["처리 코드"] || "줄을 감싼 코드",
+        ...(rule["입구"] ? { 입구: [...rule["입구"]] } : {}),
         출처: "프로젝트",
       });
       continue;
@@ -930,6 +931,8 @@ export function effectiveEntryRules(projectRules) {
     const base = rules.find((item) => item.종류 === rule["종류"]);
     if (rule["처리"]) base.처리 = rule["처리"];
     if (rule["설명"]) base.설명 = rule["설명"];
+    // A kind-only rule's 입구 applies to every 기능 of that kind.
+    if (rule["입구"]) base.입구 = [...new Set([...(base.입구 || []), ...rule["입구"]])];
     base.출처 = "기본 + 프로젝트";
   }
   const markers = [...BUILT_IN_UI_MARKERS, ...(projectRules?.["화면 코드 표시"] || []).map((entry) => ({ ...entry, 출처: "프로젝트" }))];
@@ -1139,6 +1142,8 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
   const unresolvedHandlers = [];
   const ruleIssues = [];
   const extraCodeNodes = new Map();
+  // 입구: (기능, 코드 ID, rule) as rules ask for them; checked once every 기능 is known.
+  const entryRequests = [];
   const entryFiles = files.filter((relative) => classifySourcePath(relative, path.posix.extname(relative).toLowerCase()) !== "test");
 
   const addFunction = ({ id, kind, oneLine, position, handler, handlerReason, rule }) => {
@@ -1148,10 +1153,11 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
       return;
     }
     if (!functions.has(id))
-      functions.set(id, { id, type: "기능", kind, oneLine: oneLine || "", handling: ruleHandling, positions: [], handlers: [], handlerAt: {} });
+      functions.set(id, { id, type: "기능", kind, oneLine: oneLine || "", handling: ruleHandling, positions: [], handlers: [], handlerAt: {}, entries: [] });
     const entry = functions.get(id);
     if (!entry.positions.some((item) => item.path === position.path && item.line === position.line)) entry.positions.push(position);
     if (ruleHandling === "경계로 둔다") return;
+    for (const code of rule?.입구 || []) entryRequests.push({ id, code, rule });
     if (handler) {
       if (!entry.handlers.includes(handler)) {
         entry.handlers.push(handler);
@@ -1354,10 +1360,33 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     if (sign) uiWithoutRule.push({ path: relative, sign });
   }
 
-  const functionNodes = [...functions.values()]
-    .map((entry) => ({ ...entry, positions: entry.positions.sort((a, b) => compare(a.path, b.path) || a.line - b.line), handlers: entry.handlers.sort() }))
-    .sort((a, b) => compare(a.id, b.id));
   const codeNodes = [...code.nodes, ...extraCodeNodes.values()].sort((a, b) => compare(a.id, b.id));
+  // 입구 of kind-only rules: every 기능 of that kind that is followed.
+  for (const rule of rules)
+    for (const code of rule.입구 || [])
+      for (const entry of functions.values()) if (entry.kind === rule.종류 && entry.handling === "따라간다") entryRequests.push({ id: entry.id, code, rule });
+  const codeIdSet = new Set(codeNodes.map((node) => node.id));
+  const entryIssues = new Map();
+  for (const request of entryRequests) {
+    const entry = functions.get(request.id);
+    if (!codeIdSet.has(request.code)) {
+      const key = `${request.rule.종류} ${request.code}`;
+      if (!entryIssues.has(key))
+        entryIssues.set(key, { 종류: request.rule.종류, path: request.code, 입구: request.code, reason: "규칙이 가리키는 코드가 없음" });
+      continue;
+    }
+    // Code that is already this 기능's 처리 코드 keeps that role.
+    if (!entry.handlers.includes(request.code) && !entry.entries.includes(request.code)) entry.entries.push(request.code);
+  }
+  ruleIssues.push(...[...entryIssues.values()].sort((a, b) => compare(a.종류, b.종류) || compare(a.path, b.path)));
+  const functionNodes = [...functions.values()]
+    .map((entry) => ({
+      ...entry,
+      positions: entry.positions.sort((a, b) => compare(a.path, b.path) || a.line - b.line),
+      handlers: entry.handlers.sort(),
+      entries: entry.entries.filter((code) => !entry.handlers.includes(code)).sort(),
+    }))
+    .sort((a, b) => compare(a.id, b.id));
   assertUniqueIds([...codeNodes, ...functionNodes]);
   return {
     rules: { 기본과프로젝트: rules, 패턴: patterns, "UI 연결 패턴": uiPatterns, "화면 코드 표시": uiMarkers, "화면 파일": uiFiles },
@@ -1437,7 +1466,10 @@ function unreachedCode(code, functionNodes, extraCodeNodes) {
         if (owner) constructors.set(owner.id, [...(constructors.get(owner.id) || []), symbol.id]);
       }
   const visited = new Set();
-  const queue = functionNodes.flatMap((entry) => entry.handlers);
+  // Reach starts from both roles: 처리 코드 and 입구. (A walk from 입구 that
+  // stops at another 기능's 처리 코드 reaches nothing that 기능's own walk
+  // does not, so the union is the same closure.)
+  const queue = functionNodes.flatMap((entry) => [...entry.handlers, ...entry.entries]);
   while (queue.length) {
     const id = queue.pop();
     if (visited.has(id)) continue;
@@ -1457,7 +1489,7 @@ function unreachedCode(code, functionNodes, extraCodeNodes) {
     filesNothingReached: files.filter((file) => file.nothingReached).length,
     filesPartlyReached: files.filter((file) => !file.nothingReached).length,
     files,
-    startedFrom: functionNodes.reduce((sum, entry) => sum + entry.handlers.length, 0),
+    startedFrom: functionNodes.reduce((sum, entry) => sum + entry.handlers.length + entry.entries.length, 0),
     extraCodeNodes: extraCodeNodes.size,
   };
 }

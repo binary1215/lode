@@ -966,7 +966,9 @@ function graphDocument({ extraction, loaded, computed, inputs, rules, result }) 
   for (const entry of extraction.functionNodes) {
     nodes.push({ id: entry.id, type: "기능", kind: entry.kind, oneLine: meaning.get(entry.id) || "", handling: entry.handling, positions: entry.positions });
     for (const handler of entry.handlers)
-      edges.push({ type: "기능→코드", from: entry.id, to: handler, at: entry.handlerAt?.[handler] || entry.positions[0] || null });
+      edges.push({ type: "기능→코드", from: entry.id, to: handler, 역할: "처리", at: entry.handlerAt?.[handler] || entry.positions[0] || null });
+    // 입구: code the 기능 passes through that is not its handler (a rule says so).
+    for (const code of entry.entries || []) edges.push({ type: "기능→코드", from: entry.id, to: code, 역할: "입구", at: entry.positions[0] || null });
   }
   for (const node of extraction.codeNodes) nodes.push(node);
   for (const reference of extraction.references)

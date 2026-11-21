@@ -80,13 +80,15 @@ export const productGraphWalk = (() => {
 
   // Every node reached from starts over resolved call and callback edges (and
   // class → constructor): the closure the check uses for 어느 기능에서도 닿지
-  // 않는 코드. Starts are included.
-  function closure(ix, starts) {
+  // 않는 코드. Starts are included. stop(id) keeps a node that is not a start
+  // out (it is neither visited nor followed).
+  function closure(ix, starts, stop = null) {
     const visited = new Set(),
       stack = [...starts];
+    const begin = new Set(starts);
     while (stack.length) {
       const id = stack.pop();
-      if (visited.has(id)) continue;
+      if (visited.has(id) || (stop && !begin.has(id) && stop(id))) continue;
       visited.add(id);
       for (const edge of ix.out.get(id) || []) if (CODE_EDGES.has(edge.type)) stack.push(edge.to);
       for (const target of ix.constructors.get(id) || []) stack.push(target);
@@ -109,7 +111,42 @@ export const productGraphWalk = (() => {
     return visited;
   }
 
-  const handlersOf = (ix, id) => [...new Set((ix.out.get(id) || []).filter((edge) => edge.type === "기능→코드").map((edge) => edge.to))];
+  // A 기능→코드 edge is 처리 (its handler) unless it says 입구 (code the 기능
+  // passes through, from a rule). A build made before roles has 처리 only.
+  const isEntry = (edge) => edge.type === "기능→코드" && edge.역할 === "입구";
+  const handlersOf = (ix, id) =>
+    [...new Set((ix.out.get(id) || []).filter((edge) => edge.type === "기능→코드" && !isEntry(edge)).map((edge) => edge.to))];
+  const entriesOf = (ix, id) => [...new Set((ix.out.get(id) || []).filter(isEntry).map((edge) => edge.to))];
+
+  // The code some 기능 handles (its 처리 코드), with those 기능: kept on the index.
+  function handledBy(ix) {
+    if (!ix.handledBy) {
+      ix.handledBy = new Map();
+      for (const node of ix.byType.get("기능") || []) for (const handler of handlersOf(ix, node.id)) push(ix.handledBy, handler, node.id);
+    }
+    return ix.handledBy;
+  }
+
+  // What the given 기능 reach, each node with the role it was first reached
+  // through: 처리 (from the handlers, as before roles) or 입구. From 입구, the
+  // walk does not enter another 기능's 처리 코드 (that 기능's own reach has it);
+  // an 입구 a rule names is entered whatever it is.
+  function reachOf(ix, functions) {
+    const own = new Set(functions);
+    const via = new Map();
+    for (const id of closure(
+      ix,
+      functions.flatMap((item) => handlersOf(ix, item)),
+    ))
+      via.set(id, "처리");
+    const entries = [...new Set(functions.flatMap((item) => entriesOf(ix, item)))].filter((id) => !via.has(id));
+    if (entries.length) {
+      const owners = handledBy(ix);
+      const stop = (id) => via.has(id) || (owners.get(id) || []).some((owner) => !own.has(owner));
+      for (const id of closure(ix, entries, stop)) if (!via.has(id)) via.set(id, "입구");
+    }
+    return via;
+  }
 
   // The 기능 a node stands for when reach starts from it.
   function functionsBehind(ix, node) {
@@ -281,6 +318,7 @@ export const productGraphWalk = (() => {
   function childText(ctx, item) {
     let line = nodeLine(ctx, item.to);
     if (item.screen !== undefined) line += item.screen ? ` (화면 ${item.screen})` : " (화면 없음)";
+    if (item.edge && isEntry(item.edge)) line += " (입구)";
     if (item.edge?.basis) line += ` ← ${where(item.edge.at)}${basisMark(item.edge.basis)}`;
     if (item.edge && CODE_EDGES.has(item.edge.type) && item.count > 1) line += ` ×${item.count}`;
     return line;
@@ -579,17 +617,22 @@ export const productGraphWalk = (() => {
     if (node.type === "코드") {
       const targets = node.id === node.file ? [node.id, ...(ctx.ix.byType.get("코드") || []).filter((item) => item.file === node.id).map((item) => item.id)] : [node.id];
       const reachers = reverseClosure(ctx.ix, targets);
-      const functions = (ctx.ix.byType.get("기능") || []).filter((item) => handlersOf(ctx.ix, item.id).some((handler) => reachers.has(handler)));
-      return { direction: "up", ids: functions.map((item) => item.id).sort(compare) };
+      const via = {};
+      for (const item of ctx.ix.byType.get("기능") || []) {
+        if (handlersOf(ctx.ix, item.id).some((handler) => reachers.has(handler))) via[item.id] = "처리";
+        else if (entriesOf(ctx.ix, item.id).some((entry) => reachers.has(entry))) {
+          // Through 입구 the walk may stop before the target; ask it.
+          const reached = reachOf(ctx.ix, [item.id]);
+          if (targets.some((target) => reached.has(target))) via[item.id] = "입구";
+        }
+      }
+      return { direction: "up", ids: Object.keys(via).sort(compare), via };
     }
     const functions = functionsBehind(ctx.ix, node);
-    if (!functions.length && node.type !== "기능") return { direction: "down", ids: [], functions };
-    const reached = closure(
-      ctx.ix,
-      functions.flatMap((item) => handlersOf(ctx.ix, item)),
-    );
-    const ids = [...reached].filter((item) => ctx.ix.nodes.get(item)?.type === "코드").sort(compare);
-    return { direction: "down", ids, functions };
+    if (!functions.length && node.type !== "기능") return { direction: "down", ids: [], functions, via: {} };
+    const reached = reachOf(ctx.ix, functions);
+    const ids = [...reached.keys()].filter((item) => ctx.ix.nodes.get(item)?.type === "코드").sort(compare);
+    return { direction: "down", ids, functions, via: Object.fromEntries(ids.map((item) => [item, reached.get(item)])) };
   }
 
   // What reach answers for a node: the code it reaches, or the 기능 that
@@ -629,7 +672,8 @@ export const productGraphWalk = (() => {
         lastGroup = item.group;
       }
       const onPath = path.includes(item.to);
-      rows.push({ depth: level + 1, kind: "node", id: item.to, text: childText(ctx, item) + (onPath ? ` ${WORDS.onPath}` : ""), onPath, group: item.group });
+      const role = item.edge?.type === "기능→코드" ? { 역할: isEntry(item.edge) ? "입구" : "처리" } : {};
+      rows.push({ depth: level + 1, kind: "node", id: item.to, text: childText(ctx, item) + (onPath ? ` ${WORDS.onPath}` : ""), onPath, group: item.group, ...role });
       budget.left -= 1;
       const expandable = !onPath && depth > 1 && (item.to.startsWith("@") || ctx.ix.nodes.has(item.to));
       if (expandable && budget.left > 0)
@@ -815,7 +859,11 @@ export const productGraphWalk = (() => {
       if (ctx.ix.nodes.get(id).type !== "기능") rows.push(repeated(paged, { depth: 1, kind: "text", text: `거치는 기능 ${reached.functions.length}개: ${reached.functions.join(", ") || "없음"}` }));
       rows.push(repeated(paged, { depth: 1, kind: "group", text: `닿는 코드 ${reached.ids.length}개 (${note})` }));
     }
-    for (const target of paged.slice) rows.push({ depth: 2, kind: "node", id: target, text: nodeLine(ctx, target) });
+    const viaWords = reached.direction === "up" ? " — 입구로만 닿음" : " — 입구로 닿음";
+    for (const target of paged.slice) {
+      const via = reached.via[target];
+      rows.push({ depth: 2, kind: "node", id: target, text: nodeLine(ctx, target) + (via === "입구" ? viaWords : ""), ...(via ? { via } : {}) });
+    }
     if (paged.remaining) rows.push(moreRow(1, paged, `reach ${id} --cursor ${paged.nextCursor}`, true));
     return answer(pathLine(ctx, [id]), rows, {
       reach: reached,
@@ -1419,6 +1467,8 @@ export const productGraphWalk = (() => {
     closure,
     reverseClosure,
     handlersOf,
+    entriesOf,
+    reachOf,
     context,
     nodeLine,
     step,

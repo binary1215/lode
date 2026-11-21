@@ -11,7 +11,22 @@ const SHAPES = Object.freeze({
     rowFields: Object.freeze({
       always: Object.freeze(["depth", "kind", "text"]),
       nodeRows: Object.freeze(["id", "nodeType", "changedSinceBaseline", "confirmation"]),
-      sometimes: Object.freeze(["score", "exact", "matchedTerms", "edge", "onPath", "group", "hint", "detail", "marker", "missing", "continues", "repeats"]),
+      sometimes: Object.freeze([
+        "score",
+        "exact",
+        "matchedTerms",
+        "edge",
+        "onPath",
+        "group",
+        "hint",
+        "detail",
+        "marker",
+        "missing",
+        "continues",
+        "repeats",
+        "via",
+        "역할",
+      ]),
     }),
     rowKinds: Object.freeze(["text", "node", "group", "more"]),
     fieldValues: Object.freeze({
@@ -25,6 +40,8 @@ const SHAPES = Object.freeze({
       missingKinds: Object.freeze(["cut", "rowCap", "connectionsCut", "notChecked", "notCompared", "recordLimit", "recordUnread"]),
       continues: Object.freeze(["nextPage"]),
       repeats: Object.freeze(["earlierPage"]),
+      via: Object.freeze(["처리", "입구"]),
+      역할: Object.freeze(["처리", "입구"]),
     }),
     header: "header",
     title: "title",
@@ -37,7 +54,7 @@ const SHAPES = Object.freeze({
       baselineComparison: "baselineComparison",
     }),
     notes:
-      "nodeType and changedSinceBaseline are on rows whose id is a graph node (not @ starts); changedSinceBaseline only when the build was compared with a baseline. confirmation names the confirmation lists that name the node (a 뜻 line of a 기능, or a document row from or to it). Only when confirmationComparison is compared does an absent confirmation mean either still current or nothing to check: the build keeps only a count of current ones; partial means the build read only the first confirmation records by name. baselineComparison baseline-moved means the baseline was moved after the build. A row a later page repeats from an earlier page carries repeats: earlierPage. buildSha256 names every build file and the baseline the answer read.",
+      "nodeType and changedSinceBaseline are on rows whose id is a graph node (not @ starts); changedSinceBaseline only when the build was compared with a baseline. confirmation names the confirmation lists that name the node (a 뜻 line of a 기능, or a document row from or to it). Only when confirmationComparison is compared does an absent confirmation mean either still current or nothing to check: the build keeps only a count of current ones; partial means the build read only the first confirmation records by name. baselineComparison baseline-moved means the baseline was moved after the build. A row a later page repeats from an earlier page carries repeats: earlierPage. A reach row says through which role of a 기능→코드 edge its node is reached (via: 처리 or 입구; on a reach <code> answer, via 입구 means only through 입구); a 기능→코드 child row carries 역할. buildSha256 names every build file and the baseline the answer read.",
     chain: Object.freeze({
       rows: "rows",
       answered: Object.freeze({ field: "status", in: Object.freeze(["answered"]) }),

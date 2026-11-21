@@ -50,7 +50,15 @@ export function declarationText(fileLines, [start, end]) {
 function statedContent(node, ix, reasons) {
   if (node.type === "기능") {
     const handlers = walk.handlersOf(ix, node.id).sort(compare);
-    return { kind: node.kind, handling: node.handling, handlers, reasons: handlers.length ? [] : [...(reasons.get(node.id) || [])].sort(compare) };
+    const entries = walk.entriesOf(ix, node.id).sort(compare);
+    // 입구 is stated only when a rule gives one, so a 기능 without reads as before.
+    return {
+      kind: node.kind,
+      handling: node.handling,
+      handlers,
+      ...(entries.length ? { entries } : {}),
+      reasons: handlers.length ? [] : [...(reasons.get(node.id) || [])].sort(compare),
+    };
   }
   const { at, basis, contentSha256, reachSha256, ...stated } = node;
   return stated;
@@ -86,7 +94,7 @@ export function addContentHashes(graph, readFiles, unresolvedHandlers = []) {
   }
   for (const node of graph.nodes) {
     if (node.type !== "기능") continue;
-    const reached = [...walk.closure(ix, walk.handlersOf(ix, node.id))]
+    const reached = [...walk.reachOf(ix, [node.id]).keys()]
       .filter((id) => ix.nodes.get(id)?.type === "코드")
       .sort(compare)
       .map((id) => [id, ix.nodes.get(id).contentSha256]);
@@ -423,8 +431,10 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
   for (const node of afterIx.byType.get("기능") || []) {
     const old = beforeIx.nodes.get(node.id);
     if (!old || status.has(node.id) || !old.reachSha256 || old.reachSha256 === node.reachSha256) continue;
-    const now = walk.closure(afterIx, walk.handlersOf(afterIx, node.id));
-    const then = walk.closure(beforeIx, walk.handlersOf(beforeIx, node.id));
+    const now = new Set(walk.reachOf(afterIx, [node.id]).keys());
+    // The baseline keeps edges as [type, from, to]: its 기능→코드 edges have
+    // no role, so its reach is read as 처리 from every one of them.
+    const then = new Set(walk.reachOf(beforeIx, [node.id]).keys());
     const code = (ix, id) => ix.nodes.get(id)?.type === "코드";
     const nodes = [];
     for (const id of new Set([...now, ...then])) {

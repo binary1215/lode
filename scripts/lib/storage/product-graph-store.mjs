@@ -342,6 +342,7 @@ export function verifyProductGraphCheck(document, { projectId = null, checkId = 
 
 const HANDLINGS = ["따라간다", "경계로 둔다", "범위 밖"];
 const RULE_KINDS = ["hook", "command", "tool", "cli", "프론트"];
+const ENTRY_CODE_MAX = 64;
 
 const UI_ENTRY_KEYS = [
   "이름",
@@ -434,11 +435,21 @@ export function verifyProductGraphRules(document) {
       continue;
     }
     for (const key of Object.keys(rule))
-      if (!["종류", "처리", "판단", "설명", "파일", "패턴", "처리 코드"].includes(key)) invalid(`${where}에 모르는 항목 ${key}`);
+      if (!["종류", "처리", "판단", "설명", "파일", "패턴", "처리 코드", "입구"].includes(key)) invalid(`${where}에 모르는 항목 ${key}`);
     if (rule["처리"] !== undefined && !HANDLINGS.includes(rule["처리"])) invalid(`${where}.처리는 ${HANDLINGS.join(", ")} 중 하나여야 한다`);
     if (rule["판단"] !== undefined && rule["판단"] !== true) invalid(`${where}.판단은 true만 쓸 수 있다`);
+    // 입구 (entry code): the 코드 IDs every 기능 of this rule passes through
+    // besides its 처리 코드. Whether each is a 코드 node is the build's to say.
+    if (
+      rule["입구"] !== undefined &&
+      (!Array.isArray(rule["입구"]) ||
+        !rule["입구"].length ||
+        rule["입구"].length > ENTRY_CODE_MAX ||
+        rule["입구"].some((item) => typeof item !== "string" || !item || item.length > 1024))
+    )
+      invalid(`${where}.입구는 코드 ID 배열이다 (1~${ENTRY_CODE_MAX}개)`);
     if (rule["종류"] === "tool" || rule["종류"] === "cli") {
-      if (rule["패턴"] === undefined && rule["처리"] !== undefined && rule["파일"] === undefined) continue;
+      if (rule["패턴"] === undefined && rule["파일"] === undefined && (rule["처리"] !== undefined || rule["입구"] !== undefined)) continue;
       if (!Array.isArray(rule["파일"]) || !rule["파일"].length || rule["파일"].some((item) => typeof item !== "string" || !safeRelative(item)))
         invalid(`${where}.파일은 소스 루트 기준 상대 경로 배열이어야 한다`);
       if (typeof rule["패턴"] !== "string" || !rule["패턴"]) invalid(`${where}.패턴이 필요하다`);
