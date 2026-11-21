@@ -533,7 +533,44 @@ export function verifyUiBindingPattern(entry, where = "UI 연결 패턴", { allo
 export function verifyProductGraphRules(document) {
   const invalid = (detail) => fail("PRODUCT_GRAPH_RULES_INVALID", `호출 방식 표가 올바르지 않다: ${detail}`);
   if (!document || typeof document !== "object" || Array.isArray(document)) invalid("JSON 객체가 아니다");
-  const allowedTop = ["schemaVersion", "kind", "rules", "source", "화면 코드 표시", "화면 파일", "내장 이름", "손으로 적는 연결", "빼는 연결"];
+  const allowedTop = ["schemaVersion", "kind", "rules", "source", "화면 코드 표시", "화면 파일", "내장 이름", "손으로 적는 연결", "빼는 연결", "바깥"];
+  // What is on the other side of outside calls (2.8): named, judged.
+  const outside = document["바깥"];
+  if (outside !== undefined) {
+    if (!Array.isArray(outside) || outside.length > HAND_RULES_MAX) invalid(`바깥은 배열이다 (${HAND_RULES_MAX}개까지)`);
+    for (const [index, rule] of outside.entries()) {
+      const where = `바깥[${index}]`;
+      if (!rule || typeof rule !== "object" || Array.isArray(rule)) invalid(`${where}가 객체가 아니다`);
+      for (const key of Object.keys(rule)) if (!["판단", "이름", "종류", "닿는 곳", "설명"].includes(key)) invalid(`${where}에 모르는 항목 ${key}`);
+      if (rule["판단"] !== true) invalid(`${where}.판단은 true여야 한다`);
+      if (typeof rule["이름"] !== "string" || !/^[^\s:][^:]{0,199}$/.test(rule["이름"])) invalid(`${where}.이름은 200자 이하 글이다 (: 없이)`);
+      if (!["데이터", "외부 연결"].includes(rule["종류"])) invalid(`${where}.종류는 데이터 또는 외부 연결이다`);
+      if (rule["설명"] !== undefined && (typeof rule["설명"] !== "string" || rule["설명"].length > 500)) invalid(`${where}.설명은 글자다`);
+      const places = rule["닿는 곳"];
+      if (!Array.isArray(places) || !places.length || places.length > ENTRY_CODE_MAX) invalid(`${where}.닿는 곳은 1~${ENTRY_CODE_MAX}개의 배열이다`);
+      for (const [at, place] of places.entries()) {
+        const spot = `${where}.닿는 곳[${at}]`;
+        if (!place || typeof place !== "object" || Array.isArray(place)) invalid(`${spot}가 객체가 아니다`);
+        for (const key of Object.keys(place)) if (!["모듈", "파일", "줄", "선언"].includes(key)) invalid(`${spot}에 모르는 항목 ${key}`);
+        if (typeof place["모듈"] !== "string" || !/^[A-Za-z_][\w.:/-]{0,199}$/.test(place["모듈"])) invalid(`${spot}.모듈은 모듈 이름이다`);
+        if (place["파일"] !== undefined && (!Array.isArray(place["파일"]) || !place["파일"].length || place["파일"].some((item) => !safeRelative(item))))
+          invalid(`${spot}.파일은 소스 루트 기준 상대 경로 배열이다`);
+        if (
+          place["줄"] !== undefined &&
+          (!Array.isArray(place["줄"]) ||
+            place["줄"].length !== 2 ||
+            !place["줄"].every((item) => Number.isSafeInteger(item) && item > 0) ||
+            place["줄"][0] > place["줄"][1])
+        )
+          invalid(`${spot}.줄은 [시작, 끝] 줄 번호다`);
+        if (
+          place["선언"] !== undefined &&
+          (!Array.isArray(place["선언"]) || !place["선언"].length || place["선언"].some((item) => typeof item !== "string" || !item))
+        )
+          invalid(`${spot}.선언은 코드 ID 배열이다`);
+      }
+    }
+  }
   // A machine-made 기능→화면요소 edge judged wrong (2.6).
   const removals = document["빼는 연결"];
   if (removals !== undefined) {

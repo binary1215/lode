@@ -99,7 +99,13 @@ export const NODE_TYPES = Object.freeze([
   "DB",
   "계측 이벤트",
 ]);
-export const NOT_EXTRACTED = Object.freeze(["데이터", "외부 연결", "DB", "계측 이벤트"]);
+export const NOT_EXTRACTED = Object.freeze(["계측 이벤트"]);
+// What the counts of the outside-facing node types cover (2.8).
+export const COUNT_COVERS = Object.freeze({
+  데이터: "환경 변수 이름과 바깥 규칙이 이름 붙인 데이터",
+  "외부 연결": "바깥 규칙이 이름 붙인 외부 연결",
+  DB: "코드 문자열과 .sql 파일의 CREATE TABLE로 만든 표와 그 열",
+});
 
 // The original's six checks: phrase and meaning, verbatim.
 export const CHECKS = Object.freeze([
@@ -856,6 +862,7 @@ function compute({ extraction, loaded, includeEstimates }) {
   counts["정책"] = allPolicies.size;
   counts["기능"] = extraction.functionNodes.length;
   counts["코드"] = extraction.codeNodes.length;
+  for (const type of ["데이터", "외부 연결", "DB"]) counts[type] = (extraction.outsideNodes || []).filter((node) => node.type === type).length;
   const usedCounts = {
     "유저 활동": activities.length,
     화면: screens.length,
@@ -921,6 +928,8 @@ function compute({ extraction, loaded, includeEstimates }) {
       ruleIssues: extraction.ruleIssues,
       // framework-invoked as read (2.2): every site, and the paths more than one file matched.
       runByPath: extraction.runByPath,
+      // Outside calls no 바깥 rule names, and named 데이터 calls neither read nor write (2.8).
+      outside: extraction.outside?.lists || null,
       formatIssues: formatIssues.sort((a, b) => compare(a.path, b.path) || a.line - b.line),
       unrecognizedFiles: loaded.unrecognized,
       approvalIssues: loaded.approvalIssues,
@@ -1053,6 +1062,7 @@ function graphDocument({ extraction, loaded, computed, inputs, rules, result }) 
     for (const code of entry.entries || []) edges.push({ type: "기능→코드", from: entry.id, to: code, 역할: "입구", at: entry.positions[0] || null });
   }
   for (const node of extraction.codeNodes) nodes.push(node);
+  for (const node of extraction.outsideNodes || []) nodes.push(node);
   for (const reference of extraction.references)
     edges.push({
       type: reference.type,
@@ -1145,6 +1155,8 @@ const NOT_TOLD_APART = Object.freeze(["render", "type reference", "re-render", "
 // The shapes of framework-invoked this reading sees, and what it still does not.
 const RUN_BY_PATH_LIMITS =
   "framework-invoked는 두 모양만 읽는다: 코드의 문자열·템플릿 리터럴이 스캔한 코드 파일 하나의 경로(전체 상대 경로, 또는 / 경계에서 시작하는 그 뒷부분)로 끝나고 그 글자를 실행·적재하는 호출에 넘기는 곳(동적 import, spawn·fork·exec 같은 프로세스 시작, Worker, 언어의 실행 파일(process.execPath, sys.executable)도 함께 넘기는 호출. 경로를 만드는 join·resolve·URL과 배열·객체는 건너 본다), 그리고 이름 없이 들여오는 JS·TS import \"<상대 경로>\". 경로가 여러 파일에 맞으면 잇지 않고 센다. 경로를 상수에 담아 뒤에서 넘기는 곳, import·export·require의 경로, 주입, 데코레이터, 파일 이름으로 정하는 경로는 보지 못한다. 읽은 곳은 모두 '경로로 실행으로 읽은 곳'에 적는다.";
+const OUTSIDE_LIMITS =
+  '환경 변수는 process.env.NAME, process.env["NAME"], os.environ["NAME"], os.environ.get("NAME"), os.getenv("NAME")만 읽어 데이터 data:env:NAME을 읽는 연결로 적는다. 환경 객체를 다른 이름에 담아 넘기면 따라가지 않는다. 바깥 모듈 표(JS: fs, fs/promises, net, http, https, dgram, tls, child_process, readline. Python: 내장 open, os, shutil, pathlib, subprocess, socket, sqlite3, urllib, http.client. 바깥 규칙이 적은 모듈도 더한다)에서 들여온 이름으로 부른 호출은 사실로 적고, 프로젝트가 바깥 규칙으로 맞은편을 이름 붙인 것만 연결이 된다. 짐작하지 않는다. 표는 코드 문자열이나 .sql 파일의 CREATE TABLE로 만든 것만 보고, 다른 방법으로 만든 표는 보지 못한다. 표와 데이터의 뜻 줄은 없다.';
 const VALUE_USE_LIMITS =
   '부르지 않고 넘기거나 담은 이름(.map(f), { run }, process.on("x", f), 기본값 = f)이 호출과 같은 규칙(안쪽 선언, 같은 파일, import, 다시 내보내기)으로 함수·클래스 선언 하나로 풀린 곳이 callback 연결이 된다. 멤버는 호출이 풀리는 곳에서만 푼다: 클래스 안 this.x·self.x, 제품 클래스의 C.x(JS는 static), 모듈 수준 객체 리터럴이나 namespace import의 name.x. 매개변수·지역 변수에 담긴 이름, 이름이 제품에 하나뿐이라는 이유로는 풀지 않는다. 선언·import·export 목록·속성 이름·점 뒤 멤버는 쓰임으로 세지 않고, TypeScript의 타입 자리(:, satisfies 뒤)와 <…> 안, 데코레이터는 읽지 않는다.';
 const UI_SCAN_LIMITS = Object.freeze([
@@ -1195,6 +1207,8 @@ function limitsOf({ extraction, computed, includeEstimates, loaded, callbacks })
     callReading: CALL_READING_LIMITS,
     referenceKinds: { emitted: ["call", "callback", "framework-invoked"], notToldApart: NOT_TOLD_APART },
     runByPath: RUN_BY_PATH_LIMITS,
+    // 데이터, 외부 연결, DB (2.8): what is read and what is still not seen.
+    outside: { ...(extraction.outside?.counts || {}), unnamedCalls: extraction.outside?.lists.unnamedOutsideCount ?? 0, reading: OUTSIDE_LIMITS },
     // Functions used as values (2.3), counted apart from calls.
     valueUses: { ...extraction.valueUses, reading: VALUE_USE_LIMITS },
     notExtracted: { nodeTypes: NOT_EXTRACTED, edges: ["navigate"], grouping: "C4 묶음" },
@@ -1245,6 +1259,7 @@ function run(options, { requireOutput }) {
     lists: computed.lists,
     counts: computed.counts,
     usedCounts: computed.usedCounts,
+    countCovers: COUNT_COVERS,
     referenceSummary: {
       resolvedCalls: extraction.referenceSummary.resolvedCalls,
       callbacks,

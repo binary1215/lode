@@ -1380,6 +1380,28 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     code.references.get(key).count += 1;
   }
   ruleIssues.push(...handWritten.issues);
+  // 데이터, 외부 연결, DB (2.8).
+  const outside = outsideLayer({
+    code,
+    root,
+    files: entryFiles,
+    rules: projectRules?.["바깥"] || [],
+    codeIds: new Set([...code.nodes, ...extraCodeNodes.values()].map((node) => node.id)),
+  });
+  for (const item of outside.references) {
+    const key = `${item.from}\0${item.to}\0${item.type}`;
+    if (!code.references.has(key))
+      code.references.set(key, {
+        type: item.type,
+        from: item.from,
+        to: item.to,
+        source: { path: item.path, line: item.line },
+        count: 0,
+        ...(item.judgement ? { judgement: true } : {}),
+      });
+    code.references.get(key).count += 1;
+  }
+  ruleIssues.push(...outside.issues);
   // Files that look like UI code but no pattern read: a gap, not zero 기능.
   const uiWithoutRule = [];
   const namedUiFiles = new Set(uiFiles);
@@ -1447,6 +1469,8 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     untrustedMaskFiles: ui.untrustedMask,
     runByPath: { sites: runByPath.sites, ambiguous: runByPath.ambiguous },
     valueUses: { sites: values.sites.length, plain: values.plain, members: values.members },
+    outsideNodes: outside.nodes,
+    outside: { lists: outside.lists, counts: outside.counts },
     notTakenBindings: ui.notTaken.sort((a, b) => compare(a.path, b.path) || a.line - b.line || compare(a.pattern, b.pattern)),
     uiWithoutRule: uiWithoutRule.sort((a, b) => compare(a.path, b.path)),
     outOfScope: outOfScope.sort((a, b) => compare(a.id, b.id)),
@@ -1786,6 +1810,293 @@ function handWrittenConnections({ code, rules, codeIds }) {
         });
   });
   return { sites, issues };
+}
+
+// ---------- 데이터, 외부 연결, DB (2.8) ----------
+
+// The modules whose calls reach outside the code. Data: a project's 바깥
+// rules name more (each 모듈 a rule names is read too).
+export const OUTSIDE_MODULES = Object.freeze({
+  javascript: Object.freeze(["fs", "fs/promises", "net", "http", "https", "dgram", "tls", "child_process", "readline"]),
+  python: Object.freeze(["builtins", "os", "shutil", "pathlib", "subprocess", "socket", "sqlite3", "urllib", "http.client"]),
+});
+// Whether an api reads or writes a 데이터 target, by its last name. An api in
+// neither list is listed ("읽기·쓰기를 정하지 못함"), never guessed.
+const READ_APIS = new Set([
+  "readFile",
+  "readFileSync",
+  "createReadStream",
+  "readdir",
+  "readdirSync",
+  "stat",
+  "statSync",
+  "lstat",
+  "lstatSync",
+  "existsSync",
+  "access",
+  "accessSync",
+  "readlink",
+  "readlinkSync",
+  "realpath",
+  "realpathSync",
+  "opendir",
+  "opendirSync",
+  "read_text",
+  "read_bytes",
+  "listdir",
+  "exists",
+  "isfile",
+  "isdir",
+  "scandir",
+  "walk",
+  "glob",
+  "iterdir",
+]);
+const WRITE_APIS = new Set([
+  "writeFile",
+  "writeFileSync",
+  "appendFile",
+  "appendFileSync",
+  "createWriteStream",
+  "mkdir",
+  "mkdirSync",
+  "rm",
+  "rmSync",
+  "rmdir",
+  "rmdirSync",
+  "unlink",
+  "unlinkSync",
+  "rename",
+  "renameSync",
+  "copyFile",
+  "copyFileSync",
+  "cp",
+  "cpSync",
+  "truncate",
+  "truncateSync",
+  "symlink",
+  "symlinkSync",
+  "chmod",
+  "chmodSync",
+  "utimes",
+  "utimesSync",
+  "mkdtemp",
+  "mkdtempSync",
+  "write_text",
+  "write_bytes",
+  "remove",
+  "replace",
+  "makedirs",
+  "rmtree",
+  "copy",
+  "copy2",
+  "copyfile",
+  "copytree",
+  "move",
+  "touch",
+]);
+const ENV_PATTERNS = Object.freeze({
+  javascript: [/\bprocess\.env\.([A-Za-z_][A-Za-z0-9_]*)/g, /\bprocess\.env\[\s*["'`]([A-Za-z_][A-Za-z0-9_]*)["'`]\s*\]/g],
+  python: [/\bos\.environ\[\s*["']([A-Za-z_]\w*)["']\s*\]/g, /\bos\.environ\.get\(\s*["']([A-Za-z_]\w*)["']/g, /\bos\.getenv\(\s*["']([A-Za-z_]\w*)["']/g],
+});
+const SQL_CREATE = /\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`[]?([A-Za-z_]\w*)["`\]]?\s*\(([\s\S]*?)\)\s*(?:;|$|WITHOUT\b|STRICT\b)/gi;
+const SQL_VERB = /\b(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\b/i;
+const SQL_NOT_COLUMN = /^(?:PRIMARY|FOREIGN|UNIQUE|CHECK|CONSTRAINT|KEY|INDEX)\b/i;
+
+const moduleOf = (specifier, language) => {
+  const name = String(specifier).replace(/^node:/, "");
+  return name;
+};
+const inTable = (module, table) => table.some((entry) => module === entry || module.startsWith(`${entry}.`) || module.startsWith(`${entry}/`));
+
+// Every outside fact: environment reads, calls on names from an outside
+// module, tables made by CREATE TABLE, and SQL naming a known table. Facts
+// become edges only where the project names the other side (바깥 rules),
+// except environment reads and tables, which name themselves.
+function outsideFacts({ code, root, files, rules }) {
+  const named = (rules || []).flatMap((rule) => (rule["닿는 곳"] || []).map((place) => String(place["모듈"]).replace(/^node:/, "")));
+  const tables = {
+    javascript: [...OUTSIDE_MODULES.javascript, ...named],
+    python: [...OUTSIDE_MODULES.python, ...named],
+  };
+  const env = [],
+    calls = [],
+    created = [],
+    sqlUses = [];
+  // CREATE TABLE in .sql files (read as text only).
+  for (const relative of files.filter((item) => item.toLowerCase().endsWith(".sql"))) {
+    const text = readText(root, relative);
+    if (text === null) continue;
+    for (const match of text.matchAll(SQL_CREATE))
+      created.push({ table: match[1], body: match[2], path: relative, line: lineOf(text, match.index), from: null });
+  }
+  for (const [relative, analysis] of code.analyses) {
+    const python = analysis.language === "python";
+    const language = python ? "python" : "javascript";
+    const mask = codeMask(analysis.text, language);
+    const inCode = (index) => !mask.trusted || Boolean(mask[index]);
+    const line = (index) => lineOfStarts(analysis.starts, index);
+    for (const pattern of ENV_PATTERNS[language])
+      for (const match of analysis.text.matchAll(pattern))
+        if (inCode(match.index)) env.push({ name: match[1], path: relative, line: line(match.index), from: enclosingCode(code, relative, line(match.index)) });
+    // Calls on names bound to an outside module.
+    const bindings = new Map(analysis.semanticFacts.bindings.map((binding) => [binding.local, binding]));
+    const rawLines = analysis.text.split("\n");
+    for (const call of analysis.semanticFacts.calls) {
+      if (call.construction) continue;
+      let module = null,
+        api = null;
+      const [head, ...rest] = call.callee.split(".");
+      const binding = bindings.get(head);
+      if (binding && inTable(moduleOf(binding.specifier, language), tables[language])) {
+        module = moduleOf(binding.specifier, language);
+        api = rest.length ? rest.join(".") : binding.namespace ? head : binding.imported === "default" ? head : binding.imported;
+      } else if (rest.length && !binding) {
+        // fs.promises.readFile( keeps only "promises.readFile": its head is
+        // read from the line.
+        const before = new RegExp(
+          `\\b([A-Za-z_$][\\w$]*)\\s*\\.\\s*${head.replace(/[$]/g, "\\$")}\\s*\\.\\s*${rest.join("\\s*\\.\\s*").replace(/[$]/g, "\\$")}\\s*\\(`,
+        ).exec(rawLines[call.line - 1] || "");
+        const outer = before && bindings.get(before[1]);
+        if (outer && inTable(moduleOf(outer.specifier, language), tables[language])) {
+          module = moduleOf(outer.specifier, language);
+          api = call.callee;
+        }
+      } else if (python && !binding && !rest.length && call.callee === "open" && !analysis.boundNames?.has("open")) {
+        module = "builtins";
+        api = "open";
+      }
+      if (!module) continue;
+      // An environment read is a 데이터 read already, not an outside call.
+      if (module === "os" && ["getenv", "environ.get"].includes(api)) continue;
+      calls.push({ module, api, path: relative, line: call.line, from: enclosingCode(code, relative, call.line) });
+    }
+    // Tables made in code strings, and SQL naming tables.
+    for (const span of literalSpans(analysis.text, mask, python)) {
+      for (const match of span.body.matchAll(SQL_CREATE))
+        created.push({ table: match[1], body: match[2], path: relative, line: line(span.start), from: enclosingCode(code, relative, line(span.start)) });
+      const verb = SQL_VERB.exec(span.body);
+      if (verb)
+        sqlUses.push({
+          verb: verb[1].toUpperCase().split(/\s+/)[0],
+          body: span.body,
+          path: relative,
+          line: line(span.start),
+          from: enclosingCode(code, relative, line(span.start)),
+        });
+    }
+  }
+  return { env, calls, created, sqlUses };
+}
+
+// Nodes and edges from the facts and the project's 바깥 rules.
+function outsideLayer({ code, root, files, rules, codeIds }) {
+  const facts = outsideFacts({ code, root, files, rules });
+  const nodes = new Map();
+  const references = [];
+  const issues = [];
+  const node = (id, value) => {
+    if (!nodes.has(id)) nodes.set(id, { id, ...value });
+    return nodes.get(id);
+  };
+  const ref = (type, from, to, at, judgement = false) =>
+    references.push({ type, from, to, path: at.path, line: at.line, ...(judgement ? { judgement: true } : {}) });
+  // Environment: a 데이터 node per name, read from the enclosing declaration.
+  for (const item of facts.env) {
+    node(`data:env:${item.name}`, { type: "데이터", kind: "env", name: item.name });
+    ref("read", item.from, `data:env:${item.name}`, item);
+  }
+  // DB: tables and columns (포함), and SQL that names a known table.
+  const known = new Map();
+  for (const item of facts.created) {
+    const table = item.table;
+    const id = `db:${table}`;
+    if (!known.has(table.toLowerCase())) known.set(table.toLowerCase(), id);
+    node(id, { type: "DB", kind: "table", name: table, at: { path: item.path, line: item.line } });
+    for (const part of item.body.split(",")) {
+      const column = /^\s*["`[]?([A-Za-z_]\w*)/.exec(part)?.[1];
+      if (!column || SQL_NOT_COLUMN.test(part.trim())) continue;
+      node(`${id}.${column}`, { type: "DB", kind: "column", name: column, table, at: { path: item.path, line: item.line } });
+      ref("포함", id, `${id}.${column}`, item);
+    }
+  }
+  for (const item of facts.sqlUses)
+    for (const [lower, id] of known) if (new RegExp(`\\b${lower}\\b`, "i").test(item.body)) ref(item.verb === "SELECT" ? "read" : "write", item.from, id, item);
+  // Outside calls: an edge only where a 바깥 rule names the other side.
+  const claims = (place, fact) =>
+    String(place["모듈"]).replace(/^node:/, "") === fact.module &&
+    (!place["파일"] || place["파일"].includes(fact.path)) &&
+    (!place["줄"] || (place["줄"][0] <= fact.line && fact.line <= place["줄"][1])) &&
+    (!place["선언"] || place["선언"].includes(fact.from));
+  const narrow = (place) => Boolean(place["줄"] || place["선언"]);
+  const unnamed = new Map();
+  const unknownAccess = [];
+  for (const fact of facts.calls) {
+    const holders = [];
+    (rules || []).forEach((rule, index) => {
+      const place = (rule["닿는 곳"] || []).find((item) => claims(item, fact));
+      if (place) holders.push({ rule, index, narrow: narrow(place) });
+    });
+    let holder = holders[0] || null;
+    if (holders.length > 1) {
+      const narrowed = holders.filter((item) => item.narrow);
+      if (narrowed.length === 1) holder = narrowed[0];
+      else {
+        issues.push({
+          종류: `바깥[${holders.map((item) => item.index).join(", ")}]`,
+          path: `${fact.path}:${fact.line}`,
+          reason: `규칙이 겹침 — ${fact.module}.${fact.api}를 바깥 규칙 둘 이상이 이름 붙였다(줄이나 선언으로 좁힌 것이 하나가 아니다)`,
+        });
+        continue;
+      }
+    }
+    if (!holder) {
+      const key = `${fact.module}\u0000${fact.path}`;
+      if (!unnamed.has(key)) unnamed.set(key, { module: fact.module, path: fact.path, count: 0, apis: new Set() });
+      unnamed.get(key).count += 1;
+      unnamed.get(key).apis.add(fact.api);
+      continue;
+    }
+    const rule = holder.rule;
+    if (rule["종류"] === "외부 연결") {
+      node(`ext:${rule["이름"]}`, { type: "외부 연결", kind: "named", name: rule["이름"], judgement: true });
+      ref("코드→외부 연결", fact.from, `ext:${rule["이름"]}`, fact, true);
+      continue;
+    }
+    node(`data:${rule["이름"]}`, { type: "데이터", kind: "named", name: rule["이름"], judgement: true });
+    const last = fact.api.split(".").pop();
+    if (READ_APIS.has(last)) ref("read", fact.from, `data:${rule["이름"]}`, fact, true);
+    else if (WRITE_APIS.has(last)) ref("write", fact.from, `data:${rule["이름"]}`, fact, true);
+    else unknownAccess.push({ ...fact, data: `data:${rule["이름"]}` });
+  }
+  // A 바깥 rule whose files are not scanned code is a rule issue.
+  (rules || []).forEach((rule, index) => {
+    for (const place of rule["닿는 곳"] || [])
+      for (const file of place["파일"] || [])
+        if (!code.analyses.has(file)) issues.push({ 종류: `바깥[${index}]`, path: file, reason: "규칙이 낡음 — 파일이 스캔한 코드에 없음", rule: index });
+    for (const place of rule["닿는 곳"] || [])
+      for (const id of place["선언"] || [])
+        if (!codeIds.has(id)) issues.push({ 종류: `바깥[${index}]`, path: id, reason: "규칙이 낡음 — 선언이 코드 노드가 아님", rule: index });
+  });
+  const unnamedList = [...unnamed.values()]
+    .map((item) => ({ module: item.module, path: item.path, count: item.count, apis: [...item.apis].sort() }))
+    .sort((a, b) => compare(a.module, b.module) || compare(a.path, b.path));
+  return {
+    nodes: [...nodes.values()].sort((a, b) => compare(a.id, b.id)),
+    references,
+    issues,
+    lists: {
+      unnamedOutsideCalls: unnamedList,
+      unnamedOutsideCount: unnamedList.reduce((sum, item) => sum + item.count, 0),
+      undecidedAccess: unknownAccess.sort((a, b) => compare(a.path, b.path) || a.line - b.line),
+    },
+    counts: {
+      env: facts.env.length,
+      envNames: new Set(facts.env.map((item) => item.name)).size,
+      calls: facts.calls.length,
+      tables: [...nodes.values()].filter((item) => item.type === "DB" && item.kind === "table").length,
+    },
+  };
 }
 
 // Files under the source root that were not read as code, kept apart from

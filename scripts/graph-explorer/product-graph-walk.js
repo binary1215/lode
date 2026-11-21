@@ -1120,6 +1120,11 @@ export const productGraphWalk = (() => {
       ...(limits.valueUses
         ? [`- 값으로 쓴 함수 ${limits.valueUses.sites}곳(이름 ${limits.valueUses.plain}, 멤버 ${limits.valueUses.members}). 호출 수와 따로 센다. ${limits.valueUses.reading}`]
         : []),
+      ...(limits.outside
+        ? [
+            `- 데이터·외부 연결·DB: 환경 변수 읽기 ${limits.outside.env}곳(이름 ${limits.outside.envNames}개), 바깥 모듈 호출 ${limits.outside.calls}곳 중 이름 없는 것 ${limits.outside.unnamedCalls}곳, 표 ${limits.outside.tables}개. ${limits.outside.reading}`,
+          ]
+        : []),
       `- 뽑지 않은 것: ${limits.notExtracted.nodeTypes.join(", ")} 노드, ${limits.notExtracted.edges.join(", ")} 연결, ${limits.notExtracted.grouping}.`,
       ...limits.uiBindingScan.map((line) => `- ${line}`),
       ...(limits.tableRows ? [`- ${limits.tableRows}`] : []),
@@ -1369,6 +1374,24 @@ export const productGraphWalk = (() => {
         { show: evidence.removed.length > 0 },
       );
     }
+    // Outside calls (2.8): the gap shows, nothing is guessed.
+    const outside = lists.outside;
+    if (outside) {
+      add(
+        "unnamedOutsideCalls",
+        outside.unnamedOutsideCount,
+        [`이름 없는 바깥 호출: ${outside.unnamedOutsideCount}곳 (바깥 모듈을 부르지만 맞은편을 이름 붙인 바깥 규칙이 없다. 모듈·파일별)`],
+        outside.unnamedOutsideCalls.map((item) => ({ text: `${item.module} ${item.path} — ${item.count}곳 (${item.apis.join(", ")})` })),
+        { show: outside.unnamedOutsideCount > 0 },
+      );
+      add(
+        "undecidedAccess",
+        outside.undecidedAccess.length,
+        [`읽기·쓰기를 정하지 못함: ${outside.undecidedAccess.length}곳 (이름 붙인 데이터를 부르는 api가 읽기 표에도 쓰기 표에도 없다)`],
+        outside.undecidedAccess.map((item) => ({ text: `${item.path}:${item.line} ${item.module}.${item.api} → ${item.data}`, nodeId: item.from })),
+        { show: outside.undecidedAccess.length > 0 },
+      );
+    }
     add(
       "counts",
       null,
@@ -1376,7 +1399,8 @@ export const productGraphWalk = (() => {
       nodeTypes.map((type) => {
         const count = result.counts[type];
         const usedCount = result.usedCounts[type];
-        return { text: `${type} ${count}${typeof usedCount === "number" && usedCount !== count ? ` (검사에 쓴 것 ${usedCount})` : ""}` };
+        const covers = result.countCovers?.[type];
+        return { text: `${type} ${count}${typeof usedCount === "number" && usedCount !== count ? ` (검사에 쓴 것 ${usedCount})` : ""}${covers && typeof count === "number" ? ` (${covers})` : ""}` };
       }),
       { bounded: false },
     );

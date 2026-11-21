@@ -858,3 +858,95 @@ test("2.7: V8 coverage maps run functions to declarations; it lists what ran out
     ["ranOutsideReach", "reachedNotRun"],
   );
 });
+
+// ---------- 2.8 데이터, 외부 연결, DB ----------
+
+const OUTSIDE = {
+  "src/store.js": lines(
+    'import fs from "node:fs";',
+    "export function load() {",
+    "  const home = process.env.HOME;",
+    '  const port = process.env["PORT"];',
+    "  // process.env.SECRET is only a comment",
+    '  return fs.readFileSync(home + port, "utf8");',
+    "}",
+    "export function save(text) {",
+    '  fs.writeFileSync("state.json", text);',
+    '  fs.watch("state.json");',
+    "}",
+  ),
+  "src/peer.js": lines('import net from "node:net";', "export function dial() {", "  return net.connect(4000);", "}"),
+  "src/other.js": lines('import { readFileSync } from "fs";', "export function peek() {", '  return readFileSync("other.txt");', "}"),
+  "src/db.js": lines(
+    'const SCHEMA = "CREATE TABLE users (id INTEGER, name TEXT, PRIMARY KEY (id))";',
+    "export function users(db) {",
+    "  db.exec(SCHEMA);",
+    '  db.run("INSERT INTO users (name) VALUES (?)");',
+    '  return db.all("SELECT name FROM users");',
+    "}",
+  ),
+  "schema.sql": lines("CREATE TABLE orders (", "  id INTEGER,", "  total REAL", ");"),
+  "tool.py": lines("import os", "def run():", '    a = os.environ["A"]', '    b = os.environ.get("B")', '    return os.getenv("C"), a, b'),
+};
+const outsideRules = (extra = []) => ({
+  rules: [{ 종류: "cli", 판단: true, 파일: ["src/store.js"], 패턴: "export function (load|save)", "처리 코드": "줄을 감싼 코드" }],
+  바깥: [
+    { 판단: true, 이름: "state files", 종류: "데이터", "닿는 곳": [{ 모듈: "fs", 파일: ["src/store.js"] }] },
+    { 판단: true, 이름: "worker socket", 종류: "외부 연결", "닿는 곳": [{ 모듈: "net", 파일: ["src/peer.js"], 줄: [3, 3] }] },
+    ...extra,
+  ],
+});
+
+test("2.8: environment reads, named outside calls and tables become 데이터, 외부 연결 and DB with read, write and 포함 edges", (t) => {
+  const p = product(t, OUTSIDE, outsideRules());
+  const { result, graph } = p.build();
+  const ids = (type) => graph.nodes.filter((node) => node.type === type).map((node) => node.id);
+  assert.deepEqual(ids("데이터"), ["data:env:A", "data:env:B", "data:env:C", "data:env:HOME", "data:env:PORT", "data:state files"]);
+  assert.deepEqual(ids("외부 연결"), ["ext:worker socket"]);
+  assert.deepEqual(ids("DB"), ["db:orders", "db:orders.id", "db:orders.total", "db:users", "db:users.id", "db:users.name"]);
+  const edges = (type) => graph.edges.filter((edge) => edge.type === type).map((edge) => `${edge.from} → ${edge.to}`);
+  assert.deepEqual(edges("read").sort(), [
+    "src/db.js#users → db:users",
+    "src/store.js#load → data:env:HOME",
+    "src/store.js#load → data:env:PORT",
+    "src/store.js#load → data:state files",
+    "tool.py#run → data:env:A",
+    "tool.py#run → data:env:B",
+    "tool.py#run → data:env:C",
+  ]);
+  assert.deepEqual(edges("write").sort(), ["src/db.js#users → db:users", "src/store.js#save → data:state files"]);
+  assert.deepEqual(edges("코드→외부 연결"), ["src/peer.js#dial → ext:worker socket"]);
+  assert(edges("포함").includes("db:users → db:users.name"));
+  assert(graph.edges.find((edge) => edge.type === "write" && edge.to === "data:state files").judgement);
+  // The gap shows: an unnamed call by module and file; an api neither read nor write.
+  assert.deepEqual(result.lists.outside.unnamedOutsideCalls, [{ module: "fs", path: "src/other.js", count: 1, apis: ["readFileSync"] }]);
+  assert.deepEqual(
+    result.lists.outside.undecidedAccess.map((item) => `${item.module}.${item.api}`),
+    ["fs.watch"],
+  );
+  assert.equal(result.counts["데이터"], 6);
+  assert.match(result.text, /\n {2}- 데이터 6 \(환경 변수 이름과 바깥 규칙이 이름 붙인 데이터\)\n {2}- 외부 연결 1 \(바깥 규칙이 이름 붙인 외부 연결\)\n {2}- DB 6 \(/);
+  assert.match(result.text, /\n이름 없는 바깥 호출: 1곳 [^\n]*\n {2}- fs src\/other\.js — 1곳 \(readFileSync\)\n/);
+  assert.match(result.text, /- 데이터·외부 연결·DB: 환경 변수 읽기 5곳\(이름 5개\), 바깥 모듈 호출 \d+곳 중 이름 없는 것 1곳, 표 2개\. /);
+  assert.match(result.text, /- 뽑지 않은 것: 계측 이벤트 노드, navigate 연결, C4 묶음\./);
+  // The tree lists each code line's read, write and 외부 연결.
+  p.ask({ question: "overview" });
+  const tree = p.ask({ question: "tree", id: "cli:load" });
+  assert(tree.rows.some((row) => row.text === "read data:env:HOME (src/store.js:3)"));
+});
+
+test("2.8: two rules claiming one call are a rule issue unless one narrows; no outside facts read as zero counts", (t) => {
+  const p = product(t, OUTSIDE, outsideRules([{ 판단: true, 이름: "any files", 종류: "데이터", "닿는 곳": [{ 모듈: "fs", 파일: ["src/store.js"] }] }]));
+  const { result } = p.build();
+  assert(result.lists.ruleIssues.some((item) => /^규칙이 겹침 — fs\.readFileSync를 바깥 규칙 둘 이상이 이름 붙였다/.test(item.reason)));
+  const q = product(t, OUTSIDE, outsideRules([{ 판단: true, 이름: "the config", 종류: "데이터", "닿는 곳": [{ 모듈: "fs", 파일: ["src/store.js"], 줄: [6, 6] }] }]));
+  const narrowed = q.build();
+  assert(!narrowed.result.lists.ruleIssues.some((item) => item.reason.startsWith("규칙이 겹침")));
+  assert(narrowed.graph.edges.some((edge) => edge.type === "read" && edge.to === "data:the config"));
+  const none = product(t, { "src/a.js": lines("export function a() { return 1; }") });
+  const plain = none.build();
+  assert.equal(plain.result.counts["데이터"], 0);
+  assert.equal(plain.result.counts["계측 이벤트"], "뽑지 않음");
+  assert(!plain.graph.nodes.some((node) => ["데이터", "외부 연결", "DB"].includes(node.type)));
+  assert.doesNotMatch(plain.result.text, /이름 없는 바깥 호출|읽기·쓰기를 정하지 못함/);
+});
