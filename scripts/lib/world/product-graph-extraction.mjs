@@ -1749,7 +1749,9 @@ const NAME_STATEMENTS = Object.freeze({
     /\bimport\b[^;]*?\bfrom\b|\bimport\s*\{[^}]*\}|\bimport\s+[\w$]+\s*,?/g,
     /\bexport\s*\{[^}]*\}/g,
     // const { a, b } = require(...) / await import(...): an import by another spelling.
-    /\b(?:const|let|var)\s*\{[^}]*\}\s*=\s*(?:await\s+)?(?:require|import)\s*\(/g,
+    // Written as a string: the repository's code lexer (scripts/codemods/js-scan.mjs)
+    // does not read this one as a regex literal.
+    new RegExp("\\b(?:const|let|var)\\s*\\{[^}]*\\}\\s*=\\s*(?:await\\s+)?(?:require|import)\\s*\\(", "g"),
   ],
   python: [/^[ \t]*(?:from\s+[\w.]+\s+)?import\b[^\n]*(?:\([^)]*\))?/gm],
 });

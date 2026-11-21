@@ -203,7 +203,7 @@ A pattern rule whose 처리 코드 is the enclosing code (the default) may carry
 
 ### 손으로 적는 연결 (connections written by hand)
 
-Where the scan cannot see a connection, a person can write it as a judged rule: `{"판단": true, "종류": "framework-invoked" or "경계", "파일", "글", "대상": [<코드 IDs>], "설명"}`.
+Where the scan cannot see a connection, a person can write it as a judged rule: `{"판단": true, "종류": "framework-invoked" | "경계", "파일", "글", "대상": [<코드 IDs>], "설명"}`.
 
 - framework-invoked: every code line of 파일 holding 글 gives a reference from its enclosing code to each 대상, marked as a judgement (`judgement: true`, text "(판단)"). Reach follows it.
 - 경계: a boundary edge; reach does not cross it. Queries print "경계에서 멈춤: <설명> → <대상>" under the node where it stops, and `reach <code>` behind a boundary says "경계를 넘으면 닿는 기능 N개 (…)".
@@ -212,7 +212,7 @@ Where the scan cannot see a connection, a person can write it as a judged rule: 
 
 ### 바깥 (naming outside calls)
 
-Calls on names imported from a table of outside modules are recorded as facts: JavaScript `fs`, `fs/promises`, `net`, `http`, `https`, `dgram`, `tls`, `child_process`, `readline`; Python built-in `open`, `os`, `shutil`, `pathlib`, `subprocess`, `socket`, `sqlite3`, `urllib`, `http.client`; and any module a 바깥 rule names. A fact becomes an edge only through a judged rule: `"바깥": [{"판단": true, "이름", "종류": "데이터" or "외부 연결", "닿는 곳": [{"모듈", "파일"?, "줄"?, "선언"?}], "설명"?}]`.
+Calls on names imported from a table of outside modules are recorded as facts: JavaScript `fs`, `fs/promises`, `net`, `http`, `https`, `dgram`, `tls`, `child_process`, `readline`; Python built-in `open`, `os`, `shutil`, `pathlib`, `subprocess`, `socket`, `sqlite3`, `urllib`, `http.client`; and any module a 바깥 rule names. A fact becomes an edge only through a judged rule: `"바깥": [{"판단": true, "이름", "종류": "데이터" | "외부 연결", "닿는 곳": [{"모듈", "파일"?, "줄"?, "선언"?}], "설명"?}]`.
 
 - 데이터: a node `data:<이름>` with read or write by the called api's name; an api in neither list is listed under 읽기·쓰기를 정하지 못함, never guessed.
 - 외부 연결: a node `ext:<이름>` and a 코드→외부 연결 edge.

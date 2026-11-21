@@ -264,7 +264,7 @@ Lode는 아무것도 실행하지 않습니다. 프로젝트가 기능을 실행
 lode-agent product-graph-runs-add <project> --input runs.json
 ```
 
-(MCP: `lode_product_graph`의 action `runs_add`.) 실행마다 지금 빌드의 기능 내용·닿는 코드 해시와 코드를 읽는 방식이 붙으므로, 옛 코드에서 한 실행이 오늘 코드의 근거가 되는 일은 없습니다. 기록은 `.lode/context/product-graph/실행 기록/product-graph-run-<id>.json`에 내용 주소로, 크기에 따라 나눠 쓰고, Lode는 고치거나 지우지 않습니다. 거절은 확인과 같고 아무것도 쓰지 않습니다. 빌드가 지금 소스 그대로가 아니면 `PRODUCT_GRAPH_BUILD_STALE`, 기능이 그래프에 없으면 `PRODUCT_GRAPH_RUN_TARGET_MISSING`, 기록이 2,000개를 넘거나 기록 하나가 256 KiB를 넘거나 출력이 16 KiB를 넘으면(자르지 않고 거절) `PRODUCT_GRAPH_RUN_LIMIT`입니다. 실행은 `R<기록 짧은 id>-<n>`으로 보입니다.
+(MCP: `lode_product_graph`의 action `runs_add`.) 실행마다 지금 빌드의 기능 내용·닿는 코드 해시와 코드를 읽는 방식이 붙으므로, 옛 코드에서 한 실행이 오늘 코드의 근거가 되는 일은 없습니다. 기록은 `.lode/context/product-graph/실행 기록/product-graph-run-<id>.json`에 내용 주소로, 크기에 따라 나눠 쓰고, Lode는 고치거나 지우지 않습니다. 거절은 확인과 같고 아무것도 쓰지 않습니다. 빌드가 지금 소스 그대로가 아니면 `PRODUCT_GRAPH_BUILD_STALE`, 기능이 그래프에 없으면 `PRODUCT_GRAPH_RUN_TARGET_MISSING`, 기록이 2,000개를 넘거나 기록 하나가 256 KiB를 넘거나 출력이 16 KiB를 넘으면(자르지 않고 거절) `PRODUCT_GRAPH_RUN_LIMIT`입니다. 실행은 `R<record short id>-<n>`으로 보입니다.
 
 **출력은 준 그대로 저장됩니다.** Lode는 출력에 비밀이 있는지 보지 않고, 이동용 내보내기가 출력을 함께 싣습니다. 출력을 넘기기 전에 비밀을 지웁니다.
 
