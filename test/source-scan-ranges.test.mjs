@@ -166,6 +166,38 @@ test("return types: conditional types, unions and predicates over several lines 
   for (const [lines, symbols, calls] of cases) assert.deepEqual(read(lines, "typescript"), { symbols, calls }, lines[0]);
 });
 
+test("an import type is a type in function, method and arrow return types (review F8)", () => {
+  const lines = [
+    'export function load(id: string): import("./types").Loaded {',
+    "  return read(id);",
+    "}",
+    'export function direct(): typeof import("./x") {',
+    "  return load();",
+    "}",
+    "class Store {",
+    '  get(): import("./types").Loaded {',
+    "    return fetchIt();",
+    "  }",
+    "}",
+    'const arrow = (a): import("./types").Loaded => {',
+    "  return pull(a);",
+    "};",
+  ];
+  assert.deepEqual(read(lines, "typescript"), {
+    symbols: [
+      'function load 1-3 scope= [export function load(id: string): import("./types").Loaded]',
+      'function direct 4-6 scope= [export function direct(): typeof import("./x")]',
+      "class Store 7-11 scope= [class Store]",
+      'function Store.get 8-10 scope=Store [get(): import("./types").Loaded]',
+      'binding arrow 12-14 scope= [const arrow = (a): import("./types").Loaded =>]',
+    ],
+    // "import(" is read as a call, as before 0.3.4.
+    calls: ["import@1<-load", "read@2<-load", "import@4<-direct", "load@5<-direct", "import@8<-Store.get", "fetchIt@9<-Store.get", "import@12<-arrow", "pull@13<-arrow"],
+  });
+  // A template's blanked text between ")" and "{" is still no method definition.
+  assert.deepEqual(read(["const s = `${f()} ${ {a} }`;"]), { symbols: [], calls: ["f@1<-"] });
+});
+
 test("a parameter list that does not close keeps the old reading and is counted", () => {
   const text = "function broken(a = {} {\n  g();\n}\n";
   const result = analyzeSourceFile(text, "javascript", "broken.js", { withMaskedText: true });

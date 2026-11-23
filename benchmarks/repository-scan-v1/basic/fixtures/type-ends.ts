@@ -45,4 +45,22 @@ function check(x: unknown): asserts x is
   first(x);
 }
 
+export function loadType(id: string): import("./types").Loaded {
+  return first(id);
+}
+
+export function direct(): typeof import("./x") {
+  return first();
+}
+
+export class Store {
+  get(): import("./types").Loaded {
+    return first();
+  }
+}
+
+export const arrow = (a: unknown): import("./types").Loaded => {
+  return first(a);
+};
+
 export { cache, load, count, one, two, typed, pick, union, leading, check };

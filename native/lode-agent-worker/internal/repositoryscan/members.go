@@ -263,7 +263,7 @@ func methodDefinitionSites(masked, text string, brackets []int) []methodSite {
 				continue
 			}
 		}
-		if byteAt(masked, after) != '{' || masked[closeIndex+1:after] != text[closeIndex+1:after] {
+		if byteAt(masked, after) != '{' || !codeBetween(masked, text, brackets, closeIndex+1, after) {
 			continue
 		}
 		bodyClose := braces[after]
@@ -273,6 +273,21 @@ func methodDefinitionSites(masked, text string, brackets []int) []methodSite {
 		sites = append(sites, methodSite{nameIndex: startIndex + len(private), startIndex: startIndex, name: private + name, open: after, close: bodyClose})
 	}
 	return sites
+}
+
+// codeBetween tells whether everything from index to end (exclusive) is code
+// in the original text too, outside bracket groups that close before end (a
+// return type's import("./types") holds a string; a template's blanked text
+// at the top level still does not count as code).
+func codeBetween(masked, text string, brackets []int, index, end int) bool {
+	for ; index < end; index++ {
+		if (masked[index] == '(' || masked[index] == '[') && brackets[index] > index && brackets[index] < end {
+			index = brackets[index]
+		} else if masked[index] != text[index] {
+			return false
+		}
+	}
+	return true
 }
 
 // innermostBraces returns, for each index (ascending, unique), the innermost

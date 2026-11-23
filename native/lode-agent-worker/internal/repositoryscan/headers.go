@@ -58,7 +58,7 @@ var typeOperatorWords = map[string]bool{
 var notTypeWords = map[string]bool{
 	"function": true, "class": true, "async": true, "await": true, "return": true, "throw": true, "yield": true, "delete": true,
 	"if": true, "else": true, "for": true, "while": true, "do": true, "switch": true, "case": true, "try": true,
-	"catch": true, "finally": true, "var": true, "let": true, "const": true, "import": true, "export": true, "break": true,
+	"catch": true, "finally": true, "var": true, "let": true, "const": true, "export": true, "break": true,
 	"continue": true,
 }
 

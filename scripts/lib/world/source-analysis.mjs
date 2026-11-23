@@ -406,7 +406,6 @@ const NOT_TYPE_WORDS = new Set([
   "var",
   "let",
   "const",
-  "import",
   "export",
   "break",
   "continue",
@@ -582,6 +581,18 @@ function precededByFunction(masked, index) {
   return masked.slice(cursor + 1, end) === "function" && !(cursor >= 0 && /[\w$.]/.test(masked[cursor]));
 }
 
+// Whether everything from index to end (exclusive) is code in the original
+// text too, outside bracket groups that close before end (a return type's
+// import("./types") holds a string; a template's blanked text at the top
+// level, as in "`${f()} ${ {a} }`", still does not count as code).
+function codeBetween(masked, text, brackets, index, end) {
+  for (; index < end; index += 1) {
+    if ((masked[index] === "(" || masked[index] === "[") && brackets[index] > index && brackets[index] < end) index = brackets[index];
+    else if (masked[index] !== text[index]) return false;
+  }
+  return true;
+}
+
 export function methodDefinitionSites(masked, text, brackets = bracketPartners(masked)) {
   const sites = [];
   const braces = bracePartners(masked);
@@ -599,7 +610,7 @@ export function methodDefinitionSites(masked, text, brackets = bracketPartners(m
       after = typeEnd(masked, text, brackets, after + 1, "body");
       if (after < 0) continue;
     }
-    if (masked[after] !== "{" || masked.slice(close + 1, after) !== text.slice(close + 1, after)) continue;
+    if (masked[after] !== "{" || !codeBetween(masked, text, brackets, close + 1, after)) continue;
     const bodyClose = braces[after];
     if (bodyClose < 0) continue;
     sites.push({ nameIndex: startIndex + match[1].length, startIndex, name: match[1] + match[2], open: after, close: bodyClose });

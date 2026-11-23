@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
   "corpus": "benchmarks/repository-scan-v1/basic",
-  "scanId": "repository-scan-0e567e038423430b742f5734",
-  "resultDigest": "0146a6b0a48217eb4728b29e98b6bde4b9d44dd9a76a9fec77267cdcd7f15018"
+  "scanId": "repository-scan-37a97cfbb1ed909de6aa1263",
+  "resultDigest": "b63ce9ae4349acb6fc493101db471c8fc1d9bfd6d1e001e255a19832060aecf5"
 }
