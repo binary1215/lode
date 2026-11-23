@@ -107,7 +107,8 @@ export const productGraphWalk = (() => {
       ix.crossing = new Set();
       for (const list of ix.out.values()) for (const item of list) if (item.type === "경계") ix.crossing.add(`${item.from}\u0000${item.to}`);
     }
-    return !ix.crossing.has(`${edge.from}\u0000${edge.to}`);
+    // Without any 경계 edge no key needs building (reach walks many edges).
+    return !ix.crossing.size || !ix.crossing.has(`${edge.from}\u0000${edge.to}`);
   }
   // Whether an edge occurs on one of the line ranges (2.9).
   const onLines = (edge, ranges) => (edge.lines || [edge.at?.line]).some((line) => ranges.some(([from, to]) => from <= line && line <= to));
