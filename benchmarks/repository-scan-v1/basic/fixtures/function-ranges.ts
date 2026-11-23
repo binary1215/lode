@@ -54,4 +54,9 @@ const annotated: Handler = (a) => {
 
 const identity = <T,>(a: T) => a;
 
-export { generic, literalReturn, isFoo, overloaded, afterDeclare, Loader, callbackType, returnType, annotated, identity };
+// Same-line shapes with types: nesting is by offsets.
+function oneLineTs(): void { function innerTs(): number { return first(); } innerTs(); }
+const namedTs = async function innerNamed(a: { b: string } = { b: "" }): Promise<void> { first(a); };
+function twoTsA(): { a: string } { return first(); } function twoTsB(x: number): void { first(x); }
+
+export { generic, literalReturn, isFoo, overloaded, afterDeclare, Loader, callbackType, returnType, annotated, identity, oneLineTs, namedTs, twoTsA, twoTsB };

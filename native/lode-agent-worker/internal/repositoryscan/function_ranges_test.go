@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"testing"
 )
@@ -44,6 +43,18 @@ func TestFunctionRangesMatchTheJavaScriptReference(t *testing.T) {
 				"function invoked.hidden 47-47 scope=invoked [function hidden()]",
 				"function outer 51-56 scope= [function outer(options = {})]",
 				"function outer.nested 52-54 scope=outer [function nested()]",
+				"function oneLine.innerOne 60-60 scope=oneLine [function innerOne()]",
+				"function oneLine 60-60 scope= [function oneLine()]",
+				"binding wrap 61-61 scope= [const wrap = (x) => function wrapped() { return first(x);]",
+				"function wrapped 61-61 scope= [function wrapped()]",
+				"function twoA 62-62 scope= [function twoA()]",
+				"function twoB 62-62 scope= [function twoB()]",
+				"function holder.run 63-63 scope=holder [run: function ()]",
+				"class OneLine 64-64 scope= [class OneLine]",
+				"function OneLine.go 64-64 scope=OneLine [go()]",
+				"binding arrowInArrow 65-65 scope= [const arrowInArrow = () => () => first();]",
+				"binding both 66-66 scope= [const both = function left()]",
+				"function both.left 66-66 scope=both [function left()]",
 			},
 			calls: []string{
 				"first@6<-withDefaults",
@@ -59,6 +70,16 @@ func TestFunctionRangesMatchTheJavaScriptReference(t *testing.T) {
 				"first@44<-single",
 				"first@53<-outer.nested",
 				"nested@55<-outer",
+				"first@60<-oneLine.innerOne",
+				"innerOne@60<-oneLine",
+				"first@61<-wrapped",
+				"first@62<-twoA",
+				"first@62<-twoB",
+				"first@63<-holder.run",
+				"first@64<-OneLine.go",
+				"first@65<-arrowInArrow",
+				"first@66<-both.left",
+				"first@66<-",
 			},
 		},
 		{
@@ -79,6 +100,12 @@ func TestFunctionRangesMatchTheJavaScriptReference(t *testing.T) {
 				"binding returnType 47-49 scope= [const returnType = async (a): Promise<void> =>]",
 				"binding annotated 51-53 scope= [const annotated: Handler = (a) =>]",
 				"binding identity 55-55 scope= [const identity = <T,>(a: T) => a;]",
+				"function oneLineTs.innerTs 58-58 scope=oneLineTs [function innerTs(): number]",
+				"function oneLineTs 58-58 scope= [function oneLineTs(): void]",
+				"function namedTs.innerNamed 59-59 scope=namedTs [async function innerNamed(a: { b: string } = { b: \"\" }): Promise<void>]",
+				"binding namedTs 59-59 scope= [const namedTs = async function innerNamed(a: { b: string } = { b: \"\" }): Promise<void>]",
+				"function twoTsA 60-60 scope= [function twoTsA(): { a: string }]",
+				"function twoTsB 60-60 scope= [function twoTsB(x: number): void]",
 			},
 			calls: []string{
 				"first@12<-generic",
@@ -92,6 +119,11 @@ func TestFunctionRangesMatchTheJavaScriptReference(t *testing.T) {
 				"async@47<-returnType",
 				"first@48<-returnType",
 				"first@52<-annotated",
+				"first@58<-oneLineTs.innerTs",
+				"innerTs@58<-oneLineTs",
+				"first@59<-namedTs.innerNamed",
+				"first@60<-twoTsA",
+				"first@60<-twoTsB",
 			},
 		},
 		{
@@ -178,17 +210,34 @@ func TestFunctionRangesMatchTheJavaScriptReference(t *testing.T) {
 			symbol := value.(map[string]any)
 			symbols = append(symbols, fmt.Sprintf("%s %s %d-%d scope=%s [%s]", symbol["kind"], symbol["qualifiedName"], symbol["line"], symbol["endLine"], symbol["scopePath"], symbol["signature"]))
 		}
-		if !reflect.DeepEqual(symbols, item.symbols) {
-			t.Fatalf("%s: unexpected declarations: %#v", item.file, symbols)
-		}
+		reportDifferences(t, item.file, "declaration", symbols, item.symbols)
 		calls := []string{}
 		for _, value := range extractCalls(text, item.language, lines) {
 			call := value.(map[string]any)
 			caller, _ := call["callerQualifiedName"].(string)
 			calls = append(calls, fmt.Sprintf("%s@%d<-%s", call["callee"], call["line"], caller))
 		}
-		if !reflect.DeepEqual(calls, item.calls) {
-			t.Fatalf("%s: unexpected calls: %#v", item.file, calls)
+		reportDifferences(t, item.file, "call", calls, item.calls)
+	}
+}
+
+// reportDifferences reports every entry that differs, so one run shows all
+// remaining differences across all files.
+func reportDifferences(t *testing.T, file, what string, got, want []string) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Errorf("%s: %d %ss, want %d", file, len(got), what, len(want))
+	}
+	for index := 0; index < len(got) || index < len(want); index++ {
+		gotEntry, wantEntry := "<none>", "<none>"
+		if index < len(got) {
+			gotEntry = got[index]
+		}
+		if index < len(want) {
+			wantEntry = want[index]
+		}
+		if gotEntry != wantEntry {
+			t.Errorf("%s: %s %d:\n  got  %q\n  want %q", file, what, index, gotEntry, wantEntry)
 		}
 	}
 }

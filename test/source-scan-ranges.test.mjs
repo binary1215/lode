@@ -198,6 +198,58 @@ test("an import type is a type in function, method and arrow return types (revie
   assert.deepEqual(read(["const s = `${f()} ${ {a} }`;"]), { symbols: [], calls: ["f@1<-"] });
 });
 
+test("declarations starting on one line nest by offsets, not by lines (Go parity)", () => {
+  assert.deepEqual(
+    read([
+      "function oneLine() { function innerOne() { first(); } innerOne(); }",
+      "const wrap = (x) => function wrapped() { return first(x); };",
+      "function twoA() { first(); } function twoB() { first(); }",
+      "const holder = { run: function () { first(); } };",
+      "class OneLine { go() { first(); } }",
+      "const arrowInArrow = () => () => first();",
+      "const both = function left() { first(); }, right = () => first();",
+    ]),
+    {
+      symbols: [
+        "function oneLine.innerOne 1-1 scope=oneLine [function innerOne()]",
+        "function oneLine 1-1 scope= [function oneLine()]",
+        "binding wrap 2-2 scope= [const wrap = (x) => function wrapped() { return first(x);]",
+        "function wrapped 2-2 scope= [function wrapped()]",
+        "function twoA 3-3 scope= [function twoA()]",
+        "function twoB 3-3 scope= [function twoB()]",
+        "function holder.run 4-4 scope=holder [run: function ()]",
+        "class OneLine 5-5 scope= [class OneLine]",
+        "function OneLine.go 5-5 scope=OneLine [go()]",
+        "binding arrowInArrow 6-6 scope= [const arrowInArrow = () => () => first();]",
+        "binding both 7-7 scope= [const both = function left()]",
+        "function both.left 7-7 scope=both [function left()]",
+      ],
+      calls: ["first@1<-oneLine.innerOne", "innerOne@1<-oneLine", "first@2<-wrapped", "first@3<-twoA", "first@3<-twoB", "first@4<-holder.run", "first@5<-OneLine.go", "first@6<-arrowInArrow", "first@7<-both.left", "first@7<-"],
+    },
+  );
+  assert.deepEqual(
+    read(
+      [
+        "function oneLineTs(): void { function innerTs(): number { return first(); } innerTs(); }",
+        'const namedTs = async function innerNamed(a: { b: string } = { b: "" }): Promise<void> { first(a); };',
+        "function twoTsA(): { a: string } { return first(); } function twoTsB(x: number): void { first(x); }",
+      ],
+      "typescript",
+    ),
+    {
+      symbols: [
+        "function oneLineTs.innerTs 1-1 scope=oneLineTs [function innerTs(): number]",
+        "function oneLineTs 1-1 scope= [function oneLineTs(): void]",
+        'function namedTs.innerNamed 2-2 scope=namedTs [async function innerNamed(a: { b: string } = { b: "" }): Promise<void>]',
+        'binding namedTs 2-2 scope= [const namedTs = async function innerNamed(a: { b: string } = { b: "" }): Promise<void>]',
+        "function twoTsA 3-3 scope= [function twoTsA(): { a: string }]",
+        "function twoTsB 3-3 scope= [function twoTsB(x: number): void]",
+      ],
+      calls: ["first@1<-oneLineTs.innerTs", "innerTs@1<-oneLineTs", "first@2<-namedTs.innerNamed", "first@3<-twoTsA", "first@3<-twoTsB"],
+    },
+  );
+});
+
 test("a parameter list that does not close keeps the old reading and is counted", () => {
   const text = "function broken(a = {} {\n  g();\n}\n";
   const result = analyzeSourceFile(text, "javascript", "broken.js", { withMaskedText: true });

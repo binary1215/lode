@@ -55,4 +55,14 @@ function outer(options = {}) {
   return nested();
 }
 
-export { withDefaults, destructured, bothDefaults, multiLine, generated, expression, named, defaultCall, single, invoked, outer };
+// Same-line shapes: a container and a nested declaration starting on one
+// line nest by offsets, never by lines.
+function oneLine() { function innerOne() { first(); } innerOne(); }
+const wrap = (x) => function wrapped() { return first(x); };
+function twoA() { first(); } function twoB() { first(); }
+const holder = { run: function () { first(); } };
+class OneLine { go() { first(); } }
+const arrowInArrow = () => () => first();
+const both = function left() { first(); }, right = () => first();
+
+export { withDefaults, destructured, bothDefaults, multiLine, generated, expression, named, defaultCall, single, invoked, outer, oneLine, wrap, twoA, twoB, holder, OneLine, arrowInArrow, both, right };

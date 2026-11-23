@@ -603,11 +603,25 @@ func enrichSymbols(text, masked, language string, values []any, lines []int, inc
 				if possible["startIndex"] == symbol["startIndex"] {
 					continue
 				}
-				if possible["line"].(int) < symbol["line"].(int) && possible["endLine"].(int) >= symbol["endLine"].(int) {
+				if language == "python" {
+					if possible["line"].(int) < symbol["line"].(int) && possible["endLine"].(int) >= symbol["endLine"].(int) {
+						containers = append(containers, possible)
+					}
+				} else if possible["startIndex"].(int) < symbol["startIndex"].(int) && possible["endIndex"].(int) >= symbol["endIndex"].(int) {
+					// JavaScript and TypeScript nest by offsets, as the
+					// JavaScript scan does: a container may start on the
+					// declaration's own line ("const named = async function
+					// inner() {").
 					containers = append(containers, possible)
 				}
 			}
-			sort.SliceStable(containers, func(left, right int) bool { return containers[left]["line"].(int) < containers[right]["line"].(int) })
+			if language == "python" {
+				sort.SliceStable(containers, func(left, right int) bool { return containers[left]["line"].(int) < containers[right]["line"].(int) })
+			} else {
+				sort.SliceStable(containers, func(left, right int) bool {
+					return containers[left]["startIndex"].(int) < containers[right]["startIndex"].(int)
+				})
+			}
 			names := make([]string, 0, len(containers))
 			for _, container := range containers {
 				names = append(names, container["name"].(string))

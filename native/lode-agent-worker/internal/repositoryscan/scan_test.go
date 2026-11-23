@@ -26,7 +26,7 @@ func TestTrackedCorpusMatchesReviewedIdentity(t *testing.T) {
 	// Source analysis 0.3.4 (function headers read by bracket partners;
 	// fixtures/function-ranges.mjs/.ts and type-ends.mjs/.ts added) changes
 	// aggregate identity. Computed with the JS producer on this corpus.
-	if document["scanId"] != "repository-scan-37a97cfbb1ed909de6aa1263" {
+	if document["scanId"] != "repository-scan-66d5a397c5a3864638122edc" {
 		t.Fatalf("unexpected scan identity: %v", document["scanId"])
 	}
 	summary := document["summary"].(map[string]any)
