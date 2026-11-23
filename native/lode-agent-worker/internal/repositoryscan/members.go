@@ -29,6 +29,9 @@ var (
 	literalBindingPattern = jsRegexp(`\b(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*(?::[^=;{]+)?=\s*\{`)
 	keyMemberPattern      = jsRegexp(`([A-Za-z_$][A-Za-z0-9_$]*)\s*:\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][A-Za-z0-9_$]*\s*=>)`)
 	fieldMemberPattern    = jsRegexp(`(#?[A-Za-z_$][A-Za-z0-9_$]*)\s*(?::[^=;{}()]+)?=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][A-Za-z0-9_$]*\s*=>)`)
+	// A binding that may hold a function: "const name" followed by ":" or "="
+	// (the character after it is checked in Go; RE2 has no look-ahead).
+	bindingStartRegexp    = jsRegexp(`\b(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*[:=]`)
 	classExpressionRegexp = jsRegexp(`\b(export\s+)?(const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*class\b`)
 	defaultClassRegexp    = jsRegexp(`\bexport\s+default\s+(class)\b\s*(\{|extends\b)`)
 )
@@ -153,7 +156,7 @@ type signatureSite struct {
 // signatureSites finds TypeScript signatures without a body directly in a
 // class or interface body ("abstract render(): void;", overloads): neither
 // calls nor declarations.
-func signatureSites(masked string, classBodyOpens []int) []signatureSite {
+func signatureSites(masked string, classBodyOpens []int, brackets []int) []signatureSite {
 	opens := map[int]bool{}
 	for _, open := range classBodyOpens {
 		opens[open] = true
@@ -164,7 +167,9 @@ func signatureSites(masked string, classBodyOpens []int) []signatureSite {
 	if len(opens) == 0 {
 		return []signatureSite{}
 	}
-	brackets := bracketPartners(masked)
+	if brackets == nil {
+		brackets = bracketPartners(masked)
+	}
 	type candidate struct {
 		nameIndex int
 		name      string
@@ -224,9 +229,11 @@ func signatureSites(masked string, classBodyOpens []int) []signatureSite {
 
 // Everything between ")" and "{" must be code in the original text too (a
 // template's blanked text is not).
-func methodDefinitionSites(masked, text string) []methodSite {
+func methodDefinitionSites(masked, text string, brackets []int) []methodSite {
 	sites := []methodSite{}
-	brackets := bracketPartners(masked)
+	if brackets == nil {
+		brackets = bracketPartners(masked)
+	}
 	braces := bracePartners(masked)
 	for _, match := range methodSitePattern.FindAllStringSubmatchIndex(masked, -1) {
 		startIndex := match[0]
@@ -250,16 +257,10 @@ func methodDefinitionSites(masked, text string) []methodSite {
 			after++
 		}
 		if byteAt(masked, after) == ':' {
-			// A TypeScript return type: "): Type {".
-			after++
-			for after < len(masked) && isBlank(masked[after]) {
-				after++
-			}
-			if after >= len(masked) || strings.IndexByte("{};=", masked[after]) >= 0 {
+			// A TypeScript return type: "): Type {", read as a function's (0.3.4).
+			after = returnTypeEnd(masked, text, brackets, after+1, false)
+			if after < 0 {
 				continue
-			}
-			for after < len(masked) && strings.IndexByte("{};=(),", masked[after]) < 0 {
-				after++
 			}
 		}
 		if byteAt(masked, after) != '{' || masked[closeIndex+1:after] != text[closeIndex+1:after] {

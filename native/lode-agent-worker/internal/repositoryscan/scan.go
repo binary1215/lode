@@ -26,7 +26,7 @@ const (
 	ProducerName          = "head-agent-core-repository-scan"
 	LodeProducerName      = "lode-agent-core-repository-scan"
 	ProducerVersion       = "0.5.1"
-	SourceAnalysisVersion = "0.3.3"
+	SourceAnalysisVersion = "0.3.4"
 	maximumSymbolsPerFile = 200
 	analysisSymbolLimit   = 10000
 )
@@ -306,6 +306,10 @@ type symbolPattern struct {
 	// group whose end is the match end (RE2 has no look-ahead).
 	FixedName string
 	EndGroup  int
+
+	// Read, when set, reads what follows a match: whether it is kept, where
+	// the match ends and fields to keep with the declaration (0.3.4 headers).
+	Read func(match []int) (bool, int, map[string]any)
 }
 
 func regexSymbols(text string, lines []int, patterns []symbolPattern, maximum int) []any {
@@ -328,14 +332,25 @@ func regexSymbols(text string, lines []int, patterns []symbolPattern, maximum in
 			if pattern.EndGroup > 0 {
 				matchEnd = match[pattern.EndGroup*2+1]
 			}
+			var extra map[string]any
+			if pattern.Read != nil {
+				var keep bool
+				if keep, matchEnd, extra = pattern.Read(match); !keep {
+					continue
+				}
+			}
 			line := lineAt(lines, match[0])
-			result = append(result, map[string]any{
+			symbol := map[string]any{
 				"name":          name,
 				"kind":          pattern.Kind,
 				"line":          line,
 				"startIndex":    match[0],
 				"matchEndIndex": matchEnd,
-			})
+			}
+			for key, value := range extra {
+				symbol[key] = value
+			}
+			result = append(result, symbol)
 			if len(result) >= maximum {
 				return sortSymbolsByStart(result)
 			}
@@ -464,7 +479,7 @@ func pythonHeaderEnd(masked string, start int) int {
 	return -1
 }
 
-func enrichSymbols(text, masked, language string, values []any, lines []int, includeRanges bool) []any {
+func enrichSymbols(text, masked, language string, values []any, lines []int, includeRanges bool, brackets []int) []any {
 	textLines := sourceLines(text)
 	for _, value := range values {
 		symbol := value.(map[string]any)
@@ -485,17 +500,21 @@ func enrichSymbols(text, masked, language string, values []any, lines []int, inc
 				lineEnd += matchEnd
 			}
 			open := -1
-			matched := masked[start:matchEnd]
-			if symbol["kind"] == "binding" && strings.Contains(matched, "=>") {
-				bodyStart := matchEnd
-				for bodyStart < len(masked) && (masked[bodyStart] == ' ' || masked[bodyStart] == '\t' || masked[bodyStart] == '\r' || masked[bodyStart] == '\n') {
-					bodyStart++
-				}
-				if bodyStart < len(masked) && masked[bodyStart] == '{' {
+			header, _ := symbol["header"].(string)
+			switch header {
+			case headerBody:
+				open = symbol["headerOpen"].(int)
+			case headerNone:
+				// No body follows (an overload, a declare): one statement.
+			case headerArrow:
+				if bodyStart := skipBlanks(masked, matchEnd); byteAt(masked, bodyStart) == '{' {
 					open = bodyStart
 				}
-			} else if openRelative := strings.IndexByte(masked[matchEnd:], '{'); openRelative >= 0 && matchEnd+openRelative <= advanceUTF16(text, lineEnd, 500) {
-				open = matchEnd + openRelative
+			default:
+				// The old reading: a class, or a function whose parameter list did not close.
+				if openRelative := strings.IndexByte(masked[matchEnd:], '{'); openRelative >= 0 && matchEnd+openRelative <= advanceUTF16(text, lineEnd, 500) {
+					open = matchEnd + openRelative
+				}
 			}
 			end := braceEnd(masked, open)
 			if end >= 0 && symbol["kind"] == "class" {
@@ -603,7 +622,7 @@ func enrichSymbols(text, masked, language string, values []any, lines []int, inc
 	if language == "javascript" || language == "typescript" {
 		// Members get their scope from their class or binding; they are not
 		// containers for the declarations above, whose names stay as they were.
-		values = sortSymbols(append(values, javascriptMembers(text, masked, values, methodDefinitionSites(masked, text), lines)...))
+		values = sortSymbols(append(values, javascriptMembers(text, masked, values, methodDefinitionSites(masked, text, brackets), lines)...))
 	}
 	counts := map[string]int{}
 	for _, value := range values {
@@ -620,6 +639,8 @@ func enrichSymbols(text, masked, language string, values []any, lines []int, inc
 			delete(symbol, "endIndex")
 		}
 		delete(symbol, "matchEndIndex")
+		delete(symbol, "header")
+		delete(symbol, "headerOpen")
 		if !includeRanges {
 			delete(symbol, "bodyOpen")
 		}
@@ -644,25 +665,75 @@ func sortSymbols(values []any) []any {
 // all, and only the stored list is cut to maximumSymbolsPerFile.
 func extractSymbolsInternal(text, language string, lines []int, includeRanges bool) []any {
 	masked := maskNonCode(text, language)
+	var brackets []int
+	if language == "javascript" || language == "typescript" {
+		brackets = bracketPartners(masked)
+	}
+	return extractSymbolsMasked(text, masked, language, lines, includeRanges, brackets)
+}
+
+// javascriptSymbolPatterns are the declaration patterns of JavaScript and
+// TypeScript. A function's header and a binding's value are read by bracket
+// partners (0.3.4); a binding that is not a function by that reading keeps
+// the old reading when the old pattern matched it (an immediately invoked
+// function stays as it was read).
+func javascriptSymbolPatterns(text, masked string, brackets []int) []symbolPattern {
+	oldBindings := map[int]int{}
+	for _, match := range javascriptBinding.FindAllStringIndex(masked, -1) {
+		oldBindings[match[0]] = match[1]
+	}
+	readFunction := func(match []int) (bool, int, map[string]any) {
+		status, open := functionHeader(masked, text, brackets, match[1])
+		return true, match[1], map[string]any{"header": status, "headerOpen": open}
+	}
+	readBinding := func(match []int) (bool, int, map[string]any) {
+		// As JavaScript's (?=\s*[:=](?![=>])) after the name.
+		if next := byteAt(masked, match[1]); next == '=' || next == '>' {
+			return false, 0, nil
+		}
+		nameEnd := match[3]
+		kind, status, at := bindingValue(masked, text, brackets, nameEnd)
+		switch kind {
+		case valueFunction:
+			return true, nameEnd, map[string]any{"header": status, "headerOpen": at}
+		case valueArrow:
+			return true, at, map[string]any{"header": headerArrow}
+		}
+		end, ok := oldBindings[match[0]]
+		if !ok {
+			return false, 0, nil
+		}
+		if strings.Contains(masked[match[0]:end], "=>") {
+			return true, end, map[string]any{"header": headerArrow}
+		}
+		return true, end, nil
+	}
+	return []symbolPattern{
+		{Kind: "function", Regex: javascriptFunction, Group: 4, Read: readFunction},
+		// "class extends B" is an anonymous class, not a class named "extends".
+		{Kind: "class", Regex: javascriptClass, Group: 2, Reject: "extends"},
+		{Kind: "binding", Regex: bindingStartRegexp, Group: 1, Read: readBinding},
+		// A class expression bound to a name; an anonymous default class.
+		{Kind: "class", Regex: classExpressionRegexp, Group: 3},
+		{Kind: "class", Regex: defaultClassRegexp, Group: 1, FixedName: "default", EndGroup: 1},
+	}
+}
+
+// extractSymbolsMasked reads declarations from text already masked; brackets
+// is the bracket partner table of masked (JavaScript and TypeScript), made
+// once per file and shared with members and calls.
+func extractSymbolsMasked(text, masked, language string, lines []int, includeRanges bool, brackets []int) []any {
 	var values []any
 	switch language {
 	case "javascript", "typescript":
-		values = enrichSymbols(text, masked, language, regexSymbols(masked, lines, []symbolPattern{
-			{Kind: "function", Regex: javascriptFunction, Group: 4},
-			// "class extends B" is an anonymous class, not a class named "extends".
-			{Kind: "class", Regex: javascriptClass, Group: 2, Reject: "extends"},
-			{Kind: "binding", Regex: javascriptBinding, Group: 3},
-			// A class expression bound to a name; an anonymous default class.
-			{Kind: "class", Regex: classExpressionRegexp, Group: 3},
-			{Kind: "class", Regex: defaultClassRegexp, Group: 1, FixedName: "default", EndGroup: 1},
-		}, analysisSymbolLimit), lines, includeRanges)
+		values = enrichSymbols(text, masked, language, regexSymbols(masked, lines, javascriptSymbolPatterns(text, masked, brackets), analysisSymbolLimit), lines, includeRanges, brackets)
 	case "python":
 		values = enrichSymbols(text, masked, language, regexSymbols(masked, lines, []symbolPattern{
 			{Kind: "function", Regex: pythonFunction, Group: 2},
 			{Kind: "class", Regex: pythonClass, Group: 1},
-		}, analysisSymbolLimit), lines, includeRanges)
+		}, analysisSymbolLimit), lines, includeRanges, nil)
 	case "markdown":
-		values = enrichSymbols(text, text, language, regexSymbols(text, lines, []symbolPattern{{Kind: "heading", Regex: markdownHeading, Group: 1}}, analysisSymbolLimit), lines, includeRanges)
+		values = enrichSymbols(text, text, language, regexSymbols(text, lines, []symbolPattern{{Kind: "heading", Regex: markdownHeading, Group: 1}}, analysisSymbolLimit), lines, includeRanges, nil)
 	default:
 		return []any{}
 	}
@@ -939,12 +1010,16 @@ func extractCalls(text, language string, lines []int) []any {
 		"class": true, "def": true, "with": true, "assert": true, "lambda": true,
 	}
 	masked := maskNonCode(text, language)
-	symbols := extractSymbolsInternal(text, language, lines, true)
+	var brackets []int
+	if language != "python" {
+		brackets = bracketPartners(masked)
+	}
+	symbols := extractSymbolsMasked(text, masked, language, lines, true, brackets)
 	// A method definition ("name(...) {" in a class body or object literal) is not a call.
 	// Neither is a TypeScript signature without a body in a class or interface.
 	definitions := map[int]bool{}
 	if language != "python" {
-		for _, site := range methodDefinitionSites(masked, text) {
+		for _, site := range methodDefinitionSites(masked, text, brackets) {
 			definitions[site.nameIndex] = true
 		}
 		classBodyOpens := []int{}
@@ -953,7 +1028,7 @@ func extractCalls(text, language string, lines []int) []any {
 				classBodyOpens = append(classBodyOpens, open)
 			}
 		}
-		for _, site := range signatureSites(masked, uniqueSorted(classBodyOpens)) {
+		for _, site := range signatureSites(masked, uniqueSorted(classBodyOpens), brackets) {
 			definitions[site.nameIndex] = true
 		}
 	}
