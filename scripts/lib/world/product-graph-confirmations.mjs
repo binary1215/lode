@@ -203,6 +203,52 @@ export function confirmationRecords({ projectId, by, rationale = null, graph, it
   return { records: written, unchanged };
 }
 
+// The last name segment of a code ID, without an occurrence suffix "~N".
+const codeFileAndName = (id) => {
+  const hash = String(id).indexOf("#");
+  if (hash < 0) return null;
+  const name = id.slice(hash + 1);
+  return { file: id.slice(0, hash), last: name.slice(name.lastIndexOf(".") + 1).replace(/~\d+$/, "") };
+};
+
+// Source analysis 0.3.4 renames functions nested in a function it used to
+// misread, so a 화면→코드 row edited to the new ID has no record under its
+// key. For such a row (it would be neverChecked), the current records of
+// rows with the same document, type and from, written under another reader,
+// whose `to` no longer resolves, is in the same file with the same last name
+// segment, and is not the key of any current item. Each record serves at most
+// one row: one claimed by two rows is a candidate for both, never a match.
+// Returns row key → [{ record, item }]. Derived only; nothing is written.
+function renamedRowMatches({ items, latest, nodes, readerNow }) {
+  const currentKeys = new Set(items.map((item) => productGraphCheckItemKey(item)));
+  const old = [...latest.entries()].filter(
+    ([key, { record, item }]) =>
+      item.kind === "documentRow" && item.type === "화면→코드" && readerKey(record.reader) !== readerNow && !nodes.has(item.to) && !currentKeys.has(key),
+  );
+  const matches = new Map();
+  const claims = new Map();
+  for (const item of items) {
+    if (item.kind !== "documentRow" || item.type !== "화면→코드" || latest.has(productGraphCheckItemKey(item))) continue;
+    const wanted = codeFileAndName(item.to);
+    if (!wanted) continue;
+    const found = old.filter(([, { item: checked }]) => {
+      if (checked.document !== item.document || checked.from !== item.from) return false;
+      const then = codeFileAndName(checked.to);
+      return then && then.file === wanted.file && then.last === wanted.last;
+    });
+    if (!found.length) continue;
+    matches.set(productGraphCheckItemKey(item), found);
+    for (const [key] of found) claims.set(key, (claims.get(key) || 0) + 1);
+  }
+  const result = new Map();
+  for (const [key, found] of matches) {
+    const candidates = found.map(([, entry]) => entry).sort((a, b) => compare(a.item.to, b.item.to));
+    // A record claimed by two rows matches neither: both list it as a candidate.
+    result.set(key, { candidates, unique: found.length === 1 && claims.get(found[0][0]) === 1 });
+  }
+  return result;
+}
+
 const describe = (item) =>
   item.kind === "meaning"
     ? { kind: "meaning", id: item.id, at: item.at }
@@ -231,11 +277,25 @@ export function confirmationStatus({ graph, meaningDocument, documents, records,
     textChanged: [],
     otherReader: [],
   };
-  for (const item of checkableItems({ graph, meaningDocument, documents })) {
+  const items = checkableItems({ graph, meaningDocument, documents });
+  const renamedMatch = renamedRowMatches({ items, latest, nodes, readerNow });
+  for (const item of items) {
     result.counts.items += 1;
     const found = latest.get(productGraphCheckItemKey(item));
     if (!found) {
-      result.neverChecked.push(describe(item));
+      const match = renamedMatch.get(productGraphCheckItemKey(item));
+      if (match?.unique) {
+        // Matched by name, not by key: read differently, check again. Never current.
+        const { record, item: checked } = match.candidates[0];
+        result.otherReader.push({
+          ...describe(item),
+          by: record.by,
+          checkedAt: record.checkedAt,
+          checkId: record.checkId,
+          matchedByName: { to: checked.to, note: `이름으로 맞춘 기록: 예전 ID ${checked.to}(같은 키가 아니다)` },
+        });
+      } else
+        result.neverChecked.push(match ? { ...describe(item), renamedCandidates: match.candidates.map(({ item: checked }) => checked.to) } : describe(item));
       continue;
     }
     const { record, item: checked } = found;

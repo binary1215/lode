@@ -1704,6 +1704,9 @@ export const productGraphWalk = (() => {
       let state = CHECK_WORDS[key];
       if (key === "changedSinceCheck") state += `: ${item.nodes.map((node) => `${node.id} (${CHECK_NODE_WORDS[node.change] || node.change})`).join(", ")}`;
       if (key === "textChanged") state = item.kind === "meaning" ? "확인 뒤 뜻 줄이 바뀜" : "확인 뒤 문서가 바뀜";
+      // A record matched by name after the 0.3.4 reading renamed the code (not the same key).
+      if (item.matchedByName) state += ` (${item.matchedByName.note})`;
+      if (item.renamedCandidates?.length) state += ` (이름으로 맞출 수 있는 예전 기록이 여럿: ${item.renamedCandidates.join(", ")})`;
       const target = item.kind === "meaning" ? item.id : item.type === "기능→화면요소" ? item.from : item.to;
       return { text: `${what} — ${state}${who}`, nodeId: target };
     });

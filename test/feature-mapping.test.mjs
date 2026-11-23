@@ -1254,3 +1254,59 @@ test("concurrent mapping review and start calls share one target/decision public
     );
   }
 });
+
+test("an approved mapping whose Symbol ID changes under source analysis 0.3.4 is reported stale, never deleted", async (t) => {
+  const { root } = initializedProject();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourcePath = path.join(root, "src", "message-delivery.mjs");
+  // The 0.3.3 reading gave format no container: a function nested in one whose
+  // parameter list holds a "{" was read at file level. Here format starts there.
+  fs.writeFileSync(sourcePath, "export function deliverMessage(message) { return format(message); }\nfunction format(text) { return text; }\n");
+  await buildWorldModel({ root });
+  const world = await inspectWorldModel({ root });
+  const graph = world.snapshot.temporalProvenanceGraph;
+  const symbol = graph.nodes.find((node) => node.kind === "Symbol" && node.qualifiedName === "format");
+  const feature = graph.nodes.find((node) => node.kind === "Feature" && node.key === "message-send");
+  assert.ok(symbol, "the Symbol format exists");
+  const started = await startFeatureMapping({
+    root,
+    semanticProposal: {
+      schemaVersion: 1,
+      sourceSnapshotId: graph.sourceSnapshotId,
+      productModelId: world.snapshot.productModel.productModelId,
+      candidates: [
+        {
+          relationshipType: "IMPLEMENTS",
+          sourceNodeId: symbol.nodeId,
+          productNodeId: feature.nodeId,
+          explanation: "Synthetic fixture: format implements the Feature.",
+          confidence: 0.9,
+        },
+      ],
+    },
+  });
+  await reviewFeatureMapping({ root, candidateSetId: started.candidateSet.candidateSetId, disposition: "accept-all", rationale: "Synthetic fixture review." });
+  const reviewed = async () =>
+    (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph.nodes.filter(
+      (node) => node.kind === "ReviewedRelationship" && node.relationshipType === "IMPLEMENTS" && node.fromNodeId === symbol.nodeId,
+    );
+  assert.equal((await reviewed())[0].projectionStatus, "current");
+
+  // The 0.3.4 reading: format is now deliverMessage.format, a new Symbol ID.
+  fs.writeFileSync(
+    sourcePath,
+    "export function deliverMessage(message, options = {}) {\n  function format(text) { return text; }\n  return format(message);\n}\n",
+  );
+  await refreshWorldModel({ root });
+  const after = (await inspectWorldModel({ root })).snapshot.temporalProvenanceGraph;
+  assert.ok(after.nodes.some((node) => node.kind === "Symbol" && node.qualifiedName === "deliverMessage.format"));
+  const stale = await reviewed();
+  assert.equal(stale.length, 1, "the approved mapping is kept");
+  assert.equal(stale[0].endpointStatus, "missing");
+  assert.equal(stale[0].projectionStatus, "stale-endpoint");
+  const diagnostics = (await inspectFeatureMapping({ root })).relationshipDiagnostics;
+  assert.equal(diagnostics.reviewedCount, 1);
+  assert.equal(diagnostics.missingEndpointCount, 1);
+  assert.equal(diagnostics.projectionCurrentCount, 0);
+  assert.equal(diagnostics.productCoverage.featureCoverage.find((item) => item.featureKey === "message-send").mappingStatus, "historical-or-stale");
+});

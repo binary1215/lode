@@ -159,7 +159,7 @@ Source analysis 0.3.4 reads a JavaScript or TypeScript function's body after its
 - A function nested in such a function now carries its container's name (`file#inner` becomes `file#outer.inner`). Against a baseline read the old way, such a node is counted under "읽는 방식이 달라져 이름이 바뀐 코드 N개" and left out of 신규 and 사라짐; `changes.readerChanged.renamed` lists the pairs.
 - A rule (`입구`, `대상`, `선언`) or a 화면→코드 row that names the old ID no longer resolves, and Lode does not resolve it silently. Its issue line names the declaration in that file with the same last name segment ("이름이 바뀜: `file#outer.inner`"), or lists the candidates when there are several. Edit the rule or the row to the new ID.
 - An entry named only because a dispatcher's range used to end on its first line can go: the walk from the dispatcher now reaches the steps after it.
-- Confirmation records show "다른 방식으로 읽은 때 확인함" until they are confirmed again. A 화면→코드 row edited to a new ID has no record yet.
+- Confirmation records show "다른 방식으로 읽은 때 확인함" until they are confirmed again. A 화면→코드 row edited to a new ID has no record under its own key: when exactly one record of the old reading names the same document, row type and screen with an old ID that no longer resolves, in the same file and with the same last name segment, the row shows as "다른 방식으로 읽은 때 확인함" with that old ID, marked as a match by name (`matchedByName`); with several such records it stays 확인한 적 없음 and lists them (`renamedCandidates`). Such a match never counts as checked, and nothing is written.
 - A stored repository scan read by 0.3.3 is still read, and its files are scanned again.
 
 After reviewing the list, run `product-graph-baseline` as above.
