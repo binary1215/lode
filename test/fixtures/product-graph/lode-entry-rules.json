@@ -5,20 +5,20 @@
     {
       "종류": "tool",
       "판단": true,
-      "설명": "Lode MCP tool: the name of an operation registry row (the row's own name, not the nested tool definition). A tool call enters through the MCP dispatcher (dispatch and the two steps after it, named apart because the scan gives dispatch and dispatchSessionRequest a one-line range).",
+      "설명": "Lode MCP tool: the name of an operation registry row (the row's own name, not the nested tool definition). A tool call enters through the MCP dispatcher (dispatch); the walk from it reaches the steps after it.",
       "파일": ["scripts/lib/session/operation-registry.mjs"],
       "패턴": "^ {4}name: \"(lode_[a-z0-9_]+)\",$",
       "처리 코드": "항목",
-      "입구": ["scripts/mcp-server.mjs#dispatch", "scripts/mcp-server.mjs#dispatchSessionRequest", "scripts/mcp-server.mjs#dispatchSpelledRequest"]
+      "입구": ["scripts/mcp-server.mjs#dispatch"]
     },
     {
       "종류": "cli",
       "판단": true,
-      "설명": "Lode CLI command: the command of an operation registry row's cli block (not a command named inside a result). A command enters through the CLI dispatcher (runCommand and runSpelledCommand, named apart because the scan gives runCommand a one-line range).",
+      "설명": "Lode CLI command: the command of an operation registry row's cli block (not a command named inside a result). A command enters through the CLI dispatcher (runCommand); the walk from it reaches the steps after it.",
       "파일": ["scripts/lib/session/operation-registry.mjs"],
       "패턴": "^ {4}cli: \\{ command: \"([a-z0-9-]+)\"|^ {6}command: \"([a-z0-9-]+)\",$",
       "처리 코드": "항목",
-      "입구": ["scripts/lode.mjs#runCommand", "scripts/lode.mjs#runSpelledCommand"]
+      "입구": ["scripts/lode.mjs#runCommand"]
     },
     {
       "종류": "cli",
@@ -27,7 +27,7 @@
       "파일": ["scripts/lib/session/operation-registry.mjs"],
       "패턴": "(?<=^ {6}aliases: \\[[^\\]]*)\"([^\"]+)\"",
       "처리 코드": "항목",
-      "입구": ["scripts/lode.mjs#runCommand", "scripts/lode.mjs#runSpelledCommand"]
+      "입구": ["scripts/lode.mjs#runCommand"]
     }
   ]
 }
