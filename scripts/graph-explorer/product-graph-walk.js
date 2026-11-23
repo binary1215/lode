@@ -1648,6 +1648,10 @@ export const productGraphWalk = (() => {
     // What the reader alone changed (bundle after beta.133, section 3).
     if (changes.readerChanged) {
       lines.push(`- 읽는 방식이 달라져 닿는 범위가 달라진 기능 ${changes.readerChanged.reach.length}개 (그 코드의 파일이 기준과 같다. 닿는 코드가 바뀜과 다시 볼 것에 넣지 않는다)`);
+      if (changes.readerChanged.renamed?.length)
+        lines.push(
+          `- 읽는 방식이 달라져 이름이 바뀐 코드 ${changes.readerChanged.renamed.length}개 (기준과 같은 파일, 같은 첫 줄, 같은 마지막 이름. 신규와 사라짐에 넣지 않는다)`,
+        );
       if (changes.readerChanged.newNodes.length)
         lines.push(`- 읽는 방식이 달라져 새로 생긴 노드 ${changes.readerChanged.newNodes.length}개 (${changes.readerChanged.newNodeTypes.join(", ")}. 신규로 세지 않는다)`);
     }

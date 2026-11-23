@@ -50,7 +50,7 @@ import {
   parsePolicyFile,
   parseScreenDocument,
 } from "./product-graph-documents.mjs";
-import { assertUniqueIds, extractProductGraphCode, productGraphCodeFiles } from "./product-graph-extraction.mjs";
+import { assertUniqueIds, extractProductGraphCode, productGraphCodeFiles, renamedCodeCandidates, renamedCodeNote } from "./product-graph-extraction.mjs";
 import {
   PRODUCT_GRAPH_BASELINE_FILE,
   PRODUCT_GRAPH_RETAINED_CONTENT_FILE,
@@ -630,7 +630,11 @@ function compute({ extraction, loaded, includeEstimates }) {
       cite("공통 영역으로 적은 화면", area.id, { path: screen.path, line: area.line }, screenIds.has(area.id), allScreenIds.has(area.id), screen);
     for (const draw of screen.parsed.drawsCode) {
       const ref = draw.ref.replace(/:[0-9]+$/, "");
+      const before = missing.length;
       cite("그리는 코드로 적은 코드", draw.ref, { path: screen.path, line: draw.line }, codeIds.has(ref), false, screen);
+      // A name the 0.3.4 reading changed: the candidates, never resolved silently.
+      const candidates = missing.length > before ? renamedCodeCandidates(ref, codeIds) : [];
+      if (candidates.length) Object.assign(missing.at(-1), { note: renamedCodeNote(candidates), renamed: candidates });
     }
     for (const policy of screen.parsed.policies)
       if (policyDocument)
