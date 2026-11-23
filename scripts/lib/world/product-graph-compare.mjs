@@ -656,7 +656,8 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
           readerChanged: {
             reach: readerReach.sort(compare),
             newNodes: readerNewNodes.sort(compare),
-            newNodeTypes: [...readerNewTypes].sort(compare),
+            // Only the types that have a new node here (코드 is counted in newCode).
+            newNodeTypes: [...new Set(readerNewNodes.map((id) => afterIx.nodes.get(id)?.type).filter((type) => type && type !== "코드"))].sort(compare),
             newCode: readerNewCode,
             renamed,
           },

@@ -60,7 +60,7 @@ test("a node the reader renamed is counted apart, not as 신규 or 사라짐", (
   assert.equal(changes.counts.removed, 0);
   assert.deepEqual(changes.readerChanged.newNodes, ["src/tools.js#helper"]);
   assert.equal(changes.readerChanged.newCode, 1);
-  assert.match(second.text, /\n- 읽는 방식이 달라져 새로 생긴 노드 1개 \(DB, 데이터, 외부 연결; 기준과 글이 같은 파일의 코드 1개\. 신규로 세지 않는다\)\n/);
+  assert.match(second.text, /\n- 읽는 방식이 달라져 새로 생긴 노드 1개 \(기준과 글이 같은 파일의 코드 1개\. 신규로 세지 않는다\)\n/);
   assert.deepEqual(changes.reachChanged, []);
   assert.equal(changes.counts.reviewAgain, 0);
   assert.match(second.text, /\n- 읽는 방식이 달라져 이름이 바뀐 코드 1개 \(기준과 같은 파일, 같은 첫 줄, 같은 마지막 이름\. 신규와 사라짐에 넣지 않는다\)\n/);
