@@ -1,0 +1,166 @@
+// Source analysis 0.3.4: a function's body is found after its parameter list
+// closes, TypeScript return types are read past type literals, and a
+// declaration without a body is one statement (synthetic sources only).
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { compareExactSourceVersions } from "../scripts/lib/session/context-source-delta.mjs";
+import {
+  buildRepositoryScanInput,
+  executeIncrementalRepositoryScan,
+  scanRepositoryReference,
+  validateRepositoryScanResult,
+} from "../scripts/lib/world/repository-scan.mjs";
+import { analyzeSourceFile, extractSemanticSourceFacts, extractSourceSymbols, SOURCE_ANALYSIS_VERSION } from "../scripts/lib/world/source-analysis.mjs";
+
+const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const testParent = process.env.HEAD_AGENT_TEST_TMP || os.tmpdir();
+
+function read(lines, language = "javascript") {
+  const text = `${lines.join("\n")}\n`;
+  return {
+    symbols: extractSourceSymbols(text, language).map((s) => `${s.kind} ${s.qualifiedName} ${s.line}-${s.endLine} scope=${s.scopePath} [${s.signature}]`),
+    calls: extractSemanticSourceFacts(text, language).calls.map((c) => `${c.callee}@${c.line}<-${c.callerQualifiedName ?? ""}`),
+  };
+}
+
+test("a brace inside a parameter list is not the function's body", () => {
+  const cases = [
+    [["function f(a, options = {}) {", "  g();", "}"], ["function f 1-3 scope= [function f(a, options = {})]"], ["g@2<-f"]],
+    [["function f({ a, b }) {", "  g();", "}"], ["function f 1-3 scope= [function f({ a, b })]"], ["g@2<-f"]],
+    [["function f({ a } = {}, [b] = []) {", "  g();", "}"], ["function f 1-3 scope= [function f({ a } = {}, [b] = [])]"], ["g@2<-f"]],
+    [["function f(", "  a,", "  { b } = {},", ") {", "  g();", "}"], ["function f 1-6 scope= [function f( a, { b } = {}, )]"], ["g@5<-f"]],
+    [["async function* f({ a } = {}) {", "  yield g();", "}"], ["function f 1-3 scope= [async function* f({ a } = {})]"], ["g@2<-f"]],
+    [["export default function f(options = {}) {", "  g();", "}"], ["function f 1-3 scope= [function f(options = {})]"], ["g@2<-f"]],
+    [["const f = function ({ a }) {", "  g();", "};"], ["binding f 1-3 scope= [const f = function ({ a })]"], ["g@2<-f"]],
+    [
+      ["const f = async function inner(a = {}) {", "  g();", "};"],
+      ["binding f 1-3 scope= [const f = async function inner(a = {})]", "function f.inner 1-3 scope=f [async function inner(a = {})]"],
+      ["g@2<-f.inner"],
+    ],
+    [
+      ["function outer(options = {}) {", "  function inner() {", "    g();", "  }", "  inner();", "}"],
+      ["function outer 1-6 scope= [function outer(options = {})]", "function outer.inner 2-4 scope=outer [function inner()]"],
+      ["g@3<-outer.inner", "inner@5<-outer"],
+    ],
+  ];
+  for (const [lines, symbols, calls] of cases) assert.deepEqual(read(lines), { symbols, calls }, lines[0]);
+});
+
+test("TypeScript type parameters, return types and declarations without a body", () => {
+  const cases = [
+    [
+      ["function f<T extends { a: string }>(x: T): Promise<{ a: string }> {", "  return g();", "}"],
+      ["function f 1-3 scope= [function f<T extends { a: string }>(x: T): Promise<{ a: string }>]"],
+      ["g@2<-f"],
+    ],
+    [["function f(): { a: string } {", "  return g();", "}"], ["function f 1-3 scope= [function f(): { a: string }]"], ["g@2<-f"]],
+    [["function f(x: unknown): x is Foo {", "  return g();", "}"], ["function f 1-3 scope= [function f(x: unknown): x is Foo]"], ["g@2<-f"]],
+    [
+      ["function f(a: string): { a: string };", "function f(a: number): void;", "function f(a: any) {", "  g();", "}"],
+      ["function f 1-1 scope= [function f(a: string): { a: string };]", "function f 2-2 scope= [function f(a: number): void;]", "function f 3-5 scope= [function f(a: any)]"],
+      ["g@4<-f"],
+    ],
+    [
+      ["declare function f(): void", "function h(options = {}) {", "  g();", "}"],
+      ["function f 1-1 scope= [function f(): void]", "function h 2-4 scope= [function h(options = {})]"],
+      ["g@3<-h"],
+    ],
+    [
+      ["class C {", "  load(): Promise<{ a: string }> {", "    return g();", "  }", "  get value(): { a: string } {", "    return h();", "  }", "}"],
+      ["class C 1-8 scope= [class C]", "function C.load 2-4 scope=C [load(): Promise<{ a: string }>]", "function C.value 5-7 scope=C [get value(): { a: string }]"],
+      ["g@3<-C.load", "h@6<-C.value"],
+    ],
+  ];
+  for (const [lines, symbols, calls] of cases) assert.deepEqual(read(lines, "typescript"), { symbols, calls }, lines[0]);
+});
+
+test("arrow bindings with defaults, callback types, return types and annotations", () => {
+  const cases = [
+    ["javascript", ["const f = (a = g()) => {", "  h();", "};"], ["binding f 1-3 scope= [const f = (a = g()) =>]"], ["g@1<-f", "h@2<-f"]],
+    ["typescript", ["const f = (cb: () => void) => {", "  g();", "};"], ["binding f 1-3 scope= [const f = (cb: () => void) =>]"], ["g@2<-f"]],
+    // "async (" is read as a call of async, as before 0.3.4.
+    ["typescript", ["const f = async (a): Promise<void> => {", "  g();", "};"], ["binding f 1-3 scope= [const f = async (a): Promise<void> =>]"], ["async@1<-f", "g@2<-f"]],
+    ["typescript", ["const f: Handler = (a) => {", "  g();", "};"], ["binding f 1-3 scope= [const f: Handler = (a) =>]"], ["g@2<-f"]],
+    ["typescript", ["const f = <T,>(a: T) => a", "g();"], ["binding f 1-1 scope= [const f = <T,>(a: T) => a]"], ["g@2<-"]],
+    // An immediately invoked function keeps today's reading.
+    ["javascript", ["const m = (() => { function inner() {} })()"], ["function m.inner 1-1 scope=m [function inner()]", "binding m 1-1 scope= [const m = (() =>]"], []],
+  ];
+  for (const [language, lines, symbols, calls] of cases) assert.deepEqual(read(lines, language), { symbols, calls }, lines[0]);
+});
+
+test("a parameter list that does not close keeps the old reading and is counted", () => {
+  const text = "function broken(a = {} {\n  g();\n}\n";
+  const result = analyzeSourceFile(text, "javascript", "broken.js", { withMaskedText: true });
+  assert.equal(result.rangeFallbacks, 1);
+  assert.ok(result.bracketPartners instanceof Int32Array);
+  assert.equal(analyzeSourceFile("function fine(a = {}) {}\n", "javascript", "fine.js", { withMaskedText: true }).rangeFallbacks, 0);
+  // Not part of a stored scan.
+  assert.equal("rangeFallbacks" in analyzeSourceFile(text, "javascript", "broken.js"), false);
+});
+
+test("Lode's own dispatch reads its body and calls the session dispatcher", () => {
+  const text = fs.readFileSync(path.join(pluginRoot, "scripts", "mcp-server.mjs"), "utf8");
+  const dispatch = extractSourceSymbols(text, "javascript").find((symbol) => symbol.qualifiedName === "dispatch");
+  const close = text.split("\n").findIndex((line, index) => index >= dispatch.line && line === "}");
+  assert.equal(dispatch.endLine, close + 1);
+  assert.ok(dispatch.endLine > dispatch.line + 3);
+  const calls = extractSemanticSourceFacts(text, "javascript").calls.filter((call) => call.callerQualifiedName === "dispatch");
+  assert.ok(calls.some((call) => call.callee === "dispatchSessionRequest"));
+});
+
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonical(value[key])]),
+    );
+  return value;
+}
+
+function reidentifyScan(payload) {
+  const scanHash = crypto.createHash("sha256").update(JSON.stringify(canonical(payload))).digest("hex");
+  return { ...payload, scanId: `repository-scan-${scanHash.slice(0, 24)}`, scanHash };
+}
+
+test("a stored 0.3.3 scan is read and scanned again, not reused", async (t) => {
+  assert.equal(SOURCE_ANALYSIS_VERSION, "0.3.4");
+  fs.mkdirSync(testParent, { recursive: true });
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(testParent, "lode-scan-033-")));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "app.js"), "export function run(options = {}) {\n  return step(options);\n}\nfunction step() {}\n");
+  const current = scanRepositoryReference(buildRepositoryScanInput({ projectRoot: root }));
+  // The 0.3.3 reading of the same file: a one-line range for run.
+  const payload = structuredClone(current);
+  delete payload.scanId;
+  delete payload.scanHash;
+  payload.sourceAnalysisVersion = "0.3.3";
+  const run = payload.files[0].symbols.find((symbol) => symbol.name === "run");
+  run.endLine = 1;
+  const stored = reidentifyScan(payload);
+  assert.doesNotThrow(() => validateRepositoryScanResult(stored));
+  const { files, skipped, ...repositoryScan } = stored;
+  const rescanned = await executeIncrementalRepositoryScan({ projectRoot: root, previousSnapshot: { repositoryScan, files, skipped } });
+  assert.deepEqual(rescanned.diagnostics.reusedPaths, []);
+  assert.deepEqual(rescanned.diagnostics.analyzedPaths, ["app.js"]);
+  assert.equal(rescanned.result.sourceAnalysisVersion, "0.3.4");
+  assert.equal(rescanned.result.files[0].symbols.find((symbol) => symbol.name === "run").endLine, 3);
+});
+
+test("a change inside a body with a default object parameter is attributed to the function", () => {
+  const before = "export function f(a, options = {}) {\n  return a + 1;\n}\nexport function g() {\n  return 2;\n}\n";
+  const after = before.replace("a + 1", "a + 2");
+  const sha = (text) => crypto.createHash("sha256").update(text).digest("hex");
+  const version = (text) => ({ text, digest: sha(text), path: "src/f.mjs", projectId: "synthetic-project", basis: { kind: "synthetic-exact-version" } });
+  const result = compareExactSourceVersions(version(before), version(after), "synthetic-project");
+  const observation = (name) => result.symbols.find((item) => (item.after || item.before).qualifiedName === name);
+  assert.equal(observation("f").observation, "declaration-bytes-changed");
+  assert.deepEqual([observation("f").after.line, observation("f").after.endLine], [1, 3]);
+  assert.equal(observation("g").observation, "declaration-bytes-unchanged");
+});

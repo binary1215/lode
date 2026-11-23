@@ -1168,6 +1168,9 @@ const NOT_TOLD_APART = Object.freeze(["render", "type reference", "re-render", "
 // The shapes of framework-invoked this reading sees, and what it still does not.
 const RUN_BY_PATH_LIMITS =
   "framework-invoked는 두 모양만 읽는다: 코드의 문자열·템플릿 리터럴이 스캔한 코드 파일 하나의 경로(전체 상대 경로, 또는 / 경계에서 시작하는 그 뒷부분)로 끝나고 그 글자를 실행·적재하는 호출에 넘기는 곳(동적 import, spawn·fork·exec 같은 프로세스 시작, Worker, 언어의 실행 파일(process.execPath, sys.executable)도 함께 넘기는 호출. 경로를 만드는 join·resolve·URL과 배열·객체는 건너 본다. 공백이 있는 글자는 명령 줄이라, 그 경로는 프로그램 자체이거나 언어 실행기(node, python 같은 것) 뒤의 스크립트일 때만 센다), 그리고 이름 없이 들여오는 JS·TS import \"<상대 경로>\". 경로가 여러 파일에 맞으면 잇지 않고 센다. 경로를 상수에 담아 뒤에서 넘기는 곳, import·export·require의 경로, 주입, 데코레이터, 파일 이름으로 정하는 경로는 보지 못한다. 읽은 곳은 모두 '경로로 실행으로 읽은 곳'에 적는다.";
+// How a declaration's line range is read, and when the old reading stays (0.3.4).
+const RANGE_FALLBACK_LIMITS =
+  "함수 범위는 매개변수 목록을 짝 괄호로 닫은 뒤의 { 부터 그 짝 } 까지다. 반환 타입 안의 { 는 타입으로 읽고, ) 뒤에 { 가 없는 선언(오버로드, declare)은 한 문장 범위다. 매개변수 목록이 닫히지 않는 파일에서만 이름 뒤 첫 { 를 쓰는 예전 방식이 남는다. 구문 트리가 아니므로 범위는 줄 범위다.";
 const ENTRY_STOP_RULE =
   "닿는 범위는 처리 코드와 입구 둘 다에서 시작하고, 입구에서 걷는 길은 다른 기능의 처리 코드인 노드 앞에서 멈춘다(그 노드만. 멈춘 곳은 답마다 센다). 그래서 분배 코드가 한 기능의 처리 코드를 다른 기능들의 공통 단계로 정말 부르면 그 길은 보이지 않는다.";
 const OUTSIDE_LIMITS =
@@ -1235,6 +1238,13 @@ function limitsOf({ extraction, computed, includeEstimates, loaded, callbacks })
     // Files whose lexer mask could not be trusted: 코드만 fell back to the
     // line-local check there.
     lineLocalFallback: { count: extraction.untrustedMaskFiles.length, files: extraction.untrustedMaskFiles },
+    // Declarations whose parameter list did not close keep the old range
+    // reading (the first "{" after the name); stated even when there are none.
+    rangeFallback: {
+      count: (extraction.rangeFallbackFiles || []).reduce((sum, item) => sum + item.count, 0),
+      files: (extraction.rangeFallbackFiles || []).map((item) => item.file),
+      reading: RANGE_FALLBACK_LIMITS,
+    },
     // How rows are read when a rule takes its 처리 코드 from the table row.
     tableRows: extraction.tableRowRules ? TABLE_ROW_LIMITS : null,
     execution: "아무것도 실행하지 않았다. 문서와 코드를 비교할 뿐이고, 어느 발견도 실행 근거에 기대지 않는다.",

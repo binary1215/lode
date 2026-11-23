@@ -82,7 +82,7 @@ test("historical source producer remains readable but is reanalyzed rather than 
     assert.doesNotThrow(() => validateRepositoryScanResult(historical));
     const { files, skipped, ...repositoryScan } = historical;
     const result = await executeIncrementalRepositoryScan({ ...f.options, previousSnapshot: { files, skipped, repositoryScan } });
-    assert.equal(result.result.sourceAnalysisVersion, "0.3.3");
+    assert.equal(result.result.sourceAnalysisVersion, "0.3.4");
     assert.equal(result.diagnostics.reusedFileCount, 0); assert.equal(result.diagnostics.analyzedFileCount, files.length);
     assert.deepEqual(result.result.files, historical.files); assert.notEqual(result.result.scanId, historical.scanId);
     assert.equal(JSON.stringify(historical), original);

@@ -235,14 +235,35 @@ function boundedRangeIsolated(text, language, symbol) {
   if (!["function", "class"].includes(symbol.kind)) return false;
   const structure = commentStripped(text, language, true);
   if (structure === null || !/^\s*(?:export\s+)?(?:async\s+)?(?:function|class)\b/.test(structure)) return false;
-  const open = structure.indexOf("{");
-  if (open < 0 || structure.slice(0, open).includes("=")) return false;
-  let parens = 0;
-  for (const c of structure.slice(0, open)) {
-    if (c === "(") parens++;
-    if (c === ")") parens--;
+  let open = structure.indexOf("{");
+  if (symbol.kind === "function") {
+    // The body follows the parameter list, closed by its partner as the
+    // shared scan reads it (0.3.4): a "{" in a default or a destructured
+    // parameter is not the body. A header with "=" outside the parameter
+    // list, or a return type that may hold a type literal, stays unknown.
+    const params = structure.indexOf("(");
+    if (params < 0 || structure.slice(0, params).includes("=")) return false;
+    let close = -1;
+    for (let i = params, nesting = 0; i < structure.length; i++) {
+      if ("([{".includes(structure[i])) nesting++;
+      else if (")]}".includes(structure[i]) && --nesting === 0) {
+        close = i;
+        break;
+      }
+    }
+    if (close < 0) return false;
+    open = structure.indexOf("{", close);
+    const returnType = structure.slice(close + 1, open);
+    if (open < 0 || returnType.includes("=") || /[:|&,<([]\s*$/.test(returnType)) return false;
+  } else {
+    if (open < 0 || structure.slice(0, open).includes("=")) return false;
+    let parens = 0;
+    for (const c of structure.slice(0, open)) {
+      if (c === "(") parens++;
+      if (c === ")") parens--;
+    }
+    if (parens !== 0) return false;
   }
-  if (parens !== 0) return false;
   let depth = 0;
   for (let i = open; i < structure.length; i++) {
     if (structure[i] === "{") depth++;

@@ -1198,6 +1198,11 @@ export const productGraphWalk = (() => {
             `- lexer가 파일 끝에서 문자열·템플릿·주석 안에 있어 코드만 판정을 줄 단위로 되돌린 파일 ${limits.lineLocalFallback.count}개: ${limits.lineLocalFallback.files.slice(0, 10).join(", ")}${limits.lineLocalFallback.count > 10 ? ` 외 ${limits.lineLocalFallback.count - 10}개` : ""}.`,
           ]
         : []),
+      ...(limits.rangeFallback
+        ? [
+            `- 매개변수 목록이 닫히지 않아 함수 범위를 예전 방식(이름 뒤 첫 \`{\`)으로 읽은 선언 ${limits.rangeFallback.count}개${limits.rangeFallback.count ? `: ${limits.rangeFallback.files.slice(0, 10).join(", ")}${limits.rangeFallback.files.length > 10 ? ` 외 파일 ${limits.rangeFallback.files.length - 10}개` : ""}` : ""}. ${limits.rangeFallback.reading}`,
+          ]
+        : []),
       `- ${limits.execution}`,
       `- 문서: 승인 ${documents.approved}, 승인 뒤 바뀜 ${documents.changedAfterApproval}, 추정 ${documents.estimated}. 승인 뒤 바뀜은 승인 기록의 본문과 지금 본문이 달라 추정으로 쓴다. ${usage}`,
     ];

@@ -316,24 +316,29 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
   });
   const fileSet = new Set(codeFiles);
   const analyses = new Map();
+  // Files with declarations whose parameter list did not close: those keep the
+  // old range reading, and the count is stated in the limits block (0.3.4).
+  const rangeFallbackFiles = [];
   for (const relative of codeFiles) {
     const text = readText(sourceRoot, relative);
     if (text === null) continue;
     const language = CODE_LANGUAGES[path.posix.extname(relative).toLowerCase()];
-    const { maskedText, classBodies, ...analysis } = analyzeSourceFile(text, language, path.posix.basename(relative), {
+    const { maskedText, classBodies, bracketPartners, rangeFallbacks, ...analysis } = analyzeSourceFile(text, language, path.posix.basename(relative), {
       maxSymbols: 10_000,
       withCallIndexes: true,
       withMaskedText: true,
     });
     assignSymbolIds(relative, analysis.symbols);
     const starts = lineStarts(text);
-    const sites = language === "python" ? [] : methodDefinitionSites(maskedText, text);
+    if (rangeFallbacks) rangeFallbackFiles.push({ file: relative, count: rangeFallbacks });
+    const sites = language === "python" ? [] : methodDefinitionSites(maskedText, text, bracketPartners ?? undefined);
     const signatures =
       language === "python"
         ? []
         : signatureSites(
             maskedText,
             classBodies.map((body) => body.open),
+            bracketPartners,
           );
     const facts = language === "python" ? pythonFacts(text, maskedText, analysis.symbols, starts) : javascriptFacts(text, maskedText, sites);
     // Names a class has only as a signature without a body (abstract, overloads).
@@ -641,6 +646,7 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
   };
   return {
     analyses,
+    rangeFallbackFiles,
     nodes,
     unique,
     resolveName,
@@ -1519,6 +1525,7 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
       (a, b) => compare(a.id, b.id) || compare(a.position.path, b.position.path) || a.position.line - b.position.line,
     ),
     untrustedMaskFiles: ui.untrustedMask,
+    rangeFallbackFiles: code.rangeFallbackFiles,
     runByPath: { sites: runByPath.sites, ambiguous: runByPath.ambiguous },
     // 분기 (2.9): the handlers whose references record every line, and the
     // matches whose branch block could not be delimited.

@@ -495,12 +495,14 @@ test("exact version comparison separates f edits, unchanged g, literals, comment
   assert.equal(symbol(result, "g").observation, "declaration-bytes-unchanged"); assert.equal(symbol(result, "g").locationChanged, true);
   for (const [a, b] of [["function f(){return 1;} function g(){return 2;}", "function f(){return 3;} function g(){return 2;}"],
     ["function f(){return 1;} log(1);", "function f(){return 1;} log(2);"],
-    ["function f(x={a:1}) { return x; }", "function f(x={a:2}) { return x; }"],
     ["function f(){return /a{2}/;}", "function f(){return /a{3}/;}"],
     ["function f(){return `literal`;}", "function f(){return `changed`;}"],
     ["function f(){return 1;}\nfunction f(){return 2;}", "function f(){return 3;}\nfunction f(){return 2;}"]]) {
     result = compare(a, b); assert.equal(symbol(result, "f").observation, "unknown-boundary");
   }
+  // Source analysis 0.3.4 closes the parameter list by its partner, so a "{" in a default is not the body.
+  result = compare("function f(x={a:1}) { return x; }", "function f(x={a:2}) { return x; }");
+  assert.equal(symbol(result, "f").observation, "declaration-bytes-changed");
   result = compare("def f():\n    return 'allow'\n\ndef g():\n    return 2\n", "def f():\n    return 'block'\n\ndef g():\n    return 2\n", "src/action.py");
   assert.equal(symbol(result, "f").observation, "declaration-bytes-changed"); assert.equal(symbol(result, "g").observation, "declaration-bytes-unchanged");
   result = compare("def f():\n    return 1\n# first\ndef g():\n    return 2\n", "def f():\n    return 1\n# other\ndef g():\n    return 2\n", "src/action.py");
