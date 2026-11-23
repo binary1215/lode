@@ -107,7 +107,8 @@ export const productGraphWalk = (() => {
       ix.crossing = new Set();
       for (const list of ix.out.values()) for (const item of list) if (item.type === "경계") ix.crossing.add(`${item.from}\u0000${item.to}`);
     }
-    return !ix.crossing.has(`${edge.from}\u0000${edge.to}`);
+    // Without any 경계 edge no key needs building (reach walks many edges).
+    return !ix.crossing.size || !ix.crossing.has(`${edge.from}\u0000${edge.to}`);
   }
   // Whether an edge occurs on one of the line ranges (2.9).
   const onLines = (edge, ranges) => (edge.lines || [edge.at?.line]).some((line) => ranges.some(([from, to]) => from <= line && line <= to));
@@ -1198,6 +1199,11 @@ export const productGraphWalk = (() => {
             `- lexer가 파일 끝에서 문자열·템플릿·주석 안에 있어 코드만 판정을 줄 단위로 되돌린 파일 ${limits.lineLocalFallback.count}개: ${limits.lineLocalFallback.files.slice(0, 10).join(", ")}${limits.lineLocalFallback.count > 10 ? ` 외 ${limits.lineLocalFallback.count - 10}개` : ""}.`,
           ]
         : []),
+      ...(limits.rangeFallback
+        ? [
+            `- 매개변수 목록이 닫히지 않아 함수 범위를 예전 방식(이름 뒤 첫 \`{\`)으로 읽은 선언 ${limits.rangeFallback.count}개${limits.rangeFallback.count ? `: ${limits.rangeFallback.files.slice(0, 10).join(", ")}${limits.rangeFallback.files.length > 10 ? ` 외 파일 ${limits.rangeFallback.files.length - 10}개` : ""}` : ""}. ${limits.rangeFallback.reading}`,
+          ]
+        : []),
       `- ${limits.execution}`,
       `- 문서: 승인 ${documents.approved}, 승인 뒤 바뀜 ${documents.changedAfterApproval}, 추정 ${documents.estimated}. 승인 뒤 바뀜은 승인 기록의 본문과 지금 본문이 달라 추정으로 쓴다. ${usage}`,
     ];
@@ -1643,8 +1649,17 @@ export const productGraphWalk = (() => {
     // What the reader alone changed (bundle after beta.133, section 3).
     if (changes.readerChanged) {
       lines.push(`- 읽는 방식이 달라져 닿는 범위가 달라진 기능 ${changes.readerChanged.reach.length}개 (그 코드의 파일이 기준과 같다. 닿는 코드가 바뀜과 다시 볼 것에 넣지 않는다)`);
-      if (changes.readerChanged.newNodes.length)
-        lines.push(`- 읽는 방식이 달라져 새로 생긴 노드 ${changes.readerChanged.newNodes.length}개 (${changes.readerChanged.newNodeTypes.join(", ")}. 신규로 세지 않는다)`);
+      if (changes.readerChanged.renamed?.length)
+        lines.push(
+          `- 읽는 방식이 달라져 이름이 바뀐 코드 ${changes.readerChanged.renamed.length}개 (기준과 같은 파일, 같은 첫 줄, 같은 마지막 이름. 신규와 사라짐에 넣지 않는다)`,
+        );
+      if (changes.readerChanged.newNodes.length) {
+        const what = [
+          ...(changes.readerChanged.newNodeTypes.length ? [changes.readerChanged.newNodeTypes.join(", ")] : []),
+          ...(changes.readerChanged.newCode ? [`기준과 글이 같은 파일의 코드 ${changes.readerChanged.newCode}개`] : []),
+        ];
+        lines.push(`- 읽는 방식이 달라져 새로 생긴 노드 ${changes.readerChanged.newNodes.length}개 (${what.join("; ")}. 신규로 세지 않는다)`);
+      }
     }
     lines.push("- 노드 종류별 (ID 기준):");
     for (const group of changes.byType || [])
@@ -1695,6 +1710,9 @@ export const productGraphWalk = (() => {
       let state = CHECK_WORDS[key];
       if (key === "changedSinceCheck") state += `: ${item.nodes.map((node) => `${node.id} (${CHECK_NODE_WORDS[node.change] || node.change})`).join(", ")}`;
       if (key === "textChanged") state = item.kind === "meaning" ? "확인 뒤 뜻 줄이 바뀜" : "확인 뒤 문서가 바뀜";
+      // A record matched by name after the 0.3.4 reading renamed the code (not the same key).
+      if (item.matchedByName) state += ` (${item.matchedByName.note})`;
+      if (item.renamedCandidates?.length) state += ` (이름으로 맞출 수 있는 예전 기록이 여럿: ${item.renamedCandidates.join(", ")})`;
       const target = item.kind === "meaning" ? item.id : item.type === "기능→화면요소" ? item.from : item.to;
       return { text: `${what} — ${state}${who}`, nodeId: target };
     });

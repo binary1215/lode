@@ -23,14 +23,14 @@ func TestTrackedCorpusMatchesReviewedIdentity(t *testing.T) {
 		t.Fatal(operationFailure)
 	}
 	document := result.(map[string]any)
-	// Source analysis 0.3.3 (members, import layouts; fixtures/members-imports.mjs,
-	// members-fields.ts and imports_layout.py added) changes aggregate identity.
-	// Computed with the JS producer on this corpus.
-	if document["scanId"] != "repository-scan-741fe958f7284a0555f1683a" {
+	// Source analysis 0.3.4 (function headers read by bracket partners;
+	// fixtures/function-ranges.mjs/.ts and type-ends.mjs/.ts added) changes
+	// aggregate identity. Computed with the JS producer on this corpus.
+	if document["scanId"] != "repository-scan-66d5a397c5a3864638122edc" {
 		t.Fatalf("unexpected scan identity: %v", document["scanId"])
 	}
 	summary := document["summary"].(map[string]any)
-	if summary["fileCount"] != 14 || summary["symbolCount"].(int) < 1 || summary["bindingCount"].(int) < 1 {
+	if summary["fileCount"] != 18 || summary["symbolCount"].(int) < 1 || summary["bindingCount"].(int) < 1 {
 		t.Fatalf("unexpected scan summary: %#v", summary)
 	}
 	skipped := document["skipped"].(map[string]any)

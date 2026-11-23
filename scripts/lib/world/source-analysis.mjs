@@ -1,6 +1,6 @@
 import { codeMask, TEMPLATE_EXPRESSION_OPEN } from "./source-code-mask.mjs";
 
-export const SOURCE_ANALYSIS_VERSION = "0.3.3";
+export const SOURCE_ANALYSIS_VERSION = "0.3.4";
 
 function compareText(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
@@ -349,6 +349,207 @@ function bracketPartners(masked) {
   return partner;
 }
 
+// ---------- reading a function's header (0.3.4) ----------
+// After a function's name the header is read by bracket partners (counting
+// ( [ { together), so a "{" inside the parameter list (a default "= {}", a
+// destructured parameter) is never taken as the body.
+
+const skipBlanks = (masked, index) => {
+  while (index < masked.length && isBlank(masked[index])) index += 1;
+  return index;
+};
+
+// "<…>" starting at index (masked[index] === "<"): the index after its ">",
+// counting nested "<>" and skipping bracketed groups whole; "=>" is not a
+// closer. -1 when it does not close.
+function skipAngles(masked, brackets, index) {
+  let depth = 0;
+  for (; index < masked.length; index += 1) {
+    const character = masked[index];
+    if (character === "(" || character === "[" || character === "{") {
+      if (brackets[index] < 0) return -1;
+      index = brackets[index];
+    } else if (character === "<") depth += 1;
+    else if (character === ">" && masked[index - 1] !== "=") {
+      depth -= 1;
+      if (depth === 0) return index + 1;
+    } else if (character === ";" || character === ")" || character === "]" || character === "}") return -1;
+  }
+  return -1;
+}
+
+// Words that continue a type onto the next line when they stand before the
+// line break (a type operator written as a word).
+const TYPE_OPERATOR_WORDS = new Set(["extends", "keyof", "typeof", "is", "asserts", "infer", "readonly", "new", "unique", "in", "as", "satisfies"]);
+
+// Words that cannot stand in a type: met at depth 0 on any line, they end it
+// (a ternary's "else" branch "function () {", "class {", a statement).
+const NOT_TYPE_WORDS = new Set([
+  "function",
+  "class",
+  "async",
+  "await",
+  "return",
+  "throw",
+  "yield",
+  "delete",
+  "if",
+  "else",
+  "for",
+  "while",
+  "do",
+  "switch",
+  "case",
+  "try",
+  "catch",
+  "finally",
+  "var",
+  "let",
+  "const",
+  "export",
+  "break",
+  "continue",
+]);
+
+// A TypeScript type starting at index (after its ":"), read until what
+// follows it. Brackets and type arguments are skipped whole; a "{" after one
+// of : | & , < ( [ = ? or "=>" is a type literal. A top-level "," or ";", a
+// closing bracket, a word that cannot stand in a type (function, class,
+// return, …), or a word on a later line whose line does not end in a type
+// operator (| & : < ? = . => or a word such as extends, keyof, is) ends the
+// type: then -1. What ends it otherwise depends on until:
+// - "body" (a function's return type): the index of the body's "{"; a "="
+//   not followed by ">" gives -1.
+// - "arrow" (an arrow's return type): the index of a top-level "=>"; a "{"
+//   that is not a type literal gives -1.
+// - "assign" (a binding's annotation): the index of a top-level "=" not
+//   followed by ">"; a "{" that is not a type literal gives -1.
+function typeEnd(masked, text, brackets, index, until) {
+  let newline = false;
+  // The last token at depth 0: an operator character, "=>", a word, or the
+  // closer of a group skipped whole.
+  let previous = ":";
+  for (; index < masked.length; index += 1) {
+    const character = masked[index];
+    if (character === "\n") newline = true;
+    if (isBlank(character)) continue;
+    if (character === "(" || character === "[") {
+      if (brackets[index] < 0) return -1;
+      index = brackets[index];
+      previous = ")";
+    } else if (character === "<") {
+      const after = skipAngles(masked, brackets, index);
+      if (after < 0) return -1;
+      index = after - 1;
+      previous = ">";
+    } else if (character === "{") {
+      let before = index - 1;
+      while (before >= 0 && isBlank(text[before])) before -= 1;
+      const ahead = text[before];
+      const literal = ":|&,<([=?".includes(ahead) || (ahead === ">" && text[before - 1] === "=");
+      if (!literal) return until === "body" ? index : -1;
+      if (brackets[index] < 0) return -1;
+      index = brackets[index];
+      previous = "}";
+    } else if (character === "=") {
+      if (masked[index + 1] === ">") {
+        if (until === "arrow") return index;
+        index += 1;
+        previous = "=>";
+      } else return until === "assign" ? index : -1;
+    } else if (character === "," || character === ";" || character === ")" || character === "]" || character === "}") return -1;
+    else if (/[A-Za-z_$]/.test(character)) {
+      let end = index;
+      while (end < masked.length && /[\w$]/.test(masked[end])) end += 1;
+      const word = masked.slice(index, end);
+      if (NOT_TYPE_WORDS.has(word)) return -1;
+      if (newline && !"|&:<?=.".includes(previous) && previous !== "=>" && !TYPE_OPERATOR_WORDS.has(previous)) return -1;
+      newline = false;
+      previous = word;
+      index = end - 1;
+    } else {
+      newline = false;
+      previous = character;
+    }
+  }
+  return -1;
+}
+
+// The header after a function's name (index just after the name):
+// { status: "body", open } | { status: "none" } | { status: "unclosed" }.
+function functionHeader(masked, text, brackets, index) {
+  index = skipBlanks(masked, index);
+  if (masked[index] === "<") {
+    index = skipAngles(masked, brackets, index);
+    if (index < 0) return { status: "unclosed" };
+    index = skipBlanks(masked, index);
+  }
+  if (masked[index] !== "(" || brackets[index] < 0) return { status: "unclosed" };
+  let after = skipBlanks(masked, brackets[index] + 1);
+  if (masked[after] === "{") return { status: "body", open: after };
+  if (masked[after] === ":") {
+    const open = typeEnd(masked, text, brackets, after + 1, "body");
+    return open >= 0 ? { status: "body", open } : { status: "none" };
+  }
+  return { status: "none" };
+}
+
+// A binding that may hold a function: "const name" followed by ":" or "=".
+const BINDING_START = /\b(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)(?=\s*[:=](?![=>]))/g;
+
+// The value of a binding (index just after its name): a function expression
+// ({ kind: "function", header }), an arrow ({ kind: "arrow", arrowEnd } just
+// after "=>"), { kind: "unclosed" } when its parameter list does not close, or
+// { kind: "other" }. Reads "[: Type] = [async] [<T>] (params) [: R] =>",
+// "= [async] param =>" and "= [async] function [*] [inner] (…)".
+function bindingValue(masked, text, brackets, index) {
+  index = skipBlanks(masked, index);
+  if (masked[index] === ":") {
+    // A type annotation runs to its own "=" (not part of "=>"). An annotation
+    // without an initializer never borrows a later "=": a top-level "," or a
+    // statement on the next line ends it.
+    index = typeEnd(masked, text, brackets, index + 1, "assign");
+    if (index < 0) return { kind: "other" };
+  }
+  if (masked[index] !== "=" || masked[index + 1] === "=" || masked[index + 1] === ">") return { kind: "other" };
+  index = skipBlanks(masked, index + 1);
+  const word = (at) => /^[A-Za-z_$][\w$]*/.exec(masked.slice(at, at + 64))?.[0] || "";
+  if (word(index) === "async" && /[\s(<]/.test(masked[index + 5] || "")) index = skipBlanks(masked, index + 5);
+  if (word(index) === "function") {
+    let after = skipBlanks(masked, index + 8);
+    if (masked[after] === "*") after = skipBlanks(masked, after + 1);
+    const inner = word(after);
+    if (inner) after += inner.length;
+    const header = functionHeader(masked, text, brackets, after);
+    return header.status === "unclosed" ? { kind: "unclosed" } : { kind: "function", header };
+  }
+  if (masked[index] === "<") {
+    index = skipAngles(masked, brackets, index);
+    if (index < 0) return { kind: "other" };
+    index = skipBlanks(masked, index);
+  }
+  if (masked[index] === "(") {
+    if (brackets[index] < 0) return { kind: "unclosed" };
+    let after = skipBlanks(masked, brackets[index] + 1);
+    if (masked[after] === ":") {
+      after = typeEnd(masked, text, brackets, after + 1, "arrow");
+      if (after < 0) return { kind: "other" };
+    }
+    return masked[after] === "=" && masked[after + 1] === ">" ? { kind: "arrow", arrowEnd: after + 2 } : { kind: "other" };
+  }
+  const parameter = word(index);
+  if (parameter) {
+    const after = skipBlanks(masked, index + parameter.length);
+    if (masked[after] === "=" && masked[after + 1] === ">") return { kind: "arrow", arrowEnd: after + 2 };
+  }
+  return { kind: "other" };
+}
+
+// The bracket partner table of a file, made once per analysis.
+function partnersOf(context, masked) {
+  return (context.brackets ??= bracketPartners(masked));
+}
+
 // Partner of every "{" counting braces only (as matchingBrace does), or -1.
 function bracePartners(masked) {
   const partner = new Int32Array(masked.length).fill(-1);
@@ -380,9 +581,20 @@ function precededByFunction(masked, index) {
   return masked.slice(cursor + 1, end) === "function" && !(cursor >= 0 && /[\w$.]/.test(masked[cursor]));
 }
 
-export function methodDefinitionSites(masked, text) {
+// Whether everything from index to end (exclusive) is code in the original
+// text too, outside bracket groups that close before end (a return type's
+// import("./types") holds a string; a template's blanked text at the top
+// level, as in "`${f()} ${ {a} }`", still does not count as code).
+function codeBetween(masked, text, brackets, index, end) {
+  for (; index < end; index += 1) {
+    if ((masked[index] === "(" || masked[index] === "[") && brackets[index] > index && brackets[index] < end) index = brackets[index];
+    else if (masked[index] !== text[index]) return false;
+  }
+  return true;
+}
+
+export function methodDefinitionSites(masked, text, brackets = bracketPartners(masked)) {
   const sites = [];
-  const brackets = bracketPartners(masked);
   const braces = bracePartners(masked);
   for (const match of masked.matchAll(/(?<![\w$.@#])(#?)([A-Za-z_$][\w$]*)(?:\s*<[^<>()\n]*>)?\s*\(/g)) {
     const startIndex = match.index;
@@ -394,13 +606,11 @@ export function methodDefinitionSites(masked, text) {
     let after = close + 1;
     while (isBlank(masked[after])) after += 1;
     if (masked[after] === ":") {
-      // A TypeScript return type: "): Type {".
-      after += 1;
-      while (isBlank(masked[after])) after += 1;
-      if (!masked[after] || "{};=".includes(masked[after])) continue;
-      while (after < masked.length && !"{};=(),".includes(masked[after])) after += 1;
+      // A TypeScript return type: "): Type {", read as a function's (0.3.4).
+      after = typeEnd(masked, text, brackets, after + 1, "body");
+      if (after < 0) continue;
     }
-    if (masked[after] !== "{" || masked.slice(close + 1, after) !== text.slice(close + 1, after)) continue;
+    if (masked[after] !== "{" || !codeBetween(masked, text, brackets, close + 1, after)) continue;
     const bodyClose = braces[after];
     if (bodyClose < 0) continue;
     sites.push({ nameIndex: startIndex + match[1].length, startIndex, name: match[1] + match[2], open: after, close: bodyClose });
@@ -420,11 +630,11 @@ function startsMember(masked, index) {
 // ("abstract render(): void;", "run(): void;", overloads). They are neither
 // calls nor declarations. Returns { nameIndex, name, owner } in source order;
 // owner is the body's "{".
-export function signatureSites(masked, classBodyOpens) {
+export function signatureSites(masked, classBodyOpens, brackets = null) {
   const opens = new Set(classBodyOpens);
   for (const match of masked.matchAll(/\binterface\s+[A-Za-z_$][\w$]*[^{;]*\{/g)) opens.add(match.index + match[0].length - 1);
   if (!opens.size) return [];
-  const brackets = bracketPartners(masked);
+  brackets ??= bracketPartners(masked);
   const candidates = [];
   for (const match of masked.matchAll(/(?<![\w$.@#])(#?)([A-Za-z_$][\w$]*)\s*\??\s*(?:<[^<>()\n]*>)?\s*\(/g)) {
     if (!match[1] && NOT_METHOD_NAMES.has(match[2])) continue;
@@ -636,20 +846,54 @@ function javascriptDeclarations(text, masked, maxSymbols, includeRanges = false,
     ["class", /\bexport\s+default\s+(class)\b(?=\s*(?:\{|extends\b))/g, "default"],
   ];
   const declarations = [];
+  const brackets = partnersOf(context, masked);
+  // Declarations that kept the old reading because their parameter list did not close (2.6).
+  context.rangeFallbacks ??= 0;
   // Body "{" of each class declaration, by the declaration's start.
   const classOpens = new Map();
-  for (const [kind, expression, fixedName] of patterns)
-    for (const match of masked.matchAll(expression)) {
+  // The old reading of a binding, by its start: kept for a value that is not
+  // an arrow by the new reading (an immediately invoked function stays as it was read).
+  const oldBindings = new Map([...masked.matchAll(patterns[2][1])].map((match) => [match.index || 0, match]));
+  const seenBindings = new Set();
+  for (const [kind, rawExpression, fixedName] of patterns) {
+    const expression = kind === "binding" ? BINDING_START : rawExpression;
+    for (const rawMatch of masked.matchAll(expression)) {
+      const match = rawMatch;
       if (fixedName) match[1] = fixedName;
       const startIndex = match.index || 0;
-      const matchEnd = startIndex + match[0].length;
-      const lineEnd = masked.indexOf("\n", matchEnd) < 0 ? masked.length : masked.indexOf("\n", matchEnd);
+      let matchEnd = startIndex + match[0].length;
       let boundedOpen = -1;
-      if (kind === "binding" && match[0].includes("=>")) {
-        let bodyStart = matchEnd;
-        while (/\s/.test(masked[bodyStart] || "")) bodyStart += 1;
-        if (masked[bodyStart] === "{") boundedOpen = bodyStart;
-      } else {
+      let header = null;
+      if (kind === "function") header = functionHeader(masked, text, brackets, matchEnd);
+      else if (kind === "binding") {
+        const value = bindingValue(masked, text, brackets, matchEnd);
+        if (value.kind === "function") header = value.header;
+        else if (value.kind === "arrow") {
+          matchEnd = value.arrowEnd;
+          const bodyStart = skipBlanks(masked, matchEnd);
+          if (masked[bodyStart] === "{") boundedOpen = bodyStart;
+          header = { status: "arrow" };
+        } else {
+          // Not a function value by the new reading: the old reading, if it had one.
+          const old = oldBindings.get(startIndex);
+          if (!old) continue;
+          if (value.kind === "unclosed") context.rangeFallbacks += 1;
+          matchEnd = startIndex + old[0].length;
+          if (old[0].includes("=>")) {
+            const bodyStart = skipBlanks(masked, matchEnd);
+            if (masked[bodyStart] === "{") boundedOpen = bodyStart;
+            header = { status: "arrow" };
+          }
+        }
+        if (seenBindings.has(startIndex)) continue;
+        seenBindings.add(startIndex);
+      }
+      const lineEnd = masked.indexOf("\n", matchEnd) < 0 ? masked.length : masked.indexOf("\n", matchEnd);
+      if (header?.status === "body") boundedOpen = header.open;
+      else if (header?.status === "none") boundedOpen = -1;
+      else if (header?.status !== "arrow") {
+        // The old reading: a class, or a function whose parameter list did not close.
+        if (header?.status === "unclosed") context.rangeFallbacks += 1;
         const openIndex = masked.indexOf("{", matchEnd);
         boundedOpen = openIndex >= 0 && openIndex <= lineEnd + 500 ? openIndex : -1;
       }
@@ -671,6 +915,7 @@ function javascriptDeclarations(text, masked, maxSymbols, includeRanges = false,
         endIndex: closeIndex >= 0 ? closeIndex + 1 : statementEnd,
       });
     }
+  }
   declarations.sort((left, right) => left.startIndex - right.startIndex);
   let active = [],
     sameStart = [],
@@ -720,7 +965,7 @@ function markdownDeclarations(text, maxSymbols, context) {
 }
 
 function methodSites(context, masked) {
-  return (context.methodSites ??= methodDefinitionSites(masked, context.text));
+  return (context.methodSites ??= methodDefinitionSites(masked, context.text, partnersOf(context, masked)));
 }
 
 function maskedText(context) {
@@ -898,7 +1143,7 @@ function extractCalls(text, language, context = analysisContext(text, language))
       ? null
       : new Set([
           ...methodSites(context, masked).map((site) => site.nameIndex),
-          ...signatureSites(masked, context.classBodyOpens || []).map((site) => site.nameIndex),
+          ...signatureSites(masked, context.classBodyOpens || [], partnersOf(context, masked)).map((site) => site.nameIndex),
         ]);
   const calls = [];
   for (const match of masked.matchAll(/\b([A-Za-z_$][\w$]*(?:\.#?[A-Za-z_$][\w$]*)?)\s*\(/g)) {
@@ -954,6 +1199,11 @@ export function analyzeSourceFile(
   if (withMaskedText) {
     result.maskedText = maskedText(context);
     result.classBodies = context.classBodies || [];
+    // The bracket partner table the declaration scan used (JavaScript and
+    // TypeScript), so in-memory readers do not build it again, and the
+    // declarations that kept the old range reading (0.3.4).
+    result.bracketPartners = context.brackets || null;
+    result.rangeFallbacks = context.rangeFallbacks || 0;
   }
   return result;
 }

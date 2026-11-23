@@ -1065,11 +1065,11 @@ test("section 3: against a version-1 baseline, reader-caused reach differences a
   assert.equal(changes.moved.reader, true);
   // cli:start now reaches format (a value use) and format reads data:env:SUFFIX: both from the reader.
   assert.deepEqual(changes.reachChanged, []);
-  assert.deepEqual(changes.readerChanged, { reach: ["cli:start"], newNodes: ["data:env:SUFFIX"], newNodeTypes: ["DB", "데이터", "외부 연결"] });
+  assert.deepEqual(changes.readerChanged, { reach: ["cli:start"], newNodes: ["data:env:SUFFIX"], newNodeTypes: ["데이터"], newCode: 0, renamed: [] });
   assert.equal(changes.counts.added, 0);
   assert.deepEqual(changes.reviewAgain.meaningLines, []);
   assert.equal(changes.counts.reviewAgain, 0);
-  assert.match(first.text, /\n- 읽는 방식이 달라져 닿는 범위가 달라진 기능 1개 \(그 코드의 파일이 기준과 같다\. 닿는 코드가 바뀜과 다시 볼 것에 넣지 않는다\)\n- 읽는 방식이 달라져 새로 생긴 노드 1개 \(DB, 데이터, 외부 연결\. 신규로 세지 않는다\)\n/);
+  assert.match(first.text, /\n- 읽는 방식이 달라져 닿는 범위가 달라진 기능 1개 \(그 코드의 파일이 기준과 같다\. 닿는 코드가 바뀜과 다시 볼 것에 넣지 않는다\)\n- 읽는 방식이 달라져 새로 생긴 노드 1개 \(데이터\. 신규로 세지 않는다\)\n/);
   // The structured answer agrees: no node says reachChanged.
   const answer = queryProductGraph({ buildDirectory: out, question: "node", id: "cli:start" });
   assert.equal(answer.rows[0].changedSinceBaseline, "unchanged");

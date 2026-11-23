@@ -11,6 +11,69 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.135 — publication tracked separately
+
+- Fixed: the shared source scan took the first `{` after a JavaScript or
+  TypeScript function's name as its body. A `{` in the parameter list (a
+  default `= {}`, a destructured parameter) ended the function on its first
+  line: the range was one line, the signature was cut there, and the calls in
+  the real body belonged to no function. On Lode's own source this was 1,325
+  of 5,065 function declarations. Source analysis 0.3.4 (JavaScript and the
+  Go worker alike) closes the parameter list by its matching bracket and
+  takes the `{` after it. A TypeScript return type is read past its type
+  literals, conditional types and `import("…")` types; a declaration without
+  a body (an overload, `declare function`) is one statement and no longer
+  borrows a later `{`. Arrow bindings are read with nested parentheses in
+  their parameters, a type annotation on the binding and a return type. A
+  method whose return type holds a type literal is a method with its real
+  body. A call in a ternary (`cond ? pick(a) : other`) that 0.3.3 could
+  mistake for a method definition is a call.
+- Changed: because bodies are now read, a function nested in a function that
+  used to be misread gets its container's name in front
+  (`file#inner` becomes `file#outer.inner`), signatures are whole, and more
+  calls have a caller. This reaches everything built on the scan:
+  - Stored repository scans written by 0.3.3 are still read and are scanned
+    again; nothing is migrated in place.
+  - World model: some Symbol identities change with the next scan. An
+    approved feature mapping or impact whose endpoint is gone is kept and
+    reported as `stale-endpoint` with its endpoint `missing`; proposals and
+    candidate sets taken before the update are refused as drifted, as after
+    any source change.
+  - Context source delta: an edit inside the body of such a function is now
+    attributed to that function.
+  - Product graph: reach grows. On Lode's own source the declarations no 기능
+    reaches go from 5,897 to 1,576 and the files where nothing is reached from
+    285 to 104. A 기능 that enters through a shared dispatcher now reaches what
+    the dispatcher calls, so reach per 기능 is much larger than before where
+    the rules cannot tell the handlers apart.
+- Added: the first product graph build after the update, compared with a
+  baseline taken by the old reading, tells apart what only the reading
+  changed. Renamed code is counted in its own line ("읽는 방식이 달라져 이름이
+  바뀐 코드 N개": same file, same first line, same last name) and is neither
+  신규 nor 사라짐; `changes.readerChanged.renamed` holds the pairs. Code the
+  new reading finds in a file whose text is the baseline's is counted with
+  "읽는 방식이 달라져 새로 생긴 노드", which now names only the node types that
+  really have such a node. As before, 기능 whose reach differs only by the
+  reading stay out of "닿는 코드가 바뀜" and "다시 볼 것".
+- Added: a rule (`입구`, `대상`, `선언`) or a 화면→코드 row that names code by
+  an ID that no longer exists is never resolved silently. Its issue line now
+  also names the declarations in that file with the same last name
+  ("같은 이름의 선언: … — 이름이 바뀌었을 수 있음"). Lode cannot tell a renamed
+  function from a mistyped ID, so it is stated as a possibility.
+- Added: a 화면→코드 row edited to the new ID has no confirmation record under
+  its key. When exactly one record of the old reading names, for the same
+  document and screen, an ID that no longer exists in the same file with the
+  same last name, the row shows as "다른 방식으로 읽은 때 확인함" with the old
+  ID and a note that it was matched by name (`matchedByName`). With several
+  such records it stays "확인한 적 없음" and lists them (`renamedCandidates`).
+  A match by name never counts as confirmed, and nothing is written.
+- Added: the limits block states how function ranges are read and counts the
+  declarations whose parameter list does not close, which keep the old
+  reading. The line appears with zero as well.
+- Changed: Lode's own rule fixture names the real dispatcher alone as 입구
+  (`dispatch`, `runCommand`); the extra entries were a workaround for the
+  misread ranges.
+
 ## 0.3.0-beta.134 — publication tracked separately
 
 - Changed: the product graph reads code in more ways, so its reader version

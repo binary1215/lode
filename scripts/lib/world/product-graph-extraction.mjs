@@ -316,24 +316,29 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
   });
   const fileSet = new Set(codeFiles);
   const analyses = new Map();
+  // Files with declarations whose parameter list did not close: those keep the
+  // old range reading, and the count is stated in the limits block (0.3.4).
+  const rangeFallbackFiles = [];
   for (const relative of codeFiles) {
     const text = readText(sourceRoot, relative);
     if (text === null) continue;
     const language = CODE_LANGUAGES[path.posix.extname(relative).toLowerCase()];
-    const { maskedText, classBodies, ...analysis } = analyzeSourceFile(text, language, path.posix.basename(relative), {
+    const { maskedText, classBodies, bracketPartners, rangeFallbacks, ...analysis } = analyzeSourceFile(text, language, path.posix.basename(relative), {
       maxSymbols: 10_000,
       withCallIndexes: true,
       withMaskedText: true,
     });
     assignSymbolIds(relative, analysis.symbols);
     const starts = lineStarts(text);
-    const sites = language === "python" ? [] : methodDefinitionSites(maskedText, text);
+    if (rangeFallbacks) rangeFallbackFiles.push({ file: relative, count: rangeFallbacks });
+    const sites = language === "python" ? [] : methodDefinitionSites(maskedText, text, bracketPartners ?? undefined);
     const signatures =
       language === "python"
         ? []
         : signatureSites(
             maskedText,
             classBodies.map((body) => body.open),
+            bracketPartners,
           );
     const facts = language === "python" ? pythonFacts(text, maskedText, analysis.symbols, starts) : javascriptFacts(text, maskedText, sites);
     // Names a class has only as a signature without a body (abstract, overloads).
@@ -641,6 +646,7 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
   };
   return {
     analyses,
+    rangeFallbackFiles,
     nodes,
     unique,
     resolveName,
@@ -1484,7 +1490,10 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     if (!codeIdSet.has(request.code)) {
       const key = `${request.rule.종류}\0${request.code}`;
       if (!entryIssues.has(key))
-        entryIssues.set(key, { 종류: request.rule.종류, path: request.code, 입구: request.code, reason: "규칙이 가리키는 코드가 없음" });
+        entryIssues.set(
+          key,
+          withRenamed({ 종류: request.rule.종류, path: request.code, 입구: request.code, reason: "규칙이 가리키는 코드가 없음" }, request.code, codeIdSet),
+        );
       continue;
     }
     // Code that is already this 기능's 처리 코드 keeps that role.
@@ -1519,6 +1528,7 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
       (a, b) => compare(a.id, b.id) || compare(a.position.path, b.position.path) || a.position.line - b.position.line,
     ),
     untrustedMaskFiles: ui.untrustedMask,
+    rangeFallbackFiles: code.rangeFallbackFiles,
     runByPath: { sites: runByPath.sites, ambiguous: runByPath.ambiguous },
     // 분기 (2.9): the handlers whose references record every line, and the
     // matches whose branch block could not be delimited.
@@ -1881,8 +1891,10 @@ function lineHoldsCode(analysis, line) {
 function handWrittenConnections({ code, rules, codeIds }) {
   const sites = [];
   const issues = [];
-  const stale = (rule, index, detail) =>
-    issues.push({ 종류: `손으로 적는 연결[${index}] ${rule["종류"]}`, path: rule["파일"], reason: `규칙이 낡음 — ${detail}`, rule: index });
+  const stale = (rule, index, detail, id = null) => {
+    const issue = { 종류: `손으로 적는 연결[${index}] ${rule["종류"]}`, path: rule["파일"], reason: `규칙이 낡음 — ${detail}`, rule: index };
+    issues.push(id === null ? issue : withRenamed(issue, id, codeIds));
+  };
   rules.forEach((rule, index) => {
     const analysis = code.analyses.get(rule["파일"]);
     if (!analysis) {
@@ -1890,7 +1902,7 @@ function handWrittenConnections({ code, rules, codeIds }) {
       return;
     }
     const missing = rule["대상"].filter((id) => !codeIds.has(id));
-    for (const id of missing) stale(rule, index, `대상 ${id}이 코드 노드가 아님`);
+    for (const id of missing) stale(rule, index, `대상 ${id}이 코드 노드가 아님`, id);
     const targets = rule["대상"].filter((id) => codeIds.has(id));
     const mask = maskOfAnalysis(analysis);
     const lines = new Set();
@@ -2347,7 +2359,8 @@ function outsideLayer({ code, root, files, rules, codeIds }) {
         if (!code.analyses.has(file)) issues.push({ 종류: `바깥[${index}]`, path: file, reason: "규칙이 낡음 — 파일이 스캔한 코드에 없음", rule: index });
     for (const place of rule["닿는 곳"] || [])
       for (const id of place["선언"] || [])
-        if (!codeIds.has(id)) issues.push({ 종류: `바깥[${index}]`, path: id, reason: "규칙이 낡음 — 선언이 코드 노드가 아님", rule: index });
+        if (!codeIds.has(id))
+          issues.push(withRenamed({ 종류: `바깥[${index}]`, path: id, reason: "규칙이 낡음 — 선언이 코드 노드가 아님", rule: index }, id, codeIds));
   });
   const unnamedList = [...unnamed.values()]
     .map((item) => ({ module: item.module, path: item.path, count: item.count, apis: [...item.apis].sort() }))
@@ -2454,6 +2467,37 @@ function unreachedCode(code, functionNodes, extraCodeNodes) {
 
 // Two nodes never share an ID: a clash is a defect in ID construction, so the
 // build stops with a reason instead of keeping both.
+// A 코드 ID a rule or document names that is not a 코드 node: the
+// declarations in the same file with the same last name segment (without an
+// occurrence suffix "~N"). Source analysis 0.3.4 reads bodies it used to miss,
+// so a nested function gains its container's prefix ("file#inner" becomes
+// "file#outer.inner"). Lode never resolves the old ID silently: the issue
+// names the candidates for the user to edit.
+export function renamedCodeCandidates(id, codeIds) {
+  const hash = String(id).indexOf("#");
+  if (hash < 0) return [];
+  const file = id.slice(0, hash);
+  const last = (name) => name.slice(name.lastIndexOf(".") + 1).replace(/~\d+$/, "");
+  const wanted = last(id.slice(hash + 1));
+  const found = [];
+  for (const other of codeIds) if (other !== id && other.startsWith(`${file}#`) && last(other.slice(file.length + 1)) === wanted) found.push(other);
+  return found.sort(compare);
+}
+
+// The words an issue line adds for those candidates, or "".
+export function renamedCodeNote(candidates) {
+  if (!candidates.length) return "";
+  // Lode cannot tell a renamed declaration from a mistyped ID that shares
+  // its last segment, so even one candidate is a possibility.
+  return `같은 이름의 선언: ${candidates.map((item) => `\`${item}\``).join(", ")} — 이름이 바뀌었을 수 있음`;
+}
+
+const withRenamed = (issue, id, codeIds) => {
+  const candidates = renamedCodeCandidates(id, codeIds);
+  if (!candidates.length) return issue;
+  return { ...issue, reason: `${issue.reason} — ${renamedCodeNote(candidates)}`, renamed: candidates };
+};
+
 export function assertUniqueIds(nodes) {
   const seen = new Set(),
     clashes = [];

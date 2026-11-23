@@ -467,6 +467,53 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
     if (group.unchanged || group.changed.length || group.added.length || group.removed.length) byType.push(group);
   }
 
+  // Under another reader, a removed and a new 코드 node in a file whose text
+  // is the baseline's, at the same first line and with the same last name
+  // segment, are one function the reader now names differently (source
+  // analysis 0.3.4 reads a body it used to miss, so a nested function gets
+  // its container's prefix). Counted apart, never 신규 or 사라짐.
+  const renamed = [];
+  let readerNewCode = 0;
+  const codeGroup = sameReader ? null : byType.find((group) => group.type === "코드");
+  if (codeGroup) {
+    const lastSegment = (id) => {
+      const name = id.slice(id.indexOf("#") + 1);
+      // Without the occurrence suffix "~N" of a name that was not unique.
+      return name.slice(name.lastIndexOf(".") + 1).replace(/~\d+$/, "");
+    };
+    const keyOf = (node) =>
+      node && fileSame(node.file) && Array.isArray(node.lines) ? `${node.file}\u0000${node.lines[0]}\u0000${lastSegment(node.id)}` : null;
+    const byKey = (ids, ix) => {
+      const keyed = new Map();
+      for (const id of ids) {
+        const key = keyOf(ix.nodes.get(id));
+        if (key === null) continue;
+        if (!keyed.has(key)) keyed.set(key, []);
+        keyed.get(key).push(id);
+      }
+      return keyed;
+    };
+    const added = byKey(codeGroup.added, afterIx);
+    for (const [key, from] of byKey(codeGroup.removed, beforeIx)) {
+      const to = added.get(key);
+      if (from.length === 1 && to?.length === 1) renamed.push({ from: from[0], to: to[0] });
+    }
+    const paired = new Set(renamed.flatMap((pair) => [pair.from, pair.to]));
+    for (const id of paired) status.delete(id);
+    codeGroup.added = codeGroup.added.filter((id) => !paired.has(id));
+    codeGroup.removed = codeGroup.removed.filter((id) => !paired.has(id));
+    renamed.sort((a, b) => compare(a.from, b.from) || compare(a.to, b.to));
+    // The rest of the new 코드 in files whose text is the baseline's is what
+    // the reader now finds (arrows 0.3.4 reads): new to the reading, not 신규.
+    const readerCode = codeGroup.added.filter((id) => fileSame(afterIx.nodes.get(id)?.file));
+    for (const id of readerCode) {
+      status.delete(id);
+      readerNewNodes.push(id);
+    }
+    readerNewCode = readerCode.length;
+    codeGroup.added = codeGroup.added.filter((id) => !readerCode.includes(id));
+  }
+
   // 기능 whose own content is the same and whose reached code differs. Under
   // another reader, a difference whose nodes (reached now or in the baseline,
   // and differing) all lie in files whose text is the baseline's comes from
@@ -605,7 +652,16 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
     // What the reader alone changed (section 3): counted, never listed as 신규 or 닿는 코드가 바뀜.
     ...(sameReader
       ? {}
-      : { readerChanged: { reach: readerReach.sort(compare), newNodes: readerNewNodes.sort(compare), newNodeTypes: [...readerNewTypes].sort(compare) } }),
+      : {
+          readerChanged: {
+            reach: readerReach.sort(compare),
+            newNodes: readerNewNodes.sort(compare),
+            // Only the types that have a new node here (코드 is counted in newCode).
+            newNodeTypes: [...new Set(readerNewNodes.map((id) => afterIx.nodes.get(id)?.type).filter((type) => type && type !== "코드"))].sort(compare),
+            newCode: readerNewCode,
+            renamed,
+          },
+        }),
     edges: edgeChanges,
     maybeMoved,
     unexplained,
