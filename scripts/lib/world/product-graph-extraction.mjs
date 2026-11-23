@@ -2487,7 +2487,9 @@ export function renamedCodeCandidates(id, codeIds) {
 // The words an issue line adds for those candidates, or "".
 export function renamedCodeNote(candidates) {
   if (!candidates.length) return "";
-  return candidates.length === 1 ? `이름이 바뀜: \`${candidates[0]}\`` : `이름이 바뀌었을 수 있음: ${candidates.map((item) => `\`${item}\``).join(", ")}`;
+  // Lode cannot tell a renamed declaration from a mistyped ID that shares
+  // its last segment, so even one candidate is a possibility.
+  return `같은 이름의 선언: ${candidates.map((item) => `\`${item}\``).join(", ")} — 이름이 바뀌었을 수 있음`;
 }
 
 const withRenamed = (issue, id, codeIds) => {

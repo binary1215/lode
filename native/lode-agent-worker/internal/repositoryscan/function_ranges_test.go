@@ -11,10 +11,11 @@ import (
 
 // Source analysis 0.3.4: a function's body is found after its parameter list
 // closes (a "{" in a default or a destructured parameter is not the body),
-// TypeScript return types are read past type literals, and a declaration
-// without a body is one statement. The expected values are the JavaScript
-// reference's output on the same corpus files (ranges, signatures, scope
-// paths and the caller of each call).
+// TypeScript return types are read past type literals, a declaration without
+// a body is one statement, and a type ends at a top-level "," or at a line
+// break not after a type operator (type-ends: ternaries, annotations).
+// The expected values are the JavaScript reference's output on the same
+// corpus files (ranges, signatures, scope paths and the caller of each call).
 func TestFunctionRangesMatchTheJavaScriptReference(t *testing.T) {
 	_, sourceFile, _, ok := runtime.Caller(0)
 	if !ok {
@@ -91,6 +92,54 @@ func TestFunctionRangesMatchTheJavaScriptReference(t *testing.T) {
 				"async@47<-returnType",
 				"first@48<-returnType",
 				"first@52<-annotated",
+			},
+		},
+		{
+			file: "type-ends.mjs", language: "javascript",
+			symbols: []string{
+				"function api.run 11-13 scope=api [run()]",
+				"class Holder 16-21 scope= [export class Holder]",
+				"function Holder.run 18-20 scope=Holder [run()]",
+				"function table.go 26-28 scope=table [go()]",
+				"function host 31-35 scope= [export function host(register)]",
+				"function guarded 37-44 scope= [export function guarded()]",
+			},
+			calls: []string{
+				"first@10<-",
+				"first@12<-api.run",
+				"first@17<-",
+				"first@19<-Holder.run",
+				"first@24<-",
+				"first@27<-table.go",
+				"first@32<-host",
+				"register@32<-host",
+				"first@33<-host",
+				"first@38<-guarded",
+				"first@40<-guarded",
+				"first@42<-guarded",
+			},
+		},
+		{
+			file: "type-ends.ts", language: "typescript",
+			symbols: []string{
+				"function thing.handler 8-8 scope=thing [handler: (a: unknown) => a]",
+				"binding load 11-13 scope= [const load = async (id: string) =>]",
+				"binding typed 24-26 scope= [const typed: (a: number) => void = (a) =>]",
+				"function pick 28-30 scope= [function pick<T>(x: T): T extends string ? { s: string } : { n: number }]",
+				"function union 32-35 scope= [function union(): Foo | null]",
+				"function leading 37-41 scope= [function leading(): | { a: string } | null]",
+				"function check 43-46 scope= [function check(x: unknown): asserts x is Foo]",
+			},
+			calls: []string{
+				"async@11<-load",
+				"first@12<-load",
+				"first@17<-",
+				"first@21<-",
+				"first@25<-typed",
+				"first@29<-pick",
+				"first@34<-union",
+				"first@40<-leading",
+				"first@45<-check",
 			},
 		},
 	}

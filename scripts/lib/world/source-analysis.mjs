@@ -378,38 +378,27 @@ function skipAngles(masked, brackets, index) {
   return -1;
 }
 
-// Words that start a statement: met in a return type, they end it (a
-// declaration without a body is followed by the next statement).
-const STATEMENT_WORDS = new Set([
-  "function",
-  "class",
-  "const",
-  "let",
-  "var",
-  "export",
-  "declare",
-  "import",
-  "interface",
-  "type",
-  "enum",
-  "namespace",
-  "module",
-  "abstract",
-  "async",
-  "return",
-  "if",
-  "for",
-  "while",
-]);
+// Words that continue a type onto the next line when they stand before the
+// line break (a type operator written as a word).
+const TYPE_OPERATOR_WORDS = new Set(["extends", "keyof", "typeof", "is", "asserts", "infer", "readonly", "new", "unique", "in", "as", "satisfies"]);
 
-// A TypeScript return type starting at index (after ":"): the index of the
-// body's "{", or -1 when no body follows. Brackets and type arguments are
-// skipped whole; a "{" after one of : | & , < ( [ = or "=>" is a type
-// literal; ";", a closing bracket, "=" not followed by ">" or the start of a
-// statement on a later line end the search. With untilArrow the type ends at
-// a top-level "=>", whose index is returned instead (an arrow's return type).
-function returnTypeEnd(masked, text, brackets, index, { untilArrow = false } = {}) {
+// A TypeScript type starting at index (after its ":"), read until what
+// follows it. Brackets and type arguments are skipped whole; a "{" after one
+// of : | & , < ( [ = ? or "=>" is a type literal. A top-level "," or ";", a
+// closing bracket, or a word on a later line whose line does not end in a
+// type operator (| & : < ? = . => or a word such as extends, keyof, is) ends
+// the type: then -1. What ends it otherwise depends on until:
+// - "body" (a function's return type): the index of the body's "{"; a "="
+//   not followed by ">" gives -1.
+// - "arrow" (an arrow's return type): the index of a top-level "=>"; a "{"
+//   that is not a type literal gives -1.
+// - "assign" (a binding's annotation): the index of a top-level "=" not
+//   followed by ">"; a "{" that is not a type literal gives -1.
+function typeEnd(masked, text, brackets, index, until) {
   let newline = false;
+  // The last token at depth 0: an operator character, "=>", a word, or the
+  // closer of a group skipped whole.
+  let previous = ":";
   for (; index < masked.length; index += 1) {
     const character = masked[index];
     if (character === "\n") newline = true;
@@ -417,29 +406,39 @@ function returnTypeEnd(masked, text, brackets, index, { untilArrow = false } = {
     if (character === "(" || character === "[") {
       if (brackets[index] < 0) return -1;
       index = brackets[index];
+      previous = ")";
     } else if (character === "<") {
       const after = skipAngles(masked, brackets, index);
       if (after < 0) return -1;
       index = after - 1;
+      previous = ">";
     } else if (character === "{") {
       let before = index - 1;
       while (before >= 0 && isBlank(text[before])) before -= 1;
-      const previous = text[before];
-      const literal = ":|&,<([=".includes(previous) || (previous === ">" && text[before - 1] === "=");
-      if (!literal) return untilArrow ? -1 : index;
+      const ahead = text[before];
+      const literal = ":|&,<([=?".includes(ahead) || (ahead === ">" && text[before - 1] === "=");
+      if (!literal) return until === "body" ? index : -1;
       if (brackets[index] < 0) return -1;
       index = brackets[index];
+      previous = "}";
     } else if (character === "=") {
-      if (masked[index + 1] !== ">") return -1;
-      if (untilArrow) return index;
-      index += 1;
-    } else if (character === ";" || character === ")" || character === "]" || character === "}") return -1;
+      if (masked[index + 1] === ">") {
+        if (until === "arrow") return index;
+        index += 1;
+        previous = "=>";
+      } else return until === "assign" ? index : -1;
+    } else if (character === "," || character === ";" || character === ")" || character === "]" || character === "}") return -1;
     else if (/[A-Za-z_$]/.test(character)) {
       let end = index;
       while (end < masked.length && /[\w$]/.test(masked[end])) end += 1;
-      if (newline && STATEMENT_WORDS.has(masked.slice(index, end))) return -1;
+      const word = masked.slice(index, end);
+      if (newline && !"|&:<?=.".includes(previous) && previous !== "=>" && !TYPE_OPERATOR_WORDS.has(previous)) return -1;
       newline = false;
+      previous = word;
       index = end - 1;
+    } else {
+      newline = false;
+      previous = character;
     }
   }
   return -1;
@@ -458,7 +457,7 @@ function functionHeader(masked, text, brackets, index) {
   let after = skipBlanks(masked, brackets[index] + 1);
   if (masked[after] === "{") return { status: "body", open: after };
   if (masked[after] === ":") {
-    const open = returnTypeEnd(masked, text, brackets, after + 1);
+    const open = typeEnd(masked, text, brackets, after + 1, "body");
     return open >= 0 ? { status: "body", open } : { status: "none" };
   }
   return { status: "none" };
@@ -475,20 +474,11 @@ const BINDING_START = /\b(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)(?=
 function bindingValue(masked, text, brackets, index) {
   index = skipBlanks(masked, index);
   if (masked[index] === ":") {
-    // A type annotation runs to the "=" that is not part of "=>".
-    for (index += 1; index < masked.length; index += 1) {
-      const character = masked[index];
-      if (character === "(" || character === "[" || character === "{") {
-        if (brackets[index] < 0) return { kind: "other" };
-        index = brackets[index];
-      } else if (character === "<") {
-        const after = skipAngles(masked, brackets, index);
-        if (after < 0) return { kind: "other" };
-        index = after - 1;
-      } else if (character === "=" && masked[index + 1] === ">") index += 1;
-      else if (character === "=") break;
-      else if (character === ";" || character === ")" || character === "]" || character === "}") return { kind: "other" };
-    }
+    // A type annotation runs to its own "=" (not part of "=>"). An annotation
+    // without an initializer never borrows a later "=": a top-level "," or a
+    // statement on the next line ends it.
+    index = typeEnd(masked, text, brackets, index + 1, "assign");
+    if (index < 0) return { kind: "other" };
   }
   if (masked[index] !== "=" || masked[index + 1] === "=" || masked[index + 1] === ">") return { kind: "other" };
   index = skipBlanks(masked, index + 1);
@@ -511,7 +501,7 @@ function bindingValue(masked, text, brackets, index) {
     if (brackets[index] < 0) return { kind: "unclosed" };
     let after = skipBlanks(masked, brackets[index] + 1);
     if (masked[after] === ":") {
-      after = returnTypeEnd(masked, text, brackets, after + 1, { untilArrow: true });
+      after = typeEnd(masked, text, brackets, after + 1, "arrow");
       if (after < 0) return { kind: "other" };
     }
     return masked[after] === "=" && masked[after + 1] === ">" ? { kind: "arrow", arrowEnd: after + 2 } : { kind: "other" };
@@ -574,7 +564,7 @@ export function methodDefinitionSites(masked, text, brackets = bracketPartners(m
     while (isBlank(masked[after])) after += 1;
     if (masked[after] === ":") {
       // A TypeScript return type: "): Type {", read as a function's (0.3.4).
-      after = returnTypeEnd(masked, text, brackets, after + 1);
+      after = typeEnd(masked, text, brackets, after + 1, "body");
       if (after < 0) continue;
     }
     if (masked[after] !== "{" || masked.slice(close + 1, after) !== text.slice(close + 1, after)) continue;

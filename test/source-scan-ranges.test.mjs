@@ -93,6 +93,65 @@ test("arrow bindings with defaults, callback types, return types and annotations
   for (const [language, lines, symbols, calls] of cases) assert.deepEqual(read(lines, language), { symbols, calls }, lines[0]);
 });
 
+test("a ternary whose first branch is a call is neither a method nor a lost call (review F1)", () => {
+  const cases = [
+    ["javascript", ["const api = {", "  mode: flag ? pick(a) : fallback,", "  run() { work(); },", "};"], ["function api.run 3-3 scope=api [run()]"], ["pick@2<-", "work@3<-api.run"]],
+    [
+      "javascript",
+      ["class A {", "  value = flag ? pick(a) : other", "  run() {", "    work();", "  }", "}"],
+      ["class A 1-6 scope= [class A]", "function A.run 3-5 scope=A [run()]"],
+      ["pick@2<-", "work@4<-A.run"],
+    ],
+    [
+      "javascript",
+      ["const table = {", "  a: cond ? make(1) : null,", "  b: 2,", "  go() {", "    work();", "  },", "};"],
+      ["function table.go 4-6 scope=table [go()]"],
+      ["make@2<-", "work@5<-table.go"],
+    ],
+    [
+      "javascript",
+      ["function host() {", "  register(flag ? pick(a) : fallback, function () {", "    work();", "  });", "}"],
+      ["function host 1-5 scope= [function host()]"],
+      ["pick@2<-host", "register@2<-host", "work@3<-host"],
+    ],
+    [
+      "typescript",
+      ["function f() {", "  const x = flag ? pick(a) : b", "  try {", "    work();", "  } catch (e) {}", "}"],
+      ["function f 1-6 scope= [function f()]"],
+      ["pick@2<-f", "work@4<-f"],
+    ],
+  ];
+  for (const [language, lines, symbols, calls] of cases) assert.deepEqual(read(lines, language), { symbols, calls }, lines[1]);
+});
+
+test("an annotation without an initializer never borrows a later '=' (review F2)", () => {
+  const cases = [
+    [
+      ["let cache: Map<string, number>", "const load = async (id: string) => {", "  return fetchIt(id)", "}"],
+      ["binding load 2-4 scope= [const load = async (id: string) =>]"],
+      ["async@2<-load", "fetchIt@3<-load"],
+    ],
+    [["let count: number", "thing.handler = (a) => {", "  work(a);", "};"], [], ["work@3<-"]],
+    [["let a: number, b = (x) => {", "  work(x);", "};"], [], ["work@2<-"]],
+    [["const f: (a: number) => void = (a) => {", "  work(a);", "};"], ["binding f 1-3 scope= [const f: (a: number) => void = (a) =>]"], ["work@2<-f"]],
+  ];
+  for (const [lines, symbols, calls] of cases) assert.deepEqual(read(lines, "typescript"), { symbols, calls }, lines[0]);
+});
+
+test("return types: conditional types, unions and predicates over several lines (review F3)", () => {
+  const cases = [
+    [
+      ["function pick<T>(x: T): T extends string ? { s: string } : { n: number } {", "  return work(x);", "}"],
+      ["function pick 1-3 scope= [function pick<T>(x: T): T extends string ? { s: string } : { n: number }]"],
+      ["work@2<-pick"],
+    ],
+    [["function f(): A |", "  B {", "  return work();", "}"], ["function f 1-4 scope= [function f(): A | B]"], ["work@3<-f"]],
+    [["function f():", "  | { a: string }", "  | null {", "  return work();", "}"], ["function f 1-5 scope= [function f(): | { a: string } | null]"], ["work@4<-f"]],
+    [["function f(x: unknown): asserts x is", "  Foo {", "  work();", "}"], ["function f 1-4 scope= [function f(x: unknown): asserts x is Foo]"], ["work@3<-f"]],
+  ];
+  for (const [lines, symbols, calls] of cases) assert.deepEqual(read(lines, "typescript"), { symbols, calls }, lines[0]);
+});
+
 test("a parameter list that does not close keeps the old reading and is counted", () => {
   const text = "function broken(a = {} {\n  g();\n}\n";
   const result = analyzeSourceFile(text, "javascript", "broken.js", { withMaskedText: true });

@@ -258,7 +258,7 @@ func methodDefinitionSites(masked, text string, brackets []int) []methodSite {
 		}
 		if byteAt(masked, after) == ':' {
 			// A TypeScript return type: "): Type {", read as a function's (0.3.4).
-			after = returnTypeEnd(masked, text, brackets, after+1, false)
+			after = typeEnd(masked, text, brackets, after+1, untilBody)
 			if after < 0 {
 				continue
 			}

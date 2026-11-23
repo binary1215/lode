@@ -1652,8 +1652,13 @@ export const productGraphWalk = (() => {
         lines.push(
           `- 읽는 방식이 달라져 이름이 바뀐 코드 ${changes.readerChanged.renamed.length}개 (기준과 같은 파일, 같은 첫 줄, 같은 마지막 이름. 신규와 사라짐에 넣지 않는다)`,
         );
-      if (changes.readerChanged.newNodes.length)
-        lines.push(`- 읽는 방식이 달라져 새로 생긴 노드 ${changes.readerChanged.newNodes.length}개 (${changes.readerChanged.newNodeTypes.join(", ")}. 신규로 세지 않는다)`);
+      if (changes.readerChanged.newNodes.length) {
+        const what = [
+          ...(changes.readerChanged.newNodeTypes.length ? [changes.readerChanged.newNodeTypes.join(", ")] : []),
+          ...(changes.readerChanged.newCode ? [`기준과 글이 같은 파일의 코드 ${changes.readerChanged.newCode}개`] : []),
+        ];
+        lines.push(`- 읽는 방식이 달라져 새로 생긴 노드 ${changes.readerChanged.newNodes.length}개 (${what.join("; ")}. 신규로 세지 않는다)`);
+      }
     }
     lines.push("- 노드 종류별 (ID 기준):");
     for (const group of changes.byType || [])

@@ -24,13 +24,13 @@ func TestTrackedCorpusMatchesReviewedIdentity(t *testing.T) {
 	}
 	document := result.(map[string]any)
 	// Source analysis 0.3.4 (function headers read by bracket partners;
-	// fixtures/function-ranges.mjs and function-ranges.ts added) changes
+	// fixtures/function-ranges.mjs/.ts and type-ends.mjs/.ts added) changes
 	// aggregate identity. Computed with the JS producer on this corpus.
-	if document["scanId"] != "repository-scan-3bd02f865eb0917e014e8454" {
+	if document["scanId"] != "repository-scan-f70861d4b1285a4968755735" {
 		t.Fatalf("unexpected scan identity: %v", document["scanId"])
 	}
 	summary := document["summary"].(map[string]any)
-	if summary["fileCount"] != 16 || summary["symbolCount"].(int) < 1 || summary["bindingCount"].(int) < 1 {
+	if summary["fileCount"] != 18 || summary["symbolCount"].(int) < 1 || summary["bindingCount"].(int) < 1 {
 		t.Fatalf("unexpected scan summary: %#v", summary)
 	}
 	skipped := document["skipped"].(map[string]any)

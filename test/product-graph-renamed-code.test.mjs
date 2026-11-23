@@ -29,7 +29,7 @@ function project(t, files, rules) {
 
 const SOURCE = {
   "src/registry.js": lines('import { run } from "./tools.js";', 'export const TOOLS = [{ name: "run", run: run }];'),
-  "src/tools.js": lines("export function run(options = {}) {", "  function inner() {", "    return 1;", "  }", "  return inner();", "}"),
+  "src/tools.js": lines("export function run(options = {}) {", "  function inner() {", "    return 1;", "  }", "  return inner();", "}", "export const helper = (x) => x;"),
 };
 const toolRule = (extra = {}) => ({ 종류: "tool", 판단: true, 파일: ["src/registry.js"], 패턴: 'name: "(\\w+)"', "처리 코드": "항목", ...extra });
 
@@ -42,6 +42,15 @@ test("a node the reader renamed is counted apart, not as 신규 or 사라짐", (
   const baseline = JSON.parse(fs.readFileSync(file, "utf8"));
   assert.ok(baseline.nodes.some(([id]) => id === "src/tools.js#run.inner"));
   baseline.reader.sourceAnalysis = "0.3.3";
+  // helper stands for code only the new reading finds (an arrow 0.3.3 missed).
+  // Edges name nodes by ID or by index into nodes: drop those of helper, renumber the rest.
+  const gone = baseline.nodes.findIndex(([id]) => id === "src/tools.js#helper");
+  assert.ok(gone >= 0);
+  baseline.nodes.splice(gone, 1);
+  const end = (part) => (Number.isInteger(part) && part > gone ? part - 1 : part);
+  baseline.edges = baseline.edges
+    .filter((edge) => ![edge[1], edge[2]].some((part) => part === gone || part === "src/tools.js#helper"))
+    .map((edge) => [edge[0], end(edge[1]), end(edge[2]), ...edge.slice(3)]);
   fs.writeFileSync(file, JSON.stringify(baseline).replaceAll("src/tools.js#run.inner", "src/tools.js#inner"));
   const second = p.build();
   const changes = second.changes;
@@ -49,6 +58,9 @@ test("a node the reader renamed is counted apart, not as 신규 or 사라짐", (
   assert.deepEqual(changes.readerChanged.renamed, [{ from: "src/tools.js#inner", to: "src/tools.js#run.inner" }]);
   assert.equal(changes.counts.added, 0);
   assert.equal(changes.counts.removed, 0);
+  assert.deepEqual(changes.readerChanged.newNodes, ["src/tools.js#helper"]);
+  assert.equal(changes.readerChanged.newCode, 1);
+  assert.match(second.text, /\n- 읽는 방식이 달라져 새로 생긴 노드 1개 \(DB, 데이터, 외부 연결; 기준과 글이 같은 파일의 코드 1개\. 신규로 세지 않는다\)\n/);
   assert.deepEqual(changes.reachChanged, []);
   assert.equal(changes.counts.reviewAgain, 0);
   assert.match(second.text, /\n- 읽는 방식이 달라져 이름이 바뀐 코드 1개 \(기준과 같은 파일, 같은 첫 줄, 같은 마지막 이름\. 신규와 사라짐에 넣지 않는다\)\n/);
@@ -58,9 +70,9 @@ test("a rule naming a nested function by its old ID names the new one", (t) => {
   const p = project(t, SOURCE, [toolRule({ 입구: ["src/tools.js#inner"] })]);
   const { lists, text } = p.build();
   const issue = lists.ruleIssues.find((item) => item.path === "src/tools.js#inner");
-  assert.equal(issue.reason, "규칙이 가리키는 코드가 없음 — 이름이 바뀜: `src/tools.js#run.inner`");
+  assert.equal(issue.reason, "규칙이 가리키는 코드가 없음 — 같은 이름의 선언: `src/tools.js#run.inner` — 이름이 바뀌었을 수 있음");
   assert.deepEqual(issue.renamed, ["src/tools.js#run.inner"]);
-  assert.match(text, /tool: src\/tools\.js#inner — 규칙이 가리키는 코드가 없음 — 이름이 바뀜: `src\/tools\.js#run\.inner`/);
+  assert.match(text, /tool: src\/tools\.js#inner — 규칙이 가리키는 코드가 없음 — 같은 이름의 선언: `src\/tools\.js#run\.inner` — 이름이 바뀌었을 수 있음/);
 });
 
 test("with two candidates the issue lists both", (t) => {
@@ -84,7 +96,7 @@ test("with two candidates the issue lists both", (t) => {
   const p = project(t, files, [toolRule({ 입구: ["src/tools.js#inner"] })]);
   const { lists } = p.build();
   const issue = lists.ruleIssues.find((item) => item.path === "src/tools.js#inner");
-  assert.equal(issue.reason, "규칙이 가리키는 코드가 없음 — 이름이 바뀌었을 수 있음: `src/tools.js#run.inner`, `src/tools.js#stop.inner`");
+  assert.equal(issue.reason, "규칙이 가리키는 코드가 없음 — 같은 이름의 선언: `src/tools.js#run.inner`, `src/tools.js#stop.inner` — 이름이 바뀌었을 수 있음");
   assert.deepEqual(issue.renamed, ["src/tools.js#run.inner", "src/tools.js#stop.inner"]);
 });
 

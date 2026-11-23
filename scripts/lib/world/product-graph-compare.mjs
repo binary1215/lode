@@ -473,6 +473,7 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
   // analysis 0.3.4 reads a body it used to miss, so a nested function gets
   // its container's prefix). Counted apart, never 신규 or 사라짐.
   const renamed = [];
+  let readerNewCode = 0;
   const codeGroup = sameReader ? null : byType.find((group) => group.type === "코드");
   if (codeGroup) {
     const lastSegment = (id) => {
@@ -502,6 +503,15 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
     codeGroup.added = codeGroup.added.filter((id) => !paired.has(id));
     codeGroup.removed = codeGroup.removed.filter((id) => !paired.has(id));
     renamed.sort((a, b) => compare(a.from, b.from) || compare(a.to, b.to));
+    // The rest of the new 코드 in files whose text is the baseline's is what
+    // the reader now finds (arrows 0.3.4 reads): new to the reading, not 신규.
+    const readerCode = codeGroup.added.filter((id) => fileSame(afterIx.nodes.get(id)?.file));
+    for (const id of readerCode) {
+      status.delete(id);
+      readerNewNodes.push(id);
+    }
+    readerNewCode = readerCode.length;
+    codeGroup.added = codeGroup.added.filter((id) => !readerCode.includes(id));
   }
 
   // 기능 whose own content is the same and whose reached code differs. Under
@@ -647,6 +657,7 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
             reach: readerReach.sort(compare),
             newNodes: readerNewNodes.sort(compare),
             newNodeTypes: [...readerNewTypes].sort(compare),
+            newCode: readerNewCode,
             renamed,
           },
         }),

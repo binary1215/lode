@@ -1,9 +1,12 @@
 package repositoryscan
 
-import "unicode/utf8"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // Reading a function's header (source analysis 0.3.4), ported rule for rule
-// from scripts/lib/world/source-analysis.mjs (skipAngles, returnTypeEnd,
+// from scripts/lib/world/source-analysis.mjs (skipAngles, typeEnd,
 // functionHeader, bindingValue). After a function's name the header is read by
 // bracket partners (counting ( [ { together), so a "{" inside the parameter
 // list (a default "= {}", a destructured parameter) is never taken as the
@@ -43,27 +46,38 @@ func skipAngles(masked string, brackets []int, index int) int {
 	return -1
 }
 
-// Words that start a statement: met in a return type on a later line, they
-// end it (a declaration without a body is followed by the next statement).
-var statementWords = map[string]bool{
-	"function": true, "class": true, "const": true, "let": true, "var": true, "export": true,
-	"declare": true, "import": true, "interface": true, "type": true, "enum": true, "namespace": true,
-	"module": true, "abstract": true, "async": true, "return": true, "if": true, "for": true, "while": true,
+// Words that continue a type onto the next line when they stand before the
+// line break (a type operator written as a word).
+var typeOperatorWords = map[string]bool{
+	"extends": true, "keyof": true, "typeof": true, "is": true, "asserts": true, "infer": true,
+	"readonly": true, "new": true, "unique": true, "in": true, "as": true, "satisfies": true,
 }
 
 func isIdentifierStart(character byte) bool {
 	return isLetter(character) || character == '_' || character == '$'
 }
 
-// returnTypeEnd reads a TypeScript return type starting at index (after ":")
-// and returns the index of the body's "{", or -1 when no body follows.
-// Brackets and type arguments are skipped whole; a "{" after one of
-// : | & , < ( [ = or "=>" is a type literal; ";", a closing bracket, "=" not
-// followed by ">" or the start of a statement on a later line end the search.
-// With untilArrow the type ends at a top-level "=>", whose index is returned
-// instead (an arrow's return type).
-func returnTypeEnd(masked, text string, brackets []int, index int, untilArrow bool) int {
+// What a TypeScript type is read until (typeEnd).
+const (
+	untilBody   = "body"
+	untilArrow  = "arrow"
+	untilAssign = "assign"
+)
+
+// typeEnd reads a TypeScript type starting at index (after its ":") until
+// what follows it. Brackets and type arguments are skipped whole; a "{" after
+// one of : | & , < ( [ = ? or "=>" is a type literal. A top-level "," or ";",
+// a closing bracket, or a word on a later line whose line does not end in a
+// type operator (| & : < ? = . => or a word such as extends, keyof, is) ends
+// the type: then -1. Otherwise untilBody returns the body's "{" (a "=" not
+// followed by ">" gives -1), untilArrow the index of a top-level "=>" and
+// untilAssign the index of a top-level "=" not followed by ">" (for both, a
+// "{" that is not a type literal gives -1).
+func typeEnd(masked, text string, brackets []int, index int, until string) int {
 	newline := false
+	// The last token at depth 0: an operator character, "=>", a word, or the
+	// closer of a group skipped whole.
+	previous := ":"
 	for ; index < len(masked); index++ {
 		character := masked[index]
 		if character == '\n' {
@@ -78,51 +92,61 @@ func returnTypeEnd(masked, text string, brackets []int, index int, untilArrow bo
 				return -1
 			}
 			index = brackets[index]
+			previous = ")"
 		case character == '<':
 			after := skipAngles(masked, brackets, index)
 			if after < 0 {
 				return -1
 			}
 			index = after - 1
+			previous = ">"
 		case character == '{':
 			before := index - 1
 			for before >= 0 && isBlank(text[before]) {
 				before--
 			}
-			previous := byteAt(text, before)
-			literal := (before >= 0 && (previous == ':' || previous == '|' || previous == '&' || previous == ',' ||
-				previous == '<' || previous == '(' || previous == '[' || previous == '=')) ||
-				(previous == '>' && byteAt(text, before-1) == '=')
+			ahead := byteAt(text, before)
+			literal := (before >= 0 && strings.IndexByte(":|&,<([=?", ahead) >= 0) || (ahead == '>' && byteAt(text, before-1) == '=')
 			if !literal {
-				if untilArrow {
-					return -1
+				if until == untilBody {
+					return index
 				}
-				return index
+				return -1
 			}
 			if brackets[index] < 0 {
 				return -1
 			}
 			index = brackets[index]
+			previous = "}"
 		case character == '=':
-			if byteAt(masked, index+1) != '>' {
+			if byteAt(masked, index+1) == '>' {
+				if until == untilArrow {
+					return index
+				}
+				index++
+				previous = "=>"
+			} else if until == untilAssign {
+				return index
+			} else {
 				return -1
 			}
-			if untilArrow {
-				return index
-			}
-			index++
-		case character == ';' || character == ')' || character == ']' || character == '}':
+		case character == ',' || character == ';' || character == ')' || character == ']' || character == '}':
 			return -1
 		case isIdentifierStart(character):
 			end := index
 			for end < len(masked) && isJavaScriptWord(masked[end]) {
 				end++
 			}
-			if newline && statementWords[masked[index:end]] {
+			continues := previous == "=>" || typeOperatorWords[previous] || (len(previous) == 1 && strings.IndexByte("|&:<?=.", previous[0]) >= 0)
+			if newline && !continues {
 				return -1
 			}
 			newline = false
+			previous = masked[index:end]
 			index = end - 1
+		default:
+			newline = false
+			previous = string(character)
 		}
 	}
 	return -1
@@ -156,7 +180,7 @@ func functionHeader(masked, text string, brackets []int, index int) (string, int
 		return headerBody, after
 	}
 	if byteAt(masked, after) == ':' {
-		if open := returnTypeEnd(masked, text, brackets, after+1, false); open >= 0 {
+		if open := typeEnd(masked, text, brackets, after+1, untilBody); open >= 0 {
 			return headerBody, open
 		}
 	}
@@ -192,28 +216,12 @@ func identifierAt(masked string, index int) string {
 func bindingValue(masked, text string, brackets []int, index int) (kind, status string, at int) {
 	index = skipBlanks(masked, index)
 	if byteAt(masked, index) == ':' {
-		// A type annotation runs to the "=" that is not part of "=>".
-	annotation:
-		for index++; index < len(masked); index++ {
-			switch character := masked[index]; {
-			case character == '(' || character == '[' || character == '{':
-				if brackets[index] < 0 {
-					return valueOther, "", -1
-				}
-				index = brackets[index]
-			case character == '<':
-				after := skipAngles(masked, brackets, index)
-				if after < 0 {
-					return valueOther, "", -1
-				}
-				index = after - 1
-			case character == '=' && byteAt(masked, index+1) == '>':
-				index++
-			case character == '=':
-				break annotation
-			case character == ';' || character == ')' || character == ']' || character == '}':
-				return valueOther, "", -1
-			}
+		// A type annotation runs to its own "=" (not part of "=>"). An annotation
+		// without an initializer never borrows a later "=": a top-level "," or a
+		// statement on the next line ends it.
+		index = typeEnd(masked, text, brackets, index+1, untilAssign)
+		if index < 0 {
+			return valueOther, "", -1
 		}
 	}
 	if byteAt(masked, index) != '=' || byteAt(masked, index+1) == '=' || byteAt(masked, index+1) == '>' {
@@ -250,7 +258,7 @@ func bindingValue(masked, text string, brackets []int, index int) (kind, status 
 		}
 		after := skipBlanks(masked, brackets[index]+1)
 		if byteAt(masked, after) == ':' {
-			after = returnTypeEnd(masked, text, brackets, after+1, true)
+			after = typeEnd(masked, text, brackets, after+1, untilArrow)
 			if after < 0 {
 				return valueOther, "", -1
 			}

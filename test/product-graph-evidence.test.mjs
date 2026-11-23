@@ -1065,7 +1065,7 @@ test("section 3: against a version-1 baseline, reader-caused reach differences a
   assert.equal(changes.moved.reader, true);
   // cli:start now reaches format (a value use) and format reads data:env:SUFFIX: both from the reader.
   assert.deepEqual(changes.reachChanged, []);
-  assert.deepEqual(changes.readerChanged, { reach: ["cli:start"], newNodes: ["data:env:SUFFIX"], newNodeTypes: ["DB", "데이터", "외부 연결"], renamed: [] });
+  assert.deepEqual(changes.readerChanged, { reach: ["cli:start"], newNodes: ["data:env:SUFFIX"], newNodeTypes: ["DB", "데이터", "외부 연결"], newCode: 0, renamed: [] });
   assert.equal(changes.counts.added, 0);
   assert.deepEqual(changes.reviewAgain.meaningLines, []);
   assert.equal(changes.counts.reviewAgain, 0);
