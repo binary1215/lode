@@ -382,12 +382,43 @@ function skipAngles(masked, brackets, index) {
 // line break (a type operator written as a word).
 const TYPE_OPERATOR_WORDS = new Set(["extends", "keyof", "typeof", "is", "asserts", "infer", "readonly", "new", "unique", "in", "as", "satisfies"]);
 
+// Words that cannot stand in a type: met at depth 0 on any line, they end it
+// (a ternary's "else" branch "function () {", "class {", a statement).
+const NOT_TYPE_WORDS = new Set([
+  "function",
+  "class",
+  "async",
+  "await",
+  "return",
+  "throw",
+  "yield",
+  "delete",
+  "if",
+  "else",
+  "for",
+  "while",
+  "do",
+  "switch",
+  "case",
+  "try",
+  "catch",
+  "finally",
+  "var",
+  "let",
+  "const",
+  "import",
+  "export",
+  "break",
+  "continue",
+]);
+
 // A TypeScript type starting at index (after its ":"), read until what
 // follows it. Brackets and type arguments are skipped whole; a "{" after one
 // of : | & , < ( [ = ? or "=>" is a type literal. A top-level "," or ";", a
-// closing bracket, or a word on a later line whose line does not end in a
-// type operator (| & : < ? = . => or a word such as extends, keyof, is) ends
-// the type: then -1. What ends it otherwise depends on until:
+// closing bracket, a word that cannot stand in a type (function, class,
+// return, …), or a word on a later line whose line does not end in a type
+// operator (| & : < ? = . => or a word such as extends, keyof, is) ends the
+// type: then -1. What ends it otherwise depends on until:
 // - "body" (a function's return type): the index of the body's "{"; a "="
 //   not followed by ">" gives -1.
 // - "arrow" (an arrow's return type): the index of a top-level "=>"; a "{"
@@ -432,6 +463,7 @@ function typeEnd(masked, text, brackets, index, until) {
       let end = index;
       while (end < masked.length && /[\w$]/.test(masked[end])) end += 1;
       const word = masked.slice(index, end);
+      if (NOT_TYPE_WORDS.has(word)) return -1;
       if (newline && !"|&:<?=.".includes(previous) && previous !== "=>" && !TYPE_OPERATOR_WORDS.has(previous)) return -1;
       newline = false;
       previous = word;

@@ -34,6 +34,23 @@ export function host(register) {
   });
 }
 
+export function elseFunction(c) {
+  const h = c ? first(10) : function () {
+    first(11);
+  };
+  return h;
+}
+
+export const handlers = {
+  key: flag ? first(12) : function named() { first(13); },
+  other: flag ? first(14) : async function () { first(15); },
+};
+
+export function elseClass(c) {
+  const K = c ? first(16) : class { m() {} };
+  return K;
+}
+
 export function guarded() {
   const x = flag ? first(9) : fallback
   try {

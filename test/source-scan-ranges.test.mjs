@@ -120,6 +120,20 @@ test("a ternary whose first branch is a call is neither a method nor a lost call
       ["function f 1-6 scope= [function f()]"],
       ["pick@2<-f", "work@4<-f"],
     ],
+    // Review F6: a function or class expression in the else branch is not a return type.
+    [
+      "javascript",
+      ["function outer(c) {", "  const h = c ? pick(a) : function () {", "    work();", "  };", "}"],
+      ["function outer 1-5 scope= [function outer(c)]"],
+      ["pick@2<-outer", "work@3<-outer"],
+    ],
+    [
+      "javascript",
+      ["const api = {", "  key: flag ? pick(a) : function named() { work(); },", "  other: flag ? pick(b) : async function () { work(); },", "};"],
+      ["function named 2-2 scope= [function named()]"],
+      ["pick@2<-", "work@2<-named", "pick@3<-", "work@3<-"],
+    ],
+    ["javascript", ["function outer(c) {", "  const K = c ? pick(a) : class { m() {} };", "}"], ["function outer 1-3 scope= [function outer(c)]"], ["pick@2<-outer"]],
   ];
   for (const [language, lines, symbols, calls] of cases) assert.deepEqual(read(lines, language), { symbols, calls }, lines[1]);
 });

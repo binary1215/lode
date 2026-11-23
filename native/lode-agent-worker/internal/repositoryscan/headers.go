@@ -53,6 +53,15 @@ var typeOperatorWords = map[string]bool{
 	"readonly": true, "new": true, "unique": true, "in": true, "as": true, "satisfies": true,
 }
 
+// Words that cannot stand in a type: met at depth 0 on any line, they end it
+// (a ternary's "else" branch "function () {", "class {", a statement).
+var notTypeWords = map[string]bool{
+	"function": true, "class": true, "async": true, "await": true, "return": true, "throw": true, "yield": true, "delete": true,
+	"if": true, "else": true, "for": true, "while": true, "do": true, "switch": true, "case": true, "try": true,
+	"catch": true, "finally": true, "var": true, "let": true, "const": true, "import": true, "export": true, "break": true,
+	"continue": true,
+}
+
 func isIdentifierStart(character byte) bool {
 	return isLetter(character) || character == '_' || character == '$'
 }
@@ -67,8 +76,9 @@ const (
 // typeEnd reads a TypeScript type starting at index (after its ":") until
 // what follows it. Brackets and type arguments are skipped whole; a "{" after
 // one of : | & , < ( [ = ? or "=>" is a type literal. A top-level "," or ";",
-// a closing bracket, or a word on a later line whose line does not end in a
-// type operator (| & : < ? = . => or a word such as extends, keyof, is) ends
+// a closing bracket, a word that cannot stand in a type (function, class,
+// return, …), or a word on a later line whose line does not end in a type
+// operator (| & : < ? = . => or a word such as extends, keyof, is) ends
 // the type: then -1. Otherwise untilBody returns the body's "{" (a "=" not
 // followed by ">" gives -1), untilArrow the index of a top-level "=>" and
 // untilAssign the index of a top-level "=" not followed by ">" (for both, a
@@ -136,6 +146,9 @@ func typeEnd(masked, text string, brackets []int, index int, until string) int {
 			end := index
 			for end < len(masked) && isJavaScriptWord(masked[end]) {
 				end++
+			}
+			if notTypeWords[masked[index:end]] {
+				return -1
 			}
 			continues := previous == "=>" || typeOperatorWords[previous] || (len(previous) == 1 && strings.IndexByte("|&:<?=.", previous[0]) >= 0)
 			if newline && !continues {
