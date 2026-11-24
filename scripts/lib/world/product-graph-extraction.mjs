@@ -826,27 +826,27 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
     return /^[\s;]*$/.test(masked.slice(index, end < 0 ? masked.length : end));
   };
   // A place where self.attr / this.attr is an assignment target, found
-  // loosely: before an assignment operator (after an optional annotation),
-  // after "as" or "for", or one of several targets left of an "=".
+  // loosely: before an assignment operator (after an optional annotation
+  // outside brackets), after "as" or "for", or one of several targets: left
+  // of an "=" on its line outside brackets, or inside a bracket group that is
+  // itself a target list — not a call's arguments or a subscript, and closed
+  // right before an "=" (R3-1; read on the masked text across lines).
   const OPERATOR = /^\s*(?::\s*[^=\n]+?)?\s*(?:\*\*|\/\/|>>|<<|\|\||&&|\?\?|[-+*/%&|^@])?=(?![=>])/;
-  const isTarget = (masked, start, end) => {
-    const after = masked.slice(end);
-    if (OPERATOR.test(after)) return true;
-    const before = masked.slice(0, start);
-    if (/(?:\bas|\bfor)\s+$/.test(before)) return true;
+  const PLAIN_OPERATOR = /^\s*(?:\*\*|\/\/|>>|<<|\|\||&&|\?\?|[-+*/%&|^@])?=(?![=>])/;
+  const isTarget = (line, start, end, enclosing, masked) => {
+    const after = line.slice(end);
+    if ((enclosing.length ? PLAIN_OPERATOR : OPERATOR).test(after)) return true;
+    if (/(?:\bas|\bfor)\s+$/.test(line.slice(0, start))) return true;
     if (!/^\s*[,\]})]/.test(after)) return false;
-    // Left of a plain "=" on the line, and not inside a call's arguments or a subscript.
-    if (!/(?<![=!<>])=(?![=>])/.test(after)) return false;
-    let depth = 0;
-    for (let index = before.length - 1; index >= 0; index -= 1) {
-      const character = before[index];
-      if (character === ")" || character === "]" || character === "}") depth += 1;
-      else if (character === "(" || character === "[" || character === "{") {
-        if (depth > 0) depth -= 1;
-        else if (/[\w$)\]]\s*$/.test(before.slice(0, index))) return false;
-      }
+    if (!enclosing.length) return /(?<![=!<>])=(?![=>])/.test(after);
+    for (let level = enclosing.length - 1; level >= 0; level -= 1) {
+      const open = enclosing[level];
+      if (/[\w$)\]]\s*$/.test(masked.slice(Math.max(0, open - 200), open))) return false;
+      const close = closing(masked, open);
+      if (close < 0) return false;
+      if (/^\s*=(?![=>])/.test(masked.slice(close + 1, close + 80))) return true;
     }
-    return true;
+    return false;
   };
   // A function's parameter types: from its signature, or, when the signature
   // does not close its parameter list (the scan cuts signatures at 500
@@ -929,12 +929,23 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
     const fieldPattern = python
       ? /^\s*([A-Za-z_]\w*)\s*(?::\s*([^=]+?))?\s*(?:(=)(?!=)|$)/
       : /^\s*(?:(?:public|private|protected|readonly|declare|override|accessor)\s+)*(#?[A-Za-z_$][\w$]*)\s*[?!]?\s*(?::\s*([^=;]+?))?\s*(?:(=)(?![=>])|;?\s*$)/;
+    // The brackets open at a position of the class, read forward once (R3-1).
+    const stack = [];
+    let cursor = starts[first - 1] ?? 0;
+    const enclosingAt = (index) => {
+      for (; cursor < index; cursor += 1) {
+        const character = masked[cursor];
+        if (character === "(" || character === "[" || character === "{") stack.push(cursor);
+        else if (character === ")" || character === "]" || character === "}") stack.pop();
+      }
+      return stack;
+    };
     for (let line = first; line <= last; line += 1) {
       const maskedLine = maskedLines[line - 1] || "";
       if (!maskedLine.trim() || innermost.class[line]?.qualifiedName !== owner) continue;
       const text = textLines[line - 1] || "";
       for (const match of maskedLine.matchAll(targetPattern))
-        if (isTarget(maskedLine, match.index, match.index + match[0].length)) entry(match[1]).targets += 1;
+        if (isTarget(maskedLine, match.index, match.index + match[0].length, enclosingAt(starts[line - 1] + match.index), masked)) entry(match[1]).targets += 1;
       const assignment = maskedLine.trimStart().startsWith(`${self}.`) ? strict.exec(maskedLine) : null;
       if (assignment && (assignment[2] !== undefined || assignment[3])) {
         const attr = assignment[1];

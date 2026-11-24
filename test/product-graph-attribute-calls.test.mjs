@@ -406,3 +406,77 @@ test("a typed parameter of a constructor with a signature over 500 characters is
   });
   assert.deepEqual(calls(graph, "app/big.py#Big.run"), ["app/io.py#RealIO.start"]);
 });
+
+// R3-1: an attribute passed in a call's arguments over several lines, or held
+// in a multi-line literal, is not an assignment target; a bracketed target list is.
+test("call arguments and literals across lines are not targets; bracketed target lists are", (t) => {
+  const graph = build(t, {
+    "app/__init__.py": "",
+    "app/io.py": PY_IO,
+    "app/user.py": lines(
+      "from app.io import RealIO",
+      "",
+      "class Sent:",
+      "    def __init__(self, control: RealIO):",
+      "        self.control = control",
+      "",
+      "    def step(self, command, started_ns):",
+      "        send(",
+      "            self.control, command, started=started_ns,",
+      "        )",
+      "        return self.control.start()",
+      "",
+      "class Listed:",
+      "    def __init__(self, control: RealIO):",
+      "        self.control = control",
+      "",
+      "    def table(self):",
+      "        values = {",
+      '            "control": self.control, "flag": dict(a=1),',
+      "        }",
+      "        return self.control.start()",
+      "",
+      "class Tupled:",
+      "    def __init__(self, control: RealIO):",
+      "        self.control = control",
+      "",
+      "    def swap(self, pair):",
+      "        (self.control, self.other) = pair",
+      "        return self.control.start()",
+      "",
+      "class Squared:",
+      "    def __init__(self, control: RealIO):",
+      "        self.control = control",
+      "",
+      "    def swap(self, pair):",
+      "        [self.control, self.other] = pair",
+      "        return self.control.start()",
+    ),
+    "src/io.ts": TS_IO,
+    "src/user.ts": lines(
+      'import { RealIO } from "./io";',
+      "export class Sent {",
+      "  constructor(private a: RealIO) {}",
+      "  step() {",
+      "    call(",
+      "      this.a, x = 1,",
+      "    );",
+      "    return this.a.start();",
+      "  }",
+      "}",
+      "export class Pair {",
+      "  constructor(private a: RealIO) {}",
+      "  swap(pair) {",
+      "    [this.a, this.b] = pair;",
+      "    return this.a.start();",
+      "  }",
+      "}",
+    ),
+  });
+  assert.deepEqual(calls(graph, "app/user.py#Sent.step"), ["app/io.py#RealIO.start"]);
+  assert.deepEqual(calls(graph, "app/user.py#Listed.table"), ["app/io.py#RealIO.start"]);
+  assert.deepEqual(calls(graph, "app/user.py#Tupled.swap"), []);
+  assert.deepEqual(calls(graph, "app/user.py#Squared.swap"), []);
+  assert.deepEqual(calls(graph, "src/user.ts#Sent.step"), ["src/io.ts#RealIO.start"]);
+  assert.deepEqual(calls(graph, "src/user.ts#Pair.swap"), []);
+});
