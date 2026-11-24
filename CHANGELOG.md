@@ -11,6 +11,75 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.136 — publication tracked separately
+
+- Fixed: a product graph build of a large tree failed with the bare code
+  `PRODUCT_GRAPH_SOURCE_TOO_LARGE`, because the source walk counted every
+  file. The limit (50,000, a judgement) now counts the files Lode would read:
+  code, UI-binding candidates and entry configuration. The walk has its own
+  safety stop (2,000,000 entries). The failure text gives the numbers and the
+  heaviest top-level folders.
+- Changed: a folder that holds at least 2,000 files of which under 10% would
+  be read (test code counts as code; both numbers are judgement) is taken as
+  data and is left out of the build, whatever the size of the rest. Each such
+  folder is reported in the limits block, `check.json`, `check.txt`, the query
+  overview and `gaps`, with its file counts, the code and configuration files
+  inside it that were therefore not read, and what it holds by kind (문서 /
+  데이터 / 이미지 / 코드 / 그 밖, from file extensions only; nothing is
+  opened). A new optional key `"포함"` beside `"제외"` in the table's `source`
+  rule names folders that are never left out; `제외` still wins for the same
+  path. Only a path a project rule names protects a folder; a configuration
+  file a built-in rule would find by its name does not. A project that built
+  before and has such a folder loses the code inside it from the graph once;
+  the comparison names the folders on its own line ("읽는 범위가 달라짐") and
+  counts nodes that come or go only for that reason there, not as 신규 or
+  사라짐.
+- Fixed: the UI-binding stage kept the text, a per-character mask and a masked
+  copy of every candidate file until the stage ended, which exhausted memory
+  on a tree with thousands of such files. A file's text, mask and view are
+  now dropped when the file is done; results are the same.
+- Added: Python calls through a module imported by name resolve
+  (`from pkg import mod`, `from pkg import mod as x`, `from . import mod`,
+  `from .sub import mod`, then `x.f()`, `x.Store()`, `v = x.Store()` followed
+  by `v.add()`, `x.f` used as a value), and so do longer names that walk
+  modules one segment at a time (`pkg.mod.f()`, `sub.mod.f()`). A declaration
+  or re-export in the package wins over a module of the same name. An import
+  with an alias inside a function resolves like one at module level. A name
+  that can only be a submodule that was not read ends with the new reason
+  "들여온 모듈이 읽은 파일에 없음" instead of "그 밖".
+- Added: a method call on an instance attribute resolves —
+  `self.attr.method()` in Python, `this.attr.method()` in JavaScript and
+  TypeScript — when the class's own code says which class the attribute
+  holds: every assignment constructs the same class, a declared type on the
+  attribute, or an assignment from a parameter with a declared type. `None`,
+  `null` and `undefined` assignments are skipped. The evidence must name one
+  class and be complete: a construction followed by anything else, two
+  classes, or an assignment the reader cannot classify leaves the call
+  unresolved. Only assignments inside the class are seen; a declared base
+  class or protocol is followed to its own method, not to implementations.
+- Fixed: a callee that follows another expression (`obj.mod.f()`, a line that
+  starts with `.mod.f(`) was resolved through an import named `mod`. It is a
+  method call on a receiver of unknown type.
+- Added: answers say where a call path was lost. A code node carries an
+  optional `unresolvedCalls` field in `graph.json` (outside the content and
+  reach hashes). `reach` and the 기능 node answer give the unresolved calls in
+  the reached code that could be product code, in two kinds kept apart: calls
+  by name, with the nodes that hold most, and method calls on a receiver of
+  unknown type, by method name with the rarest in the build first (a name the
+  product defines makes every call of that name on an unknown receiver count
+  here, built-in types included). `tree` shows them under each code row. A
+  declaration with no resolved caller says which unresolved calls may be it
+  ("이 선언일 수 있는 못 푼 호출"); this is a possibility and creates no
+  edge.
+- Changed: product graph version 3. A comparison against a baseline of
+  version 2 attributes reach differences in unchanged files to the reader,
+  never to "닿는 코드가 바뀜" or "다시 볼 것". Confirmation records made under
+  version 2 are shown as "다른 방식으로 읽은 때 확인함"; nothing is
+  rewritten. Source analysis stays 0.3.4.
+- Limits: on a very large tree the walk itself still takes its time before
+  data folders are left out. Runnable scripts are not 기능 yet, so a project
+  that is mostly scripts still shows most of its code as unreached.
+
 ## 0.3.0-beta.135 — publication tracked separately
 
 - Fixed: the shared source scan took the first `{` after a JavaScript or
