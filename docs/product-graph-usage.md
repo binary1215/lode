@@ -88,6 +88,8 @@ Through MCP the same question is the grouped tool `lode_product_graph` with acti
 
 The structured answer (`--json`, MCP `structuredContent`) carries the rows as data. A row that stands for a graph node also carries `nodeType` (the node's type), `changedSinceBaseline` (`changed`, `added`, `reachChanged` or `unchanged`; only when the build was compared with a baseline) and `confirmation` (the confirmation lists that name the node: `neverChecked`, `changedSinceCheck`, `textChanged`, `otherReader`). A 뜻 line names its 기능 and a document row names both of its ends, so screens and screen elements carry it too. Every answer says `baselineComparison` (`compared`, `baseline-moved` when the baseline was moved after the build so the comparison is with the earlier one, `no-baseline` or `absent`) and `confirmationComparison`: `compared`, `partial` (the build read only the first confirmation records by name; every list and `confirmation` comes from those), `not-read` (a stand-alone build reads no confirmation records) or `absent` (a build made before confirmation records existed). A row a later page repeats from an earlier page (its root, a heading, the group line its first item continues) carries `repeats: "earlierPage"`; its text is unchanged. Only when `confirmationComparison` is `compared` does an absent `confirmation` mean either still current or nothing to check: the build keeps only a count of current ones. The starts (`@…`) carry none of these. Some rows carry more: a reach row says through which role it is reached (`via`: `처리` or `입구`; on `reach <code>`, `입구` means only through 입구); a 기능→코드 child row carries `역할`; a row of an edge written by hand carries `judgement: true`; a row that says where reach stopped at a boundary, or what crossing it would add, carries `boundary` (`from`, `to`, `설명`); a tree's role heading carries `role`, and a node it names without expanding carries `notExpanded` (`otherFunction` or `expandedAbove`); a `user` answer's step heading carries `step`, and a 기능 row carries `relation` (`calls` or `shows`) and, for `shows`, `evidence` (the edge's 근거). The answer also carries `buildSha256`, which names what it was read from (the bytes of `graph.json` and `check.json` of every build it read, and the baseline; nothing is stored). Through MCP, the `structuredContent` of `lode_product_graph_query`, `_check`, `_build` and `_baseline` leaves out the whole `text` when the structured part gives it back exactly (a before/after item of `changes --list content` from its `rows[].detail`, check from its result); the content text the tool returns still starts with it, and the CLI keeps it in `--json`. An answer without rows keeps `text`: no build, an unreadable build and a refusal (their sentence is also in `message`), and a basis change (whose sentence is only in `text`).
 
+Reach follows resolved calls only. Where the reached code holds unresolved calls that could be product code, `reach` and a 기능's node answer say how many and which nodes hold the most ("이 길에서 못 푼 호출 N곳 …", data in `lostCalls` and `lostCallsIn`), and `tree` names them under each code row. A declaration nothing points at names the unresolved plain calls that end in its name ("이 선언일 수 있는 못 푼 호출 N곳", data in `mayBeThis`): a possibility, never an edge.
+
 ## Several questions in one call
 
 `lode_tools_read_chain` (CLI `tools-read-chain <project> --input chain.json`) asks several questions in one call and returns only the rows asked for, counted; see [MCP tool surface](mcp-surface.md#read-chain) for the steps, bounds and statuses. It is read-only, grants nothing and writes nothing. It helps when many answers would each be read only to pick a few lines out of them; for a single question, or when every line of the answers has to be read anyway, ask the questions directly. Its inner calls are product graph questions and `lode_project_graph`. Read `knownMissing` for what Lode knows is missing; an empty list does not prove the rows are all there is.
@@ -164,6 +166,16 @@ Source analysis 0.3.4 reads a JavaScript or TypeScript function's body after its
 
 After reviewing the list, run `product-graph-baseline` as above.
 
+### After updating to graph version 3
+
+Graph version 3 resolves Python calls through a module imported by name (`from pkg import mod`, then `mod.f()`), so the reach of Python products grows. Against a baseline read by version 2:
+
+- Reach that differs only in files whose text is the baseline's is counted under "읽는 방식이 달라져 닿는 범위가 달라진 기능", never as 닿는 코드가 바뀜 or 다시 볼 것.
+- Confirmation records show "다른 방식으로 읽은 때 확인함" until they are confirmed again; nothing is rewritten.
+- A build that now leaves out a data-like folder the baseline read, or reads one the baseline did not, says so on its own line, "읽는 범위가 달라짐: …"; the nodes that leave or come only because of it are not 신규 or 사라짐.
+
+After reviewing the list, run `product-graph-baseline` as above.
+
 ## Confirmation records
 
 "다시 볼 것" is relative to the baseline: moving the baseline clears it although nobody looked, and a 뜻 line written after a change that predates the baseline is never flagged. Confirmation records say what was actually checked, apart from the baseline. Each record, `.lode/context/product-graph/확인/product-graph-check-<id>.json`, names the 뜻 lines (by 기능 ID and the hash of the line's text) or document rows (화면요소→기능, 기능→화면요소, 화면→코드, with the document's text digest) that were checked, and for every node they point to its content hash (and, for a 기능, the hash of all code it reaches) at that moment, with the way the code was read. It is written once and never rewritten or removed by Lode; it travels with export, import and folder copies like approval records, and GC keeps it. Like approval records too, export, import, folder-copy adoption and snapshot GC stop when a record in `확인/` does not verify, and transfer stops when there are more than 2000 records, although a build only lists such records as issues and goes on.
@@ -215,6 +227,16 @@ A call to a runtime global the built-in table does not list (a host's own global
 ```
 
 `hostLog(x)` is then a built-in function and `host.run(x)` a built-in namespace member, in every file that does not declare, import or bind that name.
+
+## A large source tree
+
+A build counts only the files it would read (code, UI-binding candidates, hook, command and cli configuration, `.sql`, files a rule names) against its limit of 50,000. When a tree holds more, folders of at least 2,000 files of which under 10% would be read are left out as data-like and the build goes on; the limits block, `check.json`, the overview and `gaps` name each, with the code files in it that were not read. Under the limit nothing is left out, and such folders are only suggested for `source.제외`. To read a folder that was left out, name it under `source.포함`; `source.제외` still wins for the same path:
+
+```json
+{ "schemaVersion": 1, "kind": "LodeProductGraphEntryRules", "rules": [], "source": { "제외": ["recordings"], "포함": ["data/tools"] } }
+```
+
+When the files to read still pass the limit, the build fails with `PRODUCT_GRAPH_SOURCE_TOO_LARGE` and says how many files it would read, the ten heaviest top-level folders and that `source.제외` leaves a folder out. The numbers are judgement.
 
 ## Entry code, branches and connections the scan cannot see
 
