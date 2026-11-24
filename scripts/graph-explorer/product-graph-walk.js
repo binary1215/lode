@@ -132,6 +132,32 @@ export const productGraphWalk = (() => {
     text: `입구에서 다른 기능의 처리 코드 앞에서 멈춤 ${stops.length}곳${stops.length ? `: ${stops.slice(0, 10).map((item) => `${item.id} (${item.functions.join(", ")})`).join(", ")}${stops.length > 10 ? ` 외 ${stops.length - 10}곳` : ""}` : ""}`,
     entryStops: stops,
   });
+  // Unresolved calls that could be product code (3.1–3.4), from the optional
+  // node field of graph.json; a graph without it has none to say.
+  const MAX_LOST_NODES = 5;
+  const calleeList = (made) => `${made.callees.map((item) => `\`${item.callee}\` (줄 ${item.line})`).join(", ")}${made.count > made.callees.length ? " …" : ""}`;
+  function lostCallsOf(ix, ids) {
+    const nodes = [];
+    for (const id of ids) {
+      const made = ix.nodes.get(id)?.unresolvedCalls?.made;
+      if (made?.count) nodes.push({ id, count: made.count, callees: made.callees });
+    }
+    if (!nodes.length) return null;
+    nodes.sort((a, b) => b.count - a.count || compare(a.id, b.id));
+    return { count: nodes.reduce((sum, item) => sum + item.count, 0), nodes: nodes.slice(0, MAX_LOST_NODES) };
+  }
+  const lostCallRows = (lost, depth) => [
+    { depth, kind: "text", text: `이 길에서 못 푼 호출 ${lost.count}곳 (제품 코드일 수 있음): 닿는 범위가 실제보다 좁을 수 있다`, lostCalls: lost },
+    ...lost.nodes.map((item) => ({ depth: depth + 1, kind: "text", text: `${item.id} — ${item.count}곳: ${calleeList(item)}`, lostCallsIn: item.id })),
+  ];
+  // A code node nothing points at: unresolved calls that end in its name.
+  // A possibility only: no edge, no change to reach.
+  function mayBeThisRows(ix, id, depth) {
+    const may = ix.nodes.get(id)?.unresolvedCalls?.mayBeThis;
+    if (!may?.count || (ix.into.get(id) || []).length) return [];
+    const places = `${may.places.map((item) => where(item)).join(", ")}${may.count > may.places.length ? " …" : ""}`;
+    return [{ depth, kind: "text", text: `이 선언일 수 있는 못 푼 호출 ${may.count}곳 (이름이 같은 점 없는 호출. 이 선언을 부른다는 뜻은 아니다): ${places}`, mayBeThis: may }];
+  }
   const boundariesOf = (ix, id) => (ix.out.get(id) || []).filter((edge) => edge.type === "경계");
   const boundaryLine = (edge) => `경계에서 멈춤: ${edge.설명 || "설명 없음"} → ${edge.to}`;
 
@@ -667,7 +693,7 @@ export const productGraphWalk = (() => {
     return { status: complete ? "compared" : "partial", compatibility: compatibility || { status: "unknown", reasons: ["빌드/Project/소스 루트/reader 근거 미확인"] }, basis: minimal ? "baseline hashes; historical display may be unavailable" : "explicit proposal starting build", conflicts, ambiguousRelations, remainingReferences, currentChanges, proposedChanges, edgeChanges, affected: [...visited].sort(compare), structuralConflictFree: complete ? conflicts.length === 0 : null, productApproved: false, causeInferred: false };
   }
 
-  function impactAnswer(result, { answer, limit, cursor }) {
+  function impactAnswer(result, { answer, limit, cursor, ix }) {
     const items = [
       ...(result.conflicts || []).map((item) => ({ text: `${item.kind}: ${item.id || `${item.edge.from} → ${item.edge.to}`}`, detail: item })),
       ...(result.ambiguousRelations || []).map((item) => ({ text: `${item.reason}: ${item.edge.from} → ${item.edge.to}`, detail: item })),
@@ -675,7 +701,7 @@ export const productGraphWalk = (() => {
     ];
     const paged = page(items, { limit, cursor });
     const rows = [repeated(paged, { depth: 0, kind: "text", text: `구조적 미리보기 (${result.status}). 충돌 없음은 제품 승인이 아니다. ${result.reason || result.basis || ""}${result.compatibility?.reasons?.length ? ` — ${result.compatibility.reasons.join(" / ")}` : ""}` }),
-      ...paged.slice.map((item) => ({ depth: 1, kind: item.id ? "node" : "text", ...item }))];
+      ...paged.slice.flatMap((item) => [{ depth: 1, kind: item.id ? "node" : "text", ...item }, ...(item.id && ix ? mayBeThisRows(ix, item.id, 2) : [])])];
     if (paged.remaining) rows.push(moreRow(1, paged, `impact --cursor ${paged.nextCursor}`, true));
     const { conflicts, ambiguousRelations, affected, edgeChanges, currentChanges, proposedChanges, remainingReferences, ...summary } = result;
     return answer("반영 전 영향 미리보기", rows, { impact: { ...summary, counts: { conflicts: conflicts?.length || 0, ambiguousRelations: ambiguousRelations?.length || 0, affected: affected?.length || 0, edgeChanges: edgeChanges?.length || 0, currentChanges: currentChanges?.length || 0, proposedChanges: proposedChanges?.length || 0, remainingReferences: remainingReferences?.length || 0 }, conflicts: paged.slice.filter((item) => item.detail?.kind).map((item) => item.detail), ambiguousRelations: paged.slice.filter((item) => item.detail?.reason).map((item) => item.detail), affected: paged.slice.filter((item) => item.id).map((item) => item.id), coverage: paged.remaining ? "partial-page" : "complete-page" }, page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor } });
@@ -731,6 +757,7 @@ export const productGraphWalk = (() => {
       functions,
       via: Object.fromEntries(ids.map((item) => [item, reached.get(item)])),
       ...(reached.entries ? { entryStops: reached.stops } : {}),
+      ...(lostCallsOf(ctx.ix, ids) ? { lostCalls: lostCallsOf(ctx.ix, ids) } : {}),
     };
   }
 
@@ -878,6 +905,11 @@ export const productGraphWalk = (() => {
     if (ctx.changes?.status === "compared") add(1, `기준 뒤: ${mark ? CHANGE_WORDS[mark] : "변화 없음"}`);
     for (const edge of boundariesOf(ctx.ix, id)) rows.push({ depth: 1, kind: "text", text: boundaryLine(edge), boundary: { from: edge.from, to: edge.to, 설명: edge.설명 || null } });
     if (node.type === "기능" && entriesOf(ctx.ix, id).length) rows.push(entryStopRow(reachOf(ctx.ix, [id]).stops, 1));
+    if (node.type === "기능") {
+      const lost = lostCallsOf(ctx.ix, [...reachOf(ctx.ix, [id]).keys()]);
+      if (lost) rows.push(...lostCallRows(lost, 1));
+    }
+    if (node.type === "코드") rows.push(...mayBeThisRows(ctx.ix, id, 1));
     return rows;
   }
 
@@ -938,7 +970,7 @@ export const productGraphWalk = (() => {
     }
     if (question === "gaps") return gapsAnswer(ctx, { list, limit, cursor, answer });
     if (question === "changes") return changesAnswer(ctx, { list, limit, cursor, answer });
-    if (question === "impact") return impactAnswer(impact(ctx, request), { answer, limit, cursor });
+    if (question === "impact") return impactAnswer(impact(ctx, request), { answer, limit, cursor, ix: ctx.ix });
     if (question === "tree" || question === "user") {
       const node = ctx.ix.nodes.get(id);
       const wanted = question === "tree" ? "기능" : "유저 활동";
@@ -961,6 +993,7 @@ export const productGraphWalk = (() => {
       const paged = page(items, { limit, cursor });
       const rows = [repeated(paged, root), ...stepRows(ctx, id, question, { depth: Math.max(1, Number(depth) || 1), limit, cursor, path: [id], level: 1, hint: `${question} ${id}` })];
       if (!items.length) rows.push({ depth: 1, kind: "text", text: question === "down" ? "아래로 이어지는 연결 없음" : "이것을 가리키는 것 없음" });
+      if (question === "up") rows.push(...mayBeThisRows(ctx.ix, id, 1));
       return answer(pathLine(ctx, [id]), rows, { page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor } });
     }
     if (!reachDirection(ctx, id))
@@ -989,6 +1022,10 @@ export const productGraphWalk = (() => {
     if (paged.remaining) rows.push(moreRow(1, paged, `reach ${id} --cursor ${paged.nextCursor}`, true));
     // The walk from 입구 stopped before another 기능's 처리 코드: counted on every page.
     if (reached.entryStops) rows.push(repeated(paged, entryStopRow(reached.entryStops, 1)));
+    // Unresolved calls in the reached code (3.2): on the last page, after every node row.
+    if (reached.lostCalls && !paged.remaining) rows.push(...lostCallRows(reached.lostCalls, 1));
+    // Nothing reaches this code (3.4): calls that may be it.
+    if (reached.direction === "up" && !reached.ids.length) rows.push(...mayBeThisRows(ctx.ix, id, 1));
     // On the last page: the 기능 a crossed boundary would add.
     if (!paged.remaining)
       for (const item of reached.acrossBoundary || [])
@@ -1049,6 +1086,9 @@ export const productGraphWalk = (() => {
       for (const boundary of boundariesOf(ctx.ix, id))
         rows.push({ depth: depth + 1, kind: "text", text: boundaryLine(boundary), boundary: { from: boundary.from, to: boundary.to, 설명: boundary.설명 || null } });
       rows.push(...outsideRows(ctx, id, depth + 1));
+      const made = ctx.ix.nodes.get(id)?.unresolvedCalls?.made;
+      if (made?.count)
+        rows.push({ depth: depth + 1, kind: "text", text: `못 푼 호출 ${made.count}곳: ${made.callees.map((item) => `\`${item.callee}\``).join(", ")}${made.count > made.callees.length ? " …" : ""}`, lostCalls: made });
       // A 처리 start a 분기 rule splits shows only its own lines (2.9).
       const lines = !edge && own.has(id) ? limited.get(id) : null;
       const children = (ctx.ix.out.get(id) || [])
