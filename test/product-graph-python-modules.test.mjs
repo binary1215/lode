@@ -208,3 +208,60 @@ test("a declaration nothing calls names the unresolved calls that may be it (3.4
   // Something calls helperA: nothing said even if a name matched.
   assert.doesNotMatch(ask("up", "src/tools.js#helperA").text, /이 선언일 수 있는/);
 });
+
+// ---------- 5: graph version 3 against older baselines and records ----------
+
+test("against a version-2 baseline, newly resolved edges show as the reader's, never 닿는 코드가 바뀜 or 다시 볼 것", (t) => {
+  const files = { ...PACKAGE, "app/user.py": lines("from app.pkg import mod", "", "def absolute():", "    return mod.f()") };
+  const rules = [{ 종류: "cli", 판단: true, 파일: ["app/user.py"], 패턴: "def (absolute)", "처리 코드": "줄을 감싼 코드" }];
+  const { out } = build(t, files, rules);
+  // The baseline as version 2 wrote it: the call through the module was unresolved.
+  const file = path.join(out, "baseline.json");
+  const baseline = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.equal(baseline.reader.graphVersion, 3);
+  baseline.reader.graphVersion = 2;
+  const id = (part) => (typeof part === "number" ? baseline.nodes[part][0] : part);
+  const before = baseline.edges.length;
+  baseline.edges = baseline.edges.filter((edge) => !(edge[0] === "call" && id(edge[1]) === "app/user.py#absolute" && id(edge[2]) === "app/pkg/mod.py#f"));
+  assert.equal(baseline.edges.length, before - 1);
+  for (const node of baseline.nodes) if (node[1] === "기능") node[6] = "0".repeat(64);
+  fs.writeFileSync(file, JSON.stringify(baseline));
+  const base = path.dirname(out);
+  const second = buildProductGraph({
+    sourceRoot: path.join(base, "source"),
+    documentsDirectory: path.join(base, "documents"),
+    rulesFile: path.join(base, "rules.json"),
+    outputDirectory: out,
+  });
+  const changes = second.changes;
+  assert.equal(changes.moved.reader, true);
+  assert.equal(changes.edges.call.added, 1);
+  assert.equal(changes.counts.reachChanged, 0);
+  assert.equal(changes.counts.reviewAgain, 0);
+  assert.deepEqual(changes.readerChanged.reach, ["cli:absolute"]);
+});
+
+test("a confirmation record made under graph version 2 reads as made under another reader", async () => {
+  const { confirmationStatus } = await import("../scripts/lib/world/product-graph-confirmations.mjs");
+  const now = { generator: "lode-product-graph", graphVersion: 3, sourceAnalysis: "0.3.4" };
+  const DOC = "화면/main.md";
+  const graph = {
+    nodes: [
+      { id: "screen:main", type: "화면", contentSha256: "s" },
+      { id: "src/view.js#draw", type: "코드", contentSha256: "c" },
+    ],
+    edges: [{ type: "화면→코드", from: "screen:main", to: "src/view.js#draw", at: { path: DOC, line: 3 }, basis: { status: "승인" } }],
+    inputs: { reader: now },
+  };
+  const record = {
+    checkId: "check-1",
+    by: "agent-checked",
+    checkedAt: "2026-11-20T00:00:00.000Z",
+    reader: { ...now, graphVersion: 2 },
+    supersedes: [],
+    items: [{ kind: "documentRow", document: DOC, type: "화면→코드", from: "screen:main", to: "src/view.js#draw", documentTextSha256: "d", basis: [{ id: "src/view.js#draw", contentSha256: "c" }] }],
+  };
+  const result = confirmationStatus({ graph, meaningDocument: null, documents: [{ path: DOC, approvable: true, approvalDigest: "d" }], records: [record] });
+  assert.equal(result.counts.current, 0);
+  assert.equal(result.otherReader.length, 1);
+});

@@ -141,3 +141,30 @@ test("3,000 large UI-candidate files build within 1.5 GB of peak RSS", { timeout
   assert.equal(graph.nodes.filter((node) => node.type === "기능").length, 3000);
   assert.ok(measured.maxRssMB < 1536, `peak RSS ${measured.maxRssMB} MB`);
 });
+
+// 4.7: a folder read by the baseline and left out now (or the reverse) is
+// named on its own line; its nodes are not 신규 or 사라짐.
+test("the comparison names a folder the reading range left out or took back", (t) => {
+  const p = tree(t, { code: 30 });
+  p.build();
+  const base = path.dirname(p.out);
+  for (let index = 30; index < 38; index += 1) fs.writeFileSync(path.join(base, "source", "src", `m${index}.py`), `def f${index}():\n    return ${index}\n`);
+  const narrower = p.build();
+  assert.deepEqual(narrower.changes.readRange.leftOut, ["data"]);
+  assert.deepEqual(narrower.changes.readRange.readAgain, []);
+  assert.equal(narrower.changes.readRange.removed.length, 10);
+  assert.ok(narrower.changes.readRange.removed.every((id) => id.startsWith("data/tools/")));
+  assert.equal(narrower.changes.counts.removed, 0);
+  assert.equal(narrower.changes.counts.added, 16);
+  assert.match(narrower.text, /\n- 읽는 범위가 달라짐: data\/ 이번에 읽지 않음 — 그래서 사라진 노드 10개, 생긴 노드 0개, 닿는 범위가 달라진 기능 0개 \(신규·사라짐·닿는 코드가 바뀜에 넣지 않는다\)\n/);
+  // Set the baseline here, then go back under the limit: the folder is read again.
+  fs.rmSync(path.join(base, "out", "baseline.json"));
+  p.build();
+  for (let index = 30; index < 38; index += 1) fs.rmSync(path.join(base, "source", "src", `m${index}.py`));
+  const wider = p.build();
+  assert.deepEqual(wider.changes.readRange.readAgain, ["data"]);
+  assert.equal(wider.changes.readRange.added.length, 10);
+  assert.equal(wider.changes.counts.added, 0);
+  assert.equal(wider.changes.counts.removed, 16);
+  assert.match(wider.text, /읽는 범위가 달라짐: data\/ 이번에 읽음 — 그래서 사라진 노드 0개, 생긴 노드 10개/);
+});

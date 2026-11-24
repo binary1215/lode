@@ -70,7 +70,7 @@ import {
 import { productGraphWalk as walk } from "../../graph-explorer/product-graph-walk.js";
 import { machineEdges, runLabel, runStates } from "./product-graph-runs.mjs";
 
-export const PRODUCT_GRAPH_VERSION = 2;
+export const PRODUCT_GRAPH_VERSION = 3;
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const nfc = (name) => name.normalize("NFC");

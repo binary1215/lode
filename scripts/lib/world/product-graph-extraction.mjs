@@ -175,7 +175,7 @@ function selectSource(files, { named, uiExtensions, included }) {
   const keepAncestors = (relative) => {
     for (let dir = path.posix.dirname(relative); dir !== "."; dir = path.posix.dirname(dir)) keptDirs.add(dir);
   };
-  for (const item of [...named, ...included]) {
+  for (const item of named) {
     keepAncestors(item);
     keptDirs.add(item);
   }
@@ -204,19 +204,25 @@ function selectSource(files, { named, uiExtensions, included }) {
       if (code) row.code += 1;
     }
   });
-  const kept = (dir) => keptDirs.has(dir) || included.some((prefix) => dir.startsWith(prefix + "/"));
+  // source.포함: a folder at or under a prefix is kept (and reported as kept
+  // when data-like); one holding a prefix is looked into.
+  const includedAt = (dir) => included.some((prefix) => dir === prefix || dir.startsWith(prefix + "/"));
+  const holdsIncluded = (dir) => included.some((prefix) => prefix.startsWith(dir + "/"));
   const dataLike = [];
+  const keptByInclude = [];
   const visit = (dir) => {
     for (const child of (children.get(dir) || []).sort(compare)) {
       const row = stats.get(child);
       if (row.files < activeLimits.dataFolderFiles) continue;
-      if (!kept(child) && row.toRead < row.files * activeLimits.dataFolderShare)
-        dataLike.push({ ...row, share: Math.round((row.toRead / row.files) * 1000) / 1000 });
+      const numbers = row.toRead < row.files * activeLimits.dataFolderShare;
+      const entry = { ...row, share: Math.round((row.toRead / row.files) * 1000) / 1000 };
+      if (numbers && !keptDirs.has(child) && includedAt(child)) keptByInclude.push(entry);
+      else if (numbers && !keptDirs.has(child) && !holdsIncluded(child)) dataLike.push(entry);
       else visit(child);
     }
   };
   visit("");
-  if (toRead <= activeLimits.filesToRead) return { files, toRead, leftOut: [], candidates: dataLike };
+  if (toRead <= activeLimits.filesToRead) return { files, toRead, leftOut: [], candidates: dataLike, included: keptByInclude };
   const leftOutRead = dataLike.reduce((sum, row) => sum + row.toRead, 0);
   if (toRead - leftOutRead > activeLimits.filesToRead) {
     const byTop = new Map();
@@ -233,7 +239,7 @@ function selectSource(files, { named, uiExtensions, included }) {
     );
   }
   const out = (relative) => dataLike.some((row) => relative.startsWith(row.path + "/"));
-  return { files: files.filter((relative) => !out(relative)), toRead: toRead - leftOutRead, leftOut: dataLike, candidates: [] };
+  return { files: files.filter((relative) => !out(relative)), toRead: toRead - leftOutRead, leftOut: dataLike, candidates: [], included: keptByInclude };
 }
 
 // One code mask per code file per build (B3 of review round 1): every reader
@@ -1855,7 +1861,13 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     scannedFiles: files.length,
     // Size (4.3, 4.4): files to read, the data-like folders left out (or, under
     // the limit, the candidates for source.제외), and the limits.
-    sourceSize: { filesToRead: selection.toRead, limits: activeLimits, leftOut: selection.leftOut, candidates: selection.candidates },
+    sourceSize: {
+      filesToRead: selection.toRead,
+      limits: activeLimits,
+      leftOut: selection.leftOut,
+      candidates: selection.candidates,
+      included: selection.included,
+    },
     codeFiles: code.analyses.size,
     excludes: [...excludes].sort(),
   };

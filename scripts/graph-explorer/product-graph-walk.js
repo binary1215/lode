@@ -1221,6 +1221,7 @@ export const productGraphWalk = (() => {
         ? [`읽지 않은 데이터 폴더 ${size.leftOut.length}개 — 읽을 파일이 한도를 넘어 자동으로 뺐다: ${firstTen(size.leftOut)}. 그 안의 코드 파일 ${code}개도 읽지 않음. 다시 읽으려면 호출 방식 표의 source.포함에 적는다.`]
         : []),
       ...(size.candidates.length ? [`데이터 폴더로 보이는 곳 ${size.candidates.length}개 (다 읽었다. 빼려면 source.제외): ${firstTen(size.candidates)}`] : []),
+      ...(size.included?.length ? [`source.포함으로 읽은 데이터 폴더 ${size.included.length}개: ${firstTen(size.included)}`] : []),
       `읽을 파일 ${size.filesToRead}개. ${size.reading}`,
     ];
   }
@@ -1725,6 +1726,14 @@ export const productGraphWalk = (() => {
         ];
         lines.push(`- 읽는 방식이 달라져 새로 생긴 노드 ${changes.readerChanged.newNodes.length}개 (${what.join("; ")}. 신규로 세지 않는다)`);
       }
+    }
+    // Folders read now and not by the baseline, or the reverse (4.7).
+    if (changes.readRange) {
+      const range = changes.readRange;
+      const folders = [...range.leftOut.map((folder) => `${folder}/ 이번에 읽지 않음`), ...range.readAgain.map((folder) => `${folder}/ 이번에 읽음`)];
+      lines.push(
+        `- 읽는 범위가 달라짐: ${folders.join(", ")} — 그래서 사라진 노드 ${range.removed.length}개, 생긴 노드 ${range.added.length}개, 닿는 범위가 달라진 기능 ${range.reach.length}개 (신규·사라짐·닿는 코드가 바뀜에 넣지 않는다)`,
+      );
     }
     lines.push("- 노드 종류별 (ID 기준):");
     for (const group of changes.byType || [])
