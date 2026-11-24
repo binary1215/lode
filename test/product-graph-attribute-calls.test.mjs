@@ -357,3 +357,52 @@ test("TypeScript: the same forms leave the attribute unknown", (t) => {
     assert.deepEqual(calls(graph, `src/case-${name.toLowerCase()}.ts#Case${name}.run`), expected, name);
   }
 });
+
+// R2-3: a CRLF file reads the same as its LF copy (class-body fields too).
+test("a CRLF file gives the same attribute edges as its LF copy", (t) => {
+  const user = lines(
+    "from app.io import RealIO",
+    "",
+    "class Field:",
+    "    io: RealIO = RealIO()",
+    "",
+    "    def run(self):",
+    "        return self.io.start()",
+    "",
+    "class Built:",
+    "    def __init__(self):",
+    "        self.io = RealIO()",
+    "",
+    "    def run(self):",
+    "        return self.io.start()",
+  );
+  const edges = (text) => {
+    const graph = build(t, { "app/__init__.py": "", "app/io.py": PY_IO.replaceAll("\n", text === "crlf" ? "\r\n" : "\n"), "app/user.py": text === "crlf" ? user.replaceAll("\n", "\r\n") : user });
+    return ["Field", "Built"].map((owner) => calls(graph, `app/user.py#${owner}.run`));
+  };
+  const expected = [["app/io.py#RealIO.start"], ["app/io.py#RealIO.start"]];
+  assert.deepEqual(edges("lf"), expected);
+  assert.deepEqual(edges("crlf"), expected);
+});
+
+// R2-4: a member name the product defines nowhere stays member-nowhere, whatever the class extends.
+test("an unassigned attribute's method that the product never defines stays member-nowhere", (t) => {
+  const graph = build(t, {
+    "app/__init__.py": "",
+    "app/io.py": PY_IO,
+    "app/win.py": lines("from app.io import RealIO", "", "class Win(RealIO):", "    def show(self):", "        self.button.setText(1)", "        return self.button.start()"),
+  });
+  assert.deepEqual(reasonOf(graph, "button.setText"), ["member-nowhere"]);
+  assert.deepEqual(reasonOf(graph, "button.start"), ["inherited"]);
+});
+
+// R2-5: a constructor whose signature the scan cuts at 500 characters still gives its parameter types.
+test("a typed parameter of a constructor with a signature over 500 characters is read from the file", (t) => {
+  const many = Array.from({ length: 40 }, (_, index) => `        option_number_${index}: int = ${index},`);
+  const graph = build(t, {
+    "app/__init__.py": "",
+    "app/io.py": PY_IO,
+    "app/big.py": lines("from app.io import RealIO", "", "class Big:", "    def __init__(", "        self,", ...many, "        io: RealIO = None,", "    ):", "        self.io = io", "", "    def run(self):", "        return self.io.start()"),
+  });
+  assert.deepEqual(calls(graph, "app/big.py#Big.run"), ["app/io.py#RealIO.start"]);
+});

@@ -794,7 +794,7 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
   // Per file, once: the innermost class and function holding each line.
   const innermostByLine = (analysis) => {
     if (analysis.prepared.innermost) return analysis.prepared.innermost;
-    const size = (analysis.prepared.textLines ??= analysis.text.split("\n")).length + 2;
+    const size = (analysis.prepared.textLines ??= analysis.text.split(/\r?\n/)).length + 2;
     const fill = (kind) => {
       const holder = new Array(size).fill(null);
       const symbols = analysis.symbols
@@ -848,6 +848,19 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
     }
     return true;
   };
+  // A function's parameter types: from its signature, or, when the signature
+  // does not close its parameter list (the scan cuts signatures at 500
+  // characters), from the file from the declaration's line to the matching
+  // bracket (R2-5). Nothing is guessed when that bracket is not found.
+  const parametersOf = (analysis, symbol) => {
+    const signature = symbol.signature || "";
+    const open = signature.indexOf("(");
+    if (open >= 0 && closing(signature, open) >= 0) return parameterTypes(signature);
+    const masked = viewOfAnalysis(analysis, "code");
+    const start = masked.indexOf("(", analysis.starts[symbol.line - 1] ?? 0);
+    const close = start >= 0 ? closing(masked, start) : -1;
+    return close > start ? parameterTypes(analysis.text.slice(start, close + 1)) : new Map();
+  };
   const classEvidence = new Map();
   // One pass over a class: for every attribute, the classes its evidence
   // names, whether any of it is unknown, and the counts of assignment targets
@@ -892,7 +905,7 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
       const method = innermost.function[line];
       const parameter =
         word && restIsEmpty(masked, at + word.length) && method && method.qualifiedName.startsWith(`${owner}.`)
-          ? parameterTypes(method.signature || "").get(word)
+          ? parametersOf(analysis, method).get(word)
           : null;
       note(attr, parameter ? classIn(relative, typeName(parameter.type)) : null);
     };
@@ -947,7 +960,7 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
     // TypeScript: constructor parameter properties (constructor(private attr: T)).
     if (!python) {
       const constructor = analysis.symbols.find((symbol) => symbol.kind === "function" && symbol.qualifiedName === `${owner}.constructor`);
-      for (const [name, parameter] of constructor ? parameterTypes(constructor.signature || "") : [])
+      for (const [name, parameter] of constructor ? parametersOf(analysis, constructor) : [])
         if (parameter.property) note(name, classIn(relative, typeName(parameter.type)));
     }
     return attrs;
@@ -1412,7 +1425,9 @@ function resolveCall(relative, analysis, call, bindings, context) {
     if (owner || language === "python") {
       const held = owner ? attributeOf(relative, owner, call.chain[1]) : { unknown: true };
       if (held.class) return classMember(held.class.module, held.class.name, member, false);
-      if (held.none && classExtends(analysis, owner)) return { reason: "inherited" };
+      // A name the product defines nowhere cannot be product code, whatever the class extends (R2-4).
+      const defined = memberNames.has(member.replace(/^#/, "")) || memberNames.has(member);
+      if (held.none && defined && classExtends(analysis, owner)) return { reason: "inherited" };
       return unknownMember(member);
     }
   }

@@ -138,6 +138,7 @@ export const productGraphWalk = (() => {
   // defines counts there, built-in types' methods included). A graph without
   // the field has none to say.
   const MAX_LOST_NODES = 5;
+  const MAX_LOST_NAMES = 50;
   const memberCount = (made) => (made?.members || []).reduce((sum, item) => sum + item.count, 0);
   const calleeList = (made) => `${made.callees.map((item) => `\`${item.callee}\` (줄 ${item.line})`).join(", ")}${made.count > made.callees.length ? " …" : ""}`;
   const lostField = (lost) => (lost ? { lostCalls: lost } : {});
@@ -167,7 +168,7 @@ export const productGraphWalk = (() => {
     const names = [...byName.values()].sort((a, b) => a.buildCount - b.buildCount || compare(a.name, b.name));
     return {
       named: { count: namedCount, nodes: named.slice(0, MAX_LOST_NODES) },
-      receiver: { count: receiver, names: names.slice(0, MAX_LOST_NODES), distinctNames: names.length },
+      receiver: { count: receiver, names: names.slice(0, MAX_LOST_NAMES), distinctNames: names.length },
     };
   }
   // The count row (every page of a reach) and the detail rows (its last page).
@@ -184,7 +185,7 @@ export const productGraphWalk = (() => {
     text: `못 푼 호출이 있는 곳 (${[...(lost.named.count ? ["이름으로 부른 것이 많은 노드"] : []), ...(lost.receiver.count ? ["메서드 호출의 이름별 수"] : [])].join(", ")}):`,
   });
   function lostDetailRows(lost, depth) {
-    const names = lost.receiver.names.map((item) => `\`${item.name}\` ${item.count} (빌드 전체 ${item.buildCount}, 예: ${where(item.example)})`).join(", ");
+    const names = lost.receiver.names.slice(0, MAX_LOST_NODES).map((item) => `\`${item.name}\` ${item.count} (빌드 전체 ${item.buildCount}, 예: ${where(item.example)})`).join(", ");
     return [
       ...lost.named.nodes.map((item) => ({ depth: depth + 1, kind: "text", text: `${item.id} — ${item.count}곳: ${calleeList(item)}`, lostCallsIn: item.id })),
       ...(lost.receiver.count
@@ -192,7 +193,7 @@ export const productGraphWalk = (() => {
             {
               depth: depth + 1,
               kind: "text",
-              text: `받는 쪽 타입을 모르는 메서드 호출 ${lost.receiver.count}곳 — 이름별: ${names}${lost.receiver.distinctNames > lost.receiver.names.length ? ` 외 이름 ${lost.receiver.distinctNames - lost.receiver.names.length}개` : ""}`,
+              text: `받는 쪽 타입을 모르는 메서드 호출 ${lost.receiver.count}곳 — 이름별: ${names}${lost.receiver.distinctNames > MAX_LOST_NODES ? ` 외 이름 ${lost.receiver.distinctNames - MAX_LOST_NODES}개 (노드별로는 tree)` : ""}`,
               lostMethodNames: lost.receiver.names,
             },
           ]
@@ -1285,11 +1286,13 @@ export const productGraphWalk = (() => {
   // Size (4.4): the data-like folders left out (with the code files in them)
   // (4.3a), with what they hold by kind (4.3b).
   const folderText = (row) =>
-    `${row.path}/ (파일 ${row.files}, 읽었을 파일 ${row.toRead}, 그중 코드 ${row.code}${row.config ? `, 설정 파일 ${row.config}` : ""}, ${Math.round(row.share * 1000) / 10}%${kindText(row.kinds)})`;
+    `${row.path}/ (파일 ${row.files}, 읽었을 파일 ${row.toRead}: 읽었을 코드 파일 ${row.code}${row.config ? `, 설정 파일 ${row.config}` : ""}, ${Math.round(row.share * 1000) / 10}%${kindText(row.kinds)})`;
   const KIND_WORDS = Object.freeze({ documents: "문서", data: "데이터", images: "이미지", code: "코드", other: "그 밖" });
   const kindText = (kinds) => {
-    const parts = Object.entries(KIND_WORDS).filter(([key]) => kinds?.[key]).map(([key, word]) => `${word} ${kinds[key]}`);
-    return parts.length ? `; 종류: ${parts.join(", ")}` : "";
+    const parts = Object.entries(KIND_WORDS)
+      .filter(([key]) => kinds?.[key])
+      .map(([key, word]) => `${word} ${kinds[key]}${key === "code" ? " (테스트 포함)" : ""}`);
+    return parts.length ? `; 종류(확장자로): ${parts.join(", ")}` : "";
   };
   const firstTen = (rows) => `${rows.slice(0, 10).map(folderText).join(", ")}${rows.length > 10 ? ` 외 ${rows.length - 10}개` : ""}`;
   function sourceSizeLines(size) {

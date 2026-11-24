@@ -41,7 +41,7 @@ test("the numbers a build uses", () => {
 // 4.3a: a data-like folder is always left out, whatever the files to read.
 const KINDS = { documents: 0, data: 0, images: 0, code: 5, other: 55 };
 const LINE =
-  "읽지 않은 데이터 폴더 1개 — 파일 50개 이상 중 읽을 파일이 10% 미만이라 데이터로 보고 뺐다: data/ (파일 60, 읽었을 파일 5, 그중 코드 5, 8.3%; 종류: 코드 5, 그 밖 55). 그 안의 코드 파일 5개도 읽지 않음. 다시 읽으려면 호출 방식 표의 source.포함에 적는다.";
+  "읽지 않은 데이터 폴더 1개 — 파일 50개 이상 중 읽을 파일이 10% 미만이라 데이터로 보고 뺐다: data/ (파일 60, 읽었을 파일 5: 읽었을 코드 파일 5, 8.3%; 종류(확장자로): 코드 5 (테스트 포함), 그 밖 55). 그 안의 코드 파일 5개도 읽지 않음. 다시 읽으려면 호출 방식 표의 source.포함에 적는다.";
 for (const [label, code] of [
   ["over the limit", 38],
   ["under the limit", 30],
@@ -93,7 +93,7 @@ test("a stray configuration file does not keep a data folder; a tests folder is 
     [["data", 7, 5, 2]],
   );
   assert.ok(result.text.includes("그 안의 코드 파일 5개, 설정 파일 2개도 읽지 않음"));
-  assert.ok(result.text.includes("data/ (파일 87, 읽었을 파일 7, 그중 코드 5, 설정 파일 2, 8%; 종류: 데이터 2, 코드 5, 그 밖 80)"), result.text);
+  assert.ok(result.text.includes("data/ (파일 87, 읽었을 파일 7: 읽었을 코드 파일 5, 설정 파일 2, 8%; 종류(확장자로): 데이터 2, 코드 5 (테스트 포함), 그 밖 80)"), result.text);
   assert.ok(!result.limits.sourceSize.leftOut.some((row) => row.path === "tests"));
 });
 
