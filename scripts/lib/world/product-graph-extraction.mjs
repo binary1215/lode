@@ -268,6 +268,12 @@ export const UNRESOLVED_REASONS = Object.freeze([
     settle: "경로를 글자로 쓰고 같은 식에서 이름을 꺼내기(.then((m) => m.이름) 또는 const { 이름 } = await import(...)), 또는 프로젝트 규칙",
   }),
   Object.freeze({
+    key: "module-not-read",
+    group: "product",
+    label: "들여온 모듈이 읽은 파일에 없음 (Python: 상대 import, 또는 모듈 이름을 따라가다 읽은 파일이 아닌 모듈에 닿음)",
+    settle: "제품 코드라면 그 파일이 스캔 범위(확장자, source.제외)에 드는지 확인",
+  }),
+  Object.freeze({
     key: "rest",
     group: "product",
     label: "그 밖: 스캔이 이유를 정하지 못함 (들여온 모듈을 찾지 못함, 모듈에 그 이름이 없음, 한 줄에 같은 이름이 메서드와 함수로 함께 쓰임)",
@@ -300,6 +306,12 @@ function resolveModule(fromFile, specifier, language, fileSet) {
 // A specifier that names a module of the product: relative in JavaScript;
 // in Python, one that resolves to a scanned file (an absolute name that does
 // not is taken as outside the product).
+// Python: the module "name" of the module a specifier names ("pkg" + "mod",
+// "." + "mod", ".sub" + "mod").
+function joinSpecifier(specifier, name) {
+  return specifier.endsWith(".") ? `${specifier}${name}` : `${specifier}.${name}`;
+}
+
 function isExternalSpecifier(relative, specifier, language, fileSet) {
   if (language === "python") return !specifier.startsWith(".") && !resolveModule(relative, specifier, language, fileSet);
   return !specifier.startsWith(".");
@@ -496,7 +508,47 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
       }
     return hits.size === 1 ? [...hits.values()][0] : null;
   };
-  const context = { analyses, found, unique, fileSet, names, memberNames, globals, follow, bindingsOf, valuesOf };
+  // Python (2.1–2.3): a binding that names a module — a namespace import, or
+  // "from pkg import mod [as x]" when the package itself has no declaration,
+  // value or re-export of mod (one there wins, as in Python) and pkg.mod is a
+  // read file — and the modules a dotted name walks from it, one segment at a
+  // time while each step is a read file. null when the head names no module;
+  // { reason } when the walk starts outside the read files; else the module
+  // reached and the segments left (missing: a step was not a read file).
+  const throughModules = (relative, segments) => {
+    if (analyses.get(relative)?.language !== "python" || segments.length < 2) return null;
+    const binding = bindingsOf.get(relative)?.get(segments[0]);
+    if (!binding) return null;
+    const find = (specifier) => resolveModule(relative, specifier, "python", fileSet);
+    let specifier;
+    if (binding.namespace) {
+      // "import pkg.mod" binds pkg: a longer name walks from the package.
+      const top = binding.specifier.split(".")[0];
+      specifier = segments.length > 2 && binding.local === top && top !== binding.specifier ? top : binding.specifier;
+    } else {
+      const owner = find(binding.specifier);
+      if (owner && follow(owner, binding.imported)) return null;
+      specifier = joinSpecifier(binding.specifier, binding.imported);
+      if (!find(specifier)) return null;
+    }
+    let index = 1,
+      missing = false;
+    while (index < segments.length - 1) {
+      const owner = find(specifier);
+      if (owner && follow(owner, segments[index])) break;
+      const next = joinSpecifier(specifier, segments[index]);
+      if (!find(next)) {
+        missing = true;
+        break;
+      }
+      specifier = next;
+      index += 1;
+    }
+    const module = find(specifier);
+    if (!module) return { reason: binding.specifier.startsWith(".") ? "module-not-read" : "external-import" };
+    return { module, rest: segments.slice(index), missing };
+  };
+  const context = { analyses, found, unique, fileSet, names, memberNames, globals, follow, bindingsOf, valuesOf, throughModules };
   const references = new Map();
   const unresolvedByReason = new Map(UNRESOLVED_REASONS.map((reason) => [reason.key, new Map()]));
   let resolvedCount = 0,
@@ -547,6 +599,20 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
         receivers.set(key, receiver);
         return receiver;
       };
+      // Python: the scan keeps the last two segments of a dotted callee
+      // ("pkg.mod.f(" is "mod.f"). The whole name, read on the call's line when
+      // every use of "a.b(" there has the same leading names, else null.
+      const chainOf = (line, callee) => {
+        const key = `${line}\0${callee}\0chain`;
+        if (receivers.has(key)) return receivers.get(key);
+        const [first, second] = callee.split(".");
+        const pattern = new RegExp(`(?<![\\w.])(?<!\\.\\s*)((?:[A-Za-z_]\\w*\\s*\\.\\s*)*)${first}\\s*\\.\\s*${second}\\s*\\(`, "g");
+        const prefixes = new Set([...(maskedLines[line - 1] || "").matchAll(pattern)].map((match) => match[1].replace(/\s+/g, "")));
+        const prefix = prefixes.size === 1 ? [...prefixes][0] : "";
+        const chain = prefix ? [...prefix.split(".").filter(Boolean), first, second] : null;
+        receivers.set(key, chain);
+        return chain;
+      };
       for (const call of analysis.semanticFacts.calls) {
         // Only a plain name can be a value binding: the first pass skips the rest.
         if (pass === "values" && (call.callee.includes(".") || call.callee === "import")) continue;
@@ -583,6 +649,7 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
             ...call,
             callerQualifiedName: caller?.qualifiedName ?? call.callerQualifiedName,
             receiver: call.callee.includes(".") ? null : receiverOf(call.line, call.callee),
+            chain: analysis.language === "python" && /^[A-Za-z_]\w*\.[A-Za-z_]\w*$/.test(call.callee) ? chainOf(call.line, call.callee) : null,
           },
           bindings,
           context,
@@ -636,6 +703,12 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
   const resolveMember = (relative, head, member) => {
     const binding = bindingsOf.get(relative)?.get(head);
     if (!binding) return unique(relative, `${head}.${member}`);
+    // Python: "x.f" where x names a module (2.2), like a namespace import.
+    const walk = binding.namespace ? null : throughModules(relative, [head, member]);
+    if (walk) {
+      const place = walk.module && walk.rest.length === 1 && follow(walk.module, member);
+      return place ? unique(place.module, place.name) || nodeValue(place.module, place.name) : null;
+    }
     const language = analyses.get(relative)?.language;
     if (isExternalSpecifier(relative, binding.specifier, language, fileSet)) return null;
     const module = resolveModule(relative, binding.specifier, language, fileSet);
@@ -697,7 +770,7 @@ function classExtends(analysis, qualifiedName) {
 
 // Resolves one call to exactly one declaration or called value, or says why it did not.
 function resolveCall(relative, analysis, call, bindings, context) {
-  const { found, unique, fileSet, names, memberNames, globals, follow, analyses, valuesOf } = context;
+  const { found, unique, fileSet, names, memberNames, globals, follow, analyses, valuesOf, throughModules } = context;
   const callee = call.callee;
   const language = analysis.language;
   const table = globals[language === "python" ? "python" : "javascript"];
@@ -738,7 +811,19 @@ function resolveCall(relative, analysis, call, bindings, context) {
     // A default import: the declaration of the local's name (as before), else
     // the module's default export.
     const place = module && (binding.imported === "default" ? follow(module, local) || follow(module, "default") : follow(module, binding.imported));
-    return place ? { place } : { reason: "rest" };
+    return place ? { place } : { reason: !module && language === "python" ? "module-not-read" : "rest" };
+  };
+  // Python: the names left after walking modules (2.2, 2.3) resolve by the
+  // two-part rules: a name of the module, or a member of one of its classes
+  // or object literals. Anything longer stays unresolved.
+  const inModule = (walk) => {
+    if (walk.reason) return { reason: walk.reason };
+    const [name, member, ...more] = walk.rest;
+    const place = !more.length && follow(walk.module, name);
+    if (!place) return { reason: walk.missing ? "module-not-read" : "rest" };
+    if (member === undefined) return pick(place.module, place.name) || valueAt(place.module, place.name) || { reason: "rest" };
+    if (unique(place.module, place.name)?.kind === "class") return classMember(place.module, place.name, member, true);
+    return pick(place.module, `${place.name}.${member}`) || unknownMember(member);
   };
   const self = language === "python" ? "self." : "this.";
   if (callee.startsWith(self)) {
@@ -788,6 +873,13 @@ function resolveCall(relative, analysis, call, bindings, context) {
     return entry.kind === "const-new" || entry.kind === "call-assign" ? entry.className : null;
   };
   const classNamed = (name) => {
+    // Python: "mod.Store" through a binding that names a module (2.2).
+    if (name.includes(".")) {
+      const walk = throughModules(relative, name.split("."));
+      if (!walk?.module || walk.rest.length !== 1) return null;
+      const place = follow(walk.module, walk.rest[0]);
+      return place && unique(place.module, place.name)?.kind === "class" ? place : null;
+    }
     // A class this file can name: nested or module level here, or imported.
     const here = nested(name) || pick(relative, name);
     if (here?.target?.kind === "class") return { module: relative, name: here.target.qualifiedName };
@@ -803,13 +895,24 @@ function resolveCall(relative, analysis, call, bindings, context) {
     const owner = className && classNamed(className);
     return owner ? classMember(owner.module, owner.name, member, false) : unknownMember(member);
   }
+  // Python: a dotted name whose head names a module walks modules (2.1–2.3);
+  // a head held by a parameter or local is not the import.
+  const chain = call.chain || [head, member];
+  if (language === "python" && !(chain.length > 2 && call.index !== undefined && bindingAt(analysis.facts, call.index, chain[0]))) {
+    const walk = chain.length > 2 || !bindings.get(chain[0])?.namespace ? throughModules(relative, chain) : null;
+    if (walk) return inModule(walk);
+  }
   const binding = bindings.get(head);
   if (binding?.namespace) {
     // A namespace import: the member is a name of that module (through re-exports).
     if (isExternalSpecifier(relative, binding.specifier, language, fileSet)) return { reason: "external-import" };
     const module = resolveModule(relative, binding.specifier, language, fileSet);
     const place = module && follow(module, member);
-    return (place && (pick(place.module, place.name) || valueAt(place.module, place.name))) || { reason: "rest" };
+    return (
+      (place && (pick(place.module, place.name) || valueAt(place.module, place.name))) || {
+        reason: !module && language === "python" ? "module-not-read" : "rest",
+      }
+    );
   }
   if (binding) {
     const outcome = imported(binding, head);

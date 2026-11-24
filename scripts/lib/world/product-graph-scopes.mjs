@@ -291,8 +291,10 @@ export function pythonFacts(text, masked, symbols, starts) {
   const ownerOf = (index) => innermostScope(scopes, index) || moduleScope;
   for (const match of masked.matchAll(/^([ \t]*)([A-Za-z_]\w*)\s*(?::[^=\n]+)?=(?!=)/gm)) {
     const at = match.index + match[1].length;
-    const created = /^\s*([A-Za-z_]\w*)\s*\(/.exec(masked.slice(match.index + match[0].length, match.index + match[0].length + 200));
-    addLocal(ownerOf(at), match[2], { kind: created ? "call-assign" : "assign", className: created?.[1] ?? null, index: at });
+    // The callee may be dotted ("v = mod.Store()"): the product graph resolves
+    // it only through a binding that names a module.
+    const created = /^\s*([A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*)\s*\(/.exec(masked.slice(match.index + match[0].length, match.index + match[0].length + 200));
+    addLocal(ownerOf(at), match[2], { kind: created ? "call-assign" : "assign", className: created?.[1].replace(/\s+/g, "") ?? null, index: at });
   }
   for (const match of masked.matchAll(/\b(?:for|as)\s+([A-Za-z_]\w*)\b/g))
     addLocal(ownerOf(match.index), match[1], { kind: "assign", className: null, index: match.index });
