@@ -172,7 +172,7 @@ Graph version 3 resolves Python calls through a module imported by name (`from p
 
 - Reach that differs only in files whose text is the baseline's is counted under "읽는 방식이 달라져 닿는 범위가 달라진 기능", never as 닿는 코드가 바뀜 or 다시 볼 것.
 - Confirmation records show "다른 방식으로 읽은 때 확인함" until they are confirmed again; nothing is rewritten.
-- A build that now leaves out a data-like folder the baseline read, or reads one the baseline did not, says so on its own line, "읽는 범위가 달라짐: …"; the nodes that leave or come only because of it are not 신규 or 사라짐.
+- A build that now leaves out a data-like folder the baseline read (data-like folders are always left out now), or reads one through `source.포함` that the baseline did not, says so on its own line, "읽는 범위가 달라짐: …"; the nodes that leave or come only because of it are not 신규 or 사라짐. A project with such a folder loses the code inside it from the graph once.
 
 After reviewing the list, run `product-graph-baseline` as above.
 
@@ -230,7 +230,7 @@ A call to a runtime global the built-in table does not list (a host's own global
 
 ## A large source tree
 
-A build counts only the files it would read (code, UI-binding candidates, hook, command and cli configuration, `.sql`, files a rule names) against its limit of 50,000. When a tree holds more, folders of at least 2,000 files of which under 10% would be read are left out as data-like and the build goes on; the limits block, `check.json`, the overview and `gaps` name each, with the code files in it that were not read. Under the limit nothing is left out, and such folders are only suggested for `source.제외`. To read a folder that was left out, name it under `source.포함`; `source.제외` still wins for the same path:
+A build counts only the files it would read (code, UI-binding candidates, hook, command and cli configuration, `.sql`, files a rule names) against its limit of 50,000. Folders of at least 2,000 files of which under 10% would be read are left out as data-like, whatever the count, and the build goes on; the limits block, `check.json`, the overview and `gaps` name each, with the code files in it that were not read and what it holds by kind (문서, 데이터, 이미지, 코드, 그 밖, from extensions alone). To read a folder that was left out, name it under `source.포함`; `source.제외` still wins for the same path:
 
 ```json
 { "schemaVersion": 1, "kind": "LodeProductGraphEntryRules", "rules": [], "source": { "제외": ["recordings"], "포함": ["data/tools"] } }

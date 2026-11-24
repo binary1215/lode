@@ -162,12 +162,22 @@ const isEntryConfiguration = (relative) => ENTRY_CONFIGURATION.some((pattern) =>
 // configuration a built-in rule finds by its name protects nothing: in a
 // data-like folder it is a file Lode would have read, counted apart. Whether
 // data-like folders are left out is decided by leavesDataFoldersOut alone.
-// D1: the one condition under which data-like folders are left out — the
-// files to read pass the limit. Every other build reads them and only lists
-// them as candidates for source.제외.
-function leavesDataFoldersOut({ toRead }) {
-  return toRead > activeLimits.filesToRead;
+// 4.3a (replacing D1): data-like folders are always left out, whatever the
+// files to read; source.포함 brings one back. When the rest still passes the
+// limit the build fails (4.6).
+function leavesDataFoldersOut({ dataLike }) {
+  return dataLike.length > 0;
 }
+
+// 4.3b: what a data-like folder holds, by kind, from file extensions alone
+// (nothing is opened). The lists are judgement and shown in the limits text.
+export const FILE_KINDS = Object.freeze({
+  documents: Object.freeze([".md", ".txt", ".html", ".htm", ".pdf", ".rst"]),
+  data: Object.freeze([".json", ".jsonl", ".csv", ".tsv", ".yaml", ".yml", ".xml", ".log"]),
+  images: Object.freeze([".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".gif", ".webp", ".svg"]),
+  code: Object.freeze(Object.keys(CODE_LANGUAGES)),
+});
+const KIND_OF_EXTENSION = new Map(Object.entries(FILE_KINDS).flatMap(([kind, extensions]) => extensions.map((extension) => [extension, kind])));
 
 function selectSource(files, { named, uiExtensions, included }) {
   const namedSet = new Set(named);
@@ -202,7 +212,7 @@ function selectSource(files, { named, uiExtensions, included }) {
     for (let dir = path.posix.dirname(relative); dir !== "."; dir = path.posix.dirname(dir)) {
       let row = stats.get(dir);
       if (!row) {
-        row = { path: dir, files: 0, toRead: 0, code: 0, config: 0, testCode: 0 };
+        row = { path: dir, files: 0, toRead: 0, code: 0, config: 0, testCode: 0, kinds: { documents: 0, data: 0, images: 0, code: 0, other: 0 } };
         stats.set(dir, row);
         const parent = path.posix.dirname(dir);
         const key = parent === "." ? "" : parent;
@@ -214,6 +224,7 @@ function selectSource(files, { named, uiExtensions, included }) {
       if (code) row.code += 1;
       if (config) row.config += 1;
       if (testCode) row.testCode += 1;
+      row.kinds[KIND_OF_EXTENSION.get(extension) || "other"] += 1;
     }
   });
   // source.포함: a folder at or under a prefix is kept (and reported as kept
@@ -228,15 +239,15 @@ function selectSource(files, { named, uiExtensions, included }) {
       if (row.files < activeLimits.dataFolderFiles) continue;
       const numbers = row.toRead + row.testCode < row.files * activeLimits.dataFolderShare;
       const { testCode, ...counts } = row;
-      const entry = { ...counts, share: Math.round(((row.toRead + testCode) / row.files) * 1000) / 1000 };
+      const entry = { ...counts, kinds: { ...row.kinds }, share: Math.round(((row.toRead + testCode) / row.files) * 1000) / 1000 };
       if (numbers && !keptDirs.has(child) && includedAt(child)) keptByInclude.push(entry);
       else if (numbers && !keptDirs.has(child) && !holdsIncluded(child)) dataLike.push(entry);
       else visit(child);
     }
   };
   visit("");
-  if (!leavesDataFoldersOut({ toRead })) return { files, toRead, leftOut: [], candidates: dataLike, included: keptByInclude };
-  const leftOutRead = dataLike.reduce((sum, row) => sum + row.toRead, 0);
+  const leaving = leavesDataFoldersOut({ dataLike, toRead });
+  const leftOutRead = leaving ? dataLike.reduce((sum, row) => sum + row.toRead, 0) : 0;
   if (toRead - leftOutRead > activeLimits.filesToRead) {
     const byTop = new Map();
     files.forEach((relative, position) => {
@@ -251,8 +262,9 @@ function selectSource(files, { named, uiExtensions, included }) {
       `읽을 파일이 ${toRead - leftOutRead}개로 한도 ${activeLimits.filesToRead}개(판단)를 넘는다${dataLike.length ? ` (데이터 폴더 ${dataLike.length}개와 그 안의 읽을 파일 ${leftOutRead}개를 빼고도)` : ""}. 맨 위 폴더(파일 / 읽을 파일): ${rows.map((row) => `${row.path} ${row.files} / ${row.toRead}`).join(", ")}. 읽지 않을 폴더는 호출 방식 표의 source.제외에 적으면 빠진다.`,
     );
   }
+  if (!leaving) return { files, toRead, leftOut: [], included: keptByInclude };
   const out = (relative) => dataLike.some((row) => relative.startsWith(row.path + "/"));
-  return { files: files.filter((relative) => !out(relative)), toRead: toRead - leftOutRead, leftOut: dataLike, candidates: [], included: keptByInclude };
+  return { files: files.filter((relative) => !out(relative)), toRead: toRead - leftOutRead, leftOut: dataLike, included: keptByInclude };
 }
 
 // One code mask per code file per build (B3 of review round 1): every reader
@@ -2151,13 +2163,12 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     notLookedAt: notLookedAt(files, code, skipped),
     unreachedCode: unreachedCode(code, functionNodes, extraCodeNodes),
     scannedFiles: files.length,
-    // Size (4.3, 4.4): files to read, the data-like folders left out (or, under
-    // the limit, the candidates for source.제외), and the limits.
+    // Size (4.3a, 4.4): files to read, the data-like folders left out, those
+    // source.포함 kept, and the limits.
     sourceSize: {
       filesToRead: selection.toRead,
       limits: activeLimits,
       leftOut: selection.leftOut,
-      candidates: selection.candidates,
       included: selection.included,
     },
     codeFiles: code.analyses.size,

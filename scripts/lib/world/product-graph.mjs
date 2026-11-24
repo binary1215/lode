@@ -50,7 +50,14 @@ import {
   parsePolicyFile,
   parseScreenDocument,
 } from "./product-graph-documents.mjs";
-import { assertUniqueIds, extractProductGraphCode, productGraphCodeFiles, renamedCodeCandidates, renamedCodeNote } from "./product-graph-extraction.mjs";
+import {
+  assertUniqueIds,
+  extractProductGraphCode,
+  FILE_KINDS,
+  productGraphCodeFiles,
+  renamedCodeCandidates,
+  renamedCodeNote,
+} from "./product-graph-extraction.mjs";
 import {
   PRODUCT_GRAPH_BASELINE_FILE,
   PRODUCT_GRAPH_RETAINED_CONTENT_FILE,
@@ -1178,7 +1185,7 @@ const RUN_BY_PATH_LIMITS =
 // How a declaration's line range is read, and when the old reading stays (0.3.4).
 // Size (4.1–4.5): the rule, with its numbers as judgement.
 const SOURCE_SIZE_LIMITS = (limits) =>
-  `읽을 파일(코드, UI 연결 후보의 확장자, hook·command·cli 설정 파일, .sql, 규칙이 적은 파일. 테스트는 빼고)만 센다. 한도 ${limits.filesToRead}개, 폴더를 지나는 안전 한도 ${limits.entriesVisited}개. 파일 ${limits.dataFolderFiles}개 이상 중 읽을 파일이 ${Math.round(limits.dataFolderShare * 100)}% 미만인 폴더를 데이터 폴더로 본다(테스트 파일도 코드로 센다. 소스 루트의 자식부터 위에서 아래로, 바깥 것 하나만; 규칙이 적은 곳과 source.포함은 빼지 않는다. 그 안의 hook·command·cli 설정 파일은 읽었을 파일로 따로 센다). 읽을 파일이 한도를 넘을 때만 데이터 폴더를 자동으로 빼고, 넘지 않으면 다 읽고 source.제외 후보로만 적는다. 숫자는 모두 판단이다.`;
+  `읽을 파일(코드, UI 연결 후보의 확장자, hook·command·cli 설정 파일, .sql, 규칙이 적은 파일. 테스트는 빼고)만 센다. 한도 ${limits.filesToRead}개, 폴더를 지나는 안전 한도 ${limits.entriesVisited}개. 파일 ${limits.dataFolderFiles}개 이상 중 읽을 파일이 ${Math.round(limits.dataFolderShare * 100)}% 미만인 폴더를 데이터 폴더로 본다(테스트 파일도 코드로 센다. 소스 루트의 자식부터 위에서 아래로, 바깥 것 하나만; 규칙이 적은 곳과 source.포함은 빼지 않는다. 그 안의 hook·command·cli 설정 파일은 읽었을 파일로 따로 센다). 데이터 폴더는 읽을 파일 수와 상관없이 늘 빼고 폴더마다 적으며, source.포함에 적은 폴더만 다시 읽는다. 빼고도 읽을 파일이 한도를 넘으면 빌드가 멈춘다. 데이터 폴더 안은 확장자로만(파일을 열지 않고) 종류를 센다: 문서 ${FILE_KINDS.documents.join(" ")}, 데이터 ${FILE_KINDS.data.join(" ")}, 이미지 ${FILE_KINDS.images.join(" ")}, 코드 ${FILE_KINDS.code.join(" ")}, 그 밖은 나머지. 숫자와 확장자 목록은 모두 판단이다.`;
 const RANGE_FALLBACK_LIMITS =
   "함수 범위는 매개변수 목록을 짝 괄호로 닫은 뒤의 { 부터 그 짝 } 까지다. 반환 타입 안의 { 는 타입으로 읽고, ) 뒤에 { 가 없는 선언(오버로드, declare)은 한 문장 범위다. 매개변수 목록이 닫히지 않는 선언만 이름 뒤 첫 { 를 쓰는 예전 방식으로 읽는다. 구문 트리가 아니므로 범위는 줄 범위다.";
 const ENTRY_STOP_RULE =

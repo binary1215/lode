@@ -1283,9 +1283,14 @@ export const productGraphWalk = (() => {
   }
 
   // Size (4.4): the data-like folders left out (with the code files in them)
-  // or, under the limit, suggested for source.제외.
+  // (4.3a), with what they hold by kind (4.3b).
   const folderText = (row) =>
-    `${row.path}/ (파일 ${row.files}, 읽었을 파일 ${row.toRead}, 그중 코드 ${row.code}${row.config ? `, 설정 파일 ${row.config}` : ""}, ${Math.round(row.share * 1000) / 10}%)`;
+    `${row.path}/ (파일 ${row.files}, 읽었을 파일 ${row.toRead}, 그중 코드 ${row.code}${row.config ? `, 설정 파일 ${row.config}` : ""}, ${Math.round(row.share * 1000) / 10}%${kindText(row.kinds)})`;
+  const KIND_WORDS = Object.freeze({ documents: "문서", data: "데이터", images: "이미지", code: "코드", other: "그 밖" });
+  const kindText = (kinds) => {
+    const parts = Object.entries(KIND_WORDS).filter(([key]) => kinds?.[key]).map(([key, word]) => `${word} ${kinds[key]}`);
+    return parts.length ? `; 종류: ${parts.join(", ")}` : "";
+  };
   const firstTen = (rows) => `${rows.slice(0, 10).map(folderText).join(", ")}${rows.length > 10 ? ` 외 ${rows.length - 10}개` : ""}`;
   function sourceSizeLines(size) {
     if (!size) return [];
@@ -1293,9 +1298,8 @@ export const productGraphWalk = (() => {
     const config = size.leftOut.reduce((sum, row) => sum + (row.config || 0), 0);
     return [
       ...(size.leftOut.length
-        ? [`읽지 않은 데이터 폴더 ${size.leftOut.length}개 — 읽을 파일이 한도를 넘어 자동으로 뺐다: ${firstTen(size.leftOut)}. 그 안의 코드 파일 ${code}개${config ? `, 설정 파일 ${config}개` : ""}도 읽지 않음. 다시 읽으려면 호출 방식 표의 source.포함에 적는다.`]
+        ? [`읽지 않은 데이터 폴더 ${size.leftOut.length}개 — 파일 ${size.limits.dataFolderFiles}개 이상 중 읽을 파일이 ${Math.round(size.limits.dataFolderShare * 100)}% 미만이라 데이터로 보고 뺐다: ${firstTen(size.leftOut)}. 그 안의 코드 파일 ${code}개${config ? `, 설정 파일 ${config}개` : ""}도 읽지 않음. 다시 읽으려면 호출 방식 표의 source.포함에 적는다.`]
         : []),
-      ...(size.candidates.length ? [`데이터 폴더로 보이는 곳 ${size.candidates.length}개 (다 읽었다. 빼려면 source.제외): ${firstTen(size.candidates)}`] : []),
       ...(size.included?.length ? [`source.포함으로 읽은 데이터 폴더 ${size.included.length}개: ${firstTen(size.included)}`] : []),
       `읽을 파일 ${size.filesToRead}개. ${size.reading}`,
     ];
@@ -1452,12 +1456,12 @@ export const productGraphWalk = (() => {
     );
     const looked = lists.notLookedAt;
     const size = lists.sourceSize;
-    if (size?.leftOut.length || size?.candidates.length)
+    if (size?.leftOut.length || size?.included?.length)
       add(
         "dataFolders",
-        size.leftOut.length + size.candidates.length,
+        size.leftOut.length + (size.included?.length || 0),
         sourceSizeLines(size).slice(0, -1),
-        [...size.leftOut, ...size.candidates].map((row) => ({ text: folderText(row), path: row.path })),
+        [...size.leftOut, ...(size.included || [])].map((row) => ({ text: folderText(row), path: row.path })),
       );
     add("notLookedAt", looked.files, [
       `코드로 읽지 않은 파일(보지 않음): ${looked.files}개${looked.byExtension.length ? ` (${looked.byExtension.map((item) => `${item.extension} ${item.count}`).join(", ")})` : ""}. 테스트로 분류해 코드 층에 넣지 않은 코드 파일 ${looked.testCodeFiles}개, 읽지 못한 코드 파일 ${looked.unreadableCodeFiles}개.`,

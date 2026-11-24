@@ -38,26 +38,43 @@ test("the numbers a build uses", () => {
   assert.deepEqual({ ...SOURCE_LIMITS }, { filesToRead: 50_000, entriesVisited: 2_000_000, dataFolderFiles: 2_000, dataFolderShare: 0.1 });
 });
 
-test("over the limit, a data-like folder is left out and reported; the build goes on", (t) => {
-  const p = tree(t, { code: 38 });
+// 4.3a: a data-like folder is always left out, whatever the files to read.
+const KINDS = { documents: 0, data: 0, images: 0, code: 5, other: 55 };
+const LINE =
+  "읽지 않은 데이터 폴더 1개 — 파일 50개 이상 중 읽을 파일이 10% 미만이라 데이터로 보고 뺐다: data/ (파일 60, 읽었을 파일 5, 그중 코드 5, 8.3%; 종류: 코드 5, 그 밖 55). 그 안의 코드 파일 5개도 읽지 않음. 다시 읽으려면 호출 방식 표의 source.포함에 적는다.";
+for (const [label, code] of [
+  ["over the limit", 38],
+  ["under the limit", 30],
+])
+  test(`${label}, a data-like folder is left out and reported with what it holds by kind; the build goes on`, (t) => {
+    const p = tree(t, { code });
+    const result = p.build();
+    const graph = p.graph();
+    assert.equal(codeFiles(graph).filter((id) => id.startsWith("data/")).length, 0);
+    assert.equal(codeFiles(graph).filter((id) => id.startsWith("src/")).length, code);
+    assert.deepEqual(graph.inputs.leftOutFolders, ["data"]);
+    const size = result.limits.sourceSize;
+    assert.equal(size.filesToRead, code);
+    assert.deepEqual(size.leftOut, [{ path: "data", files: 60, toRead: 5, code: 5, config: 0, kinds: KINDS, share: 0.083 }]);
+    assert.equal("candidates" in size, false);
+    const check = JSON.parse(fs.readFileSync(path.join(p.out, "check.json"), "utf8"));
+    assert.deepEqual(check.limits.sourceSize.leftOut, size.leftOut);
+    assert.deepEqual(check.lists.sourceSize.leftOut, size.leftOut);
+    assert.ok(result.text.includes(LINE), result.text);
+    assert.ok(fs.readFileSync(path.join(p.out, "check.txt"), "utf8").includes(LINE));
+    assert.ok(queryProductGraph({ buildDirectory: p.out, question: "overview" }).text.includes(LINE));
+    const gaps = queryProductGraph({ buildDirectory: p.out, question: "gaps" }).text;
+    assert.ok(gaps.includes(LINE), gaps);
+    assert.ok(result.text.includes("데이터 폴더 안은 확장자로만(파일을 열지 않고) 종류를 센다: 문서 .md .txt .html .htm .pdf .rst, 데이터 .json .jsonl .csv .tsv .yaml .yml .xml .log, 이미지 .png .jpg .jpeg .bmp .tif .tiff .gif .webp .svg"));
+  });
+
+test("with nothing data-like everything is read and nothing is reported", (t) => {
+  const p = tree(t, { code: 30, dataFiles: 10 });
   const result = p.build();
-  const graph = p.graph();
-  assert.equal(codeFiles(graph).filter((id) => id.startsWith("data/")).length, 0);
-  assert.equal(codeFiles(graph).filter((id) => id.startsWith("src/")).length, 38);
-  assert.deepEqual(graph.inputs.leftOutFolders, ["data"]);
-  const size = result.limits.sourceSize;
-  assert.equal(size.filesToRead, 38);
-  assert.deepEqual(size.leftOut, [{ path: "data", files: 60, toRead: 5, code: 5, config: 0, share: 0.083 }]);
-  assert.deepEqual(size.candidates, []);
-  const check = JSON.parse(fs.readFileSync(path.join(p.out, "check.json"), "utf8"));
-  assert.deepEqual(check.limits.sourceSize.leftOut, size.leftOut);
-  assert.deepEqual(check.lists.sourceSize.leftOut, size.leftOut);
-  const line = "읽지 않은 데이터 폴더 1개 — 읽을 파일이 한도를 넘어 자동으로 뺐다: data/ (파일 60, 읽었을 파일 5, 그중 코드 5, 8.3%). 그 안의 코드 파일 5개도 읽지 않음.";
-  assert.ok(result.text.includes(line));
-  assert.ok(fs.readFileSync(path.join(p.out, "check.txt"), "utf8").includes(line));
-  assert.ok(queryProductGraph({ buildDirectory: p.out, question: "overview" }).text.includes(line));
-  const gaps = queryProductGraph({ buildDirectory: p.out, question: "gaps" }).text;
-  assert.ok(gaps.includes(line), gaps);
+  assert.equal(codeFiles(p.graph()).filter((id) => id.startsWith("data/")).length, 5);
+  assert.equal(p.graph().inputs.leftOutFolders, undefined);
+  assert.deepEqual(result.limits.sourceSize.leftOut, []);
+  assert.doesNotMatch(result.text, /데이터 폴더 \d+개/);
 });
 
 // M1: configuration a built-in rule finds by name inside a data-like folder
@@ -76,8 +93,8 @@ test("a stray configuration file does not keep a data folder; a tests folder is 
     [["data", 7, 5, 2]],
   );
   assert.ok(result.text.includes("그 안의 코드 파일 5개, 설정 파일 2개도 읽지 않음"));
-  assert.ok(result.text.includes("data/ (파일 87, 읽었을 파일 7, 그중 코드 5, 설정 파일 2, 8%)"), result.text);
-  assert.ok(![...result.limits.sourceSize.leftOut, ...result.limits.sourceSize.candidates].some((row) => row.path === "tests"));
+  assert.ok(result.text.includes("data/ (파일 87, 읽었을 파일 7, 그중 코드 5, 설정 파일 2, 8%; 종류: 데이터 2, 코드 5, 그 밖 80)"), result.text);
+  assert.ok(!result.limits.sourceSize.leftOut.some((row) => row.path === "tests"));
 });
 
 test("source.포함 brings the folder back, and the build then fails with the numbers", (t) => {
@@ -92,20 +109,6 @@ test("source.포함 brings the folder back, and the build then fails with the nu
   both.build();
   assert.equal(both.graph().inputs.leftOutFolders, undefined);
   assert.equal(codeFiles(both.graph()).filter((id) => id.startsWith("data/")).length, 0);
-});
-
-test("under the limit everything is read and the folder is only a candidate", (t) => {
-  const p = tree(t, { code: 30 });
-  const result = p.build();
-  const graph = p.graph();
-  assert.equal(codeFiles(graph).filter((id) => id.startsWith("data/")).length, 5);
-  assert.equal(graph.inputs.leftOutFolders, undefined);
-  assert.deepEqual(result.limits.sourceSize.leftOut, []);
-  assert.deepEqual(
-    result.limits.sourceSize.candidates.map((row) => row.path),
-    ["data"],
-  );
-  assert.ok(result.text.includes("데이터 폴더로 보이는 곳 1개 (다 읽었다. 빼려면 source.제외): data/ (파일 60, 읽었을 파일 5, 그중 코드 5, 8.3%)"));
 });
 
 test("too many files to read and no data-like folder: the failure says so (4.6)", (t) => {
@@ -165,26 +168,31 @@ test("3,000 large UI-candidate files build within 1.5 GB of peak RSS", { timeout
 // 4.7: a folder read by the baseline and left out now (or the reverse) is
 // named on its own line; its nodes are not 신규 or 사라짐.
 test("the comparison names a folder the reading range left out or took back", (t) => {
-  const p = tree(t, { code: 30 });
-  p.build();
+  const p = tree(t, { code: 30, source: { 포함: ["data"] } });
   const base = path.dirname(p.out);
-  for (let index = 30; index < 38; index += 1) fs.writeFileSync(path.join(base, "source", "src", `m${index}.py`), `def f${index}():\n    return ${index}\n`);
+  const setSource = (source) => fs.writeFileSync(path.join(base, "rules.json"), JSON.stringify({ ...RULES_HEAD, rules: [], ...(source ? { source } : {}) }));
+  const first = p.build();
+  assert.deepEqual(
+    first.limits.sourceSize.included.map((row) => row.path),
+    ["data"],
+  );
+  assert.ok(first.text.includes("source.포함으로 읽은 데이터 폴더 1개: data/"));
+  // Without 포함 the folder is left out: its nodes are named on their own line.
+  setSource(null);
   const narrower = p.build();
   assert.deepEqual(narrower.changes.readRange.leftOut, ["data"]);
   assert.deepEqual(narrower.changes.readRange.readAgain, []);
   assert.equal(narrower.changes.readRange.removed.length, 10);
   assert.ok(narrower.changes.readRange.removed.every((id) => id.startsWith("data/tools/")));
   assert.equal(narrower.changes.counts.removed, 0);
-  assert.equal(narrower.changes.counts.added, 16);
   assert.match(narrower.text, /\n- 읽는 범위가 달라짐: data\/ 이번에 읽지 않음 — 그래서 사라진 노드 10개, 생긴 노드 0개, 닿는 범위가 달라진 기능 0개 \(신규·사라짐·닿는 코드가 바뀜에 넣지 않는다\)\n/);
-  // Set the baseline here, then go back under the limit: the folder is read again.
+  // Set the baseline here, then bring the folder back with 포함.
   fs.rmSync(path.join(base, "out", "baseline.json"));
   p.build();
-  for (let index = 30; index < 38; index += 1) fs.rmSync(path.join(base, "source", "src", `m${index}.py`));
+  setSource({ 포함: ["data"] });
   const wider = p.build();
   assert.deepEqual(wider.changes.readRange.readAgain, ["data"]);
   assert.equal(wider.changes.readRange.added.length, 10);
   assert.equal(wider.changes.counts.added, 0);
-  assert.equal(wider.changes.counts.removed, 16);
   assert.match(wider.text, /읽는 범위가 달라짐: data\/ 이번에 읽음 — 그래서 사라진 노드 0개, 생긴 노드 10개/);
 });

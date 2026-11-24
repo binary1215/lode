@@ -524,7 +524,7 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
   const afterFiles = [...sourceAfter.keys()];
   const size = graph.limits?.sourceSize;
   const rangeLeftOut = (graph.inputs.leftOutFolders || []).filter((folder) => holds(beforeFiles, folder));
-  const rangeReadAgain = [...(size?.candidates || []), ...(size?.included || [])]
+  const rangeReadAgain = (size?.included || [])
     .map((row) => row.path)
     .filter((folder) => !holds(beforeFiles, folder) && holds(afterFiles, folder))
     .sort(compare);
