@@ -162,6 +162,32 @@ test("a module name after an expression, or inside a longer name, is not the imp
   assert.deepEqual(edgesFrom(graph, "app/user.py#plain"), ["app/pkg/mod.py#f"]);
 });
 
+// M6: an import inside a function, with an alias, is the import.
+test("a function-local import with an alias resolves", (t) => {
+  const { graph } = build(t, {
+    ...PACKAGE,
+    "app/user.py": lines(
+      "def a():",
+      "    from app.pkg import mod as lm",
+      "    return lm.f()",
+      "",
+      "def b():",
+      "    import app.pkg.mod as pm2",
+      "    return pm2.f()",
+      "",
+      "def c():",
+      "    from app.pkg.mod import f as ff",
+      "    return ff()",
+      "",
+      "def d(path):",
+      "    with open(path) as handle:",
+      "        return handle.read()",
+    ),
+  });
+  for (const id of ["app/user.py#a", "app/user.py#b", "app/user.py#c"]) assert.deepEqual(edgesFrom(graph, id), ["app/pkg/mod.py#f"], id);
+  assert.deepEqual(edgesFrom(graph, "app/user.py#d"), []);
+});
+
 // ---------- 3: answers say where a path was lost ----------
 
 const { queryProductGraph } = await import("../scripts/lib/world/product-graph-query.mjs");
@@ -196,6 +222,7 @@ const LOST = {
 const TOOL_RULE = { 종류: "tool", 판단: true, 파일: ["src/registry.js"], 패턴: 'name: "(\\w+)"', "처리 코드": "항목" };
 
 const lostProject = (t) => build(t, LOST, [TOOL_RULE]);
+const TOOL_RULE_GO = { ...TOOL_RULE };
 
 test("reach, the 기능 node and tree say how many unresolved calls the path holds (3.2, 3.3)", (t) => {
   const { graph, out } = lostProject(t);
@@ -219,13 +246,13 @@ test("reach, the 기능 node and tree say how many unresolved calls the path hol
   assert.ok(reach.text.includes(`\n  ${count}\n`), reach.text);
   assert.ok(
     reach.text.includes(
-      "\n  못 푼 호출이 있는 곳 (이름으로 부른 것이 많은 노드, 메서드 호출의 이름별 수):\n    src/tools.js#helperA — 2곳: `dispatch` (줄 6), `orphan` (줄 7)\n    받는 쪽 타입을 모르는 메서드 호출 1곳 — 이름별: `add` 1 (예: src/tools.js:2)\n",
+      "\n  못 푼 호출이 있는 곳 (이름으로 부른 것이 많은 노드, 메서드 호출의 이름별 수):\n    src/tools.js#helperA — 2곳: `dispatch` (줄 6), `orphan` (줄 7)\n    받는 쪽 타입을 모르는 메서드 호출 1곳 — 이름별: `add` 1 (빌드 전체 1, 예: src/tools.js:2)\n",
     ),
     reach.text,
   );
   assert.deepEqual(reach.reach.lostCalls, {
     named: { count: 2, nodes: [{ id: "src/tools.js#helperA", count: 2, callees: made("src/tools.js#helperA").callees }] },
-    receiver: { count: 1, names: [{ name: "add", count: 1, example: { path: "src/tools.js", line: 2 } }], distinctNames: 1 },
+    receiver: { count: 1, names: [{ name: "add", count: 1, buildCount: 1, example: { path: "src/tools.js", line: 2 } }], distinctNames: 1 },
   });
   // S2: the count row on every page, the detail on the last.
   const first = queryProductGraph({ buildDirectory: out, question: "reach", id: alpha, limit: 1 });
@@ -234,9 +261,9 @@ test("reach, the 기능 node and tree say how many unresolved calls the path hol
   assert.doesNotMatch(first.text, /이름별/);
   assert.ok(ask("node", alpha).text.includes(count));
   const tree = ask("tree", alpha).text;
-  assert.match(tree, /\n\s+못 푼 호출 2곳: `dispatch`, `orphan`\n/);
-  // A node with only method calls on an unknown receiver gets no tree row.
-  assert.doesNotMatch(tree, /store\.add/);
+  assert.match(tree, /\n\s+못 푼 호출 — 이름으로 부른 것 2곳: `dispatch`, `orphan`\n/);
+  // A node with only method calls on an unknown receiver gets its row too.
+  assert.match(tree, /\n\s+못 푼 호출 — 받는 쪽 타입을 모르는 메서드 호출 1곳: `\.add`\n/);
   for (const answer of [ask("reach", beta), ask("node", beta), ask("tree", beta)]) assert.doesNotMatch(answer.text, /못 푼 호출/);
 });
 
@@ -290,6 +317,41 @@ test("a declaration with no resolved caller names the unresolved calls that may 
   // (e) a method named like a built-in type's: the line with its count, and the limits block says why.
   assert.match(ask("up", "src/tools.js#Box.append").text, /이 선언일 수 있는 못 푼 호출 1곳 \(받는 쪽 타입을 모름\. 이 선언을 부른다는 뜻은 아니다\): src\/tools\.js:21\n/);
   assert.ok(result.text.includes("내장 타입도 가진 메서드 이름(get, append 같은 것)은 제품의 것과 가를 수 없어, 그런 선언에는 가능한 호출이 많이 붙을 수 있다."));
+});
+
+// M3: method names on an unknown receiver show rarest first in the whole build.
+test("method names on an unknown receiver are ordered by how rare they are in the build", (t) => {
+  const { graph, out } = build(
+    t,
+    {
+      "src/registry.js": lines('import { go } from "./run.js";', 'export const TOOLS = [{ name: "go", run: go }];'),
+      "src/run.js": lines(
+        "export function go(map, job) {",
+        "  map.get(1);",
+        "  map.get(2);",
+        "  job.settleOnce();",
+        "}",
+        "export function elsewhere(map) {",
+        "  map.get(3);",
+        "  map.get(4);",
+        "}",
+      ),
+      "src/store.js": lines("export class Store {", "  get(key) {", "    return key;", "  }", "  settleOnce() {", "    return 1;", "  }", "}"),
+    },
+    [TOOL_RULE_GO],
+  );
+  assert.deepEqual(graph.referenceSummary.unresolvedMethodNames, { get: 4, settleOnce: 1 });
+  const reach = queryProductGraph({ buildDirectory: out, question: "reach", id: "tool:go" });
+  assert.deepEqual(
+    reach.reach.lostCalls.receiver.names.map((item) => [item.name, item.count, item.buildCount]),
+    [
+      ["settleOnce", 1, 1],
+      ["get", 2, 4],
+    ],
+  );
+  assert.ok(reach.text.includes("이름별: `settleOnce` 1 (빌드 전체 1, 예: src/run.js:4), `get` 2 (빌드 전체 4, 예: src/run.js:2)"), reach.text);
+  const tree = queryProductGraph({ buildDirectory: out, question: "tree", id: "tool:go" }).text;
+  assert.match(tree, /못 푼 호출 — 받는 쪽 타입을 모르는 메서드 호출 3곳: `\.settleOnce`, `\.get`\n/);
 });
 
 // ---------- 5: graph version 3 against older baselines and records ----------

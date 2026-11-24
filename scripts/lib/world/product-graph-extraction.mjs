@@ -977,6 +977,17 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
       resolvedCalls: resolvedCount,
       unresolvedCalls: allCount - resolvedCount,
       unresolvedByReason: byReason,
+      // Build-wide count of each member name called on a receiver of unknown
+      // type (3.2, 3.3): answers order those names by rarity.
+      unresolvedMethodNames: Object.fromEntries(
+        [
+          ...lostCalls.reduce(
+            (counts, item) =>
+              item.reason === "unknown-receiver" ? counts.set(memberName(item.callee), (counts.get(memberName(item.callee)) || 0) + 1) : counts,
+            new Map(),
+          ),
+        ].sort(([a], [b]) => compare(a, b)),
+      ),
     },
     excludes,
   };

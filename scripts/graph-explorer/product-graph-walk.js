@@ -159,7 +159,12 @@ export const productGraphWalk = (() => {
     const namedCount = named.reduce((sum, item) => sum + item.count, 0);
     if (!namedCount && !receiver) return null;
     named.sort((a, b) => b.count - a.count || compare(a.id, b.id));
-    const names = [...byName.values()].sort((a, b) => b.count - a.count || compare(a.name, b.name));
+    // Rarest first: fewest calls of that name on unknown receivers in the
+    // whole build, so a distinctive method called once is not hidden behind
+    // get or append; the build-wide count tells them apart.
+    const wide = ix.graph?.referenceSummary?.unresolvedMethodNames || {};
+    for (const item of byName.values()) item.buildCount = wide[item.name] ?? item.count;
+    const names = [...byName.values()].sort((a, b) => a.buildCount - b.buildCount || compare(a.name, b.name));
     return {
       named: { count: namedCount, nodes: named.slice(0, MAX_LOST_NODES) },
       receiver: { count: receiver, names: names.slice(0, MAX_LOST_NODES), distinctNames: names.length },
@@ -179,7 +184,7 @@ export const productGraphWalk = (() => {
     text: `못 푼 호출이 있는 곳 (${[...(lost.named.count ? ["이름으로 부른 것이 많은 노드"] : []), ...(lost.receiver.count ? ["메서드 호출의 이름별 수"] : [])].join(", ")}):`,
   });
   function lostDetailRows(lost, depth) {
-    const names = lost.receiver.names.map((item) => `\`${item.name}\` ${item.count} (예: ${where(item.example)})`).join(", ");
+    const names = lost.receiver.names.map((item) => `\`${item.name}\` ${item.count} (빌드 전체 ${item.buildCount}, 예: ${where(item.example)})`).join(", ");
     return [
       ...lost.named.nodes.map((item) => ({ depth: depth + 1, kind: "text", text: `${item.id} — ${item.count}곳: ${calleeList(item)}`, lostCallsIn: item.id })),
       ...(lost.receiver.count
@@ -1147,15 +1152,17 @@ export const productGraphWalk = (() => {
         rows.push({ depth: depth + 1, kind: "text", text: boundaryLine(boundary), boundary: { from: boundary.from, to: boundary.to, 설명: boundary.설명 || null } });
       rows.push(...outsideRows(ctx, id, depth + 1));
       const made = ctx.ix.nodes.get(id)?.unresolvedCalls?.made;
-      // Only a node with calls by name gets a row; method calls on an unknown
-      // receiver are counted by name in the reach and node answers.
-      if (made?.count)
-        rows.push({
-          depth: depth + 1,
-          kind: "text",
-          text: `못 푼 호출 ${made.count}곳: ${made.callees.map((item) => `\`${item.callee}\``).join(", ")}${made.count > made.callees.length ? " …" : ""}${memberCount(made) ? ` (+ 받는 쪽 타입을 모르는 메서드 호출 ${memberCount(made)}곳)` : ""}`,
-          lostCalls: made,
-        });
+      // Every code node with unresolved calls that could be product code gets
+      // a row: both counts, calls by name first, then method names rarest
+      // first, five in all.
+      if (made && (made.count || memberCount(made))) {
+        const wide = ctx.graph?.referenceSummary?.unresolvedMethodNames || {};
+        const methods = [...(made.members || [])].sort((a, b) => (wide[a.name] ?? a.count) - (wide[b.name] ?? b.count) || compare(a.name, b.name));
+        const shown = [...made.callees.map((item) => `\`${item.callee}\``), ...methods.map((item) => `\`.${item.name}\``)].slice(0, MAX_LOST_NODES);
+        const total = made.count + (made.members || []).length;
+        const counts = [...(made.count ? [`이름으로 부른 것 ${made.count}곳`] : []), ...(memberCount(made) ? [`받는 쪽 타입을 모르는 메서드 호출 ${memberCount(made)}곳`] : [])];
+        rows.push({ depth: depth + 1, kind: "text", text: `못 푼 호출 — ${counts.join(", ")}: ${shown.join(", ")}${total > shown.length ? " …" : ""}`, lostCalls: made });
+      }
       // A 처리 start a 분기 rule splits shows only its own lines (2.9).
       const lines = !edge && own.has(id) ? limited.get(id) : null;
       const children = (ctx.ix.out.get(id) || [])
