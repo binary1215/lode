@@ -1875,7 +1875,7 @@ test("R3: resultShape is returned by exact name, every declared field occurs in 
   for (const field of fromOtherRules) assert.ok(known.has(field), field);
   // Fields only other source shapes give (a declaration nothing calls whose
   // name unresolved calls end in); test/product-graph-python-modules.test.mjs asserts them.
-  const fromOtherSources = new Set(["mayBeThis", "lostCallsIn"]);
+  const fromOtherSources = new Set(["mayBeThis", "lostCalls", "lostCallsIn", "lostMethodNames"]);
   for (const field of known)
     assert.ok(seenFields.has(field) || notOnFixture.has(field) || fromOtherRules.has(field) || fromOtherSources.has(field), `declared field ${field} occurs`);
   assert.ok(notOnFixture.size <= 2, `${[...notOnFixture]}`);

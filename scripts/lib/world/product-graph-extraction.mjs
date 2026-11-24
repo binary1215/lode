@@ -703,7 +703,176 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
     if (!module) return { reason: binding.specifier.startsWith(".") ? "module-not-read" : "external-import" };
     return { module, rest: segments.slice(index), missing };
   };
-  const context = { analyses, found, unique, fileSet, names, memberNames, globals, follow, bindingsOf, valuesOf, throughModules };
+  // 2b: which product class an attribute of a class holds, read only from
+  // that class's own code: (a) every assignment constructs the same class,
+  // (b) a declared type on the attribute, (c) an assignment from a parameter
+  // of the same method with a declared type. None / null / undefined say
+  // nothing; Optional[T], T | None, T | null | undefined and a quoted "T" mean
+  // T. All evidence must name one class: { class } or { unknown } or { none }
+  // when the class never assigns or declares the attribute.
+  const NOTHING = new Set(["None", "null", "undefined"]);
+  const typeName = (text) => {
+    let type = text
+      .trim()
+      .replace(/^(["'])(.*)\1$/, "$2")
+      .trim();
+    const optional = /^(?:typing\.)?Optional\[(.*)\]$/.exec(type);
+    if (optional) type = optional[1].trim();
+    const parts = type
+      .split("|")
+      .map((part) =>
+        part
+          .trim()
+          .replace(/^(["'])(.*)\1$/, "$2")
+          .trim(),
+      )
+      .filter((part) => part && !NOTHING.has(part));
+    if (parts.length !== 1) return null;
+    const name = parts[0].replace(/<[^<>]*>$/, "").trim();
+    return /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(name) ? name : null;
+  };
+  // A product class this file can name: declared here, imported, or through a
+  // namespace or (Python) a binding that names a module.
+  const classIn = (relative, name) => {
+    if (!name) return null;
+    const analysis = analyses.get(relative);
+    const asClass = (place) => (place && unique(place.module, place.name)?.kind === "class" ? { module: place.module, name: place.name } : null);
+    if (name.includes(".")) {
+      const segments = name.split(".");
+      if (analysis.language === "python") {
+        const walk = throughModules(relative, segments);
+        return walk?.module && walk.rest.length === 1 ? asClass(follow(walk.module, walk.rest[0])) : null;
+      }
+      const binding = bindingsOf.get(relative)?.get(segments[0]);
+      if (segments.length !== 2 || !binding?.namespace || isExternalSpecifier(relative, binding.specifier, analysis.language, fileSet)) return null;
+      const module = resolveModule(relative, binding.specifier, analysis.language, fileSet);
+      return module ? asClass(follow(module, segments[1])) : null;
+    }
+    const local = unique(relative, name);
+    if (local) return local.kind === "class" ? { module: relative, name: local.qualifiedName } : null;
+    const binding = bindingsOf.get(relative)?.get(name);
+    if (!binding || binding.namespace || isExternalSpecifier(relative, binding.specifier, analysis.language, fileSet)) return null;
+    const module = resolveModule(relative, binding.specifier, analysis.language, fileSet);
+    return module ? asClass(binding.imported === "default" ? follow(module, name) || follow(module, "default") : follow(module, binding.imported)) : null;
+  };
+  // The declared types of a function's parameters, from its signature.
+  const parameterTypes = (signature) => {
+    const open = signature.indexOf("(");
+    const close = signature.lastIndexOf(")");
+    const types = new Map();
+    if (open < 0 || close < open) return types;
+    let depth = 0,
+      start = open + 1;
+    const parts = [];
+    for (let index = open + 1; index <= close; index += 1) {
+      const character = signature[index];
+      if ("([{<".includes(character)) depth += 1;
+      else if (")]}>".includes(character) && index < close) depth -= 1;
+      if ((character === "," && depth === 0) || index === close) {
+        parts.push(signature.slice(start, index));
+        start = index + 1;
+      }
+    }
+    for (const part of parts) {
+      const match = /^\s*(?:(?:public|private|protected|readonly|override)\s+)*\*{0,2}([A-Za-z_$][\w$]*)\s*\??\s*:\s*([^=]+?)\s*(?:=.*)?$/.exec(part);
+      if (match) types.set(match[1], { type: match[2], property: /^\s*(?:public|private|protected|readonly)\b/.test(part) });
+    }
+    return types;
+  };
+  const attributes = new Map();
+  const attributeOf = (relative, owner, attr) => {
+    const key = `${relative}\0${owner}\0${attr}`;
+    if (attributes.has(key)) return attributes.get(key);
+    const analysis = analyses.get(relative);
+    const python = analysis.language === "python";
+    const classSymbol = analysis.symbols.find((symbol) => symbol.kind === "class" && symbol.qualifiedName === owner);
+    const found = new Set();
+    let any = false,
+      unknown = false;
+    const note = (cls) => {
+      any = true;
+      if (!cls) unknown = true;
+      else found.add(`${cls.module}\0${cls.name}`);
+    };
+    const holding = (line, kind) =>
+      analysis.symbols
+        .filter((symbol) => symbol.kind === kind && symbol.line <= line && line <= (symbol.endLine ?? symbol.line))
+        .sort((a, b) => (a.endLine ?? a.line) - a.line - ((b.endLine ?? b.line) - b.line))[0] || null;
+    const textLines = (analysis.prepared.textLines ??= analysis.text.split("\n"));
+    const maskedLines = analysis.prepared.maskedLines;
+    // The value assigned: a construction, a typed parameter of the method, or nothing said.
+    const value = (expression, line) => {
+      const text = expression.trim().replace(/;$/, "").trim();
+      if (NOTHING.has(text)) return;
+      const construction = python ? /^([A-Za-z_][\w.]*)\s*\(/.exec(text) : /^new\s+([A-Za-z_$][\w$.]*)\s*(?:<[^()]*>)?\s*(?:\(|$)/.exec(text);
+      if (construction) return note(classIn(relative, construction[1]));
+      const method = holding(line, "function");
+      const parameter =
+        /^[A-Za-z_$][\w$]*$/.test(text) && method && method.qualifiedName.startsWith(`${owner}.`) ? parameterTypes(method.signature || "").get(text) : null;
+      note(parameter ? classIn(relative, typeName(parameter.type)) : null);
+    };
+    if (classSymbol) {
+      const first = classSymbol.line,
+        last = classSymbol.endLine ?? classSymbol.line;
+      const self = python ? "self" : "this";
+      const name = attr.replace(/[$]/g, "\\$");
+      const assignment = new RegExp(`^\\s*${self}\\.${name}\\s*(?::\\s*([^=]+?))?\\s*(?:=(?!=)\\s*(.*))?$`);
+      // JavaScript/TypeScript: the class body's own statements (brace depth 1).
+      let bodyDepth = null;
+      if (!python) {
+        bodyDepth = new Map();
+        let depth = 0;
+        for (let line = first; line <= last; line += 1) {
+          bodyDepth.set(line, depth);
+          for (const character of maskedLines[line - 1] || "") {
+            if (character === "{") depth += 1;
+            else if (character === "}") depth -= 1;
+          }
+        }
+      }
+      const bodyIndent = python ? /^(\s*)\S/.exec(textLines.slice(first).find((text, index) => (maskedLines[first + index] || "").trim()) || "")?.[1] : null;
+      for (let line = first; line <= last; line += 1) {
+        const masked = maskedLines[line - 1] || "";
+        const text = textLines[line - 1] || "";
+        if (!masked.trim() || holding(line, "class")?.qualifiedName !== owner) continue;
+        const match = masked.trimStart().startsWith(`${self}.`) ? assignment.exec(text) : null;
+        if (match && (match[1] !== undefined || match[2] !== undefined)) {
+          if (match[1] !== undefined) note(classIn(relative, typeName(match[1])));
+          if (match[2] !== undefined) value(match[2], line);
+          continue;
+        }
+        // The class body: Python at the body's indentation outside a method;
+        // JavaScript/TypeScript fields at depth 1 (not static).
+        const inBody = python
+          ? bodyIndent !== undefined && /^(\s*)/.exec(text)[1] === bodyIndent && !holding(line, "function")?.qualifiedName.startsWith(`${owner}.`)
+          : bodyDepth.get(line) === 1;
+        if (!inBody) continue;
+        const field = python
+          ? new RegExp(`^\\s*${name}\\s*(?::\\s*([^=]+?))?\\s*(?:=(?!=)\\s*(.*))?$`).exec(text)
+          : new RegExp(
+              `^\\s*(?:(?:public|private|protected|readonly|declare|override|accessor)\\s+)*${name}\\s*[?!]?\\s*(?::\\s*([^=;]+?))?\\s*(?:=\\s*(.+?))?\\s*;?\\s*$`,
+            ).exec(text);
+        if (!field || (field[1] === undefined && field[2] === undefined)) continue;
+        if (field[1] !== undefined) note(classIn(relative, typeName(field[1])));
+        if (field[2] !== undefined) value(field[2], line);
+      }
+      // TypeScript: a constructor parameter property (constructor(private attr: T)).
+      if (!python) {
+        const constructor = analysis.symbols.find((symbol) => symbol.kind === "function" && symbol.qualifiedName === `${owner}.constructor`);
+        const property = constructor && parameterTypes(constructor.signature || "").get(attr);
+        if (property?.property) note(classIn(relative, typeName(property.type)));
+      }
+    }
+    const [only] = found;
+    const result = !any
+      ? { none: true }
+      : unknown || found.size !== 1
+        ? { unknown: true }
+        : { class: { module: only.split("\0")[0], name: only.split("\0")[1] } };
+    attributes.set(key, result);
+    return result;
+  };
+  const context = { analyses, found, unique, fileSet, names, memberNames, globals, follow, bindingsOf, valuesOf, throughModules, attributeOf };
   const references = new Map();
   const unresolvedByReason = new Map(UNRESOLVED_REASONS.map((reason) => [reason.key, new Map()]));
   // Unresolved calls that could be product code (3.1): per calling node a
@@ -800,6 +969,31 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
         receivers.set(key, chain);
         return chain;
       };
+      // JavaScript/TypeScript (2b.4): "this.a.b(" — the scan keeps "a.b". Read
+      // on the call's line: every occurrence of "a.b(" there must follow
+      // "this." (itself not after an expression), else nothing is said.
+      const thisChainOf = (line, callee) => {
+        const key = `${line}\0${callee}\0this`;
+        if (receivers.has(key)) return receivers.get(key);
+        const [first, second] = callee
+          .replace(/^#/, "")
+          .split(".")
+          .map((part) => part.replace(/[$]/g, "\\$"));
+        const text = maskedLines[line - 1] || "";
+        const pattern = new RegExp(`(?<![\\w$#])(#?)${first}\\s*\\.\\s*${second}\\s*\\(`, "g");
+        const heads = new Set();
+        let other = false;
+        for (const match of text.matchAll(pattern)) {
+          const before = text.slice(0, match.index);
+          const receiver = /(?<![\w$])(?<![.)\]]\s*)this\s*\.\s*$/.exec(before);
+          if (receiver) heads.add(match[1]);
+          else other = true;
+        }
+        const chain =
+          !other && heads.size === 1 ? { chain: ["this", `${[...heads][0]}${callee.replace(/^#/, "").split(".")[0]}`, callee.split(".")[1]] } : null;
+        receivers.set(key, chain);
+        return chain;
+      };
       for (const call of analysis.semanticFacts.calls) {
         // Only a plain name can be a value binding: the first pass skips the rest.
         if (pass === "values" && (call.callee.includes(".") || call.callee === "import")) continue;
@@ -838,6 +1032,7 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
             callerQualifiedName: caller?.qualifiedName ?? call.callerQualifiedName,
             receiver: call.callee.includes(".") ? null : receiverOf(call.line, call.callee),
             ...(analysis.language === "python" && /^[A-Za-z_]\w*\.[A-Za-z_]\w*$/.test(call.callee) ? chainOf(call.line, call.callee) : {}),
+            ...(analysis.language !== "python" && /^#?[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*$/.test(call.callee) ? thisChainOf(call.line, call.callee) : {}),
           },
           bindings,
           context,
@@ -1027,7 +1222,7 @@ function classExtends(analysis, qualifiedName) {
 
 // Resolves one call to exactly one declaration or called value, or says why it did not.
 function resolveCall(relative, analysis, call, bindings, context) {
-  const { found, unique, fileSet, names, memberNames, globals, follow, analyses, valuesOf, throughModules } = context;
+  const { found, unique, fileSet, names, memberNames, globals, follow, analyses, valuesOf, throughModules, attributeOf } = context;
   const callee = call.callee;
   const language = analysis.language;
   const table = globals[language === "python" ? "python" : "javascript"];
@@ -1121,6 +1316,19 @@ function resolveCall(relative, analysis, call, bindings, context) {
   }
   const [head, member] = callee.split(".");
   if (head === "super") return { reason: "inherited" };
+  // 2b: self.attr.method() / this.attr.method() in a method of a class: the
+  // method of the class the attribute holds, when the class's own code says
+  // which one; else a method call on a receiver of unknown type (inherited
+  // when the class has a base and never assigns the attribute).
+  if (call.chain?.length === 3 && call.chain[0] === (language === "python" ? "self" : "this")) {
+    const owner = enclosingClass(analysis, call.callerQualifiedName);
+    if (owner || language === "python") {
+      const held = owner ? attributeOf(relative, owner, call.chain[1]) : { unknown: true };
+      if (held.class) return classMember(held.class.module, held.class.name, member, false);
+      if (held.none && classExtends(analysis, owner)) return { reason: "inherited" };
+      return unknownMember(member);
+    }
+  }
   // A parameter or local of an enclosing function: only "const v = new C(...)"
   // (Python: v = C(...) assigned once in that function) says what v is.
   const local = call.index !== undefined ? bindingAt(analysis.facts, call.index, head) : null;

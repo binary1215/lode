@@ -168,7 +168,7 @@ After reviewing the list, run `product-graph-baseline` as above.
 
 ### After updating to graph version 3
 
-Graph version 3 resolves Python calls through a module imported by name (`from pkg import mod`, then `mod.f()`), so the reach of Python products grows. Against a baseline read by version 2:
+Graph version 3 resolves Python calls through a module imported by name (`from pkg import mod`, then `mod.f()`) and method calls on an instance attribute whose class the class's own code declares (`self.port.send()`, `this.port.send()`), so reach grows. Against a baseline read by version 2:
 
 - Reach that differs only in files whose text is the baseline's is counted under "읽는 방식이 달라져 닿는 범위가 달라진 기능", never as 닿는 코드가 바뀜 or 다시 볼 것.
 - Confirmation records show "다른 방식으로 읽은 때 확인함" until they are confirmed again; nothing is rewritten.

@@ -254,6 +254,8 @@ test("reach, the 기능 node and tree say how many unresolved calls the path hol
     named: { count: 2, nodes: [{ id: "src/tools.js#helperA", count: 2, callees: made("src/tools.js#helperA").callees }] },
     receiver: { count: 1, names: [{ name: "add", count: 1, buildCount: 1, example: { path: "src/tools.js", line: 2 } }], distinctNames: 1 },
   });
+  // The row fields of the read chain's result shape.
+  assert.ok(reach.rows.some((row) => row.lostCalls) && reach.rows.some((row) => row.lostCallsIn) && reach.rows.some((row) => row.lostMethodNames));
   // S2: the count row on every page, the detail on the last.
   const first = queryProductGraph({ buildDirectory: out, question: "reach", id: alpha, limit: 1 });
   assert.ok(first.page.remaining > 0);
