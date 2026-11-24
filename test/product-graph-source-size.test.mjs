@@ -47,7 +47,7 @@ test("over the limit, a data-like folder is left out and reported; the build goe
   assert.deepEqual(graph.inputs.leftOutFolders, ["data"]);
   const size = result.limits.sourceSize;
   assert.equal(size.filesToRead, 38);
-  assert.deepEqual(size.leftOut, [{ path: "data", files: 60, toRead: 5, code: 5, share: 0.083 }]);
+  assert.deepEqual(size.leftOut, [{ path: "data", files: 60, toRead: 5, code: 5, config: 0, share: 0.083 }]);
   assert.deepEqual(size.candidates, []);
   const check = JSON.parse(fs.readFileSync(path.join(p.out, "check.json"), "utf8"));
   assert.deepEqual(check.limits.sourceSize.leftOut, size.leftOut);
@@ -58,6 +58,26 @@ test("over the limit, a data-like folder is left out and reported; the build goe
   assert.ok(queryProductGraph({ buildDirectory: p.out, question: "overview" }).text.includes(line));
   const gaps = queryProductGraph({ buildDirectory: p.out, question: "gaps" }).text;
   assert.ok(gaps.includes(line), gaps);
+});
+
+// M1: configuration a built-in rule finds by name inside a data-like folder
+// protects nothing; it is counted apart. M2: a tests folder is code, never data.
+test("a stray configuration file does not keep a data folder; a tests folder is never one", (t) => {
+  const p = tree(t, { code: 38, dataFiles: 80 });
+  const base = path.dirname(p.out);
+  fs.mkdirSync(path.join(base, "source", "data", "samples", "hooks"), { recursive: true });
+  fs.writeFileSync(path.join(base, "source", "data", "samples", "package.json"), "{}\n");
+  fs.writeFileSync(path.join(base, "source", "data", "samples", "hooks", "x.json"), "{}\n");
+  fs.mkdirSync(path.join(base, "source", "tests"));
+  for (let index = 0; index < 60; index += 1) fs.writeFileSync(path.join(base, "source", "tests", `test_m${index}.py`), `def test_${index}():\n    pass\n`);
+  const result = p.build();
+  assert.deepEqual(
+    result.limits.sourceSize.leftOut.map((row) => [row.path, row.toRead, row.code, row.config]),
+    [["data", 7, 5, 2]],
+  );
+  assert.ok(result.text.includes("그 안의 코드 파일 5개, 설정 파일 2개도 읽지 않음"));
+  assert.ok(result.text.includes("data/ (파일 87, 읽었을 파일 7, 그중 코드 5, 설정 파일 2, 8%)"), result.text);
+  assert.ok(![...result.limits.sourceSize.leftOut, ...result.limits.sourceSize.candidates].some((row) => row.path === "tests"));
 });
 
 test("source.포함 brings the folder back, and the build then fails with the numbers", (t) => {

@@ -124,9 +124,42 @@ test("what does not walk to a read module stays unresolved, with the reason", (t
   assert.deepEqual(edgesFrom(graph, "app/user.py#shadowed"), []);
   assert.ok(unresolved(graph, "module-not-read").includes("thing"));
   assert.ok(unresolved(graph, "module-not-read").includes("nomod.f"));
-  assert.ok(unresolved(graph, "rest").includes("missing.f"));
+  // S1: neither a name of the package nor a read module — a submodule not read.
+  assert.ok(unresolved(graph, "module-not-read").includes("missing.f"));
   const reason = graph.referenceSummary.unresolvedByReason.find((item) => item.reason === "module-not-read");
   assert.match(reason.settle, /스캔 범위/);
+});
+
+// M5: a head that follows an expression is a member of something else, and a
+// longer name never falls back to the import of its second-to-last segment.
+test("a module name after an expression, or inside a longer name, is not the import", (t) => {
+  const { graph } = build(t, {
+    ...PACKAGE,
+    "app/user.py": lines(
+      "import app.pkg.mod as pm",
+      "from app.pkg import mod",
+      "",
+      "def continued(obj):",
+      "    value = (obj",
+      "             .mod.f())",
+      "    return value",
+      "",
+      "def attribute(obj):",
+      "    return obj.pm.f()",
+      "",
+      "class Holder:",
+      "    def run(self):",
+      "        return self.pm.f()",
+      "",
+      "def called():",
+      "    return make().mod.f()",
+      "",
+      "def plain():",
+      "    return pm.f()",
+    ),
+  });
+  for (const id of ["app/user.py#continued", "app/user.py#attribute", "app/user.py#Holder.run", "app/user.py#called"]) assert.deepEqual(edgesFrom(graph, id), [], id);
+  assert.deepEqual(edgesFrom(graph, "app/user.py#plain"), ["app/pkg/mod.py#f"]);
 });
 
 // ---------- 3: answers say where a path was lost ----------
@@ -169,29 +202,41 @@ test("reach, the 기능 node and tree say how many unresolved calls the path hol
   const ask = (question, id) => queryProductGraph({ buildDirectory: out, question, id });
   const alpha = graph.nodes.find((node) => node.type === "기능" && node.id.includes("alpha")).id;
   const beta = graph.nodes.find((node) => node.type === "기능" && node.id.includes("beta")).id;
-  assert.deepEqual(graph.nodes.find((node) => node.id === "src/tools.js#helperA").unresolvedCalls.made, {
+  const made = (id) => graph.nodes.find((node) => node.id === id).unresolvedCalls.made;
+  assert.deepEqual(made("src/tools.js#helperA"), {
     count: 2,
     byReason: { "no-declaration": 1, "declared-elsewhere": 1 },
     callees: [
       { callee: "dispatch", line: 6 },
       { callee: "orphan", line: 7 },
     ],
+    members: [],
   });
+  // A method call on a receiver of unknown type is the other kind, counted by name.
+  assert.deepEqual(made("src/tools.js#runA"), { count: 0, byReason: {}, callees: [], members: [{ name: "add", count: 1, line: 2 }] });
   const reach = ask("reach", alpha);
-  assert.match(reach.text, /\n {2}이 길에서 못 푼 호출 3곳 \(제품 코드일 수 있음\): 닿는 범위가 실제보다 좁을 수 있다\n/);
-  assert.match(reach.text, /\n {4}src\/tools\.js#helperA — 2곳: `dispatch` \(줄 6\), `orphan` \(줄 7\)\n/);
-  assert.equal(reach.reach.lostCalls.count, 3);
-  assert.deepEqual(
-    reach.reach.lostCalls.nodes.map((item) => [item.id, item.count]),
-    [
-      ["src/tools.js#helperA", 2],
-      ["src/tools.js#runA", 1],
-    ],
+  const count = "이 길에서 못 푼 호출 (제품 코드일 수 있음) — 이름으로 부른 것 2곳, 받는 쪽 타입을 모르는 메서드 호출 1곳: 닿는 범위가 실제보다 좁을 수 있다";
+  assert.ok(reach.text.includes(`\n  ${count}\n`), reach.text);
+  assert.ok(
+    reach.text.includes(
+      "\n  못 푼 호출이 있는 곳 (이름으로 부른 것이 많은 노드, 메서드 호출의 이름별 수):\n    src/tools.js#helperA — 2곳: `dispatch` (줄 6), `orphan` (줄 7)\n    받는 쪽 타입을 모르는 메서드 호출 1곳 — 이름별: `add` 1 (예: src/tools.js:2)\n",
+    ),
+    reach.text,
   );
-  assert.match(ask("node", alpha).text, /이 길에서 못 푼 호출 3곳/);
+  assert.deepEqual(reach.reach.lostCalls, {
+    named: { count: 2, nodes: [{ id: "src/tools.js#helperA", count: 2, callees: made("src/tools.js#helperA").callees }] },
+    receiver: { count: 1, names: [{ name: "add", count: 1, example: { path: "src/tools.js", line: 2 } }], distinctNames: 1 },
+  });
+  // S2: the count row on every page, the detail on the last.
+  const first = queryProductGraph({ buildDirectory: out, question: "reach", id: alpha, limit: 1 });
+  assert.ok(first.page.remaining > 0);
+  assert.ok(first.text.includes(count));
+  assert.doesNotMatch(first.text, /이름별/);
+  assert.ok(ask("node", alpha).text.includes(count));
   const tree = ask("tree", alpha).text;
   assert.match(tree, /\n\s+못 푼 호출 2곳: `dispatch`, `orphan`\n/);
-  assert.match(tree, /\n\s+못 푼 호출 1곳: `store\.add`\n/);
+  // A node with only method calls on an unknown receiver gets no tree row.
+  assert.doesNotMatch(tree, /store\.add/);
   for (const answer of [ask("reach", beta), ask("node", beta), ask("tree", beta)]) assert.doesNotMatch(answer.text, /못 푼 호출/);
 });
 
@@ -206,6 +251,10 @@ test("a declaration with no resolved caller names the unresolved calls that may 
       // (c) a declaration named like a built-in global, called bare elsewhere.
       "app/util.py": lines("def len(items):", "    return 0"),
       "app/main.py": lines("def count(items):", "    return len(items)"),
+      // M4: a parameter's call is no declaration's; a member is not called by its bare name.
+      "app/runner.py": lines("def runner(finish):", "    return finish()", "", "class Tool:", "    def finish(self):", "        return 1"),
+      // M4: a local helper inside a function is no member: not matched, and not counted in K.
+      "src/local.js": lines("export function outer() {", "  function refresh() {", "    return 0;", "  }", "  return 1;", "}"),
     },
     [TOOL_RULE],
   );
@@ -229,6 +278,8 @@ test("a declaration with no resolved caller names the unresolved calls that may 
       sameName: 2,
     });
   }
+  assert.equal(possible("app/runner.py#Tool.finish"), undefined);
+  assert.equal(possible("src/local.js#outer.refresh"), undefined);
   // (c) calls the built-in rule settles never count.
   assert.equal(possible("app/util.py#len"), undefined);
   assert.doesNotMatch(ask("up", "app/util.py#len").text, /이 선언일 수 있는/);

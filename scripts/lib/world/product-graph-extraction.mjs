@@ -154,13 +154,21 @@ const isEntryConfiguration = (relative) => ENTRY_CONFIGURATION.some((pattern) =>
 // candidates (by the patterns' and file signs' extensions), entry
 // configuration, .sql and files a project rule names; tests are not read.
 // A data-like folder (4.2) holds at least activeLimits.dataFolderFiles files
-// of which under activeLimits.dataFolderShare are read; looked for top-down
-// from the root's children, the outermost one taken, descending only into a
-// folder that holds that many files; never one a project rule names or
-// contains, one holding entry configuration, or one source.포함 keeps. When
-// more than activeLimits.filesToRead files would be read, the data-like
-// folders are left out and the build goes on; under the limit they are only
-// candidates for source.제외.
+// of which under activeLimits.dataFolderShare are read or are code (a test
+// file with a code extension counts as code here, never as data); looked for
+// top-down from the root's children, the outermost one taken, descending only
+// into a folder that holds that many files; never one a project rule names or
+// contains (파일, 화면 파일, an 입구 file), or one source.포함 keeps. Entry
+// configuration a built-in rule finds by its name protects nothing: in a
+// data-like folder it is a file Lode would have read, counted apart. Whether
+// data-like folders are left out is decided by leavesDataFoldersOut alone.
+// D1: the one condition under which data-like folders are left out — the
+// files to read pass the limit. Every other build reads them and only lists
+// them as candidates for source.제외.
+function leavesDataFoldersOut({ toRead }) {
+  return toRead > activeLimits.filesToRead;
+}
+
 function selectSource(files, { named, uiExtensions, included }) {
   const namedSet = new Set(named);
   const reads = (relative) => {
@@ -188,11 +196,13 @@ function selectSource(files, { named, uiExtensions, included }) {
       toRead += 1;
       readFlags[position] = 1;
     }
-    if (isEntryConfiguration(relative)) keepAncestors(relative);
+    const extension = path.posix.extname(relative).toLowerCase();
+    const config = read && isEntryConfiguration(relative);
+    const testCode = !read && Boolean(CODE_LANGUAGES[extension]) && classifySourcePath(relative, extension) === "test";
     for (let dir = path.posix.dirname(relative); dir !== "."; dir = path.posix.dirname(dir)) {
       let row = stats.get(dir);
       if (!row) {
-        row = { path: dir, files: 0, toRead: 0, code: 0 };
+        row = { path: dir, files: 0, toRead: 0, code: 0, config: 0, testCode: 0 };
         stats.set(dir, row);
         const parent = path.posix.dirname(dir);
         const key = parent === "." ? "" : parent;
@@ -202,6 +212,8 @@ function selectSource(files, { named, uiExtensions, included }) {
       row.files += 1;
       if (read) row.toRead += 1;
       if (code) row.code += 1;
+      if (config) row.config += 1;
+      if (testCode) row.testCode += 1;
     }
   });
   // source.포함: a folder at or under a prefix is kept (and reported as kept
@@ -214,15 +226,16 @@ function selectSource(files, { named, uiExtensions, included }) {
     for (const child of (children.get(dir) || []).sort(compare)) {
       const row = stats.get(child);
       if (row.files < activeLimits.dataFolderFiles) continue;
-      const numbers = row.toRead < row.files * activeLimits.dataFolderShare;
-      const entry = { ...row, share: Math.round((row.toRead / row.files) * 1000) / 1000 };
+      const numbers = row.toRead + row.testCode < row.files * activeLimits.dataFolderShare;
+      const { testCode, ...counts } = row;
+      const entry = { ...counts, share: Math.round(((row.toRead + testCode) / row.files) * 1000) / 1000 };
       if (numbers && !keptDirs.has(child) && includedAt(child)) keptByInclude.push(entry);
       else if (numbers && !keptDirs.has(child) && !holdsIncluded(child)) dataLike.push(entry);
       else visit(child);
     }
   };
   visit("");
-  if (toRead <= activeLimits.filesToRead) return { files, toRead, leftOut: [], candidates: dataLike, included: keptByInclude };
+  if (!leavesDataFoldersOut({ toRead })) return { files, toRead, leftOut: [], candidates: dataLike, included: keptByInclude };
   const leftOutRead = dataLike.reduce((sum, row) => sum + row.toRead, 0);
   if (toRead - leftOutRead > activeLimits.filesToRead) {
     const byTop = new Map();
@@ -669,7 +682,9 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
       const owner = find(binding.specifier);
       if (owner && follow(owner, binding.imported)) return null;
       specifier = joinSpecifier(binding.specifier, binding.imported);
-      if (!find(specifier)) return null;
+      // Neither a name of the package nor a read module: a submodule that is
+      // not among the read files (S1). An absolute package not read is outside.
+      if (!find(specifier)) return owner || binding.specifier.startsWith(".") ? { reason: "module-not-read" } : null;
     }
     let index = 1,
       missing = false;
@@ -696,13 +711,23 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
   // end in (3.4).
   const lostIn = new Map();
   const lostCalls = [];
+  // Two kinds, kept apart: calls by name (every product reason but
+  // unknown-receiver; the first callees kept) and method calls on a receiver
+  // of unknown type (every member name with its count and first line).
+  const memberName = (callee) => callee.slice(callee.lastIndexOf(".") + 1).replace(/^#/, "");
   const lose = (from, reason, callee, file, line) => {
     if (!PRODUCT_REASONS.has(reason)) return;
-    if (!lostIn.has(from)) lostIn.set(from, { count: 0, byReason: {}, callees: [] });
+    if (!lostIn.has(from)) lostIn.set(from, { count: 0, byReason: {}, callees: [], members: new Map() });
     const entry = lostIn.get(from);
-    entry.count += 1;
-    entry.byReason[reason] = (entry.byReason[reason] || 0) + 1;
-    if (entry.callees.length < MAX_LOST_SHOWN) entry.callees.push({ callee, line });
+    if (reason === "unknown-receiver") {
+      const name = memberName(callee);
+      if (!entry.members.has(name)) entry.members.set(name, { name, count: 0, line });
+      entry.members.get(name).count += 1;
+    } else {
+      entry.count += 1;
+      entry.byReason[reason] = (entry.byReason[reason] || 0) + 1;
+      if (entry.callees.length < MAX_LOST_SHOWN) entry.callees.push({ callee, line });
+    }
     lostCalls.push({ callee, path: file, line, reason });
   };
   let resolvedCount = 0,
@@ -754,16 +779,24 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
         return receiver;
       };
       // Python: the scan keeps the last two segments of a dotted callee
-      // ("pkg.mod.f(" is "mod.f"). The whole name, read on the call's line when
-      // every use of "a.b(" there has the same leading names, else null.
+      // ("pkg.mod.f(" is "mod.f"). Read on the call's line: when an
+      // occurrence of "a.b(" there follows an expression ("x.a.b(", "f().a.b(",
+      // a line starting ".a.b("), a is a member of something else (member);
+      // else the whole name when every occurrence has the same leading names.
       const chainOf = (line, callee) => {
         const key = `${line}\0${callee}\0chain`;
         if (receivers.has(key)) return receivers.get(key);
         const [first, second] = callee.split(".");
-        const pattern = new RegExp(`(?<![\\w.])(?<!\\.\\s*)((?:[A-Za-z_]\\w*\\s*\\.\\s*)*)${first}\\s*\\.\\s*${second}\\s*\\(`, "g");
-        const prefixes = new Set([...(maskedLines[line - 1] || "").matchAll(pattern)].map((match) => match[1].replace(/\s+/g, "")));
-        const prefix = prefixes.size === 1 ? [...prefixes][0] : "";
-        const chain = prefix ? [...prefix.split(".").filter(Boolean), first, second] : null;
+        const text = maskedLines[line - 1] || "";
+        const pattern = new RegExp(`(?<![\\w])((?:[A-Za-z_]\\w*\\s*\\.\\s*)*)${first}\\s*\\.\\s*${second}\\s*\\(`, "g");
+        const prefixes = new Set();
+        let member = false;
+        for (const match of text.matchAll(pattern)) {
+          if (/[.)\]]\s*$/.test(text.slice(0, match.index))) member = true;
+          else prefixes.add(match[1].replace(/\s+/g, ""));
+        }
+        const prefix = !member && prefixes.size === 1 ? [...prefixes][0] : "";
+        const chain = member ? { member: true } : prefix ? { chain: [...prefix.split(".").filter(Boolean), first, second] } : null;
         receivers.set(key, chain);
         return chain;
       };
@@ -804,7 +837,7 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
             ...call,
             callerQualifiedName: caller?.qualifiedName ?? call.callerQualifiedName,
             receiver: call.callee.includes(".") ? null : receiverOf(call.line, call.callee),
-            chain: analysis.language === "python" && /^[A-Za-z_]\w*\.[A-Za-z_]\w*$/.test(call.callee) ? chainOf(call.line, call.callee) : null,
+            ...(analysis.language === "python" && /^[A-Za-z_]\w*\.[A-Za-z_]\w*$/.test(call.callee) ? chainOf(call.line, call.callee) : {}),
           },
           bindings,
           context,
@@ -828,12 +861,22 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
   for (const values of valuesOf.values())
     for (const value of values.values())
       if (calledValues.has(value.id)) nodes.push({ id: value.id, type: "코드", kind: VALUE_KIND, file: value.file, lines: [value.line, value.endLine] });
-  // The optional node field (3.1, 3.4): the unresolved calls made in a node,
-  // and, counted exactly from all unresolved calls, those that may be the
-  // declaration: bare calls of its name (names of the built-in table are left
-  // out) and, for a member of a class or object, calls of its name on a
-  // receiver of unknown type, with how many declarations share that name. A
+  // The optional node field (3.1, 3.4): the unresolved calls made in a node
+  // (the two kinds apart), and, counted exactly from all unresolved calls,
+  // those that may be the declaration: bare calls of its name when it is
+  // callable by that name (not a member of a class or object literal; names
+  // of the built-in table and calls of a parameter or local left out), and
+  // calls of its name on a receiver of unknown type when it is a member of a
+  // class or object literal, with how many such members share the name. A
   // possibility only. Not part of any hash.
+  const memberIds = new Set();
+  for (const analysis of analyses.values()) {
+    const kinds = new Map();
+    for (const symbol of analysis.symbols) if (!kinds.has(symbol.qualifiedName)) kinds.set(symbol.qualifiedName, symbol.kind);
+    // A class member, or a member of an object literal (whose binding is not a declaration).
+    for (const symbol of analysis.symbols)
+      if (symbol.scopePath && (!kinds.has(symbol.scopePath) || kinds.get(symbol.scopePath) === "class")) memberIds.add(symbol.id);
+  }
   const lastName = (id) =>
     id
       .slice(id.indexOf("#") + 1)
@@ -847,26 +890,32 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
     map.get(key).push({ callee: item.callee, path: item.path, line: item.line });
   };
   for (const item of lostCalls) {
-    if (item.callee === "import") continue;
-    if (item.reason === "unknown-receiver") add(memberByName, item.callee.slice(item.callee.lastIndexOf(".") + 1).replace(/^#/, ""), item);
+    if (item.callee === "import" || item.reason === "local-function") continue;
+    if (item.reason === "unknown-receiver") add(memberByName, memberName(item.callee), item);
     else if (!item.callee.includes(".")) add(bareByName, item.callee, item);
   }
-  const declaredByName = new Map();
-  for (const node of nodes) if (node.id !== node.file) declaredByName.set(lastName(node.id), (declaredByName.get(lastName(node.id)) || 0) + 1);
+  const membersByName = new Map();
+  for (const node of nodes) if (memberIds.has(node.id)) membersByName.set(lastName(node.id), (membersByName.get(lastName(node.id)) || 0) + 1);
   const part = (places, extra = {}) => (places?.length ? { count: places.length, places: places.slice(0, MAX_LOST_SHOWN), ...extra } : null);
   for (const node of nodes) {
-    const made = lostIn.get(node.id);
+    const lost = lostIn.get(node.id);
+    const made = lost && {
+      count: lost.count,
+      byReason: lost.byReason,
+      callees: lost.callees,
+      members: [...lost.members.values()].sort((a, b) => b.count - a.count || compare(a.name, b.name)),
+    };
     const name = node.id === node.file ? null : lastName(node.id);
+    const member = name !== null && memberIds.has(node.id);
     const table = globals[CODE_LANGUAGES[path.posix.extname(node.file).toLowerCase()] === "python" ? "python" : "javascript"];
-    const bare = part(name && !table.functions.has(name) && !table.namespaces.has(name) ? bareByName.get(name) : null);
-    // A member: its qualified name has a container (C.add, literal.run).
-    const member = part(name && node.id.slice(node.id.indexOf("#") + 1).includes(".") ? memberByName.get(name) : null, {
-      sameName: declaredByName.get(name) || 1,
-    });
-    if (!made && !bare && !member) continue;
+    const bare = part(name !== null && !member && !table.functions.has(name) && !table.namespaces.has(name) ? bareByName.get(name) : null);
+    const receiver = part(member ? memberByName.get(name) : null, { sameName: membersByName.get(name) || 1 });
+    if (!made && !bare && !receiver) continue;
     node.unresolvedCalls = {
       ...(made ? { made } : {}),
-      ...(bare || member ? { mayBeThis: { count: (bare?.count || 0) + (member?.count || 0), ...(bare ? { bare } : {}), ...(member ? { member } : {}) } } : {}),
+      ...(bare || receiver
+        ? { mayBeThis: { count: (bare?.count || 0) + (receiver?.count || 0), ...(bare ? { bare } : {}), ...(receiver ? { member: receiver } : {}) } }
+        : {}),
     };
   }
   const byReason = UNRESOLVED_REASONS.map((reason) => {
@@ -1094,9 +1143,19 @@ function resolveCall(relative, analysis, call, bindings, context) {
   }
   // Python: a dotted name whose head names a module walks modules (2.1–2.3);
   // a head held by a parameter or local is not the import.
+  // Python: "x.a.b(" where a follows an expression: a member call on a
+  // receiver of unknown type, never the import named a (M5).
+  if (language === "python" && call.member) return unknownMember(member);
   const chain = call.chain || [head, member];
-  if (language === "python" && !(chain.length > 2 && call.index !== undefined && bindingAt(analysis.facts, call.index, chain[0]))) {
-    const walk = chain.length > 2 || !bindings.get(chain[0])?.namespace ? throughModules(relative, chain) : null;
+  if (language === "python" && chain.length > 2) {
+    // A longer name either walks modules from its head or stays unresolved:
+    // it never falls back to the binding of its second-to-last segment.
+    const shadowed = call.index !== undefined && bindingAt(analysis.facts, call.index, chain[0]);
+    const walk = shadowed ? null : throughModules(relative, chain);
+    return walk ? inModule(walk) : unknownMember(member);
+  }
+  if (language === "python" && !bindings.get(chain[0])?.namespace) {
+    const walk = throughModules(relative, chain);
     if (walk) return inModule(walk);
   }
   const binding = bindings.get(head);
