@@ -681,9 +681,12 @@ export function verifyProductGraphRules(document) {
   const source = document.source;
   if (source !== undefined) {
     if (!source || typeof source !== "object" || Array.isArray(source)) invalid("source는 객체여야 한다");
-    for (const key of Object.keys(source)) if (key !== "제외") invalid(`source에 모르는 항목 ${key}`);
-    if (!Array.isArray(source["제외"]) || source["제외"].some((item) => typeof item !== "string" || !safeRelative(item.replace(/\/$/, ""))))
+    for (const key of Object.keys(source)) if (key !== "제외" && key !== "포함") invalid(`source에 모르는 항목 ${key}`);
+    const paths = (value) => Array.isArray(value) && !value.some((item) => typeof item !== "string" || !safeRelative(item.replace(/\/$/, "")));
+    // 포함 (4.5): folders never left out as data-like; 제외 still wins for the same path.
+    if (source["포함"] === undefined ? !paths(source["제외"]) : source["제외"] !== undefined && !paths(source["제외"]))
       invalid("source.제외는 상대 경로 배열이어야 한다");
+    if (source["포함"] !== undefined && !paths(source["포함"])) invalid("source.포함은 상대 경로 배열이어야 한다");
   }
   return document;
 }

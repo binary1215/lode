@@ -861,6 +861,7 @@ export const productGraphWalk = (() => {
     if (ctx.graph?.limits?.notExtracted)
       add(0, `뽑지 않은 것: ${ctx.graph.limits.notExtracted.nodeTypes.join(", ")} 노드, ${ctx.graph.limits.notExtracted.edges.join(", ")} 연결`);
     if (ctx.graph?.limits?.execution) add(0, ctx.graph.limits.execution);
+    for (const line of sourceSizeLines(ctx.graph?.limits?.sourceSize).slice(0, -1)) add(0, line);
     add(0, "시작:", { marker: "starts" });
     if (hasDocuments(ctx)) {
       for (const id of ["제품코어", "유저저니"]) if (ctx.ix.nodes.has(id)) add(1, nodeLine(ctx, id), { kind: "node", id });
@@ -1208,6 +1209,21 @@ export const productGraphWalk = (() => {
     return `- 호출 ${calls.all}개. 제품 코드일 수 없는 호출 ${calls.notProduct.builtIn + calls.notProduct.keyword}개(언어·런타임 내장 ${calls.notProduct.builtIn}, 호출처럼 보인 언어 키워드 ${calls.notProduct.keyword})와 제품 밖 모듈로 가는 호출 ${calls.notProduct.external}개를 빼면, 제품 코드일 수 있는 호출 ${calls.canBeProduct}개 중 ${calls.resolved}개를 하나의 선언으로 풀었다. 풀린 것만 코드→코드 연결이 된다.`;
   }
 
+  // Size (4.4): the data-like folders left out (with the code files in them)
+  // or, under the limit, suggested for source.제외.
+  const folderText = (row) => `${row.path}/ (파일 ${row.files}, 읽었을 파일 ${row.toRead}, 그중 코드 ${row.code}, ${Math.round(row.share * 1000) / 10}%)`;
+  const firstTen = (rows) => `${rows.slice(0, 10).map(folderText).join(", ")}${rows.length > 10 ? ` 외 ${rows.length - 10}개` : ""}`;
+  function sourceSizeLines(size) {
+    if (!size) return [];
+    const code = size.leftOut.reduce((sum, row) => sum + row.code, 0);
+    return [
+      ...(size.leftOut.length
+        ? [`읽지 않은 데이터 폴더 ${size.leftOut.length}개 — 읽을 파일이 한도를 넘어 자동으로 뺐다: ${firstTen(size.leftOut)}. 그 안의 코드 파일 ${code}개도 읽지 않음. 다시 읽으려면 호출 방식 표의 source.포함에 적는다.`]
+        : []),
+      ...(size.candidates.length ? [`데이터 폴더로 보이는 곳 ${size.candidates.length}개 (다 읽었다. 빼려면 source.제외): ${firstTen(size.candidates)}`] : []),
+      `읽을 파일 ${size.filesToRead}개. ${size.reading}`,
+    ];
+  }
   function renderLimits(limits) {
     const documents = limits.documents;
     const usage = !documents.approvalsRead
@@ -1244,6 +1260,7 @@ export const productGraphWalk = (() => {
             `- 매개변수 목록이 닫히지 않아 함수 범위를 예전 방식(이름 뒤 첫 \`{\`)으로 읽은 선언 ${limits.rangeFallback.count}개${limits.rangeFallback.count ? `: ${limits.rangeFallback.files.slice(0, 10).join(", ")}${limits.rangeFallback.files.length > 10 ? ` 외 파일 ${limits.rangeFallback.files.length - 10}개` : ""}` : ""}. ${limits.rangeFallback.reading}`,
           ]
         : []),
+      ...sourceSizeLines(limits.sourceSize).map((line) => `- ${line}`),
       `- ${limits.execution}`,
       `- 문서: 승인 ${documents.approved}, 승인 뒤 바뀜 ${documents.changedAfterApproval}, 추정 ${documents.estimated}. 승인 뒤 바뀜은 승인 기록의 본문과 지금 본문이 달라 추정으로 쓴다. ${usage}`,
     ];
@@ -1358,6 +1375,14 @@ export const productGraphWalk = (() => {
       { bounded: false },
     );
     const looked = lists.notLookedAt;
+    const size = lists.sourceSize;
+    if (size?.leftOut.length || size?.candidates.length)
+      add(
+        "dataFolders",
+        size.leftOut.length + size.candidates.length,
+        sourceSizeLines(size).slice(0, -1),
+        [...size.leftOut, ...size.candidates].map((row) => ({ text: folderText(row), path: row.path })),
+      );
     add("notLookedAt", looked.files, [
       `코드로 읽지 않은 파일(보지 않음): ${looked.files}개${looked.byExtension.length ? ` (${looked.byExtension.map((item) => `${item.extension} ${item.count}`).join(", ")})` : ""}. 테스트로 분류해 코드 층에 넣지 않은 코드 파일 ${looked.testCodeFiles}개, 읽지 못한 코드 파일 ${looked.unreadableCodeFiles}개.`,
       ...(looked.skipped.length ? [`  건너뛴 것: ${looked.skipped.map((item) => `${item.reason} ${item.count}`).join(", ")}`] : []),

@@ -14,7 +14,21 @@ import { bindingAt, definedMemberNames, javascriptFacts, pythonFacts } from "./p
 import { failCode as fail } from "../core/errors.mjs";
 
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
-const MAX_FILES = 50_000;
+// Size (4.1, 4.2), all judgement: the files a build would read, a safety stop
+// on the entries the walk visits, and what makes a folder data-like.
+export const SOURCE_LIMITS = Object.freeze({ filesToRead: 50_000, entriesVisited: 2_000_000, dataFolderFiles: 2_000, dataFolderShare: 0.1 });
+// Tests run the size rules on small trees with smaller numbers; a build always
+// uses SOURCE_LIMITS.
+let activeLimits = SOURCE_LIMITS;
+export function withSourceLimits(limits, run) {
+  const previous = activeLimits;
+  activeLimits = Object.freeze({ ...SOURCE_LIMITS, ...limits });
+  try {
+    return run();
+  } finally {
+    activeLimits = previous;
+  }
+}
 const MAX_READ_BYTES = 1024 * 1024;
 const CODE_LANGUAGES = Object.freeze({
   ".js": "javascript",
@@ -67,10 +81,15 @@ export const BUILT_IN_ENTRY_RULES = Object.freeze([
   }),
 ]);
 
+// Every file under the source root the build may look at, in path order:
+// source.제외, hidden folders (but the entry configuration ones), the scan's
+// excluded folders and symbolic links left out. The walk stops when it has
+// visited SOURCE_LIMITS.entriesVisited entries, so a runaway tree still ends.
 function walkSource(sourceRoot, excludes, skipped = new Map()) {
   const files = [];
   const skip = (reason) => skipped.set(reason, (skipped.get(reason) || 0) + 1);
   const excluded = (relative) => excludes.some((prefix) => relative === prefix || relative.startsWith(prefix + "/"));
+  let visited = 0;
   const visit = (relative) => {
     const absolute = relative ? path.join(sourceRoot, ...relative.split("/")) : sourceRoot;
     let entries;
@@ -80,6 +99,8 @@ function walkSource(sourceRoot, excludes, skipped = new Map()) {
       return;
     }
     for (const entry of entries.sort((a, b) => compare(a.name, b.name))) {
+      visited += 1;
+      if (visited > activeLimits.entriesVisited) tooManyEntries(files);
       const child = relative ? `${relative}/${entry.name}` : entry.name;
       if (excluded(child)) {
         skip("호출 방식 표의 source.제외");
@@ -95,14 +116,124 @@ function walkSource(sourceRoot, excludes, skipped = new Map()) {
           continue;
         }
         visit(child);
-      } else if (entry.isFile()) {
-        if (files.length >= MAX_FILES) fail("PRODUCT_GRAPH_SOURCE_TOO_LARGE");
-        files.push(child);
-      }
+      } else if (entry.isFile()) files.push(child);
     }
   };
   visit("");
   return files;
+}
+
+const ROOT_FILES = "(소스 루트의 파일)";
+const topFolder = (relative) => (relative.includes("/") ? `${relative.slice(0, relative.indexOf("/"))}/` : ROOT_FILES);
+
+function tooManyEntries(files) {
+  const byTop = new Map();
+  for (const relative of files) byTop.set(topFolder(relative), (byTop.get(topFolder(relative)) || 0) + 1);
+  const rows = [...byTop.entries()].sort((a, b) => b[1] - a[1] || compare(a[0], b[0])).slice(0, 10);
+  fail(
+    "PRODUCT_GRAPH_SOURCE_TOO_LARGE",
+    `소스 루트 아래 항목이 너무 많아 ${activeLimits.entriesVisited}개를 지나고 멈췄다(안전 한도, 판단). 멈출 때까지 지난 맨 위 폴더(파일 수): ${rows.map(([name, count]) => `${name} ${count}`).join(", ")}. 읽지 않을 큰 폴더는 호출 방식 표의 source.제외에 적으면 빠진다.`,
+  );
+}
+
+// Entry configuration files the built-in rules read (hook, command, cli).
+const ENTRY_CONFIGURATION = [
+  /(?:^|\/)hooks\/[^/]+\.json$/,
+  /(?:^|\/)\.claude\/settings(?:\.local)?\.json$/,
+  /(?:^|\/)\.codex\/hooks\.json$/,
+  /(?:^|\/)\.(?:claude|codex)-plugin\/plugin\.json$/,
+  /(?:^|\/)commands\/[^/]+\.md$/,
+  /(?:^|\/)\.claude\/commands\/.+\.md$/,
+  /(?:^|\/)skills\/[^/]+\/SKILL\.md$/,
+  /(?:^|\/)package\.json$/,
+  /(?:^|\/)pyproject\.toml$/,
+];
+const isEntryConfiguration = (relative) => ENTRY_CONFIGURATION.some((pattern) => pattern.test(relative));
+
+// Which walked files the build reads (4.1–4.3): code files, UI-binding
+// candidates (by the patterns' and file signs' extensions), entry
+// configuration, .sql and files a project rule names; tests are not read.
+// A data-like folder (4.2) holds at least activeLimits.dataFolderFiles files
+// of which under activeLimits.dataFolderShare are read; looked for top-down
+// from the root's children, the outermost one taken, descending only into a
+// folder that holds that many files; never one a project rule names or
+// contains, one holding entry configuration, or one source.포함 keeps. When
+// more than activeLimits.filesToRead files would be read, the data-like
+// folders are left out and the build goes on; under the limit they are only
+// candidates for source.제외.
+function selectSource(files, { named, uiExtensions, included }) {
+  const namedSet = new Set(named);
+  const reads = (relative) => {
+    const extension = path.posix.extname(relative).toLowerCase();
+    if (namedSet.has(relative)) return true;
+    if (classifySourcePath(relative, extension) === "test") return false;
+    return Boolean(CODE_LANGUAGES[extension]) || uiExtensions.has(extension) || extension === ".sql" || isEntryConfiguration(relative);
+  };
+  const stats = new Map();
+  const children = new Map();
+  const keptDirs = new Set();
+  const keepAncestors = (relative) => {
+    for (let dir = path.posix.dirname(relative); dir !== "."; dir = path.posix.dirname(dir)) keptDirs.add(dir);
+  };
+  for (const item of [...named, ...included]) {
+    keepAncestors(item);
+    keptDirs.add(item);
+  }
+  let toRead = 0;
+  const readFlags = new Uint8Array(files.length);
+  files.forEach((relative, position) => {
+    const read = reads(relative);
+    const code = read && Boolean(CODE_LANGUAGES[path.posix.extname(relative).toLowerCase()]);
+    if (read) {
+      toRead += 1;
+      readFlags[position] = 1;
+    }
+    if (isEntryConfiguration(relative)) keepAncestors(relative);
+    for (let dir = path.posix.dirname(relative); dir !== "."; dir = path.posix.dirname(dir)) {
+      let row = stats.get(dir);
+      if (!row) {
+        row = { path: dir, files: 0, toRead: 0, code: 0 };
+        stats.set(dir, row);
+        const parent = path.posix.dirname(dir);
+        const key = parent === "." ? "" : parent;
+        if (!children.has(key)) children.set(key, []);
+        children.get(key).push(dir);
+      }
+      row.files += 1;
+      if (read) row.toRead += 1;
+      if (code) row.code += 1;
+    }
+  });
+  const kept = (dir) => keptDirs.has(dir) || included.some((prefix) => dir.startsWith(prefix + "/"));
+  const dataLike = [];
+  const visit = (dir) => {
+    for (const child of (children.get(dir) || []).sort(compare)) {
+      const row = stats.get(child);
+      if (row.files < activeLimits.dataFolderFiles) continue;
+      if (!kept(child) && row.toRead < row.files * activeLimits.dataFolderShare)
+        dataLike.push({ ...row, share: Math.round((row.toRead / row.files) * 1000) / 1000 });
+      else visit(child);
+    }
+  };
+  visit("");
+  if (toRead <= activeLimits.filesToRead) return { files, toRead, leftOut: [], candidates: dataLike };
+  const leftOutRead = dataLike.reduce((sum, row) => sum + row.toRead, 0);
+  if (toRead - leftOutRead > activeLimits.filesToRead) {
+    const byTop = new Map();
+    files.forEach((relative, position) => {
+      const key = topFolder(relative);
+      if (!byTop.has(key)) byTop.set(key, { path: key, files: 0, toRead: 0 });
+      byTop.get(key).files += 1;
+      byTop.get(key).toRead += readFlags[position];
+    });
+    const rows = [...byTop.values()].sort((a, b) => b.toRead - a.toRead || b.files - a.files || compare(a.path, b.path)).slice(0, 10);
+    fail(
+      "PRODUCT_GRAPH_SOURCE_TOO_LARGE",
+      `읽을 파일이 ${toRead - leftOutRead}개로 한도 ${activeLimits.filesToRead}개(판단)를 넘는다${dataLike.length ? ` (데이터 폴더 ${dataLike.length}개와 그 안의 읽을 파일 ${leftOutRead}개를 빼고도)` : ""}. 맨 위 폴더(파일 / 읽을 파일): ${rows.map((row) => `${row.path} ${row.files} / ${row.toRead}`).join(", ")}. 읽지 않을 폴더는 호출 방식 표의 source.제외에 적으면 빠진다.`,
+    );
+  }
+  const out = (relative) => dataLike.some((row) => relative.startsWith(row.path + "/"));
+  return { files: files.filter((relative) => !out(relative)), toRead: toRead - leftOutRead, leftOut: dataLike, candidates: [] };
 }
 
 // One code mask per code file per build (B3 of review round 1): every reader
@@ -1130,47 +1261,37 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
   const notTaken = [];
   const callbacks = [];
   const wired = new Set();
-  const texts = new Map();
-  const textOf = (relative) => {
-    if (!texts.has(relative)) texts.set(relative, readText(root, relative));
-    return texts.get(relative);
-  };
+  // A file's text: the scan's copy for an analysed file, else read now.
+  const textOf = (relative) => code.analyses.get(relative)?.text ?? readText(root, relative);
   // Code only: comments and string contents blanked by the lexer mask, so a
   // file sign or a wiring written in a comment or a string does not count.
-  const maskOf = new Map();
-  const maskFor = (relative, text) => {
-    if (!maskOf.has(relative)) {
-      const kind = codeMaskKind(path.posix.extname(relative).toLowerCase());
-      const analysis = code.analyses.get(relative);
-      const shared = analysis && kind === (analysis.language === "python" ? "python" : "javascript") && analysis.text === text;
-      maskOf.set(relative, shared ? maskOfAnalysis(analysis) : codeMask(text, kind));
-    }
-    return maskOf.get(relative);
+  // An analysed file reuses the scan's mask and view; any other file's are
+  // made for that file and dropped when it is done (4.8).
+  const sharedAnalysis = (relative, text) => {
+    const analysis = code.analyses.get(relative);
+    const kind = codeMaskKind(path.posix.extname(relative).toLowerCase());
+    return analysis && kind === (analysis.language === "python" ? "python" : "javascript") && analysis.text === text ? analysis : null;
   };
   // A file whose mask is not trusted (the lexer ended inside a string,
   // template or comment) falls back to the line-local check for 코드만 and
   // to its raw text for file signs; it is named in the limits block.
   const untrustedMask = new Set();
-  const maskedOf = new Map();
-  const masked = (relative, text) => {
-    if (!maskedOf.has(relative)) {
-      const mask = maskFor(relative, text);
-      if (!mask.trusted) {
-        untrustedMask.add(relative);
-        maskedOf.set(relative, text);
-        return text;
-      }
-      let view = "";
-      for (let index = 0; index < text.length; index += 1) view += mask[index] || text[index] === "\n" ? text[index] : " ";
-      maskedOf.set(relative, view);
+  const viewOf = (relative, text, own) => {
+    const analysis = sharedAnalysis(relative, text);
+    const mask = own.mask ?? (own.mask = analysis ? maskOfAnalysis(analysis) : codeMask(text, codeMaskKind(path.posix.extname(relative).toLowerCase())));
+    if (!mask.trusted) {
+      untrustedMask.add(relative);
+      return text;
     }
-    return maskedOf.get(relative);
-  };
-  const inCode = (relative, text, start) => {
-    const mask = maskFor(relative, text);
-    if (mask.trusted) return Boolean(mask[start]);
-    untrustedMask.add(relative);
-    return startsInCodeOnLine(text, start, relative.endsWith(".py"));
+    if (own.view === undefined) {
+      if (analysis) own.view = viewOfAnalysis(analysis, "code");
+      else {
+        let view = "";
+        for (let index = 0; index < text.length; index += 1) view += mask[index] || text[index] === "\n" ? text[index] : " ";
+        own.view = view;
+      }
+    }
+    return own.view;
   };
   const unnamed = new Map();
   const nextUnnamed = (key) => {
@@ -1212,28 +1333,50 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
     ];
     return resolved.length === 1 ? resolved[0] : null;
   };
-  for (const entry of uiPatterns) {
-    const extensions = new Set(entry["확장자"].map((item) => item.toLowerCase()));
-    const marker = entry["파일 표시"] ? new RegExp(entry["파일 표시"], "m") : null;
-    for (const relative of files) {
-      if (!extensions.has(path.posix.extname(relative).toLowerCase())) continue;
-      const text = textOf(relative);
-      if (text === null) continue;
-      const blank = masked(relative, text);
-      if (marker && !marker.test(blank)) continue;
+  // Patterns compiled once. Files are read one at a time and their text,
+  // mask and view are dropped when the file is done; the effects of each
+  // match are applied afterwards pattern by pattern, in the order of before.
+  const compiled = uiPatterns.map((entry) => ({
+    extensions: new Set(entry["확장자"].map((item) => item.toLowerCase())),
+    marker: entry["파일 표시"] ? new RegExp(entry["파일 표시"], "m") : null,
+    method: entry["메서드"] !== undefined ? new RegExp(entry["메서드"]) : null,
+    shape: entry["메서드"] === undefined ? new RegExp(entry["모양"], "gmd") : null,
+  }));
+  const deferred = uiPatterns.map(() => []);
+  // A string cut from a file's text can keep the whole text alive: kept values are copies.
+  const fresh = (value) => (typeof value === "string" ? JSON.parse(JSON.stringify(value)) : value);
+  for (const relative of files) {
+    const extension = path.posix.extname(relative).toLowerCase();
+    if (!compiled.some((item) => item.extensions.has(extension))) continue;
+    const text = textOf(relative);
+    if (text === null) continue;
+    const own = {};
+    const masked = () => viewOf(relative, text, own);
+    const inCode = (start) => {
+      const mask = own.mask ?? (masked(), own.mask);
+      if (mask.trusted) return Boolean(mask[start]);
+      untrustedMask.add(relative);
+      return startsInCodeOnLine(text, start, relative.endsWith(".py"));
+    };
+    for (const [index, entry] of uiPatterns.entries()) {
+      if (!compiled[index].extensions.has(extension)) continue;
+      // Records only: a closure here would keep the file's text alive.
+      const later = (kind, value) => deferred[index].push([kind, value]);
+      const blank = masked();
+      if (compiled[index].marker && !compiled[index].marker.test(blank)) continue;
       const stem = relative.replace(/\.[^./]+$/, "");
       if (entry["메서드"] !== undefined) {
         const analysis = code.analyses.get(relative);
         if (!analysis) continue;
-        const expression = new RegExp(entry["메서드"]);
+        const expression = compiled[index].method;
         for (const symbol of analysis.symbols) {
           const owner = symbol.kind === "function" && analysis.symbols.find((item) => item.kind === "class" && item.qualifiedName === symbol.scopePath);
           const match = owner && expression.exec(symbol.name);
           if (!match) continue;
           const event = transformEvent(match.groups?.event ?? symbol.name, entry["이벤트 바꾸기"]);
-          wired.add(relative);
-          addFunction({
-            id: `fe/${stem}/${owner.qualifiedName}@${event}:${symbol.name}`,
+          later("wired", relative);
+          later("function", {
+            id: `fe/${stem}/${owner.qualifiedName}@${fresh(event)}:${symbol.name}`,
             kind: "프론트",
             position: { path: relative, line: symbol.line },
             handler: symbolId(relative, symbol),
@@ -1242,14 +1385,14 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
         }
         continue;
       }
-      const expression = new RegExp(entry["모양"], "gmd");
+      const expression = compiled[index].shape;
       const user = new Set(entry["유저 조작"] || []),
         notUser = new Set(entry["유저 조작 아님"] || []),
         selfRun = new Set(entry["스스로 도는"] || []),
         known = entry["그 밖의 이벤트"] ? new Set(entry["그 밖의 이벤트"]) : null;
       for (const match of text.matchAll(expression)) {
         const start = match.index || 0;
-        if (entry["코드만"] && !inCode(relative, text, start)) continue;
+        if (entry["코드만"] && !inCode(start)) continue;
         const groups = match.groups || {};
         const rawEvent = groups.event ?? entry["이벤트 고정"];
         if (!rawEvent) continue;
@@ -1260,22 +1403,22 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
         const component = componentAt(relative, line);
         const name = handlerNameOf(target);
         const handler = resolve(relative, component, name, target);
-        wired.add(relative);
+        later("wired", relative);
         const role = selfRun.has(event) ? "effect" : (user.has("*") && !notUser.has(event)) || user.has(event) ? "user" : "other";
         // An entry that lists its other known events treats any other name as
         // not a wiring at all ("state.online = true" is not an event).
         if (role === "other" && known && !known.has(event)) continue;
         if (role === "other") {
-          notTaken.push({
+          later("notTaken", {
             path: relative,
             line,
             pattern: entry.이름,
             component: component.name,
-            emitter: groups.emitter || null,
-            event,
-            target: target.replace(/\s+/g, " ").slice(0, 120),
+            emitter: fresh(groups.emitter || null),
+            event: fresh(event),
+            target: fresh(target.replace(/\s+/g, " ").slice(0, 120)),
           });
-          if (handler) callbacks.push({ from: enclosingCode(code, relative, line) || relative, to: handler, file: relative, line });
+          if (handler) later("callback", { from: enclosingCode(code, relative, line) || relative, to: handler, file: relative, line });
           continue;
         }
         let shown = name;
@@ -1292,18 +1435,26 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
             if (shown) break;
           }
         shown ||= nextUnnamed(`${relative}\0${component.name}`);
-        addFunction({
-          id: `fe/${stem}/${component.name}@${role === "effect" ? "effect" : event}:${shown}`,
+        later("function", {
+          id: `fe/${stem}/${component.name}@${role === "effect" ? "effect" : fresh(event)}:${fresh(shown)}`,
           kind: "프론트",
           position: { path: relative, line },
           handler,
-          handlerReason: name ? `${name}의 정의를 찾지 못함` : "대상이 이름이 아닌 식이고, 그 안에서 처리 코드를 하나로 정하지 못함",
+          handlerReason: name ? `${fresh(name)}의 정의를 찾지 못함` : "대상이 이름이 아닌 식이고, 그 안에서 처리 코드를 하나로 정하지 못함",
           rule: entry,
         });
       }
     }
   }
-  return { notTaken, callbacks, wired, textOf, masked, untrustedMask: [...untrustedMask].sort() };
+  const apply = {
+    wired: (value) => wired.add(value),
+    function: addFunction,
+    notTaken: (value) => notTaken.push(value),
+    callback: (value) => callbacks.push(value),
+  };
+  for (const list of deferred) for (const [kind, value] of list) apply[kind](value);
+  // For the later stage (UI files no pattern read): fresh per call, nothing kept.
+  return { notTaken, callbacks, wired, textOf, masked: (relative, text) => viewOf(relative, text, {}), untrustedMask: [...untrustedMask].sort() };
 }
 
 // Finds 기능 (entry points) and links each to the code that receives it.
@@ -1325,10 +1476,16 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
   const root = path.resolve(sourceRoot);
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) fail("PRODUCT_GRAPH_SOURCE_ROOT_MISSING");
   const excludes = (projectRules?.source?.["제외"] || []).map((item) => item.replace(/\/$/, ""));
+  const included = (projectRules?.source?.["포함"] || []).map((item) => item.replace(/\/$/, ""));
   const skipped = new Map();
-  const files = walkSource(root, excludes, skipped);
-  const code = buildCodeLayer(root, files, excludes, projectRules?.["내장 이름"] ?? null);
   const { rules, patterns, uiPatterns, uiMarkers, uiFiles } = effectiveEntryRules(projectRules);
+  const selection = selectSource(walkSource(root, excludes, skipped), {
+    named: [...patterns.flatMap((rule) => rule.파일 || []), ...uiFiles, ...rules.flatMap((rule) => (rule.입구 || []).map((id) => id.split("#")[0]))],
+    uiExtensions: new Set([...uiPatterns, ...uiMarkers].flatMap((entry) => entry["확장자"] || []).map((item) => item.toLowerCase())),
+    included,
+  });
+  const files = selection.files;
+  const code = buildCodeLayer(root, files, excludes, projectRules?.["내장 이름"] ?? null);
   const handling = Object.fromEntries(rules.map((rule) => [rule.종류, rule.처리]));
   const functions = new Map();
   const outOfScope = [];
@@ -1615,11 +1772,14 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     if (ui.wired.has(relative)) continue;
     const extension = path.posix.extname(relative).toLowerCase();
     let sign = namedUiFiles.has(relative) ? "호출 방식 표의 화면 파일" : null;
+    // Read and blanked once for this file, then dropped (4.8).
+    let text, view;
     if (!sign)
       for (const marker of uiMarkers) {
         if (!marker["확장자"].map((item) => item.toLowerCase()).includes(extension)) continue;
-        const text = ui.textOf(relative);
-        if (text !== null && new RegExp(marker["표시"], "m").test(ui.masked(relative, text))) {
+        if (text === undefined) text = ui.textOf(relative);
+        if (text !== null && view === undefined) view = ui.masked(relative, text);
+        if (text !== null && new RegExp(marker["표시"], "m").test(view)) {
           sign = marker["이름"];
           break;
         }
@@ -1693,6 +1853,9 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     notLookedAt: notLookedAt(files, code, skipped),
     unreachedCode: unreachedCode(code, functionNodes, extraCodeNodes),
     scannedFiles: files.length,
+    // Size (4.3, 4.4): files to read, the data-like folders left out (or, under
+    // the limit, the candidates for source.제외), and the limits.
+    sourceSize: { filesToRead: selection.toRead, limits: activeLimits, leftOut: selection.leftOut, candidates: selection.candidates },
     codeFiles: code.analyses.size,
     excludes: [...excludes].sort(),
   };

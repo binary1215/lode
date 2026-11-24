@@ -923,6 +923,7 @@ function compute({ extraction, loaded, includeEstimates }) {
         byReason: extraction.referenceSummary.unresolvedByReason,
       },
       notLookedAt: extraction.notLookedAt,
+      sourceSize: extraction.sourceSize,
       unresolvedHandlers: extraction.unresolvedHandlers,
       multiRowFunctions: extraction.multiRowFunctions,
       partlyResolvedRows: extraction.partlyResolvedRows,
@@ -1133,6 +1134,8 @@ function graphDocument({ extraction, loaded, computed, inputs, rules, result }) 
       reader: productGraphReader(PRODUCT_GRAPH_VERSION),
       codeFiles: extraction.codeFiles,
       sourceExcludes: extraction.excludes,
+      // Data-like folders left out because the files to read passed the limit (4.3).
+      ...(extraction.sourceSize.leftOut.length ? { leftOutFolders: extraction.sourceSize.leftOut.map((row) => row.path) } : {}),
     },
     nodeTypes: NODE_TYPES.map((type) => ({ type, count: computed.counts[type] })),
     limits: result.limits,
@@ -1173,6 +1176,9 @@ const NOT_TOLD_APART = Object.freeze(["render", "type reference", "re-render", "
 const RUN_BY_PATH_LIMITS =
   "framework-invoked는 두 모양만 읽는다: 코드의 문자열·템플릿 리터럴이 스캔한 코드 파일 하나의 경로(전체 상대 경로, 또는 / 경계에서 시작하는 그 뒷부분)로 끝나고 그 글자를 실행·적재하는 호출에 넘기는 곳(동적 import, spawn·fork·exec 같은 프로세스 시작, Worker, 언어의 실행 파일(process.execPath, sys.executable)도 함께 넘기는 호출. 경로를 만드는 join·resolve·URL과 배열·객체는 건너 본다. 공백이 있는 글자는 명령 줄이라, 그 경로는 프로그램 자체이거나 언어 실행기(node, python 같은 것) 뒤의 스크립트일 때만 센다), 그리고 이름 없이 들여오는 JS·TS import \"<상대 경로>\". 경로가 여러 파일에 맞으면 잇지 않고 센다. 경로를 상수에 담아 뒤에서 넘기는 곳, import·export·require의 경로, 주입, 데코레이터, 파일 이름으로 정하는 경로는 보지 못한다. 읽은 곳은 모두 '경로로 실행으로 읽은 곳'에 적는다.";
 // How a declaration's line range is read, and when the old reading stays (0.3.4).
+// Size (4.1–4.5): the rule, with its numbers as judgement.
+const SOURCE_SIZE_LIMITS = (limits) =>
+  `읽을 파일(코드, UI 연결 후보의 확장자, hook·command·cli 설정 파일, .sql, 규칙이 적은 파일. 테스트는 빼고)만 센다. 한도 ${limits.filesToRead}개, 폴더를 지나는 안전 한도 ${limits.entriesVisited}개. 파일 ${limits.dataFolderFiles}개 이상 중 읽을 파일이 ${Math.round(limits.dataFolderShare * 100)}% 미만인 폴더를 데이터 폴더로 본다(소스 루트의 자식부터 위에서 아래로, 바깥 것 하나만; 규칙이 적은 곳, hook·command·cli 설정 파일이 있는 곳, source.포함은 빼지 않는다). 읽을 파일이 한도를 넘을 때만 데이터 폴더를 자동으로 빼고, 넘지 않으면 다 읽고 source.제외 후보로만 적는다. 숫자는 모두 판단이다.`;
 const RANGE_FALLBACK_LIMITS =
   "함수 범위는 매개변수 목록을 짝 괄호로 닫은 뒤의 { 부터 그 짝 } 까지다. 반환 타입 안의 { 는 타입으로 읽고, ) 뒤에 { 가 없는 선언(오버로드, declare)은 한 문장 범위다. 매개변수 목록이 닫히지 않는 선언만 이름 뒤 첫 { 를 쓰는 예전 방식으로 읽는다. 구문 트리가 아니므로 범위는 줄 범위다.";
 const ENTRY_STOP_RULE =
@@ -1251,6 +1257,8 @@ function limitsOf({ extraction, computed, includeEstimates, loaded, callbacks })
       files: (extraction.rangeFallbackFiles || []).map((item) => item.file),
       reading: RANGE_FALLBACK_LIMITS,
     },
+    // Size (4.4): files read, data-like folders left out or suggested.
+    sourceSize: { ...extraction.sourceSize, reading: SOURCE_SIZE_LIMITS(extraction.sourceSize.limits) },
     // How rows are read when a rule takes its 처리 코드 from the table row.
     tableRows: extraction.tableRowRules ? TABLE_ROW_LIMITS : null,
     execution: "아무것도 실행하지 않았다. 문서와 코드를 비교할 뿐이고, 어느 발견도 실행 근거에 기대지 않는다.",
@@ -1702,7 +1710,8 @@ function freshnessOf(inputs, graph) {
       }
       // A code file the build would read now but did not (a file it cannot
       // read as text is not one the build reads either).
-      for (const file of productGraphCodeFiles(inputs.sourceRoot, excludes))
+      // Folders the build left out as data-like (4.3) are not new code either.
+      for (const file of productGraphCodeFiles(inputs.sourceRoot, [...excludes, ...(graph.inputs?.leftOutFolders || [])]))
         if (!known.has(file) && sourceHashNow(inputs.sourceRoot, file) !== null) changed.push(file);
       result.source = { known: true, changed: changed.sort(compare) };
     } catch (error) {
