@@ -195,18 +195,50 @@ test("reach, the 기능 node and tree say how many unresolved calls the path hol
   for (const answer of [ask("reach", beta), ask("node", beta), ask("tree", beta)]) assert.doesNotMatch(answer.text, /못 푼 호출/);
 });
 
-test("a declaration nothing calls names the unresolved calls that may be it (3.4)", (t) => {
-  const { graph, out } = lostProject(t);
+test("a declaration with no resolved caller names the unresolved calls that may be it (3.4)", (t) => {
+  const { graph, out, result } = build(
+    t,
+    {
+      ...LOST,
+      // (b) two classes declare refresh; it is called only on receivers of unknown type.
+      "src/views.js": lines("export class Panel {", "  refresh() {", "    return 1;", "  }", "}", "export class Chart {", "  refresh() {", "    return 2;", "  }", "}"),
+      "src/caller.js": lines("export function update(view) {", "  view.refresh();", "}", "export function again(other) {", "  other.refresh();", "  helperA();", "}"),
+      // (c) a declaration named like a built-in global, called bare elsewhere.
+      "app/util.py": lines("def len(items):", "    return 0"),
+      "app/main.py": lines("def count(items):", "    return len(items)"),
+    },
+    [TOOL_RULE],
+  );
   const ask = (question, id) => queryProductGraph({ buildDirectory: out, question, id });
+  const possible = (id) => graph.nodes.find((node) => node.id === id).unresolvedCalls?.mayBeThis;
+  // (a) a bare call of its name.
   const up = ask("up", "src/other.js#orphan");
-  assert.match(up.text, /이 선언일 수 있는 못 푼 호출 1곳 \(이름이 같은 점 없는 호출\. 이 선언을 부른다는 뜻은 아니다\): src\/tools\.js:7/);
+  assert.match(up.text, /이 선언일 수 있는 못 푼 호출 1곳 \(이름만 부른 호출\. 이 선언을 부른다는 뜻은 아니다\): src\/tools\.js:7\n/);
+  assert.deepEqual(up.rows.find((row) => row.mayBeThis).mayBeThis, { count: 1, bare: { count: 1, places: [{ callee: "orphan", path: "src/tools.js", line: 7 }] } });
   assert.match(ask("reach", "src/other.js#orphan").text, /이 선언일 수 있는 못 푼 호출 1곳/);
-  assert.deepEqual(up.rows.find((row) => row.mayBeThis).mayBeThis, { count: 1, places: [{ callee: "orphan", path: "src/tools.js", line: 7 }] });
-  // A built-in name, and a method called only on an unknown receiver: nothing said.
-  assert.equal(graph.nodes.find((node) => node.id === "src/other.js#setTimeout").unresolvedCalls, undefined);
-  assert.doesNotMatch(ask("up", "src/tools.js#Box.append").text, /이 선언일 수 있는/);
-  // Something calls helperA: nothing said even if a name matched.
+  assert.match(ask("node", "src/other.js#orphan").text, /이 선언일 수 있는 못 푼 호출 1곳/);
+  // (b) a method called only on receivers of unknown type, its name declared twice.
+  for (const id of ["src/views.js#Panel.refresh", "src/views.js#Chart.refresh"]) {
+    assert.match(ask("up", id).text, /이 선언일 수 있는 못 푼 호출 2곳 \(받는 쪽 타입을 모름, 같은 이름의 선언 2개\. 이 선언을 부른다는 뜻은 아니다\): src\/caller\.js:2, src\/caller\.js:5\n/);
+    assert.deepEqual(possible(id).member, {
+      count: 2,
+      places: [
+        { callee: "view.refresh", path: "src/caller.js", line: 2 },
+        { callee: "other.refresh", path: "src/caller.js", line: 5 },
+      ],
+      sameName: 2,
+    });
+  }
+  // (c) calls the built-in rule settles never count.
+  assert.equal(possible("app/util.py#len"), undefined);
+  assert.doesNotMatch(ask("up", "app/util.py#len").text, /이 선언일 수 있는/);
+  assert.equal(possible("src/other.js#setTimeout"), undefined);
+  // (d) helperA has a resolved caller (runA): no line, although a bare call of its name is unresolved.
+  assert.equal(possible("src/tools.js#helperA").count, 1);
   assert.doesNotMatch(ask("up", "src/tools.js#helperA").text, /이 선언일 수 있는/);
+  // (e) a method named like a built-in type's: the line with its count, and the limits block says why.
+  assert.match(ask("up", "src/tools.js#Box.append").text, /이 선언일 수 있는 못 푼 호출 1곳 \(받는 쪽 타입을 모름\. 이 선언을 부른다는 뜻은 아니다\): src\/tools\.js:21\n/);
+  assert.ok(result.text.includes("내장 타입도 가진 메서드 이름(get, append 같은 것)은 제품의 것과 가를 수 없어, 그런 선언에는 가능한 호출이 많이 붙을 수 있다."));
 });
 
 // ---------- 5: graph version 3 against older baselines and records ----------

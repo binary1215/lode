@@ -703,7 +703,7 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
     entry.count += 1;
     entry.byReason[reason] = (entry.byReason[reason] || 0) + 1;
     if (entry.callees.length < MAX_LOST_SHOWN) entry.callees.push({ callee, line });
-    lostCalls.push({ callee, path: file, line });
+    lostCalls.push({ callee, path: file, line, reason });
   };
   let resolvedCount = 0,
     allCount = 0;
@@ -829,30 +829,44 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
     for (const value of values.values())
       if (calledValues.has(value.id)) nodes.push({ id: value.id, type: "코드", kind: VALUE_KIND, file: value.file, lines: [value.line, value.endLine] });
   // The optional node field (3.1, 3.4): the unresolved calls made in a node,
-  // and those whose name is the declaration's (plain calls only; names of the
-  // built-in table are left out). Not part of any hash.
-  const lostByName = new Map();
+  // and, counted exactly from all unresolved calls, those that may be the
+  // declaration: bare calls of its name (names of the built-in table are left
+  // out) and, for a member of a class or object, calls of its name on a
+  // receiver of unknown type, with how many declarations share that name. A
+  // possibility only. Not part of any hash.
+  const lastName = (id) =>
+    id
+      .slice(id.indexOf("#") + 1)
+      .split(".")
+      .pop()
+      .replace(/~\d+$/, "");
+  const bareByName = new Map();
+  const memberByName = new Map();
+  const add = (map, key, item) => {
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push({ callee: item.callee, path: item.path, line: item.line });
+  };
   for (const item of lostCalls) {
-    if (item.callee.includes(".") || item.callee === "import") continue;
-    if (!lostByName.has(item.callee)) lostByName.set(item.callee, []);
-    lostByName.get(item.callee).push(item);
+    if (item.callee === "import") continue;
+    if (item.reason === "unknown-receiver") add(memberByName, item.callee.slice(item.callee.lastIndexOf(".") + 1).replace(/^#/, ""), item);
+    else if (!item.callee.includes(".")) add(bareByName, item.callee, item);
   }
+  const declaredByName = new Map();
+  for (const node of nodes) if (node.id !== node.file) declaredByName.set(lastName(node.id), (declaredByName.get(lastName(node.id)) || 0) + 1);
+  const part = (places, extra = {}) => (places?.length ? { count: places.length, places: places.slice(0, MAX_LOST_SHOWN), ...extra } : null);
   for (const node of nodes) {
     const made = lostIn.get(node.id);
-    const name =
-      node.id === node.file
-        ? null
-        : node.id
-            .slice(node.id.indexOf("#") + 1)
-            .split(".")
-            .pop()
-            .replace(/~\d+$/, "");
+    const name = node.id === node.file ? null : lastName(node.id);
     const table = globals[CODE_LANGUAGES[path.posix.extname(node.file).toLowerCase()] === "python" ? "python" : "javascript"];
-    const places = name && !table.functions.has(name) && !table.namespaces.has(name) ? lostByName.get(name) : null;
-    if (!made && !places) continue;
+    const bare = part(name && !table.functions.has(name) && !table.namespaces.has(name) ? bareByName.get(name) : null);
+    // A member: its qualified name has a container (C.add, literal.run).
+    const member = part(name && node.id.slice(node.id.indexOf("#") + 1).includes(".") ? memberByName.get(name) : null, {
+      sameName: declaredByName.get(name) || 1,
+    });
+    if (!made && !bare && !member) continue;
     node.unresolvedCalls = {
       ...(made ? { made } : {}),
-      ...(places ? { mayBeThis: { count: places.length, places: places.slice(0, MAX_LOST_SHOWN) } } : {}),
+      ...(bare || member ? { mayBeThis: { count: (bare?.count || 0) + (member?.count || 0), ...(bare ? { bare } : {}), ...(member ? { member } : {}) } } : {}),
     };
   }
   const byReason = UNRESOLVED_REASONS.map((reason) => {

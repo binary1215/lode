@@ -150,13 +150,25 @@ export const productGraphWalk = (() => {
     { depth, kind: "text", text: `이 길에서 못 푼 호출 ${lost.count}곳 (제품 코드일 수 있음): 닿는 범위가 실제보다 좁을 수 있다`, lostCalls: lost },
     ...lost.nodes.map((item) => ({ depth: depth + 1, kind: "text", text: `${item.id} — ${item.count}곳: ${calleeList(item)}`, lostCallsIn: item.id })),
   ];
-  // A code node nothing points at: unresolved calls that end in its name.
-  // A possibility only: no edge, no change to reach.
+  // A code node with no resolved caller (3.4): unresolved calls that may be
+  // it — bare calls of its name, and calls of its name on a receiver of
+  // unknown type, with how many declarations share that name. A possibility
+  // only: no edge, no change to reach.
+  const CALLER_EDGES = new Set(["call", "callback", "framework-invoked"]);
   function mayBeThisRows(ix, id, depth) {
     const may = ix.nodes.get(id)?.unresolvedCalls?.mayBeThis;
-    if (!may?.count || (ix.into.get(id) || []).length) return [];
-    const places = `${may.places.map((item) => where(item)).join(", ")}${may.count > may.places.length ? " …" : ""}`;
-    return [{ depth, kind: "text", text: `이 선언일 수 있는 못 푼 호출 ${may.count}곳 (이름이 같은 점 없는 호출. 이 선언을 부른다는 뜻은 아니다): ${places}`, mayBeThis: may }];
+    if (!may?.count || (ix.into.get(id) || []).some((edge) => CALLER_EDGES.has(edge.type))) return [];
+    const { bare, member } = may;
+    const sameName = member?.sameName > 1 ? `, 같은 이름의 선언 ${member.sameName}개` : "";
+    const kinds =
+      bare && member
+        ? `이름만 부른 호출 ${bare.count}곳, 받는 쪽 타입을 모르는 호출 ${member.count}곳${sameName}`
+        : bare
+          ? "이름만 부른 호출"
+          : `받는 쪽 타입을 모름${sameName}`;
+    const all = [...(bare?.places || []), ...(member?.places || [])];
+    const places = `${all.slice(0, MAX_LOST_NODES).map((item) => where(item)).join(", ")}${may.count > Math.min(all.length, MAX_LOST_NODES) ? " …" : ""}`;
+    return [{ depth, kind: "text", text: `이 선언일 수 있는 못 푼 호출 ${may.count}곳 (${kinds}. 이 선언을 부른다는 뜻은 아니다): ${places}`, mayBeThis: may }];
   }
   const boundariesOf = (ix, id) => (ix.out.get(id) || []).filter((edge) => edge.type === "경계");
   const boundaryLine = (edge) => `경계에서 멈춤: ${edge.설명 || "설명 없음"} → ${edge.to}`;
