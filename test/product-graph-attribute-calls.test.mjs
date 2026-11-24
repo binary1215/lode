@@ -268,3 +268,92 @@ test("a longer chain, an attribute copied to a local, or a call after another ex
   });
   for (const method of ["chain", "copied", "other"]) assert.deepEqual(calls(graph, `src/user.js#Holder.${method}`), [], method);
 });
+
+// Review round 2: a construction counts only when it is the whole assigned
+// expression (R2-1), and every place the attribute is an assignment target in
+// the class must be one that was read (R2-2); otherwise the call stays a
+// method call on a receiver of unknown type.
+const PY_IO = lines(
+  "class RealIO:",
+  "    def start(self):",
+  "        return 1",
+  "",
+  "class FakeIO:",
+  "    def start(self):",
+  "        return 2",
+  "",
+  "class Builder:",
+  "    def start(self):",
+  "        return 3",
+  "",
+  "    def build(self):",
+  "        return RealIO()",
+);
+const RUN_PY = ["", "    def run(self):", "        return self.io.start()"];
+
+test("Python: an expression around a construction, or another assignment target, leaves the attribute unknown", (t) => {
+  const cases = {
+    A: ["    def __init__(self, live):", "        self.io = RealIO() if live else FakeIO()"],
+    B: ["    def __init__(self):", "        self.io = Builder().build()"],
+    G: ["    def __init__(self):", "        self.io = Builder(", "        ).build()"],
+    C: ["    def __init__(self):", "        self.io = RealIO()", "", "    def swap(self, other):", "        self.io, self.spare = other, None"],
+    D: ["    def __init__(self):", "        self.io = RealIO()", "", "    def flip(self, flag):", "        if flag: self.io = FakeIO()"],
+    J: ["    def __init__(self):", "        self.io = RealIO()", "", "    def open(self):", "        with opener() as self.io:", "            pass"],
+    Or: ["    def __init__(self, io):", "        self.io = io or RealIO()"],
+    Chained: ["    def __init__(self):", "        self.io = self.other = RealIO()"],
+    Augmented: ["    def __init__(self):", "        self.io = RealIO()", "", "    def more(self):", "        self.io += 1"],
+    Kept: ["    def __init__(self):", "        self.io = None", "        self.io = RealIO()  # the real one"],
+  };
+  const files = { "app/__init__.py": "", "app/io.py": PY_IO };
+  for (const [name, body] of Object.entries(cases))
+    files[`app/case_${name.toLowerCase()}.py`] = lines("from app.io import RealIO, FakeIO, Builder", "", `class Case${name}:`, ...body, ...RUN_PY);
+  const graph = build(t, files);
+  for (const name of Object.keys(cases)) {
+    const expected = name === "Kept" ? ["app/io.py#RealIO.start"] : [];
+    assert.deepEqual(calls(graph, `app/case_${name.toLowerCase()}.py#Case${name}.run`), expected, name);
+  }
+});
+
+const TS_IO = lines(
+  "export class RealIO {",
+  "  start() {",
+  "    return 1;",
+  "  }",
+  "}",
+  "export class FakeIO {",
+  "  start() {",
+  "    return 2;",
+  "  }",
+  "}",
+  "export class Builder {",
+  "  start() {",
+  "    return 3;",
+  "  }",
+  "  build() {",
+  "    return new RealIO();",
+  "  }",
+  "}",
+);
+const RUN_TS = ["  run() {", "    return this.io.start();", "  }", "}"];
+
+test("TypeScript: the same forms leave the attribute unknown", (t) => {
+  const cases = {
+    B: ["  constructor() {", "    this.io = new Builder().build();", "  }"],
+    G: ["  constructor() {", "    this.io = new Builder(", "    ).build();", "  }"],
+    Or: ["  constructor(other: FakeIO) {", "    this.io = new RealIO() || other;", "  }"],
+    Ternary: ["  constructor(live: boolean) {", "    this.io = live ? new RealIO() : new FakeIO();", "  }"],
+    C: ["  constructor() {", "    this.io = new RealIO();", "  }", "  swap(other) {", "    [this.io, this.spare] = [other, null];", "  }"],
+    D: ["  constructor() {", "    this.io = new RealIO();", "  }", "  flip(flag: boolean) {", "    if (flag) this.io = new FakeIO();", "  }"],
+    Nullish: ["  constructor() {", "    this.io = new RealIO();", "  }", "  reset() {", "    this.io ??= new FakeIO();", "  }"],
+    Field: ["  io = new Builder().build();"],
+    Kept: ["  constructor() {", "    this.io = null;", "    this.io = new RealIO(); // the real one", "  }"],
+  };
+  const files = { "src/io.ts": TS_IO };
+  for (const [name, body] of Object.entries(cases))
+    files[`src/case-${name.toLowerCase()}.ts`] = lines('import { RealIO, FakeIO, Builder } from "./io";', `export class Case${name} {`, ...body, ...RUN_TS);
+  const graph = build(t, files);
+  for (const name of Object.keys(cases)) {
+    const expected = name === "Kept" ? ["src/io.ts#RealIO.start"] : [];
+    assert.deepEqual(calls(graph, `src/case-${name.toLowerCase()}.ts#Case${name}.run`), expected, name);
+  }
+});

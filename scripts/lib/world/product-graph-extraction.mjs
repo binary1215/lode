@@ -791,98 +791,173 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
     }
     return types;
   };
-  const attributes = new Map();
-  const attributeOf = (relative, owner, attr) => {
-    const key = `${relative}\0${owner}\0${attr}`;
-    if (attributes.has(key)) return attributes.get(key);
-    const analysis = analyses.get(relative);
-    const python = analysis.language === "python";
-    const classSymbol = analysis.symbols.find((symbol) => symbol.kind === "class" && symbol.qualifiedName === owner);
-    const found = new Set();
-    let any = false,
-      unknown = false;
-    const note = (cls) => {
-      any = true;
-      if (!cls) unknown = true;
-      else found.add(`${cls.module}\0${cls.name}`);
+  // Per file, once: the innermost class and function holding each line.
+  const innermostByLine = (analysis) => {
+    if (analysis.prepared.innermost) return analysis.prepared.innermost;
+    const size = (analysis.prepared.textLines ??= analysis.text.split("\n")).length + 2;
+    const fill = (kind) => {
+      const holder = new Array(size).fill(null);
+      const symbols = analysis.symbols
+        .filter((symbol) => symbol.kind === kind)
+        .sort((a, b) => (b.endLine ?? b.line) - b.line - ((a.endLine ?? a.line) - a.line));
+      for (const symbol of symbols) for (let line = symbol.line; line <= Math.min(symbol.endLine ?? symbol.line, size - 1); line += 1) holder[line] = symbol;
+      return holder;
     };
-    const holding = (line, kind) =>
-      analysis.symbols
-        .filter((symbol) => symbol.kind === kind && symbol.line <= line && line <= (symbol.endLine ?? symbol.line))
-        .sort((a, b) => (a.endLine ?? a.line) - a.line - ((b.endLine ?? b.line) - b.line))[0] || null;
-    const textLines = (analysis.prepared.textLines ??= analysis.text.split("\n"));
-    const maskedLines = analysis.prepared.maskedLines;
-    // The value assigned: a construction, a typed parameter of the method, or nothing said.
-    const value = (expression, line) => {
-      const text = expression.trim().replace(/;$/, "").trim();
-      if (NOTHING.has(text)) return;
-      const construction = python ? /^([A-Za-z_][\w.]*)\s*\(/.exec(text) : /^new\s+([A-Za-z_$][\w$.]*)\s*(?:<[^()]*>)?\s*(?:\(|$)/.exec(text);
-      if (construction) return note(classIn(relative, construction[1]));
-      const method = holding(line, "function");
-      const parameter =
-        /^[A-Za-z_$][\w$]*$/.test(text) && method && method.qualifiedName.startsWith(`${owner}.`) ? parameterTypes(method.signature || "").get(text) : null;
-      note(parameter ? classIn(relative, typeName(parameter.type)) : null);
-    };
-    if (classSymbol) {
-      const first = classSymbol.line,
-        last = classSymbol.endLine ?? classSymbol.line;
-      const self = python ? "self" : "this";
-      const name = attr.replace(/[$]/g, "\\$");
-      const assignment = new RegExp(`^\\s*${self}\\.${name}\\s*(?::\\s*([^=]+?))?\\s*(?:=(?!=)\\s*(.*))?$`);
-      // JavaScript/TypeScript: the class body's own statements (brace depth 1).
-      let bodyDepth = null;
-      if (!python) {
-        bodyDepth = new Map();
-        let depth = 0;
-        for (let line = first; line <= last; line += 1) {
-          bodyDepth.set(line, depth);
-          for (const character of maskedLines[line - 1] || "") {
-            if (character === "{") depth += 1;
-            else if (character === "}") depth -= 1;
-          }
-        }
-      }
-      const bodyIndent = python ? /^(\s*)\S/.exec(textLines.slice(first).find((text, index) => (maskedLines[first + index] || "").trim()) || "")?.[1] : null;
-      for (let line = first; line <= last; line += 1) {
-        const masked = maskedLines[line - 1] || "";
-        const text = textLines[line - 1] || "";
-        if (!masked.trim() || holding(line, "class")?.qualifiedName !== owner) continue;
-        const match = masked.trimStart().startsWith(`${self}.`) ? assignment.exec(text) : null;
-        if (match && (match[1] !== undefined || match[2] !== undefined)) {
-          if (match[1] !== undefined) note(classIn(relative, typeName(match[1])));
-          if (match[2] !== undefined) value(match[2], line);
-          continue;
-        }
-        // The class body: Python at the body's indentation outside a method;
-        // JavaScript/TypeScript fields at depth 1 (not static).
-        const inBody = python
-          ? bodyIndent !== undefined && /^(\s*)/.exec(text)[1] === bodyIndent && !holding(line, "function")?.qualifiedName.startsWith(`${owner}.`)
-          : bodyDepth.get(line) === 1;
-        if (!inBody) continue;
-        const field = python
-          ? new RegExp(`^\\s*${name}\\s*(?::\\s*([^=]+?))?\\s*(?:=(?!=)\\s*(.*))?$`).exec(text)
-          : new RegExp(
-              `^\\s*(?:(?:public|private|protected|readonly|declare|override|accessor)\\s+)*${name}\\s*[?!]?\\s*(?::\\s*([^=;]+?))?\\s*(?:=\\s*(.+?))?\\s*;?\\s*$`,
-            ).exec(text);
-        if (!field || (field[1] === undefined && field[2] === undefined)) continue;
-        if (field[1] !== undefined) note(classIn(relative, typeName(field[1])));
-        if (field[2] !== undefined) value(field[2], line);
-      }
-      // TypeScript: a constructor parameter property (constructor(private attr: T)).
-      if (!python) {
-        const constructor = analysis.symbols.find((symbol) => symbol.kind === "function" && symbol.qualifiedName === `${owner}.constructor`);
-        const property = constructor && parameterTypes(constructor.signature || "").get(attr);
-        if (property?.property) note(classIn(relative, typeName(property.type)));
+    analysis.prepared.innermost = { class: fill("class"), function: fill("function") };
+    return analysis.prepared.innermost;
+  };
+  // Where a value assigned at index ends: a construction is the whole
+  // expression only when nothing but whitespace or ";" follows the closing
+  // bracket of its argument list (read on the masked text, across lines).
+  const closing = (masked, open) => {
+    let depth = 0;
+    for (let index = open; index < masked.length; index += 1) {
+      const character = masked[index];
+      if (character === "(" || character === "[" || character === "{") depth += 1;
+      else if (character === ")" || character === "]" || character === "}") {
+        depth -= 1;
+        if (depth === 0) return index;
       }
     }
-    const [only] = found;
-    const result = !any
-      ? { none: true }
-      : unknown || found.size !== 1
-        ? { unknown: true }
-        : { class: { module: only.split("\0")[0], name: only.split("\0")[1] } };
-    attributes.set(key, result);
-    return result;
+    return -1;
+  };
+  const restIsEmpty = (masked, index) => {
+    const end = masked.indexOf("\n", index);
+    return /^[\s;]*$/.test(masked.slice(index, end < 0 ? masked.length : end));
+  };
+  // A place where self.attr / this.attr is an assignment target, found
+  // loosely: before an assignment operator (after an optional annotation),
+  // after "as" or "for", or one of several targets left of an "=".
+  const OPERATOR = /^\s*(?::\s*[^=\n]+?)?\s*(?:\*\*|\/\/|>>|<<|\|\||&&|\?\?|[-+*/%&|^@])?=(?![=>])/;
+  const isTarget = (masked, start, end) => {
+    const after = masked.slice(end);
+    if (OPERATOR.test(after)) return true;
+    const before = masked.slice(0, start);
+    if (/(?:\bas|\bfor)\s+$/.test(before)) return true;
+    if (!/^\s*[,\]})]/.test(after)) return false;
+    // Left of a plain "=" on the line, and not inside a call's arguments or a subscript.
+    if (!/(?<![=!<>])=(?![=>])/.test(after)) return false;
+    let depth = 0;
+    for (let index = before.length - 1; index >= 0; index -= 1) {
+      const character = before[index];
+      if (character === ")" || character === "]" || character === "}") depth += 1;
+      else if (character === "(" || character === "[" || character === "{") {
+        if (depth > 0) depth -= 1;
+        else if (/[\w$)\]]\s*$/.test(before.slice(0, index))) return false;
+      }
+    }
+    return true;
+  };
+  const classEvidence = new Map();
+  // One pass over a class: for every attribute, the classes its evidence
+  // names, whether any of it is unknown, and the counts of assignment targets
+  // found loosely and read strictly (R2-2: they must agree).
+  const evidenceOf = (relative, owner) => {
+    const key = `${relative}\0${owner}`;
+    if (classEvidence.has(key)) return classEvidence.get(key);
+    const analysis = analyses.get(relative);
+    const python = analysis.language === "python";
+    const attrs = new Map();
+    const entry = (attr) => {
+      if (!attrs.has(attr)) attrs.set(attr, { classes: new Set(), unknown: false, any: false, targets: 0, read: 0 });
+      return attrs.get(attr);
+    };
+    const note = (attr, cls) => {
+      const item = entry(attr);
+      item.any = true;
+      if (!cls) item.unknown = true;
+      else item.classes.add(`${cls.module}\0${cls.name}`);
+    };
+    classEvidence.set(key, attrs);
+    const classSymbol = analysis.symbols.find((symbol) => symbol.kind === "class" && symbol.qualifiedName === owner);
+    if (!classSymbol) return attrs;
+    const innermost = innermostByLine(analysis);
+    const textLines = analysis.prepared.textLines;
+    const maskedLines = analysis.prepared.maskedLines;
+    const masked = viewOfAnalysis(analysis, "code");
+    const starts = analysis.starts;
+    const self = python ? "self" : "this";
+    // The value assigned from index on (masked): nothing said, a construction
+    // that is the whole expression, a typed parameter of the method, or unknown.
+    const value = (attr, index, line) => {
+      const rest = masked.slice(index).replace(/^[ \t]*/, "");
+      const at = masked.length - rest.length;
+      const word = /^([A-Za-z_$][\w$]*)/.exec(rest)?.[1];
+      if (word && NOTHING.has(word) && restIsEmpty(masked, at + word.length)) return;
+      const construction = python ? /^([A-Za-z_][\w.]*)\s*\(/.exec(rest) : /^new\s+([A-Za-z_$][\w$.]*)\s*(?:<[^()\n]*>)?\s*\(/.exec(rest);
+      if (construction) {
+        const close = closing(masked, at + construction[0].length - 1);
+        return note(attr, close >= 0 && restIsEmpty(masked, close + 1) ? classIn(relative, construction[1]) : null);
+      }
+      const method = innermost.function[line];
+      const parameter =
+        word && restIsEmpty(masked, at + word.length) && method && method.qualifiedName.startsWith(`${owner}.`)
+          ? parameterTypes(method.signature || "").get(word)
+          : null;
+      note(attr, parameter ? classIn(relative, typeName(parameter.type)) : null);
+    };
+    const first = classSymbol.line,
+      last = classSymbol.endLine ?? classSymbol.line;
+    // JavaScript/TypeScript: the class body's own statements (brace depth 1).
+    const bodyDepth = new Map();
+    if (!python) {
+      let depth = 0;
+      for (let line = first; line <= last; line += 1) {
+        bodyDepth.set(line, depth);
+        for (const character of maskedLines[line - 1] || "") {
+          if (character === "{") depth += 1;
+          else if (character === "}") depth -= 1;
+        }
+      }
+    }
+    const bodyIndent = python ? /^(\s*)\S/.exec(textLines.slice(first).find((text, index) => (maskedLines[first + index] || "").trim()) || "")?.[1] : null;
+    const targetPattern = new RegExp(`(?<![\\w$.])${self}\\s*\\.\\s*(#?[A-Za-z_$][\\w$]*)(?![\\w$])`, "g");
+    const strict = new RegExp(`^\\s*${self}\\.(#?[A-Za-z_$][\\w$]*)\\s*(?::\\s*([^=]+?))?\\s*(?:(=)(?![=>])|$)`);
+    const fieldPattern = python
+      ? /^\s*([A-Za-z_]\w*)\s*(?::\s*([^=]+?))?\s*(?:(=)(?!=)|$)/
+      : /^\s*(?:(?:public|private|protected|readonly|declare|override|accessor)\s+)*(#?[A-Za-z_$][\w$]*)\s*[?!]?\s*(?::\s*([^=;]+?))?\s*(?:(=)(?![=>])|;?\s*$)/;
+    for (let line = first; line <= last; line += 1) {
+      const maskedLine = maskedLines[line - 1] || "";
+      if (!maskedLine.trim() || innermost.class[line]?.qualifiedName !== owner) continue;
+      const text = textLines[line - 1] || "";
+      for (const match of maskedLine.matchAll(targetPattern))
+        if (isTarget(maskedLine, match.index, match.index + match[0].length)) entry(match[1]).targets += 1;
+      const assignment = maskedLine.trimStart().startsWith(`${self}.`) ? strict.exec(maskedLine) : null;
+      if (assignment && (assignment[2] !== undefined || assignment[3])) {
+        const attr = assignment[1];
+        // The annotation from the text itself (a quoted Python type is a string).
+        if (assignment[2] !== undefined) note(attr, classIn(relative, typeName(strict.exec(text)?.[2] ?? assignment[2])));
+        if (assignment[3]) {
+          entry(attr).read += 1;
+          value(attr, starts[line - 1] + assignment.index + assignment[0].length, line);
+        }
+        continue;
+      }
+      // The class body: Python at the body's indentation outside a method;
+      // JavaScript/TypeScript fields at depth 1 (not static).
+      const inBody = python
+        ? bodyIndent !== undefined && /^(\s*)/.exec(text)[1] === bodyIndent && !innermost.function[line]?.qualifiedName.startsWith(`${owner}.`)
+        : bodyDepth.get(line) === 1;
+      if (!inBody || /^\s*static\b/.test(maskedLine)) continue;
+      const field = fieldPattern.exec(maskedLine);
+      if (!field || (field[2] === undefined && !field[3])) continue;
+      if (field[2] !== undefined) note(field[1], classIn(relative, typeName(fieldPattern.exec(text)?.[2] ?? field[2])));
+      if (field[3]) value(field[1], starts[line - 1] + field.index + field[0].length, line);
+    }
+    // TypeScript: constructor parameter properties (constructor(private attr: T)).
+    if (!python) {
+      const constructor = analysis.symbols.find((symbol) => symbol.kind === "function" && symbol.qualifiedName === `${owner}.constructor`);
+      for (const [name, parameter] of constructor ? parameterTypes(constructor.signature || "") : [])
+        if (parameter.property) note(name, classIn(relative, typeName(parameter.type)));
+    }
+    return attrs;
+  };
+  const attributeOf = (relative, owner, attr) => {
+    const item = evidenceOf(relative, owner).get(attr);
+    if (!item || (!item.any && !item.targets)) return { none: true };
+    if (item.unknown || item.targets !== item.read || item.classes.size !== 1) return { unknown: true };
+    const [only] = item.classes;
+    return { class: { module: only.split("\0")[0], name: only.split("\0")[1] } };
   };
   const context = { analyses, found, unique, fileSet, names, memberNames, globals, follow, bindingsOf, valuesOf, throughModules, attributeOf };
   const references = new Map();
