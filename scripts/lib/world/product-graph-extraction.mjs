@@ -14,7 +14,21 @@ import { bindingAt, definedMemberNames, javascriptFacts, pythonFacts } from "./p
 import { failCode as fail } from "../core/errors.mjs";
 
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
-const MAX_FILES = 50_000;
+// Size (4.1, 4.2), all judgement: the files a build would read, a safety stop
+// on the entries the walk visits, and what makes a folder data-like.
+export const SOURCE_LIMITS = Object.freeze({ filesToRead: 50_000, entriesVisited: 2_000_000, dataFolderFiles: 2_000, dataFolderShare: 0.1 });
+// Tests run the size rules on small trees with smaller numbers; a build always
+// uses SOURCE_LIMITS.
+let activeLimits = SOURCE_LIMITS;
+export function withSourceLimits(limits, run) {
+  const previous = activeLimits;
+  activeLimits = Object.freeze({ ...SOURCE_LIMITS, ...limits });
+  try {
+    return run();
+  } finally {
+    activeLimits = previous;
+  }
+}
 const MAX_READ_BYTES = 1024 * 1024;
 const CODE_LANGUAGES = Object.freeze({
   ".js": "javascript",
@@ -67,10 +81,15 @@ export const BUILT_IN_ENTRY_RULES = Object.freeze([
   }),
 ]);
 
+// Every file under the source root the build may look at, in path order:
+// source.제외, hidden folders (but the entry configuration ones), the scan's
+// excluded folders and symbolic links left out. The walk stops when it has
+// visited SOURCE_LIMITS.entriesVisited entries, so a runaway tree still ends.
 function walkSource(sourceRoot, excludes, skipped = new Map()) {
   const files = [];
   const skip = (reason) => skipped.set(reason, (skipped.get(reason) || 0) + 1);
   const excluded = (relative) => excludes.some((prefix) => relative === prefix || relative.startsWith(prefix + "/"));
+  let visited = 0;
   const visit = (relative) => {
     const absolute = relative ? path.join(sourceRoot, ...relative.split("/")) : sourceRoot;
     let entries;
@@ -80,6 +99,8 @@ function walkSource(sourceRoot, excludes, skipped = new Map()) {
       return;
     }
     for (const entry of entries.sort((a, b) => compare(a.name, b.name))) {
+      visited += 1;
+      if (visited > activeLimits.entriesVisited) tooManyEntries(files);
       const child = relative ? `${relative}/${entry.name}` : entry.name;
       if (excluded(child)) {
         skip("호출 방식 표의 source.제외");
@@ -95,14 +116,155 @@ function walkSource(sourceRoot, excludes, skipped = new Map()) {
           continue;
         }
         visit(child);
-      } else if (entry.isFile()) {
-        if (files.length >= MAX_FILES) fail("PRODUCT_GRAPH_SOURCE_TOO_LARGE");
-        files.push(child);
-      }
+      } else if (entry.isFile()) files.push(child);
     }
   };
   visit("");
   return files;
+}
+
+const ROOT_FILES = "(소스 루트의 파일)";
+const topFolder = (relative) => (relative.includes("/") ? `${relative.slice(0, relative.indexOf("/"))}/` : ROOT_FILES);
+
+function tooManyEntries(files) {
+  const byTop = new Map();
+  for (const relative of files) byTop.set(topFolder(relative), (byTop.get(topFolder(relative)) || 0) + 1);
+  const rows = [...byTop.entries()].sort((a, b) => b[1] - a[1] || compare(a[0], b[0])).slice(0, 10);
+  fail(
+    "PRODUCT_GRAPH_SOURCE_TOO_LARGE",
+    `소스 루트 아래 항목이 너무 많아 ${activeLimits.entriesVisited}개를 지나고 멈췄다(안전 한도, 판단). 멈출 때까지 지난 맨 위 폴더(파일 수): ${rows.map(([name, count]) => `${name} ${count}`).join(", ")}. 읽지 않을 큰 폴더는 호출 방식 표의 source.제외에 적으면 빠진다.`,
+  );
+}
+
+// Entry configuration files the built-in rules read (hook, command, cli).
+const ENTRY_CONFIGURATION = [
+  /(?:^|\/)hooks\/[^/]+\.json$/,
+  /(?:^|\/)\.claude\/settings(?:\.local)?\.json$/,
+  /(?:^|\/)\.codex\/hooks\.json$/,
+  /(?:^|\/)\.(?:claude|codex)-plugin\/plugin\.json$/,
+  /(?:^|\/)commands\/[^/]+\.md$/,
+  /(?:^|\/)\.claude\/commands\/.+\.md$/,
+  /(?:^|\/)skills\/[^/]+\/SKILL\.md$/,
+  /(?:^|\/)package\.json$/,
+  /(?:^|\/)pyproject\.toml$/,
+];
+const isEntryConfiguration = (relative) => ENTRY_CONFIGURATION.some((pattern) => pattern.test(relative));
+
+// Which walked files the build reads (4.1–4.3): code files, UI-binding
+// candidates (by the patterns' and file signs' extensions), entry
+// configuration, .sql and files a project rule names; tests are not read.
+// A data-like folder (4.2) holds at least activeLimits.dataFolderFiles files
+// of which under activeLimits.dataFolderShare are read or are code (a test
+// file with a code extension counts as code here, never as data); looked for
+// top-down from the root's children, the outermost one taken, descending only
+// into a folder that holds that many files; never one a project rule names or
+// contains (파일, 화면 파일, an 입구 file), or one source.포함 keeps. Entry
+// configuration a built-in rule finds by its name protects nothing: in a
+// data-like folder it is a file Lode would have read, counted apart. Whether
+// data-like folders are left out is decided by leavesDataFoldersOut alone.
+// 4.3a (replacing D1): data-like folders are always left out, whatever the
+// files to read; source.포함 brings one back. When the rest still passes the
+// limit the build fails (4.6).
+function leavesDataFoldersOut({ dataLike }) {
+  return dataLike.length > 0;
+}
+
+// 4.3b: what a data-like folder holds, by kind, from file extensions alone
+// (nothing is opened). The lists are judgement and shown in the limits text.
+export const FILE_KINDS = Object.freeze({
+  documents: Object.freeze([".md", ".txt", ".html", ".htm", ".pdf", ".rst"]),
+  data: Object.freeze([".json", ".jsonl", ".csv", ".tsv", ".yaml", ".yml", ".xml", ".log"]),
+  images: Object.freeze([".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".gif", ".webp", ".svg"]),
+  code: Object.freeze(Object.keys(CODE_LANGUAGES)),
+});
+const KIND_OF_EXTENSION = new Map(Object.entries(FILE_KINDS).flatMap(([kind, extensions]) => extensions.map((extension) => [extension, kind])));
+
+function selectSource(files, { named, uiExtensions, included }) {
+  const namedSet = new Set(named);
+  const reads = (relative) => {
+    const extension = path.posix.extname(relative).toLowerCase();
+    if (namedSet.has(relative)) return true;
+    if (classifySourcePath(relative, extension) === "test") return false;
+    return Boolean(CODE_LANGUAGES[extension]) || uiExtensions.has(extension) || extension === ".sql" || isEntryConfiguration(relative);
+  };
+  const stats = new Map();
+  const children = new Map();
+  const keptDirs = new Set();
+  const keepAncestors = (relative) => {
+    for (let dir = path.posix.dirname(relative); dir !== "."; dir = path.posix.dirname(dir)) keptDirs.add(dir);
+  };
+  for (const item of named) {
+    keepAncestors(item);
+    keptDirs.add(item);
+  }
+  let toRead = 0;
+  const readFlags = new Uint8Array(files.length);
+  files.forEach((relative, position) => {
+    const read = reads(relative);
+    const code = read && Boolean(CODE_LANGUAGES[path.posix.extname(relative).toLowerCase()]);
+    if (read) {
+      toRead += 1;
+      readFlags[position] = 1;
+    }
+    const extension = path.posix.extname(relative).toLowerCase();
+    const config = read && isEntryConfiguration(relative);
+    const testCode = !read && Boolean(CODE_LANGUAGES[extension]) && classifySourcePath(relative, extension) === "test";
+    for (let dir = path.posix.dirname(relative); dir !== "."; dir = path.posix.dirname(dir)) {
+      let row = stats.get(dir);
+      if (!row) {
+        row = { path: dir, files: 0, toRead: 0, code: 0, config: 0, testCode: 0, kinds: { documents: 0, data: 0, images: 0, code: 0, other: 0 } };
+        stats.set(dir, row);
+        const parent = path.posix.dirname(dir);
+        const key = parent === "." ? "" : parent;
+        if (!children.has(key)) children.set(key, []);
+        children.get(key).push(dir);
+      }
+      row.files += 1;
+      if (read) row.toRead += 1;
+      if (code) row.code += 1;
+      if (config) row.config += 1;
+      if (testCode) row.testCode += 1;
+      row.kinds[KIND_OF_EXTENSION.get(extension) || "other"] += 1;
+    }
+  });
+  // source.포함: a folder at or under a prefix is kept (and reported as kept
+  // when data-like); one holding a prefix is looked into.
+  const includedAt = (dir) => included.some((prefix) => dir === prefix || dir.startsWith(prefix + "/"));
+  const holdsIncluded = (dir) => included.some((prefix) => prefix.startsWith(dir + "/"));
+  const dataLike = [];
+  const keptByInclude = [];
+  const visit = (dir) => {
+    for (const child of (children.get(dir) || []).sort(compare)) {
+      const row = stats.get(child);
+      if (row.files < activeLimits.dataFolderFiles) continue;
+      const numbers = row.toRead + row.testCode < row.files * activeLimits.dataFolderShare;
+      const { testCode, ...counts } = row;
+      const entry = { ...counts, kinds: { ...row.kinds }, share: Math.round(((row.toRead + testCode) / row.files) * 1000) / 1000 };
+      if (numbers && !keptDirs.has(child) && includedAt(child)) keptByInclude.push(entry);
+      else if (numbers && !keptDirs.has(child) && !holdsIncluded(child)) dataLike.push(entry);
+      else visit(child);
+    }
+  };
+  visit("");
+  const leaving = leavesDataFoldersOut({ dataLike, toRead });
+  const leftOutRead = leaving ? dataLike.reduce((sum, row) => sum + row.toRead, 0) : 0;
+  if (toRead - leftOutRead > activeLimits.filesToRead) {
+    const byTop = new Map();
+    files.forEach((relative, position) => {
+      const key = topFolder(relative);
+      if (!byTop.has(key)) byTop.set(key, { path: key, files: 0, toRead: 0 });
+      byTop.get(key).files += 1;
+      byTop.get(key).toRead += readFlags[position];
+    });
+    const rows = [...byTop.values()].sort((a, b) => b.toRead - a.toRead || b.files - a.files || compare(a.path, b.path)).slice(0, 10);
+    fail(
+      "PRODUCT_GRAPH_SOURCE_TOO_LARGE",
+      `읽을 파일이 ${toRead - leftOutRead}개로 한도 ${activeLimits.filesToRead}개(판단)를 넘는다${dataLike.length ? ` (데이터 폴더 ${dataLike.length}개와 그 안의 읽을 파일 ${leftOutRead}개를 빼고도)` : ""}. 맨 위 폴더(파일 / 읽을 파일): ${rows.map((row) => `${row.path} ${row.files} / ${row.toRead}`).join(", ")}. 읽지 않을 폴더는 호출 방식 표의 source.제외에 적으면 빠진다.`,
+    );
+  }
+  if (!leaving) return { files, toRead, leftOut: [], included: keptByInclude };
+  const out = (relative) => dataLike.some((row) => relative.startsWith(row.path + "/"));
+  return { files: files.filter((relative) => !out(relative)), toRead: toRead - leftOutRead, leftOut: dataLike, included: keptByInclude };
 }
 
 // One code mask per code file per build (B3 of review round 1): every reader
@@ -268,12 +430,21 @@ export const UNRESOLVED_REASONS = Object.freeze([
     settle: "경로를 글자로 쓰고 같은 식에서 이름을 꺼내기(.then((m) => m.이름) 또는 const { 이름 } = await import(...)), 또는 프로젝트 규칙",
   }),
   Object.freeze({
+    key: "module-not-read",
+    group: "product",
+    label: "들여온 모듈이 읽은 파일에 없음 (Python: 상대 import, 또는 모듈 이름을 따라가다 읽은 파일이 아닌 모듈에 닿음)",
+    settle: "제품 코드라면 그 파일이 스캔 범위(확장자, source.제외)에 드는지 확인",
+  }),
+  Object.freeze({
     key: "rest",
     group: "product",
     label: "그 밖: 스캔이 이유를 정하지 못함 (들여온 모듈을 찾지 못함, 모듈에 그 이름이 없음, 한 줄에 같은 이름이 메서드와 함수로 함께 쓰임)",
     settle: "구문 트리 기반의 더 정밀한 해석기",
   }),
 ]);
+
+const PRODUCT_REASONS = new Set(UNRESOLVED_REASONS.filter((reason) => reason.group === "product").map((reason) => reason.key));
+const MAX_LOST_SHOWN = 5;
 
 function resolveModule(fromFile, specifier, language, fileSet) {
   const tries = [];
@@ -300,6 +471,12 @@ function resolveModule(fromFile, specifier, language, fileSet) {
 // A specifier that names a module of the product: relative in JavaScript;
 // in Python, one that resolves to a scanned file (an absolute name that does
 // not is taken as outside the product).
+// Python: the module "name" of the module a specifier names ("pkg" + "mod",
+// "." + "mod", ".sub" + "mod").
+function joinSpecifier(specifier, name) {
+  return specifier.endsWith(".") ? `${specifier}${name}` : `${specifier}.${name}`;
+}
+
 function isExternalSpecifier(relative, specifier, language, fileSet) {
   if (language === "python") return !specifier.startsWith(".") && !resolveModule(relative, specifier, language, fileSet);
   return !specifier.startsWith(".");
@@ -496,9 +673,343 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
       }
     return hits.size === 1 ? [...hits.values()][0] : null;
   };
-  const context = { analyses, found, unique, fileSet, names, memberNames, globals, follow, bindingsOf, valuesOf };
+  // Python (2.1–2.3): a binding that names a module — a namespace import, or
+  // "from pkg import mod [as x]" when the package itself has no declaration,
+  // value or re-export of mod (one there wins, as in Python) and pkg.mod is a
+  // read file — and the modules a dotted name walks from it, one segment at a
+  // time while each step is a read file. null when the head names no module;
+  // { reason } when the walk starts outside the read files; else the module
+  // reached and the segments left (missing: a step was not a read file).
+  const throughModules = (relative, segments) => {
+    if (analyses.get(relative)?.language !== "python" || segments.length < 2) return null;
+    const binding = bindingsOf.get(relative)?.get(segments[0]);
+    if (!binding) return null;
+    const find = (specifier) => resolveModule(relative, specifier, "python", fileSet);
+    let specifier;
+    if (binding.namespace) {
+      // "import pkg.mod" binds pkg: a longer name walks from the package.
+      const top = binding.specifier.split(".")[0];
+      specifier = segments.length > 2 && binding.local === top && top !== binding.specifier ? top : binding.specifier;
+    } else {
+      const owner = find(binding.specifier);
+      if (owner && follow(owner, binding.imported)) return null;
+      specifier = joinSpecifier(binding.specifier, binding.imported);
+      // Neither a name of the package nor a read module: a submodule that is
+      // not among the read files (S1). An absolute package not read is outside.
+      if (!find(specifier)) return owner || binding.specifier.startsWith(".") ? { reason: "module-not-read" } : null;
+    }
+    let index = 1,
+      missing = false;
+    while (index < segments.length - 1) {
+      const owner = find(specifier);
+      if (owner && follow(owner, segments[index])) break;
+      const next = joinSpecifier(specifier, segments[index]);
+      if (!find(next)) {
+        missing = true;
+        break;
+      }
+      specifier = next;
+      index += 1;
+    }
+    const module = find(specifier);
+    if (!module) return { reason: binding.specifier.startsWith(".") ? "module-not-read" : "external-import" };
+    return { module, rest: segments.slice(index), missing };
+  };
+  // 2b: which product class an attribute of a class holds, read only from
+  // that class's own code: (a) every assignment constructs the same class,
+  // (b) a declared type on the attribute, (c) an assignment from a parameter
+  // of the same method with a declared type. None / null / undefined say
+  // nothing; Optional[T], T | None, T | null | undefined and a quoted "T" mean
+  // T. All evidence must name one class: { class } or { unknown } or { none }
+  // when the class never assigns or declares the attribute.
+  const NOTHING = new Set(["None", "null", "undefined"]);
+  const typeName = (text) => {
+    let type = text
+      .trim()
+      .replace(/^(["'])(.*)\1$/, "$2")
+      .trim();
+    const optional = /^(?:typing\.)?Optional\[(.*)\]$/.exec(type);
+    if (optional) type = optional[1].trim();
+    const parts = type
+      .split("|")
+      .map((part) =>
+        part
+          .trim()
+          .replace(/^(["'])(.*)\1$/, "$2")
+          .trim(),
+      )
+      .filter((part) => part && !NOTHING.has(part));
+    if (parts.length !== 1) return null;
+    const name = parts[0].replace(/<[^<>]*>$/, "").trim();
+    return /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(name) ? name : null;
+  };
+  // A product class this file can name: declared here, imported, or through a
+  // namespace or (Python) a binding that names a module.
+  const classIn = (relative, name) => {
+    if (!name) return null;
+    const analysis = analyses.get(relative);
+    const asClass = (place) => (place && unique(place.module, place.name)?.kind === "class" ? { module: place.module, name: place.name } : null);
+    if (name.includes(".")) {
+      const segments = name.split(".");
+      if (analysis.language === "python") {
+        const walk = throughModules(relative, segments);
+        return walk?.module && walk.rest.length === 1 ? asClass(follow(walk.module, walk.rest[0])) : null;
+      }
+      const binding = bindingsOf.get(relative)?.get(segments[0]);
+      if (segments.length !== 2 || !binding?.namespace || isExternalSpecifier(relative, binding.specifier, analysis.language, fileSet)) return null;
+      const module = resolveModule(relative, binding.specifier, analysis.language, fileSet);
+      return module ? asClass(follow(module, segments[1])) : null;
+    }
+    const local = unique(relative, name);
+    if (local) return local.kind === "class" ? { module: relative, name: local.qualifiedName } : null;
+    const binding = bindingsOf.get(relative)?.get(name);
+    if (!binding || binding.namespace || isExternalSpecifier(relative, binding.specifier, analysis.language, fileSet)) return null;
+    const module = resolveModule(relative, binding.specifier, analysis.language, fileSet);
+    return module ? asClass(binding.imported === "default" ? follow(module, name) || follow(module, "default") : follow(module, binding.imported)) : null;
+  };
+  // The declared types of a function's parameters, from its signature.
+  const parameterTypes = (signature) => {
+    const open = signature.indexOf("(");
+    const close = signature.lastIndexOf(")");
+    const types = new Map();
+    if (open < 0 || close < open) return types;
+    let depth = 0,
+      start = open + 1;
+    const parts = [];
+    for (let index = open + 1; index <= close; index += 1) {
+      const character = signature[index];
+      if ("([{<".includes(character)) depth += 1;
+      else if (")]}>".includes(character) && index < close) depth -= 1;
+      if ((character === "," && depth === 0) || index === close) {
+        parts.push(signature.slice(start, index));
+        start = index + 1;
+      }
+    }
+    for (const part of parts) {
+      const match = /^\s*(?:(?:public|private|protected|readonly|override)\s+)*\*{0,2}([A-Za-z_$][\w$]*)\s*\??\s*:\s*([^=]+?)\s*(?:=.*)?$/.exec(part);
+      if (match) types.set(match[1], { type: match[2], property: /^\s*(?:public|private|protected|readonly)\b/.test(part) });
+    }
+    return types;
+  };
+  // Per file, once: the innermost class and function holding each line.
+  const innermostByLine = (analysis) => {
+    if (analysis.prepared.innermost) return analysis.prepared.innermost;
+    const size = (analysis.prepared.textLines ??= analysis.text.split(/\r?\n/)).length + 2;
+    const fill = (kind) => {
+      const holder = new Array(size).fill(null);
+      const symbols = analysis.symbols
+        .filter((symbol) => symbol.kind === kind)
+        .sort((a, b) => (b.endLine ?? b.line) - b.line - ((a.endLine ?? a.line) - a.line));
+      for (const symbol of symbols) for (let line = symbol.line; line <= Math.min(symbol.endLine ?? symbol.line, size - 1); line += 1) holder[line] = symbol;
+      return holder;
+    };
+    analysis.prepared.innermost = { class: fill("class"), function: fill("function") };
+    return analysis.prepared.innermost;
+  };
+  // Where a value assigned at index ends: a construction is the whole
+  // expression only when nothing but whitespace or ";" follows the closing
+  // bracket of its argument list (read on the masked text, across lines).
+  const closing = (masked, open) => {
+    let depth = 0;
+    for (let index = open; index < masked.length; index += 1) {
+      const character = masked[index];
+      if (character === "(" || character === "[" || character === "{") depth += 1;
+      else if (character === ")" || character === "]" || character === "}") {
+        depth -= 1;
+        if (depth === 0) return index;
+      }
+    }
+    return -1;
+  };
+  const restIsEmpty = (masked, index) => {
+    const end = masked.indexOf("\n", index);
+    return /^[\s;]*$/.test(masked.slice(index, end < 0 ? masked.length : end));
+  };
+  // A place where self.attr / this.attr is an assignment target, found
+  // loosely: before an assignment operator (after an optional annotation
+  // outside brackets), after "as" or "for", or one of several targets: left
+  // of an "=" on its line outside brackets, or inside a bracket group that is
+  // itself a target list — not a call's arguments or a subscript, and closed
+  // right before an "=" (R3-1; read on the masked text across lines).
+  const OPERATOR = /^\s*(?::\s*[^=\n]+?)?\s*(?:\*\*|\/\/|>>|<<|\|\||&&|\?\?|[-+*/%&|^@])?=(?![=>])/;
+  const PLAIN_OPERATOR = /^\s*(?:\*\*|\/\/|>>|<<|\|\||&&|\?\?|[-+*/%&|^@])?=(?![=>])/;
+  const isTarget = (line, start, end, enclosing, masked) => {
+    const after = line.slice(end);
+    if ((enclosing.length ? PLAIN_OPERATOR : OPERATOR).test(after)) return true;
+    if (/(?:\bas|\bfor)\s+$/.test(line.slice(0, start))) return true;
+    if (!/^\s*[,\]})]/.test(after)) return false;
+    if (!enclosing.length) return /(?<![=!<>])=(?![=>])/.test(after);
+    for (let level = enclosing.length - 1; level >= 0; level -= 1) {
+      const open = enclosing[level];
+      if (/[\w$)\]]\s*$/.test(masked.slice(Math.max(0, open - 200), open))) return false;
+      const close = closing(masked, open);
+      if (close < 0) return false;
+      if (/^\s*=(?![=>])/.test(masked.slice(close + 1, close + 80))) return true;
+    }
+    return false;
+  };
+  // A function's parameter types: from its signature, or, when the signature
+  // does not close its parameter list (the scan cuts signatures at 500
+  // characters), from the file from the declaration's line to the matching
+  // bracket (R2-5). Nothing is guessed when that bracket is not found.
+  const parametersOf = (analysis, symbol) => {
+    const signature = symbol.signature || "";
+    const open = signature.indexOf("(");
+    if (open >= 0 && closing(signature, open) >= 0) return parameterTypes(signature);
+    const masked = viewOfAnalysis(analysis, "code");
+    const start = masked.indexOf("(", analysis.starts[symbol.line - 1] ?? 0);
+    const close = start >= 0 ? closing(masked, start) : -1;
+    return close > start ? parameterTypes(analysis.text.slice(start, close + 1)) : new Map();
+  };
+  const classEvidence = new Map();
+  // One pass over a class: for every attribute, the classes its evidence
+  // names, whether any of it is unknown, and the counts of assignment targets
+  // found loosely and read strictly (R2-2: they must agree).
+  const evidenceOf = (relative, owner) => {
+    const key = `${relative}\0${owner}`;
+    if (classEvidence.has(key)) return classEvidence.get(key);
+    const analysis = analyses.get(relative);
+    const python = analysis.language === "python";
+    const attrs = new Map();
+    const entry = (attr) => {
+      if (!attrs.has(attr)) attrs.set(attr, { classes: new Set(), unknown: false, any: false, targets: 0, read: 0 });
+      return attrs.get(attr);
+    };
+    const note = (attr, cls) => {
+      const item = entry(attr);
+      item.any = true;
+      if (!cls) item.unknown = true;
+      else item.classes.add(`${cls.module}\0${cls.name}`);
+    };
+    classEvidence.set(key, attrs);
+    const classSymbol = analysis.symbols.find((symbol) => symbol.kind === "class" && symbol.qualifiedName === owner);
+    if (!classSymbol) return attrs;
+    const innermost = innermostByLine(analysis);
+    const textLines = analysis.prepared.textLines;
+    const maskedLines = analysis.prepared.maskedLines;
+    const masked = viewOfAnalysis(analysis, "code");
+    const starts = analysis.starts;
+    const self = python ? "self" : "this";
+    // The value assigned from index on (masked): nothing said, a construction
+    // that is the whole expression, a typed parameter of the method, or unknown.
+    const value = (attr, index, line) => {
+      const rest = masked.slice(index).replace(/^[ \t]*/, "");
+      const at = masked.length - rest.length;
+      const word = /^([A-Za-z_$][\w$]*)/.exec(rest)?.[1];
+      if (word && NOTHING.has(word) && restIsEmpty(masked, at + word.length)) return;
+      const construction = python ? /^([A-Za-z_][\w.]*)\s*\(/.exec(rest) : /^new\s+([A-Za-z_$][\w$.]*)\s*(?:<[^()\n]*>)?\s*\(/.exec(rest);
+      if (construction) {
+        const close = closing(masked, at + construction[0].length - 1);
+        return note(attr, close >= 0 && restIsEmpty(masked, close + 1) ? classIn(relative, construction[1]) : null);
+      }
+      const method = innermost.function[line];
+      const parameter =
+        word && restIsEmpty(masked, at + word.length) && method && method.qualifiedName.startsWith(`${owner}.`)
+          ? parametersOf(analysis, method).get(word)
+          : null;
+      note(attr, parameter ? classIn(relative, typeName(parameter.type)) : null);
+    };
+    const first = classSymbol.line,
+      last = classSymbol.endLine ?? classSymbol.line;
+    // JavaScript/TypeScript: the class body's own statements (brace depth 1).
+    const bodyDepth = new Map();
+    if (!python) {
+      let depth = 0;
+      for (let line = first; line <= last; line += 1) {
+        bodyDepth.set(line, depth);
+        for (const character of maskedLines[line - 1] || "") {
+          if (character === "{") depth += 1;
+          else if (character === "}") depth -= 1;
+        }
+      }
+    }
+    const bodyIndent = python ? /^(\s*)\S/.exec(textLines.slice(first).find((text, index) => (maskedLines[first + index] || "").trim()) || "")?.[1] : null;
+    const targetPattern = new RegExp(`(?<![\\w$.])${self}\\s*\\.\\s*(#?[A-Za-z_$][\\w$]*)(?![\\w$])`, "g");
+    const strict = new RegExp(`^\\s*${self}\\.(#?[A-Za-z_$][\\w$]*)\\s*(?::\\s*([^=]+?))?\\s*(?:(=)(?![=>])|$)`);
+    const fieldPattern = python
+      ? /^\s*([A-Za-z_]\w*)\s*(?::\s*([^=]+?))?\s*(?:(=)(?!=)|$)/
+      : /^\s*(?:(?:public|private|protected|readonly|declare|override|accessor)\s+)*(#?[A-Za-z_$][\w$]*)\s*[?!]?\s*(?::\s*([^=;]+?))?\s*(?:(=)(?![=>])|;?\s*$)/;
+    // The brackets open at a position of the class, read forward once (R3-1).
+    const stack = [];
+    let cursor = starts[first - 1] ?? 0;
+    const enclosingAt = (index) => {
+      for (; cursor < index; cursor += 1) {
+        const character = masked[cursor];
+        if (character === "(" || character === "[" || character === "{") stack.push(cursor);
+        else if (character === ")" || character === "]" || character === "}") stack.pop();
+      }
+      return stack;
+    };
+    for (let line = first; line <= last; line += 1) {
+      const maskedLine = maskedLines[line - 1] || "";
+      if (!maskedLine.trim() || innermost.class[line]?.qualifiedName !== owner) continue;
+      const text = textLines[line - 1] || "";
+      for (const match of maskedLine.matchAll(targetPattern))
+        if (isTarget(maskedLine, match.index, match.index + match[0].length, enclosingAt(starts[line - 1] + match.index), masked)) entry(match[1]).targets += 1;
+      const assignment = maskedLine.trimStart().startsWith(`${self}.`) ? strict.exec(maskedLine) : null;
+      if (assignment && (assignment[2] !== undefined || assignment[3])) {
+        const attr = assignment[1];
+        // The annotation from the text itself (a quoted Python type is a string).
+        if (assignment[2] !== undefined) note(attr, classIn(relative, typeName(strict.exec(text)?.[2] ?? assignment[2])));
+        if (assignment[3]) {
+          entry(attr).read += 1;
+          value(attr, starts[line - 1] + assignment.index + assignment[0].length, line);
+        }
+        continue;
+      }
+      // The class body: Python at the body's indentation outside a method;
+      // JavaScript/TypeScript fields at depth 1 (not static).
+      const inBody = python
+        ? bodyIndent !== undefined && /^(\s*)/.exec(text)[1] === bodyIndent && !innermost.function[line]?.qualifiedName.startsWith(`${owner}.`)
+        : bodyDepth.get(line) === 1;
+      if (!inBody || /^\s*static\b/.test(maskedLine)) continue;
+      const field = fieldPattern.exec(maskedLine);
+      if (!field || (field[2] === undefined && !field[3])) continue;
+      if (field[2] !== undefined) note(field[1], classIn(relative, typeName(fieldPattern.exec(text)?.[2] ?? field[2])));
+      if (field[3]) value(field[1], starts[line - 1] + field.index + field[0].length, line);
+    }
+    // TypeScript: constructor parameter properties (constructor(private attr: T)).
+    if (!python) {
+      const constructor = analysis.symbols.find((symbol) => symbol.kind === "function" && symbol.qualifiedName === `${owner}.constructor`);
+      for (const [name, parameter] of constructor ? parametersOf(analysis, constructor) : [])
+        if (parameter.property) note(name, classIn(relative, typeName(parameter.type)));
+    }
+    return attrs;
+  };
+  const attributeOf = (relative, owner, attr) => {
+    const item = evidenceOf(relative, owner).get(attr);
+    if (!item || (!item.any && !item.targets)) return { none: true };
+    if (item.unknown || item.targets !== item.read || item.classes.size !== 1) return { unknown: true };
+    const [only] = item.classes;
+    return { class: { module: only.split("\0")[0], name: only.split("\0")[1] } };
+  };
+  const context = { analyses, found, unique, fileSet, names, memberNames, globals, follow, bindingsOf, valuesOf, throughModules, attributeOf };
   const references = new Map();
   const unresolvedByReason = new Map(UNRESOLVED_REASONS.map((reason) => [reason.key, new Map()]));
+  // Unresolved calls that could be product code (3.1): per calling node a
+  // count per reason and the first callees, and every one for the names they
+  // end in (3.4).
+  const lostIn = new Map();
+  const lostCalls = [];
+  // Two kinds, kept apart: calls by name (every product reason but
+  // unknown-receiver; the first callees kept) and method calls on a receiver
+  // of unknown type (every member name with its count and first line).
+  const memberName = (callee) => callee.slice(callee.lastIndexOf(".") + 1).replace(/^#/, "");
+  const lose = (from, reason, callee, file, line) => {
+    if (!PRODUCT_REASONS.has(reason)) return;
+    if (!lostIn.has(from)) lostIn.set(from, { count: 0, byReason: {}, callees: [], members: new Map() });
+    const entry = lostIn.get(from);
+    if (reason === "unknown-receiver") {
+      const name = memberName(callee);
+      if (!entry.members.has(name)) entry.members.set(name, { name, count: 0, line });
+      entry.members.get(name).count += 1;
+    } else {
+      entry.count += 1;
+      entry.byReason[reason] = (entry.byReason[reason] || 0) + 1;
+      if (entry.callees.length < MAX_LOST_SHOWN) entry.callees.push({ callee, line });
+    }
+    lostCalls.push({ callee, path: file, line, reason });
+  };
   let resolvedCount = 0,
     allCount = 0;
   const addReference = (from, to, kind, file, line) => {
@@ -547,6 +1058,53 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
         receivers.set(key, receiver);
         return receiver;
       };
+      // Python: the scan keeps the last two segments of a dotted callee
+      // ("pkg.mod.f(" is "mod.f"). Read on the call's line: when an
+      // occurrence of "a.b(" there follows an expression ("x.a.b(", "f().a.b(",
+      // a line starting ".a.b("), a is a member of something else (member);
+      // else the whole name when every occurrence has the same leading names.
+      const chainOf = (line, callee) => {
+        const key = `${line}\0${callee}\0chain`;
+        if (receivers.has(key)) return receivers.get(key);
+        const [first, second] = callee.split(".");
+        const text = maskedLines[line - 1] || "";
+        const pattern = new RegExp(`(?<![\\w])((?:[A-Za-z_]\\w*\\s*\\.\\s*)*)${first}\\s*\\.\\s*${second}\\s*\\(`, "g");
+        const prefixes = new Set();
+        let member = false;
+        for (const match of text.matchAll(pattern)) {
+          if (/[.)\]]\s*$/.test(text.slice(0, match.index))) member = true;
+          else prefixes.add(match[1].replace(/\s+/g, ""));
+        }
+        const prefix = !member && prefixes.size === 1 ? [...prefixes][0] : "";
+        const chain = member ? { member: true } : prefix ? { chain: [...prefix.split(".").filter(Boolean), first, second] } : null;
+        receivers.set(key, chain);
+        return chain;
+      };
+      // JavaScript/TypeScript (2b.4): "this.a.b(" — the scan keeps "a.b". Read
+      // on the call's line: every occurrence of "a.b(" there must follow
+      // "this." (itself not after an expression), else nothing is said.
+      const thisChainOf = (line, callee) => {
+        const key = `${line}\0${callee}\0this`;
+        if (receivers.has(key)) return receivers.get(key);
+        const [first, second] = callee
+          .replace(/^#/, "")
+          .split(".")
+          .map((part) => part.replace(/[$]/g, "\\$"));
+        const text = maskedLines[line - 1] || "";
+        const pattern = new RegExp(`(?<![\\w$#])(#?)${first}\\s*\\.\\s*${second}\\s*\\(`, "g");
+        const heads = new Set();
+        let other = false;
+        for (const match of text.matchAll(pattern)) {
+          const before = text.slice(0, match.index);
+          const receiver = /(?<![\w$])(?<![.)\]]\s*)this\s*\.\s*$/.exec(before);
+          if (receiver) heads.add(match[1]);
+          else other = true;
+        }
+        const chain =
+          !other && heads.size === 1 ? { chain: ["this", `${[...heads][0]}${callee.replace(/^#/, "").split(".")[0]}`, callee.split(".")[1]] } : null;
+        receivers.set(key, chain);
+        return chain;
+      };
       for (const call of analysis.semanticFacts.calls) {
         // Only a plain name can be a value binding: the first pass skips the rest.
         if (pass === "values" && (call.callee.includes(".") || call.callee === "import")) continue;
@@ -572,6 +1130,7 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
             } else {
               const bucket = unresolvedByReason.get(outcome.reason);
               bucket.set("import", (bucket.get("import") || 0) + 1);
+              lose(caller?.id || relative, outcome.reason, "import", relative, call.line);
             }
             continue;
           }
@@ -583,6 +1142,8 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
             ...call,
             callerQualifiedName: caller?.qualifiedName ?? call.callerQualifiedName,
             receiver: call.callee.includes(".") ? null : receiverOf(call.line, call.callee),
+            ...(analysis.language === "python" && /^[A-Za-z_]\w*\.[A-Za-z_]\w*$/.test(call.callee) ? chainOf(call.line, call.callee) : {}),
+            ...(analysis.language !== "python" && /^#?[A-Za-z_$][\w$]*\.[A-Za-z_$][\w$]*$/.test(call.callee) ? thisChainOf(call.line, call.callee) : {}),
           },
           bindings,
           context,
@@ -598,6 +1159,7 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
         } else {
           const bucket = unresolvedByReason.get(outcome.reason);
           bucket.set(call.callee, (bucket.get(call.callee) || 0) + 1);
+          lose(caller?.id || relative, outcome.reason, call.callee, relative, call.line);
         }
       }
     }
@@ -605,6 +1167,63 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
   for (const values of valuesOf.values())
     for (const value of values.values())
       if (calledValues.has(value.id)) nodes.push({ id: value.id, type: "코드", kind: VALUE_KIND, file: value.file, lines: [value.line, value.endLine] });
+  // The optional node field (3.1, 3.4): the unresolved calls made in a node
+  // (the two kinds apart), and, counted exactly from all unresolved calls,
+  // those that may be the declaration: bare calls of its name when it is
+  // callable by that name (not a member of a class or object literal; names
+  // of the built-in table and calls of a parameter or local left out), and
+  // calls of its name on a receiver of unknown type when it is a member of a
+  // class or object literal, with how many such members share the name. A
+  // possibility only. Not part of any hash.
+  const memberIds = new Set();
+  for (const analysis of analyses.values()) {
+    const kinds = new Map();
+    for (const symbol of analysis.symbols) if (!kinds.has(symbol.qualifiedName)) kinds.set(symbol.qualifiedName, symbol.kind);
+    // A class member, or a member of an object literal (whose binding is not a declaration).
+    for (const symbol of analysis.symbols)
+      if (symbol.scopePath && (!kinds.has(symbol.scopePath) || kinds.get(symbol.scopePath) === "class")) memberIds.add(symbol.id);
+  }
+  const lastName = (id) =>
+    id
+      .slice(id.indexOf("#") + 1)
+      .split(".")
+      .pop()
+      .replace(/~\d+$/, "");
+  const bareByName = new Map();
+  const memberByName = new Map();
+  const add = (map, key, item) => {
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push({ callee: item.callee, path: item.path, line: item.line });
+  };
+  for (const item of lostCalls) {
+    if (item.callee === "import" || item.reason === "local-function") continue;
+    if (item.reason === "unknown-receiver") add(memberByName, memberName(item.callee), item);
+    else if (!item.callee.includes(".")) add(bareByName, item.callee, item);
+  }
+  const membersByName = new Map();
+  for (const node of nodes) if (memberIds.has(node.id)) membersByName.set(lastName(node.id), (membersByName.get(lastName(node.id)) || 0) + 1);
+  const part = (places, extra = {}) => (places?.length ? { count: places.length, places: places.slice(0, MAX_LOST_SHOWN), ...extra } : null);
+  for (const node of nodes) {
+    const lost = lostIn.get(node.id);
+    const made = lost && {
+      count: lost.count,
+      byReason: lost.byReason,
+      callees: lost.callees,
+      members: [...lost.members.values()].sort((a, b) => b.count - a.count || compare(a.name, b.name)),
+    };
+    const name = node.id === node.file ? null : lastName(node.id);
+    const member = name !== null && memberIds.has(node.id);
+    const table = globals[CODE_LANGUAGES[path.posix.extname(node.file).toLowerCase()] === "python" ? "python" : "javascript"];
+    const bare = part(name !== null && !member && !table.functions.has(name) && !table.namespaces.has(name) ? bareByName.get(name) : null);
+    const receiver = part(member ? memberByName.get(name) : null, { sameName: membersByName.get(name) || 1 });
+    if (!made && !bare && !receiver) continue;
+    node.unresolvedCalls = {
+      ...(made ? { made } : {}),
+      ...(bare || receiver
+        ? { mayBeThis: { count: (bare?.count || 0) + (receiver?.count || 0), ...(bare ? { bare } : {}), ...(receiver ? { member: receiver } : {}) } }
+        : {}),
+    };
+  }
   const byReason = UNRESOLVED_REASONS.map((reason) => {
     const bucket = unresolvedByReason.get(reason.key);
     return {
@@ -636,6 +1255,12 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
   const resolveMember = (relative, head, member) => {
     const binding = bindingsOf.get(relative)?.get(head);
     if (!binding) return unique(relative, `${head}.${member}`);
+    // Python: "x.f" where x names a module (2.2), like a namespace import.
+    const walk = binding.namespace ? null : throughModules(relative, [head, member]);
+    if (walk) {
+      const place = walk.module && walk.rest.length === 1 && follow(walk.module, member);
+      return place ? unique(place.module, place.name) || nodeValue(place.module, place.name) : null;
+    }
     const language = analyses.get(relative)?.language;
     if (isExternalSpecifier(relative, binding.specifier, language, fileSet)) return null;
     const module = resolveModule(relative, binding.specifier, language, fileSet);
@@ -658,6 +1283,17 @@ function buildCodeLayer(sourceRoot, files, excludes, projectGlobals = null) {
       resolvedCalls: resolvedCount,
       unresolvedCalls: allCount - resolvedCount,
       unresolvedByReason: byReason,
+      // Build-wide count of each member name called on a receiver of unknown
+      // type (3.2, 3.3): answers order those names by rarity.
+      unresolvedMethodNames: Object.fromEntries(
+        [
+          ...lostCalls.reduce(
+            (counts, item) =>
+              item.reason === "unknown-receiver" ? counts.set(memberName(item.callee), (counts.get(memberName(item.callee)) || 0) + 1) : counts,
+            new Map(),
+          ),
+        ].sort(([a], [b]) => compare(a, b)),
+      ),
     },
     excludes,
   };
@@ -697,7 +1333,7 @@ function classExtends(analysis, qualifiedName) {
 
 // Resolves one call to exactly one declaration or called value, or says why it did not.
 function resolveCall(relative, analysis, call, bindings, context) {
-  const { found, unique, fileSet, names, memberNames, globals, follow, analyses, valuesOf } = context;
+  const { found, unique, fileSet, names, memberNames, globals, follow, analyses, valuesOf, throughModules, attributeOf } = context;
   const callee = call.callee;
   const language = analysis.language;
   const table = globals[language === "python" ? "python" : "javascript"];
@@ -738,7 +1374,19 @@ function resolveCall(relative, analysis, call, bindings, context) {
     // A default import: the declaration of the local's name (as before), else
     // the module's default export.
     const place = module && (binding.imported === "default" ? follow(module, local) || follow(module, "default") : follow(module, binding.imported));
-    return place ? { place } : { reason: "rest" };
+    return place ? { place } : { reason: !module && language === "python" ? "module-not-read" : "rest" };
+  };
+  // Python: the names left after walking modules (2.2, 2.3) resolve by the
+  // two-part rules: a name of the module, or a member of one of its classes
+  // or object literals. Anything longer stays unresolved.
+  const inModule = (walk) => {
+    if (walk.reason) return { reason: walk.reason };
+    const [name, member, ...more] = walk.rest;
+    const place = !more.length && follow(walk.module, name);
+    if (!place) return { reason: walk.missing ? "module-not-read" : "rest" };
+    if (member === undefined) return pick(place.module, place.name) || valueAt(place.module, place.name) || { reason: "rest" };
+    if (unique(place.module, place.name)?.kind === "class") return classMember(place.module, place.name, member, true);
+    return pick(place.module, `${place.name}.${member}`) || unknownMember(member);
   };
   const self = language === "python" ? "self." : "this.";
   if (callee.startsWith(self)) {
@@ -779,6 +1427,21 @@ function resolveCall(relative, analysis, call, bindings, context) {
   }
   const [head, member] = callee.split(".");
   if (head === "super") return { reason: "inherited" };
+  // 2b: self.attr.method() / this.attr.method() in a method of a class: the
+  // method of the class the attribute holds, when the class's own code says
+  // which one; else a method call on a receiver of unknown type (inherited
+  // when the class has a base and never assigns the attribute).
+  if (call.chain?.length === 3 && call.chain[0] === (language === "python" ? "self" : "this")) {
+    const owner = enclosingClass(analysis, call.callerQualifiedName);
+    if (owner || language === "python") {
+      const held = owner ? attributeOf(relative, owner, call.chain[1]) : { unknown: true };
+      if (held.class) return classMember(held.class.module, held.class.name, member, false);
+      // A name the product defines nowhere cannot be product code, whatever the class extends (R2-4).
+      const defined = memberNames.has(member.replace(/^#/, "")) || memberNames.has(member);
+      if (held.none && defined && classExtends(analysis, owner)) return { reason: "inherited" };
+      return unknownMember(member);
+    }
+  }
   // A parameter or local of an enclosing function: only "const v = new C(...)"
   // (Python: v = C(...) assigned once in that function) says what v is.
   const local = call.index !== undefined ? bindingAt(analysis.facts, call.index, head) : null;
@@ -788,6 +1451,13 @@ function resolveCall(relative, analysis, call, bindings, context) {
     return entry.kind === "const-new" || entry.kind === "call-assign" ? entry.className : null;
   };
   const classNamed = (name) => {
+    // Python: "mod.Store" through a binding that names a module (2.2).
+    if (name.includes(".")) {
+      const walk = throughModules(relative, name.split("."));
+      if (!walk?.module || walk.rest.length !== 1) return null;
+      const place = follow(walk.module, walk.rest[0]);
+      return place && unique(place.module, place.name)?.kind === "class" ? place : null;
+    }
     // A class this file can name: nested or module level here, or imported.
     const here = nested(name) || pick(relative, name);
     if (here?.target?.kind === "class") return { module: relative, name: here.target.qualifiedName };
@@ -803,13 +1473,34 @@ function resolveCall(relative, analysis, call, bindings, context) {
     const owner = className && classNamed(className);
     return owner ? classMember(owner.module, owner.name, member, false) : unknownMember(member);
   }
+  // Python: a dotted name whose head names a module walks modules (2.1–2.3);
+  // a head held by a parameter or local is not the import.
+  // Python: "x.a.b(" where a follows an expression: a member call on a
+  // receiver of unknown type, never the import named a (M5).
+  if (language === "python" && call.member) return unknownMember(member);
+  const chain = call.chain || [head, member];
+  if (language === "python" && chain.length > 2) {
+    // A longer name either walks modules from its head or stays unresolved:
+    // it never falls back to the binding of its second-to-last segment.
+    const shadowed = call.index !== undefined && bindingAt(analysis.facts, call.index, chain[0]);
+    const walk = shadowed ? null : throughModules(relative, chain);
+    return walk ? inModule(walk) : unknownMember(member);
+  }
+  if (language === "python" && !bindings.get(chain[0])?.namespace) {
+    const walk = throughModules(relative, chain);
+    if (walk) return inModule(walk);
+  }
   const binding = bindings.get(head);
   if (binding?.namespace) {
     // A namespace import: the member is a name of that module (through re-exports).
     if (isExternalSpecifier(relative, binding.specifier, language, fileSet)) return { reason: "external-import" };
     const module = resolveModule(relative, binding.specifier, language, fileSet);
     const place = module && follow(module, member);
-    return (place && (pick(place.module, place.name) || valueAt(place.module, place.name))) || { reason: "rest" };
+    return (
+      (place && (pick(place.module, place.name) || valueAt(place.module, place.name))) || {
+        reason: !module && language === "python" ? "module-not-read" : "rest",
+      }
+    );
   }
   if (binding) {
     const outcome = imported(binding, head);
@@ -981,47 +1672,37 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
   const notTaken = [];
   const callbacks = [];
   const wired = new Set();
-  const texts = new Map();
-  const textOf = (relative) => {
-    if (!texts.has(relative)) texts.set(relative, readText(root, relative));
-    return texts.get(relative);
-  };
+  // A file's text: the scan's copy for an analysed file, else read now.
+  const textOf = (relative) => code.analyses.get(relative)?.text ?? readText(root, relative);
   // Code only: comments and string contents blanked by the lexer mask, so a
   // file sign or a wiring written in a comment or a string does not count.
-  const maskOf = new Map();
-  const maskFor = (relative, text) => {
-    if (!maskOf.has(relative)) {
-      const kind = codeMaskKind(path.posix.extname(relative).toLowerCase());
-      const analysis = code.analyses.get(relative);
-      const shared = analysis && kind === (analysis.language === "python" ? "python" : "javascript") && analysis.text === text;
-      maskOf.set(relative, shared ? maskOfAnalysis(analysis) : codeMask(text, kind));
-    }
-    return maskOf.get(relative);
+  // An analysed file reuses the scan's mask and view; any other file's are
+  // made for that file and dropped when it is done (4.8).
+  const sharedAnalysis = (relative, text) => {
+    const analysis = code.analyses.get(relative);
+    const kind = codeMaskKind(path.posix.extname(relative).toLowerCase());
+    return analysis && kind === (analysis.language === "python" ? "python" : "javascript") && analysis.text === text ? analysis : null;
   };
   // A file whose mask is not trusted (the lexer ended inside a string,
   // template or comment) falls back to the line-local check for 코드만 and
   // to its raw text for file signs; it is named in the limits block.
   const untrustedMask = new Set();
-  const maskedOf = new Map();
-  const masked = (relative, text) => {
-    if (!maskedOf.has(relative)) {
-      const mask = maskFor(relative, text);
-      if (!mask.trusted) {
-        untrustedMask.add(relative);
-        maskedOf.set(relative, text);
-        return text;
-      }
-      let view = "";
-      for (let index = 0; index < text.length; index += 1) view += mask[index] || text[index] === "\n" ? text[index] : " ";
-      maskedOf.set(relative, view);
+  const viewOf = (relative, text, own) => {
+    const analysis = sharedAnalysis(relative, text);
+    const mask = own.mask ?? (own.mask = analysis ? maskOfAnalysis(analysis) : codeMask(text, codeMaskKind(path.posix.extname(relative).toLowerCase())));
+    if (!mask.trusted) {
+      untrustedMask.add(relative);
+      return text;
     }
-    return maskedOf.get(relative);
-  };
-  const inCode = (relative, text, start) => {
-    const mask = maskFor(relative, text);
-    if (mask.trusted) return Boolean(mask[start]);
-    untrustedMask.add(relative);
-    return startsInCodeOnLine(text, start, relative.endsWith(".py"));
+    if (own.view === undefined) {
+      if (analysis) own.view = viewOfAnalysis(analysis, "code");
+      else {
+        let view = "";
+        for (let index = 0; index < text.length; index += 1) view += mask[index] || text[index] === "\n" ? text[index] : " ";
+        own.view = view;
+      }
+    }
+    return own.view;
   };
   const unnamed = new Map();
   const nextUnnamed = (key) => {
@@ -1063,28 +1744,50 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
     ];
     return resolved.length === 1 ? resolved[0] : null;
   };
-  for (const entry of uiPatterns) {
-    const extensions = new Set(entry["확장자"].map((item) => item.toLowerCase()));
-    const marker = entry["파일 표시"] ? new RegExp(entry["파일 표시"], "m") : null;
-    for (const relative of files) {
-      if (!extensions.has(path.posix.extname(relative).toLowerCase())) continue;
-      const text = textOf(relative);
-      if (text === null) continue;
-      const blank = masked(relative, text);
-      if (marker && !marker.test(blank)) continue;
+  // Patterns compiled once. Files are read one at a time and their text,
+  // mask and view are dropped when the file is done; the effects of each
+  // match are applied afterwards pattern by pattern, in the order of before.
+  const compiled = uiPatterns.map((entry) => ({
+    extensions: new Set(entry["확장자"].map((item) => item.toLowerCase())),
+    marker: entry["파일 표시"] ? new RegExp(entry["파일 표시"], "m") : null,
+    method: entry["메서드"] !== undefined ? new RegExp(entry["메서드"]) : null,
+    shape: entry["메서드"] === undefined ? new RegExp(entry["모양"], "gmd") : null,
+  }));
+  const deferred = uiPatterns.map(() => []);
+  // A string cut from a file's text can keep the whole text alive: kept values are copies.
+  const fresh = (value) => (typeof value === "string" ? JSON.parse(JSON.stringify(value)) : value);
+  for (const relative of files) {
+    const extension = path.posix.extname(relative).toLowerCase();
+    if (!compiled.some((item) => item.extensions.has(extension))) continue;
+    const text = textOf(relative);
+    if (text === null) continue;
+    const own = {};
+    const masked = () => viewOf(relative, text, own);
+    const inCode = (start) => {
+      const mask = own.mask ?? (masked(), own.mask);
+      if (mask.trusted) return Boolean(mask[start]);
+      untrustedMask.add(relative);
+      return startsInCodeOnLine(text, start, relative.endsWith(".py"));
+    };
+    for (const [index, entry] of uiPatterns.entries()) {
+      if (!compiled[index].extensions.has(extension)) continue;
+      // Records only: a closure here would keep the file's text alive.
+      const later = (kind, value) => deferred[index].push([kind, value]);
+      const blank = masked();
+      if (compiled[index].marker && !compiled[index].marker.test(blank)) continue;
       const stem = relative.replace(/\.[^./]+$/, "");
       if (entry["메서드"] !== undefined) {
         const analysis = code.analyses.get(relative);
         if (!analysis) continue;
-        const expression = new RegExp(entry["메서드"]);
+        const expression = compiled[index].method;
         for (const symbol of analysis.symbols) {
           const owner = symbol.kind === "function" && analysis.symbols.find((item) => item.kind === "class" && item.qualifiedName === symbol.scopePath);
           const match = owner && expression.exec(symbol.name);
           if (!match) continue;
           const event = transformEvent(match.groups?.event ?? symbol.name, entry["이벤트 바꾸기"]);
-          wired.add(relative);
-          addFunction({
-            id: `fe/${stem}/${owner.qualifiedName}@${event}:${symbol.name}`,
+          later("wired", relative);
+          later("function", {
+            id: `fe/${stem}/${owner.qualifiedName}@${fresh(event)}:${symbol.name}`,
             kind: "프론트",
             position: { path: relative, line: symbol.line },
             handler: symbolId(relative, symbol),
@@ -1093,14 +1796,14 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
         }
         continue;
       }
-      const expression = new RegExp(entry["모양"], "gmd");
+      const expression = compiled[index].shape;
       const user = new Set(entry["유저 조작"] || []),
         notUser = new Set(entry["유저 조작 아님"] || []),
         selfRun = new Set(entry["스스로 도는"] || []),
         known = entry["그 밖의 이벤트"] ? new Set(entry["그 밖의 이벤트"]) : null;
       for (const match of text.matchAll(expression)) {
         const start = match.index || 0;
-        if (entry["코드만"] && !inCode(relative, text, start)) continue;
+        if (entry["코드만"] && !inCode(start)) continue;
         const groups = match.groups || {};
         const rawEvent = groups.event ?? entry["이벤트 고정"];
         if (!rawEvent) continue;
@@ -1111,22 +1814,22 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
         const component = componentAt(relative, line);
         const name = handlerNameOf(target);
         const handler = resolve(relative, component, name, target);
-        wired.add(relative);
+        later("wired", relative);
         const role = selfRun.has(event) ? "effect" : (user.has("*") && !notUser.has(event)) || user.has(event) ? "user" : "other";
         // An entry that lists its other known events treats any other name as
         // not a wiring at all ("state.online = true" is not an event).
         if (role === "other" && known && !known.has(event)) continue;
         if (role === "other") {
-          notTaken.push({
+          later("notTaken", {
             path: relative,
             line,
             pattern: entry.이름,
             component: component.name,
-            emitter: groups.emitter || null,
-            event,
-            target: target.replace(/\s+/g, " ").slice(0, 120),
+            emitter: fresh(groups.emitter || null),
+            event: fresh(event),
+            target: fresh(target.replace(/\s+/g, " ").slice(0, 120)),
           });
-          if (handler) callbacks.push({ from: enclosingCode(code, relative, line) || relative, to: handler, file: relative, line });
+          if (handler) later("callback", { from: enclosingCode(code, relative, line) || relative, to: handler, file: relative, line });
           continue;
         }
         let shown = name;
@@ -1143,18 +1846,26 @@ function extractUiBindings({ root, files, code, uiPatterns, addFunction }) {
             if (shown) break;
           }
         shown ||= nextUnnamed(`${relative}\0${component.name}`);
-        addFunction({
-          id: `fe/${stem}/${component.name}@${role === "effect" ? "effect" : event}:${shown}`,
+        later("function", {
+          id: `fe/${stem}/${component.name}@${role === "effect" ? "effect" : fresh(event)}:${fresh(shown)}`,
           kind: "프론트",
           position: { path: relative, line },
           handler,
-          handlerReason: name ? `${name}의 정의를 찾지 못함` : "대상이 이름이 아닌 식이고, 그 안에서 처리 코드를 하나로 정하지 못함",
+          handlerReason: name ? `${fresh(name)}의 정의를 찾지 못함` : "대상이 이름이 아닌 식이고, 그 안에서 처리 코드를 하나로 정하지 못함",
           rule: entry,
         });
       }
     }
   }
-  return { notTaken, callbacks, wired, textOf, masked, untrustedMask: [...untrustedMask].sort() };
+  const apply = {
+    wired: (value) => wired.add(value),
+    function: addFunction,
+    notTaken: (value) => notTaken.push(value),
+    callback: (value) => callbacks.push(value),
+  };
+  for (const list of deferred) for (const [kind, value] of list) apply[kind](value);
+  // For the later stage (UI files no pattern read): fresh per call, nothing kept.
+  return { notTaken, callbacks, wired, textOf, masked: (relative, text) => viewOf(relative, text, {}), untrustedMask: [...untrustedMask].sort() };
 }
 
 // Finds 기능 (entry points) and links each to the code that receives it.
@@ -1176,10 +1887,16 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
   const root = path.resolve(sourceRoot);
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) fail("PRODUCT_GRAPH_SOURCE_ROOT_MISSING");
   const excludes = (projectRules?.source?.["제외"] || []).map((item) => item.replace(/\/$/, ""));
+  const included = (projectRules?.source?.["포함"] || []).map((item) => item.replace(/\/$/, ""));
   const skipped = new Map();
-  const files = walkSource(root, excludes, skipped);
-  const code = buildCodeLayer(root, files, excludes, projectRules?.["내장 이름"] ?? null);
   const { rules, patterns, uiPatterns, uiMarkers, uiFiles } = effectiveEntryRules(projectRules);
+  const selection = selectSource(walkSource(root, excludes, skipped), {
+    named: [...patterns.flatMap((rule) => rule.파일 || []), ...uiFiles, ...rules.flatMap((rule) => (rule.입구 || []).map((id) => id.split("#")[0]))],
+    uiExtensions: new Set([...uiPatterns, ...uiMarkers].flatMap((entry) => entry["확장자"] || []).map((item) => item.toLowerCase())),
+    included,
+  });
+  const files = selection.files;
+  const code = buildCodeLayer(root, files, excludes, projectRules?.["내장 이름"] ?? null);
   const handling = Object.fromEntries(rules.map((rule) => [rule.종류, rule.처리]));
   const functions = new Map();
   const outOfScope = [];
@@ -1466,11 +2183,14 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     if (ui.wired.has(relative)) continue;
     const extension = path.posix.extname(relative).toLowerCase();
     let sign = namedUiFiles.has(relative) ? "호출 방식 표의 화면 파일" : null;
+    // Read and blanked once for this file, then dropped (4.8).
+    let text, view;
     if (!sign)
       for (const marker of uiMarkers) {
         if (!marker["확장자"].map((item) => item.toLowerCase()).includes(extension)) continue;
-        const text = ui.textOf(relative);
-        if (text !== null && new RegExp(marker["표시"], "m").test(ui.masked(relative, text))) {
+        if (text === undefined) text = ui.textOf(relative);
+        if (text !== null && view === undefined) view = ui.masked(relative, text);
+        if (text !== null && new RegExp(marker["표시"], "m").test(view)) {
           sign = marker["이름"];
           break;
         }
@@ -1544,6 +2264,14 @@ function extractWithReadLog({ sourceRoot, projectRules }) {
     notLookedAt: notLookedAt(files, code, skipped),
     unreachedCode: unreachedCode(code, functionNodes, extraCodeNodes),
     scannedFiles: files.length,
+    // Size (4.3a, 4.4): files to read, the data-like folders left out, those
+    // source.포함 kept, and the limits.
+    sourceSize: {
+      filesToRead: selection.toRead,
+      limits: activeLimits,
+      leftOut: selection.leftOut,
+      included: selection.included,
+    },
     codeFiles: code.analyses.size,
     excludes: [...excludes].sort(),
   };

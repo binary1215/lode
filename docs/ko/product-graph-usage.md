@@ -90,6 +90,8 @@ MCP에서는 묶은 도구 `lode_product_graph`의 `query` 동작(`lode_product_
 
 구조화된 답(`--json`, MCP `structuredContent`)은 줄을 데이터로 싣습니다. 그래프 노드를 나타내는 줄에는 `nodeType`(노드 종류), `changedSinceBaseline`(`changed`, `added`, `reachChanged`, `unchanged`. 빌드가 기준과 비교했을 때만), `confirmation`(그 노드를 가리키는 확인 기록 목록: `neverChecked`, `changedSinceCheck`, `textChanged`, `otherReader`)도 붙습니다. 뜻 줄은 그 기능을, 문서 줄은 양 끝을 모두 가리키므로 화면과 화면요소에도 붙습니다. 모든 답에는 `baselineComparison`(`compared`, 빌드 뒤에 기준을 옮겨 앞의 기준과 비교한 것이면 `baseline-moved`, `no-baseline`, `absent`)과 `confirmationComparison`이 있습니다: `compared`, `partial`(빌드가 확인 기록을 파일 이름 순으로 앞부분만 읽음. 모든 목록과 `confirmation`이 그것에서 나옴), `not-read`(독립 실행 빌드는 확인 기록을 읽지 않음), `absent`(확인 기록이 생기기 전에 만든 빌드). 뒤의 쪽이 앞의 쪽에서 되풀이하는 줄(뿌리, 머리 줄, 첫 항목이 이어 가는 묶음 줄)에는 `repeats: "earlierPage"`가 붙고, 글은 그대로입니다. `confirmationComparison`이 `compared`일 때만 `confirmation`이 없다는 것이 확인이 그대로이거나 확인할 것이 없다는 뜻입니다. 빌드는 그대로인 확인의 개수만 갖고 있습니다. 시작점(`@…`)에는 이 필드가 없습니다. 어떤 줄에는 더 붙습니다. 닿음 줄은 어느 역할로 닿았는지(`via`: `처리` 또는 `입구`. `reach <code>`에서 `입구`는 입구로만 닿는다는 뜻), 기능→코드 자식 줄은 `역할`, 손으로 적는 연결의 줄은 `judgement: true`, 닿는 길이 경계에서 멈춘 곳이나 경계를 넘으면 더해지는 것을 말하는 줄은 `boundary`(`from`, `to`, `설명`), 트리의 역할 머리 줄은 `role`, 이름만 대고 펼치지 않은 노드는 `notExpanded`(`otherFunction` 또는 `expandedAbove`), `user` 답의 차례 머리 줄은 `step`, 기능 줄은 `relation`(`calls` 또는 `shows`)과, `shows`이면 `evidence`(그 연결의 근거)를 갖습니다. 답에는 무엇에서 읽었는지를 가리키는 `buildSha256`(읽은 모든 빌드의 `graph.json`과 `check.json` 바이트, 그리고 기준. 저장하지 않음)도 있습니다. MCP에서 `lode_product_graph_query`, `_check`, `_build`, `_baseline`의 `structuredContent`는 구조화된 부분으로 전체 `text`가 그대로 되살아날 때 그 글을 싣지 않습니다(`changes --list content`의 전후 항목은 `rows[].detail`에서, check는 그 결과에서). 도구가 돌려주는 내용 글은 여전히 그 글로 시작하고, CLI의 `--json`도 그대로 싣습니다. 줄이 없는 답은 `text`를 그대로 둡니다. 빌드 없음, 읽지 못한 빌드, 거부(그 문장은 `message`에도 있음), 그리고 기준 바뀜(그 문장은 `text`에만 있음)입니다.
 
+닿음은 풀린 호출만 따라갑니다. 닿는 코드에 제품 코드일 수 있는 못 푼 호출이 있으면 `reach`(쪽마다)와 기능의 노드 답이 그것을 이름으로 부른 것과 받는 쪽 타입을 모르는 메서드 호출 두 종류로 세고(데이터는 `lostCalls`), 이름으로 부른 것이 많은 노드(`lostCallsIn`)와 빌드 전체에서 드문 것부터 빌드 전체 수와 함께 메서드 이름(`lostMethodNames`)을 적어서 특이한 메서드가 `push` 같은 내장 같은 이름과 따로 보이게 합니다. `tree`는 코드 줄 아래에 두 종류를 모두 적습니다. 풀린 호출이 하나도 없는 선언은 그 선언일 수 있는 못 푼 호출을 말합니다: 그 이름만 부른 호출과, 클래스·객체 리터럴의 멤버면 받는 쪽 타입을 모르는 그 이름의 호출(같은 이름의 멤버 수와 함께)("이 선언일 수 있는 못 푼 호출 N곳", 데이터는 `mayBeThis`). 가능성일 뿐 연결이 아닙니다.
+
 ## 여러 질문을 한 번에
 
 `lode_tools_read_chain`(CLI `tools-read-chain <project> --input chain.json`)은 여러 질문을 한 번에 묻고 요청한 줄만 개수와 함께 돌려줍니다. 단계, 상한, 상태는 [MCP 도구 표면](mcp-surface.md#연쇄-읽기)에 있습니다. 읽기 전용이고, 아무 권한도 주지 않고, 아무것도 쓰지 않습니다. 답 여러 개를 받아 그중 몇 줄만 고를 때 도움이 됩니다. 질문 하나이거나, 답의 모든 줄을 어차피 읽어야 하면 직접 묻습니다. 안쪽 호출은 제품 그래프 질문과 `lode_project_graph`입니다. 빠졌다고 Lode가 아는 것은 `knownMissing`에 있습니다. 목록이 비어 있다고 줄이 전부라는 뜻은 아닙니다.
@@ -166,6 +168,16 @@ lode-agent product-graph-baseline <project>
 
 목록을 살펴본 뒤 위처럼 `product-graph-baseline`을 실행합니다.
 
+### 그래프 3판으로 업데이트한 뒤
+
+그래프 3판은 모듈 이름으로 들여온 Python 호출(`from pkg import mod` 뒤의 `mod.f()`)과, 클래스의 코드가 클래스를 밝힌 인스턴스 속성의 메서드 호출(`self.port.send()`, `this.port.send()`)을 풀어서, 닿는 범위가 늘어납니다. 2판이 읽은 기준과 비교하면:
+
+- 기준과 글이 같은 파일에서만 달라진 닿는 범위는 "읽는 방식이 달라져 닿는 범위가 달라진 기능"으로 세고, 닿는 코드가 바뀜이나 다시 볼 것에 넣지 않습니다.
+- 확인 기록은 다시 확인할 때까지 "다른 방식으로 읽은 때 확인함"으로 나옵니다. 아무것도 고쳐 쓰지 않습니다.
+- 기준이 읽은 데이터 폴더를 이제 빼거나(이제 데이터 폴더는 늘 뺍니다), 기준이 읽지 않은 폴더를 `source.포함`으로 이제 읽으면 "읽는 범위가 달라짐: …" 줄에 따로 적습니다. 그 때문에 사라지거나 생긴 노드는 신규나 사라짐이 아닙니다. 그런 폴더가 있는 프로젝트는 그 안의 코드가 그래프에서 한 번 빠집니다.
+
+목록을 살펴본 뒤 위처럼 `product-graph-baseline`을 실행합니다.
+
 ## 확인 기록
 
 "다시 볼 것"은 기준에 따라 정해집니다. 기준을 옮기면 아무도 보지 않았어도 사라지고, 기준보다 앞선 변경 뒤에 쓴 뜻 줄은 끝내 잡히지 않습니다. 확인 기록은 기준과 따로, 실제로 무엇을 확인했는지 남깁니다. 기록 하나(`.lode/context/product-graph/확인/product-graph-check-<id>.json`)는 확인한 뜻 줄(기능 ID와 그 줄 글의 해시)이나 문서 줄(화면요소→기능, 기능→화면요소, 화면→코드와 문서 글의 확인 값)을 적고, 그것이 가리키는 노드마다 그때의 내용 해시(기능이면 닿는 코드 전체의 해시도)와 코드를 읽은 방식을 적습니다. 한 번 쓰면 Lode가 고치거나 지우지 않습니다. 승인 기록처럼 내보내기·가져오기·폴더 복사로 함께 옮겨지고 GC가 남겨 둡니다. 역시 승인 기록처럼, `확인/`의 기록 하나가 검증되지 않으면 내보내기·가져오기·폴더 복사 채택·스냅숏 GC가 멈추고, 기록이 2000개를 넘으면 옮기기가 멈춥니다. 빌드는 그런 기록을 issue로 적기만 하고 계속합니다.
@@ -217,6 +229,16 @@ export const COMMANDS = [
 ```
 
 그러면 그 이름을 선언·들여오거나 묶지 않는 모든 파일에서 `hostLog(x)`는 내장 함수, `host.run(x)`는 내장 네임스페이스의 멤버입니다.
+
+## 큰 소스 트리
+
+빌드는 읽을 파일(코드, UI 연결 후보, hook·command·cli 설정, `.sql`, 규칙이 적은 파일)만 한도 50,000개와 견줍니다. 파일이 2,000개 이상이고 그중 읽을 파일이 10% 미만인 폴더는 개수와 상관없이 데이터 폴더로 빼고 빌드를 이어 갑니다. 한계 블록, `check.json`, 개요, `gaps`가 뺀 폴더마다 그 안에서 읽지 않은 코드 파일, 그리고 확장자로만 센 종류(문서, 데이터, 이미지, 코드, 그 밖)와 함께 적습니다. 뺀 폴더를 읽으려면 `source.포함`에 적습니다. 같은 경로에서는 `source.제외`가 이깁니다.
+
+```json
+{ "schemaVersion": 1, "kind": "LodeProductGraphEntryRules", "rules": [], "source": { "제외": ["recordings"], "포함": ["data/tools"] } }
+```
+
+그래도 읽을 파일이 한도를 넘으면 빌드는 `PRODUCT_GRAPH_SOURCE_TOO_LARGE`로 멈추고, 읽을 파일 수, 가장 무거운 맨 위 폴더 10개, `source.제외`로 폴더를 뺄 수 있다는 것을 말합니다. 숫자는 판단입니다.
 
 ## 입구, 분기, 스캔이 보지 못하는 연결
 

@@ -514,6 +514,35 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
     codeGroup.added = codeGroup.added.filter((id) => !readerCode.includes(id));
   }
 
+  // The reading range (4.7): folders the build leaves out as data-like now
+  // that the baseline read, and data-like folders read now (under the limit
+  // or through source.포함) of which the baseline read no file. Derived from
+  // the paths alone; nodes that leave or come only because of that are
+  // counted there, never 신규 or 사라짐.
+  const holds = (files, folder) => files.some((file) => file.startsWith(`${folder}/`));
+  const beforeFiles = [...sourceBefore.keys()];
+  const afterFiles = [...sourceAfter.keys()];
+  const size = graph.limits?.sourceSize;
+  const rangeLeftOut = (graph.inputs.leftOutFolders || []).filter((folder) => holds(beforeFiles, folder));
+  const rangeReadAgain = (size?.included || [])
+    .map((row) => row.path)
+    .filter((folder) => !holds(beforeFiles, folder) && holds(afterFiles, folder))
+    .sort(compare);
+  const inRange = (file) => Boolean(file) && [...rangeLeftOut, ...rangeReadAgain].some((folder) => file.startsWith(`${folder}/`));
+  const rangeRemoved = [];
+  const rangeAdded = [];
+  if (rangeLeftOut.length || rangeReadAgain.length)
+    for (const group of byType) {
+      const removed = group.removed.filter((id) => inRange(beforeIx.nodes.get(id)?.file));
+      const added = group.added.filter((id) => inRange(afterIx.nodes.get(id)?.file));
+      for (const id of [...removed, ...added]) status.delete(id);
+      rangeRemoved.push(...removed);
+      rangeAdded.push(...added);
+      group.removed = group.removed.filter((id) => !removed.includes(id));
+      group.added = group.added.filter((id) => !added.includes(id));
+    }
+  const rangeReach = [];
+
   // 기능 whose own content is the same and whose reached code differs. Under
   // another reader, a difference whose nodes (reached now or in the baseline,
   // and differing) all lie in files whose text is the baseline's comes from
@@ -537,6 +566,14 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
     }
     nodes.sort((a, b) => compare(a.change, b.change) || compare(a.id, b.id));
     const fileOfNode = (id) => afterIx.nodes.get(id)?.file || beforeIx.nodes.get(id)?.file || null;
+    if (
+      nodes.length &&
+      nodes.some((item) => inRange(fileOfNode(item.id))) &&
+      nodes.every((item) => inRange(fileOfNode(item.id)) || (!sameReader && fileSame(fileOfNode(item.id))))
+    ) {
+      rangeReach.push(node.id);
+      continue;
+    }
     if (!sameReader && nodes.every((item) => fileSame(fileOfNode(item.id)))) {
       readerReach.push(node.id);
       continue;
@@ -662,6 +699,17 @@ export function compareWithBaseline(graph, baseline, { meaningLines = [], retain
             renamed,
           },
         }),
+    ...(rangeLeftOut.length || rangeReadAgain.length
+      ? {
+          readRange: {
+            leftOut: rangeLeftOut,
+            readAgain: rangeReadAgain,
+            removed: rangeRemoved.sort(compare),
+            added: rangeAdded.sort(compare),
+            reach: rangeReach.sort(compare),
+          },
+        }
+      : {}),
     edges: edgeChanges,
     maybeMoved,
     unexplained,

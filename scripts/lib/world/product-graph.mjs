@@ -50,7 +50,14 @@ import {
   parsePolicyFile,
   parseScreenDocument,
 } from "./product-graph-documents.mjs";
-import { assertUniqueIds, extractProductGraphCode, productGraphCodeFiles, renamedCodeCandidates, renamedCodeNote } from "./product-graph-extraction.mjs";
+import {
+  assertUniqueIds,
+  extractProductGraphCode,
+  FILE_KINDS,
+  productGraphCodeFiles,
+  renamedCodeCandidates,
+  renamedCodeNote,
+} from "./product-graph-extraction.mjs";
 import {
   PRODUCT_GRAPH_BASELINE_FILE,
   PRODUCT_GRAPH_RETAINED_CONTENT_FILE,
@@ -70,7 +77,7 @@ import {
 import { productGraphWalk as walk } from "../../graph-explorer/product-graph-walk.js";
 import { machineEdges, runLabel, runStates } from "./product-graph-runs.mjs";
 
-export const PRODUCT_GRAPH_VERSION = 2;
+export const PRODUCT_GRAPH_VERSION = 3;
 const compare = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const nfc = (name) => name.normalize("NFC");
@@ -923,6 +930,7 @@ function compute({ extraction, loaded, includeEstimates }) {
         byReason: extraction.referenceSummary.unresolvedByReason,
       },
       notLookedAt: extraction.notLookedAt,
+      sourceSize: extraction.sourceSize,
       unresolvedHandlers: extraction.unresolvedHandlers,
       multiRowFunctions: extraction.multiRowFunctions,
       partlyResolvedRows: extraction.partlyResolvedRows,
@@ -1133,6 +1141,8 @@ function graphDocument({ extraction, loaded, computed, inputs, rules, result }) 
       reader: productGraphReader(PRODUCT_GRAPH_VERSION),
       codeFiles: extraction.codeFiles,
       sourceExcludes: extraction.excludes,
+      // Data-like folders left out because the files to read passed the limit (4.3).
+      ...(extraction.sourceSize.leftOut.length ? { leftOutFolders: extraction.sourceSize.leftOut.map((row) => row.path) } : {}),
     },
     nodeTypes: NODE_TYPES.map((type) => ({ type, count: computed.counts[type] })),
     limits: result.limits,
@@ -1173,6 +1183,9 @@ const NOT_TOLD_APART = Object.freeze(["render", "type reference", "re-render", "
 const RUN_BY_PATH_LIMITS =
   "framework-invoked는 두 모양만 읽는다: 코드의 문자열·템플릿 리터럴이 스캔한 코드 파일 하나의 경로(전체 상대 경로, 또는 / 경계에서 시작하는 그 뒷부분)로 끝나고 그 글자를 실행·적재하는 호출에 넘기는 곳(동적 import, spawn·fork·exec 같은 프로세스 시작, Worker, 언어의 실행 파일(process.execPath, sys.executable)도 함께 넘기는 호출. 경로를 만드는 join·resolve·URL과 배열·객체는 건너 본다. 공백이 있는 글자는 명령 줄이라, 그 경로는 프로그램 자체이거나 언어 실행기(node, python 같은 것) 뒤의 스크립트일 때만 센다), 그리고 이름 없이 들여오는 JS·TS import \"<상대 경로>\". 경로가 여러 파일에 맞으면 잇지 않고 센다. 경로를 상수에 담아 뒤에서 넘기는 곳, import·export·require의 경로, 주입, 데코레이터, 파일 이름으로 정하는 경로는 보지 못한다. 읽은 곳은 모두 '경로로 실행으로 읽은 곳'에 적는다.";
 // How a declaration's line range is read, and when the old reading stays (0.3.4).
+// Size (4.1–4.5): the rule, with its numbers as judgement.
+const SOURCE_SIZE_LIMITS = (limits) =>
+  `읽을 파일(코드, UI 연결 후보의 확장자, hook·command·cli 설정 파일, .sql, 규칙이 적은 파일. 테스트는 빼고)만 센다. 한도 ${limits.filesToRead}개, 폴더를 지나는 안전 한도 ${limits.entriesVisited}개. 파일 ${limits.dataFolderFiles}개 이상 중 읽을 파일이 ${Math.round(limits.dataFolderShare * 100)}% 미만인 폴더를 데이터 폴더로 본다(테스트 파일도 코드로 센다. 소스 루트의 자식부터 위에서 아래로, 바깥 것 하나만; 규칙이 적은 곳과 source.포함은 빼지 않는다. 그 안의 hook·command·cli 설정 파일은 읽었을 파일로 따로 센다). 데이터 폴더는 읽을 파일 수와 상관없이 늘 빼고 폴더마다 적으며, source.포함에 적은 폴더만 다시 읽는다. 빼고도 읽을 파일이 한도를 넘으면 빌드가 멈춘다. 데이터 폴더 안은 확장자로만(파일을 열지 않고) 종류를 센다: 문서 ${FILE_KINDS.documents.join(" ")}, 데이터 ${FILE_KINDS.data.join(" ")}, 이미지 ${FILE_KINDS.images.join(" ")}, 코드 ${FILE_KINDS.code.join(" ")}, 그 밖은 나머지. 숫자와 확장자 목록은 모두 판단이다.`;
 const RANGE_FALLBACK_LIMITS =
   "함수 범위는 매개변수 목록을 짝 괄호로 닫은 뒤의 { 부터 그 짝 } 까지다. 반환 타입 안의 { 는 타입으로 읽고, ) 뒤에 { 가 없는 선언(오버로드, declare)은 한 문장 범위다. 매개변수 목록이 닫히지 않는 선언만 이름 뒤 첫 { 를 쓰는 예전 방식으로 읽는다. 구문 트리가 아니므로 범위는 줄 범위다.";
 const ENTRY_STOP_RULE =
@@ -1199,6 +1212,9 @@ const CALL_READING_LIMITS = Object.freeze([
   '값 바인딩: 함수식이 아닌 값으로 정한 모듈 수준 이름(const fail = failWith("X"))은 어디선가 함수로 불릴 때만 값 노드가 되고, 그 참조는 초기값 안의 호출이다. 불리지 않는 값 바인딩은 노드가 아니다.',
   "다시 내보내기: export { a as b } from, export * from, import한 이름을 적은 export 목록, default(export { default } from, export { x as default }, export default 이름)를 선언까지 따라간다(Python은 패키지 모듈이 들여온 이름). 단계 수에 한도가 있고, 고리는 끊고 원래 이유를 둔다. export * as 이름 from은 읽지 않는다.",
   "내장 호출: 언어·런타임의 전역 이름 표(판단, 프로젝트 규칙의 내장 이름으로 더함)에 있고 파일이 그 이름을 선언·들여오거나 묶지 않을 때만 내장으로 본다. 메서드 이름이 제품 어디에서도 정의되지 않을 때만(선언이 아닌 것까지 넓게 본다: 클래스 필드, 클래스 식, 어느 객체 리터럴의 멤버, 시그니처, 따옴표 이름, x.y = function, prototype 대입, defineProperty) 제품 코드일 수 없다고 본다. 실행 중에 만든 이름(obj[name] = fn, Object.assign, 섞어 넣기)은 보지 못하므로, 그런 메서드는 제품 코드인데도 이 이유에 들 수 있다. 제품이 같은 이름을 정의하면 받는 쪽 타입을 모르는 호출로 둔다.",
+  "Python 모듈 이름으로 들여오기: from pkg import mod (as x), from . import mod 같은 것은, 패키지(__init__.py)에 그 이름의 선언·값·다시 내보내기가 없고 pkg/mod.py나 pkg/mod/__init__.py가 읽은 파일일 때 모듈로 본다(패키지의 선언이 이긴다). 그 뒤 x.f(), x.Store(), v = x.Store() 다음의 v.add(), 값으로 쓴 x.f는 네임스페이스 import처럼 푼다. 점이 더 많은 이름(pkg.mod.f(), sub.mod.f())은 한 마디씩 읽은 파일인 모듈을 따라가고, 모듈이 아닌 마디에서 멈춰 나머지를 두 마디 규칙으로 푼다. 스캔은 호출 이름의 마지막 두 마디만 남기므로, 앞 마디는 호출이 있는 줄의 글자에서 읽는다(그 줄의 같은 호출이 모두 같은 앞 마디일 때만). 앞 마디 앞이 식이면(x.mod.f(), f().mod.f(), .mod.f(로 시작하는 줄) 그 이름은 다른 것의 멤버라 받는 쪽 타입을 모르는 호출로 두고, 점이 셋 이상인 이름은 모듈을 따라가지 못하면 풀지 않는다(뒤의 두 마디의 import로 돌아가지 않는다). 함수 안에서 한 import도 파일 전체의 import로 읽는다.",
+  "인스턴스 속성의 메서드 호출(self.attr.method(), this.attr.method()): 그 메서드가 든 클래스의 코드가 속성의 클래스를 말할 때만 푼다 — 클래스 안의 모든 대입이 같은 제품 클래스를 만듦(self.attr = Name(…), 클래스 본문 attr = Name(…), this.attr = new Name(…), 필드 attr = new Name(…), #attr 포함), 속성에 적은 타입(self.attr: Name, 클래스 본문 attr: Name, TypeScript 필드 attr: Name, 생성자 매개변수 속성), 같은 메서드에서 타입을 적은 매개변수를 대입. None·null·undefined 대입은 건너뛰고, Optional[Name]·Name | None·Name | null | undefined·따옴표 이름은 Name이다. 근거가 모두 한 클래스여야 하고, 아니면 받는 쪽 타입을 모르는 호출로 둔다. 생성식은 대입하는 식 전체일 때만 센다(닫는 괄호 뒤에 .build(), if … else, or, ||, ?? 같은 것이 붙으면 모름). 클래스 안에서 그 속성이 대입 대상인 곳(여러 대상 중 하나, with … as, for, +=·??= 같은 대입 포함)은 모두 위의 형태로 읽혀야 하고, 하나라도 아니면 모름이다. 클래스 안의 대입만 보고(클래스 밖에서, setattr이나 Object.assign으로 넣은 속성은 보지 않는다), 감싼 클래스에서만 찾는다(클래스가 상속하고 그 속성을 대입하지 않으면 상속받은 멤버일 수 있음). 적은 클래스가 기반 클래스나 프로토콜이면 그 클래스의 메서드로 잇고, 하위 클래스의 구현은 따라가지 않는다. 더 긴 사슬(self.a.b.m()), 지역 변수에 옮긴 속성, 속성 자체의 호출(self.attr())은 읽지 않는다. JavaScript·TypeScript는 받는 쪽을 호출이 있는 줄에서 읽는다(그 줄의 같은 호출이 모두 this. 바로 뒤일 때만).",
+  "닿음은 풀린 호출만 따라간다. 제품 코드일 수 있는 못 푼 호출은 두 종류로 나눠 그것이 있는 곳에 적는다: 이름으로 부른 것(받는 쪽 타입을 모르는 호출 말고 제품 코드일 수 있는 모든 이유)과 받는 쪽 타입을 모르는 메서드 호출. reach와 기능 노드는 두 수와, 이름으로 부른 것이 많은 노드, 메서드 이름별 수를 적고(이름은 빌드 전체에서 그 이름의 그런 호출이 적은 것부터, 빌드 전체 수와 함께), tree는 못 푼 호출이 있는 코드 줄마다 두 수와 이름 다섯(이름으로 부른 것 먼저, 메서드 이름은 드문 것부터)을 적는다. 제품이 어떤 멤버 이름을 정의하면 받는 쪽 타입을 모르는 그 이름의 호출은 모두 여기에 든다(내장 타입의 메서드도). 풀린 호출이 하나도 없는 선언의 up·reach·노드·impact는 그 선언일 수 있는 못 푼 호출을 적는다: 그 이름으로 부를 수 있는 선언(클래스·객체 리터럴의 멤버가 아닌 것)에는 이름만 부른 호출(내장 이름 표의 이름, 매개변수·지역 변수에 담긴 함수의 호출은 빼고), 클래스·객체 리터럴의 멤버에는 받는 쪽 타입을 모르는 그 이름의 호출과 같은 이름의 멤버 수. 앞의 것은 닿는 범위가 실제보다 좁을 수 있다는 뜻이고, 뒤의 것은 가능성일 뿐 연결을 만들지 않는다. 내장 타입도 가진 메서드 이름(get, append 같은 것)은 제품의 것과 가를 수 없어, 그런 선언에는 가능한 호출이 많이 붙을 수 있다.",
 ]);
 
 // One object for the structured result and generated files; the text renders
@@ -1249,6 +1265,8 @@ function limitsOf({ extraction, computed, includeEstimates, loaded, callbacks })
       files: (extraction.rangeFallbackFiles || []).map((item) => item.file),
       reading: RANGE_FALLBACK_LIMITS,
     },
+    // Size (4.4): files read, data-like folders left out or suggested.
+    sourceSize: { ...extraction.sourceSize, reading: SOURCE_SIZE_LIMITS(extraction.sourceSize.limits) },
     // How rows are read when a rule takes its 처리 코드 from the table row.
     tableRows: extraction.tableRowRules ? TABLE_ROW_LIMITS : null,
     execution: "아무것도 실행하지 않았다. 문서와 코드를 비교할 뿐이고, 어느 발견도 실행 근거에 기대지 않는다.",
@@ -1700,7 +1718,8 @@ function freshnessOf(inputs, graph) {
       }
       // A code file the build would read now but did not (a file it cannot
       // read as text is not one the build reads either).
-      for (const file of productGraphCodeFiles(inputs.sourceRoot, excludes))
+      // Folders the build left out as data-like (4.3) are not new code either.
+      for (const file of productGraphCodeFiles(inputs.sourceRoot, [...excludes, ...(graph.inputs?.leftOutFolders || [])]))
         if (!known.has(file) && sourceHashNow(inputs.sourceRoot, file) !== null) changed.push(file);
       result.source = { known: true, changed: changed.sort(compare) };
     } catch (error) {

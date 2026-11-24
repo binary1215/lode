@@ -132,6 +132,94 @@ export const productGraphWalk = (() => {
     text: `입구에서 다른 기능의 처리 코드 앞에서 멈춤 ${stops.length}곳${stops.length ? `: ${stops.slice(0, 10).map((item) => `${item.id} (${item.functions.join(", ")})`).join(", ")}${stops.length > 10 ? ` 외 ${stops.length - 10}곳` : ""}` : ""}`,
     entryStops: stops,
   });
+  // Unresolved calls that could be product code (3.1–3.3), from the optional
+  // node field of graph.json, in two kinds kept apart: calls by name, and
+  // method calls on a receiver of unknown type (every member name the product
+  // defines counts there, built-in types' methods included). A graph without
+  // the field has none to say.
+  const MAX_LOST_NODES = 5;
+  const MAX_LOST_NAMES = 50;
+  const memberCount = (made) => (made?.members || []).reduce((sum, item) => sum + item.count, 0);
+  const calleeList = (made) => `${made.callees.map((item) => `\`${item.callee}\` (줄 ${item.line})`).join(", ")}${made.count > made.callees.length ? " …" : ""}`;
+  const lostField = (lost) => (lost ? { lostCalls: lost } : {});
+  function lostCallsOf(ix, ids) {
+    const named = [];
+    const byName = new Map();
+    let receiver = 0;
+    for (const id of [...ids].sort(compare)) {
+      const node = ix.nodes.get(id);
+      const made = node?.unresolvedCalls?.made;
+      if (!made) continue;
+      if (made.count) named.push({ id, count: made.count, callees: made.callees });
+      for (const item of made.members || []) {
+        receiver += item.count;
+        if (!byName.has(item.name)) byName.set(item.name, { name: item.name, count: 0, example: { path: node.file, line: item.line } });
+        byName.get(item.name).count += item.count;
+      }
+    }
+    const namedCount = named.reduce((sum, item) => sum + item.count, 0);
+    if (!namedCount && !receiver) return null;
+    named.sort((a, b) => b.count - a.count || compare(a.id, b.id));
+    // Rarest first: fewest calls of that name on unknown receivers in the
+    // whole build, so a distinctive method called once is not hidden behind
+    // get or append; the build-wide count tells them apart.
+    const wide = ix.graph?.referenceSummary?.unresolvedMethodNames || {};
+    for (const item of byName.values()) item.buildCount = wide[item.name] ?? item.count;
+    const names = [...byName.values()].sort((a, b) => a.buildCount - b.buildCount || compare(a.name, b.name));
+    return {
+      named: { count: namedCount, nodes: named.slice(0, MAX_LOST_NODES) },
+      receiver: { count: receiver, names: names.slice(0, MAX_LOST_NAMES), distinctNames: names.length },
+    };
+  }
+  // The count row (every page of a reach) and the detail rows (its last page).
+  function lostCountRow(lost, depth) {
+    const parts = [
+      ...(lost.named.count ? [`이름으로 부른 것 ${lost.named.count}곳`] : []),
+      ...(lost.receiver.count ? [`받는 쪽 타입을 모르는 메서드 호출 ${lost.receiver.count}곳`] : []),
+    ];
+    return { depth, kind: "text", text: `이 길에서 못 푼 호출 (제품 코드일 수 있음) — ${parts.join(", ")}: 닿는 범위가 실제보다 좁을 수 있다`, lostCalls: lost };
+  }
+  const lostDetailHead = (lost, depth) => ({
+    depth,
+    kind: "text",
+    text: `못 푼 호출이 있는 곳 (${[...(lost.named.count ? ["이름으로 부른 것이 많은 노드"] : []), ...(lost.receiver.count ? ["메서드 호출의 이름별 수"] : [])].join(", ")}):`,
+  });
+  function lostDetailRows(lost, depth) {
+    const names = lost.receiver.names.slice(0, MAX_LOST_NODES).map((item) => `\`${item.name}\` ${item.count} (빌드 전체 ${item.buildCount}, 예: ${where(item.example)})`).join(", ");
+    return [
+      ...lost.named.nodes.map((item) => ({ depth: depth + 1, kind: "text", text: `${item.id} — ${item.count}곳: ${calleeList(item)}`, lostCallsIn: item.id })),
+      ...(lost.receiver.count
+        ? [
+            {
+              depth: depth + 1,
+              kind: "text",
+              text: `받는 쪽 타입을 모르는 메서드 호출 ${lost.receiver.count}곳 — 이름별: ${names}${lost.receiver.distinctNames > MAX_LOST_NODES ? ` 외 이름 ${lost.receiver.distinctNames - MAX_LOST_NODES}개 (노드별로는 tree)` : ""}`,
+              lostMethodNames: lost.receiver.names,
+            },
+          ]
+        : []),
+    ];
+  }
+  // A code node with no resolved caller (3.4): unresolved calls that may be
+  // it — bare calls of its name, and calls of its name on a receiver of
+  // unknown type, with how many declarations share that name. A possibility
+  // only: no edge, no change to reach.
+  const CALLER_EDGES = new Set(["call", "callback", "framework-invoked"]);
+  function mayBeThisRows(ix, id, depth) {
+    const may = ix.nodes.get(id)?.unresolvedCalls?.mayBeThis;
+    if (!may?.count || (ix.into.get(id) || []).some((edge) => CALLER_EDGES.has(edge.type))) return [];
+    const { bare, member } = may;
+    const sameName = member?.sameName > 1 ? `, 같은 이름의 선언 ${member.sameName}개` : "";
+    const kinds =
+      bare && member
+        ? `이름만 부른 호출 ${bare.count}곳, 받는 쪽 타입을 모르는 호출 ${member.count}곳${sameName}`
+        : bare
+          ? "이름만 부른 호출"
+          : `받는 쪽 타입을 모름${sameName}`;
+    const all = [...(bare?.places || []), ...(member?.places || [])];
+    const places = `${all.slice(0, MAX_LOST_NODES).map((item) => where(item)).join(", ")}${may.count > Math.min(all.length, MAX_LOST_NODES) ? " …" : ""}`;
+    return [{ depth, kind: "text", text: `이 선언일 수 있는 못 푼 호출 ${may.count}곳 (${kinds}. 이 선언을 부른다는 뜻은 아니다): ${places}`, mayBeThis: may }];
+  }
   const boundariesOf = (ix, id) => (ix.out.get(id) || []).filter((edge) => edge.type === "경계");
   const boundaryLine = (edge) => `경계에서 멈춤: ${edge.설명 || "설명 없음"} → ${edge.to}`;
 
@@ -667,7 +755,7 @@ export const productGraphWalk = (() => {
     return { status: complete ? "compared" : "partial", compatibility: compatibility || { status: "unknown", reasons: ["빌드/Project/소스 루트/reader 근거 미확인"] }, basis: minimal ? "baseline hashes; historical display may be unavailable" : "explicit proposal starting build", conflicts, ambiguousRelations, remainingReferences, currentChanges, proposedChanges, edgeChanges, affected: [...visited].sort(compare), structuralConflictFree: complete ? conflicts.length === 0 : null, productApproved: false, causeInferred: false };
   }
 
-  function impactAnswer(result, { answer, limit, cursor }) {
+  function impactAnswer(result, { answer, limit, cursor, ix }) {
     const items = [
       ...(result.conflicts || []).map((item) => ({ text: `${item.kind}: ${item.id || `${item.edge.from} → ${item.edge.to}`}`, detail: item })),
       ...(result.ambiguousRelations || []).map((item) => ({ text: `${item.reason}: ${item.edge.from} → ${item.edge.to}`, detail: item })),
@@ -675,7 +763,7 @@ export const productGraphWalk = (() => {
     ];
     const paged = page(items, { limit, cursor });
     const rows = [repeated(paged, { depth: 0, kind: "text", text: `구조적 미리보기 (${result.status}). 충돌 없음은 제품 승인이 아니다. ${result.reason || result.basis || ""}${result.compatibility?.reasons?.length ? ` — ${result.compatibility.reasons.join(" / ")}` : ""}` }),
-      ...paged.slice.map((item) => ({ depth: 1, kind: item.id ? "node" : "text", ...item }))];
+      ...paged.slice.flatMap((item) => [{ depth: 1, kind: item.id ? "node" : "text", ...item }, ...(item.id && ix ? mayBeThisRows(ix, item.id, 2) : [])])];
     if (paged.remaining) rows.push(moreRow(1, paged, `impact --cursor ${paged.nextCursor}`, true));
     const { conflicts, ambiguousRelations, affected, edgeChanges, currentChanges, proposedChanges, remainingReferences, ...summary } = result;
     return answer("반영 전 영향 미리보기", rows, { impact: { ...summary, counts: { conflicts: conflicts?.length || 0, ambiguousRelations: ambiguousRelations?.length || 0, affected: affected?.length || 0, edgeChanges: edgeChanges?.length || 0, currentChanges: currentChanges?.length || 0, proposedChanges: proposedChanges?.length || 0, remainingReferences: remainingReferences?.length || 0 }, conflicts: paged.slice.filter((item) => item.detail?.kind).map((item) => item.detail), ambiguousRelations: paged.slice.filter((item) => item.detail?.reason).map((item) => item.detail), affected: paged.slice.filter((item) => item.id).map((item) => item.id), coverage: paged.remaining ? "partial-page" : "complete-page" }, page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor } });
@@ -731,6 +819,7 @@ export const productGraphWalk = (() => {
       functions,
       via: Object.fromEntries(ids.map((item) => [item, reached.get(item)])),
       ...(reached.entries ? { entryStops: reached.stops } : {}),
+      ...lostField(lostCallsOf(ctx.ix, ids)),
     };
   }
 
@@ -834,6 +923,7 @@ export const productGraphWalk = (() => {
     if (ctx.graph?.limits?.notExtracted)
       add(0, `뽑지 않은 것: ${ctx.graph.limits.notExtracted.nodeTypes.join(", ")} 노드, ${ctx.graph.limits.notExtracted.edges.join(", ")} 연결`);
     if (ctx.graph?.limits?.execution) add(0, ctx.graph.limits.execution);
+    for (const line of sourceSizeLines(ctx.graph?.limits?.sourceSize).slice(0, -1)) add(0, line);
     add(0, "시작:", { marker: "starts" });
     if (hasDocuments(ctx)) {
       for (const id of ["제품코어", "유저저니"]) if (ctx.ix.nodes.has(id)) add(1, nodeLine(ctx, id), { kind: "node", id });
@@ -878,6 +968,11 @@ export const productGraphWalk = (() => {
     if (ctx.changes?.status === "compared") add(1, `기준 뒤: ${mark ? CHANGE_WORDS[mark] : "변화 없음"}`);
     for (const edge of boundariesOf(ctx.ix, id)) rows.push({ depth: 1, kind: "text", text: boundaryLine(edge), boundary: { from: edge.from, to: edge.to, 설명: edge.설명 || null } });
     if (node.type === "기능" && entriesOf(ctx.ix, id).length) rows.push(entryStopRow(reachOf(ctx.ix, [id]).stops, 1));
+    if (node.type === "기능") {
+      const lost = lostCallsOf(ctx.ix, [...reachOf(ctx.ix, [id]).keys()]);
+      if (lost) rows.push(lostCountRow(lost, 1), lostDetailHead(lost, 1), ...lostDetailRows(lost, 1));
+    }
+    if (node.type === "코드") rows.push(...mayBeThisRows(ctx.ix, id, 1));
     return rows;
   }
 
@@ -938,7 +1033,7 @@ export const productGraphWalk = (() => {
     }
     if (question === "gaps") return gapsAnswer(ctx, { list, limit, cursor, answer });
     if (question === "changes") return changesAnswer(ctx, { list, limit, cursor, answer });
-    if (question === "impact") return impactAnswer(impact(ctx, request), { answer, limit, cursor });
+    if (question === "impact") return impactAnswer(impact(ctx, request), { answer, limit, cursor, ix: ctx.ix });
     if (question === "tree" || question === "user") {
       const node = ctx.ix.nodes.get(id);
       const wanted = question === "tree" ? "기능" : "유저 활동";
@@ -961,6 +1056,7 @@ export const productGraphWalk = (() => {
       const paged = page(items, { limit, cursor });
       const rows = [repeated(paged, root), ...stepRows(ctx, id, question, { depth: Math.max(1, Number(depth) || 1), limit, cursor, path: [id], level: 1, hint: `${question} ${id}` })];
       if (!items.length) rows.push({ depth: 1, kind: "text", text: question === "down" ? "아래로 이어지는 연결 없음" : "이것을 가리키는 것 없음" });
+      if (question === "up") rows.push(...mayBeThisRows(ctx.ix, id, 1));
       return answer(pathLine(ctx, [id]), rows, { page: { total: paged.total, cursor: paged.cursor, limit: paged.limit, remaining: paged.remaining, nextCursor: paged.nextCursor } });
     }
     if (!reachDirection(ctx, id))
@@ -976,6 +1072,8 @@ export const productGraphWalk = (() => {
     else {
       if (ctx.ix.nodes.get(id).type !== "기능") rows.push(repeated(paged, { depth: 1, kind: "text", text: `거치는 기능 ${reached.functions.length}개: ${reached.functions.join(", ") || "없음"}` }));
       rows.push(repeated(paged, { depth: 1, kind: "group", text: `닿는 코드 ${reached.ids.length}개 (${note})` }));
+      // Unresolved calls in the reached code (3.2): the count before the node rows, on every page.
+      if (reached.lostCalls) rows.push(repeated(paged, lostCountRow(reached.lostCalls, 1)));
     }
     const viaWords = reached.direction === "up" ? " — 입구로만 닿음" : " — 입구로 닿음";
     for (const target of paged.slice) {
@@ -989,6 +1087,11 @@ export const productGraphWalk = (() => {
     if (paged.remaining) rows.push(moreRow(1, paged, `reach ${id} --cursor ${paged.nextCursor}`, true));
     // The walk from 입구 stopped before another 기능's 처리 코드: counted on every page.
     if (reached.entryStops) rows.push(repeated(paged, entryStopRow(reached.entryStops, 1)));
+    // Unresolved calls in the reached code (3.2): on the last page, after every node row.
+    // Its detail on the last page, after every node row.
+    if (reached.lostCalls && !paged.remaining) rows.push(lostDetailHead(reached.lostCalls, 1), ...lostDetailRows(reached.lostCalls, 1));
+    // Nothing reaches this code (3.4): calls that may be it.
+    if (reached.direction === "up" && !reached.ids.length) rows.push(...mayBeThisRows(ctx.ix, id, 1));
     // On the last page: the 기능 a crossed boundary would add.
     if (!paged.remaining)
       for (const item of reached.acrossBoundary || [])
@@ -1049,6 +1152,18 @@ export const productGraphWalk = (() => {
       for (const boundary of boundariesOf(ctx.ix, id))
         rows.push({ depth: depth + 1, kind: "text", text: boundaryLine(boundary), boundary: { from: boundary.from, to: boundary.to, 설명: boundary.설명 || null } });
       rows.push(...outsideRows(ctx, id, depth + 1));
+      const made = ctx.ix.nodes.get(id)?.unresolvedCalls?.made;
+      // Every code node with unresolved calls that could be product code gets
+      // a row: both counts, calls by name first, then method names rarest
+      // first, five in all.
+      if (made && (made.count || memberCount(made))) {
+        const wide = ctx.graph?.referenceSummary?.unresolvedMethodNames || {};
+        const methods = [...(made.members || [])].sort((a, b) => (wide[a.name] ?? a.count) - (wide[b.name] ?? b.count) || compare(a.name, b.name));
+        const shown = [...made.callees.map((item) => `\`${item.callee}\``), ...methods.map((item) => `\`.${item.name}\``)].slice(0, MAX_LOST_NODES);
+        const total = made.count + (made.members || []).length;
+        const counts = [...(made.count ? [`이름으로 부른 것 ${made.count}곳`] : []), ...(memberCount(made) ? [`받는 쪽 타입을 모르는 메서드 호출 ${memberCount(made)}곳`] : [])];
+        rows.push({ depth: depth + 1, kind: "text", text: `못 푼 호출 — ${counts.join(", ")}: ${shown.join(", ")}${total > shown.length ? " …" : ""}`, lostCalls: made });
+      }
       // A 처리 start a 분기 rule splits shows only its own lines (2.9).
       const lines = !edge && own.has(id) ? limited.get(id) : null;
       const children = (ctx.ix.out.get(id) || [])
@@ -1168,6 +1283,30 @@ export const productGraphWalk = (() => {
     return `- 호출 ${calls.all}개. 제품 코드일 수 없는 호출 ${calls.notProduct.builtIn + calls.notProduct.keyword}개(언어·런타임 내장 ${calls.notProduct.builtIn}, 호출처럼 보인 언어 키워드 ${calls.notProduct.keyword})와 제품 밖 모듈로 가는 호출 ${calls.notProduct.external}개를 빼면, 제품 코드일 수 있는 호출 ${calls.canBeProduct}개 중 ${calls.resolved}개를 하나의 선언으로 풀었다. 풀린 것만 코드→코드 연결이 된다.`;
   }
 
+  // Size (4.4): the data-like folders left out (with the code files in them)
+  // (4.3a), with what they hold by kind (4.3b).
+  const folderText = (row) =>
+    `${row.path}/ (파일 ${row.files}, 읽었을 파일 ${row.toRead}: 읽었을 코드 파일 ${row.code}${row.config ? `, 설정 파일 ${row.config}` : ""}, ${Math.round(row.share * 1000) / 10}%${kindText(row.kinds)})`;
+  const KIND_WORDS = Object.freeze({ documents: "문서", data: "데이터", images: "이미지", code: "코드", other: "그 밖" });
+  const kindText = (kinds) => {
+    const parts = Object.entries(KIND_WORDS)
+      .filter(([key]) => kinds?.[key])
+      .map(([key, word]) => `${word} ${kinds[key]}${key === "code" ? " (테스트 포함)" : ""}`);
+    return parts.length ? `; 종류(확장자로): ${parts.join(", ")}` : "";
+  };
+  const firstTen = (rows) => `${rows.slice(0, 10).map(folderText).join(", ")}${rows.length > 10 ? ` 외 ${rows.length - 10}개` : ""}`;
+  function sourceSizeLines(size) {
+    if (!size) return [];
+    const code = size.leftOut.reduce((sum, row) => sum + row.code, 0);
+    const config = size.leftOut.reduce((sum, row) => sum + (row.config || 0), 0);
+    return [
+      ...(size.leftOut.length
+        ? [`읽지 않은 데이터 폴더 ${size.leftOut.length}개 — 파일 ${size.limits.dataFolderFiles}개 이상 중 읽을 파일이 ${Math.round(size.limits.dataFolderShare * 100)}% 미만이라 데이터로 보고 뺐다: ${firstTen(size.leftOut)}. 그 안의 코드 파일 ${code}개${config ? `, 설정 파일 ${config}개` : ""}도 읽지 않음. 다시 읽으려면 호출 방식 표의 source.포함에 적는다.`]
+        : []),
+      ...(size.included?.length ? [`source.포함으로 읽은 데이터 폴더 ${size.included.length}개: ${firstTen(size.included)}`] : []),
+      `읽을 파일 ${size.filesToRead}개. ${size.reading}`,
+    ];
+  }
   function renderLimits(limits) {
     const documents = limits.documents;
     const usage = !documents.approvalsRead
@@ -1204,6 +1343,7 @@ export const productGraphWalk = (() => {
             `- 매개변수 목록이 닫히지 않아 함수 범위를 예전 방식(이름 뒤 첫 \`{\`)으로 읽은 선언 ${limits.rangeFallback.count}개${limits.rangeFallback.count ? `: ${limits.rangeFallback.files.slice(0, 10).join(", ")}${limits.rangeFallback.files.length > 10 ? ` 외 파일 ${limits.rangeFallback.files.length - 10}개` : ""}` : ""}. ${limits.rangeFallback.reading}`,
           ]
         : []),
+      ...sourceSizeLines(limits.sourceSize).map((line) => `- ${line}`),
       `- ${limits.execution}`,
       `- 문서: 승인 ${documents.approved}, 승인 뒤 바뀜 ${documents.changedAfterApproval}, 추정 ${documents.estimated}. 승인 뒤 바뀜은 승인 기록의 본문과 지금 본문이 달라 추정으로 쓴다. ${usage}`,
     ];
@@ -1318,6 +1458,14 @@ export const productGraphWalk = (() => {
       { bounded: false },
     );
     const looked = lists.notLookedAt;
+    const size = lists.sourceSize;
+    if (size?.leftOut.length || size?.included?.length)
+      add(
+        "dataFolders",
+        size.leftOut.length + (size.included?.length || 0),
+        sourceSizeLines(size).slice(0, -1),
+        [...size.leftOut, ...(size.included || [])].map((row) => ({ text: folderText(row), path: row.path })),
+      );
     add("notLookedAt", looked.files, [
       `코드로 읽지 않은 파일(보지 않음): ${looked.files}개${looked.byExtension.length ? ` (${looked.byExtension.map((item) => `${item.extension} ${item.count}`).join(", ")})` : ""}. 테스트로 분류해 코드 층에 넣지 않은 코드 파일 ${looked.testCodeFiles}개, 읽지 못한 코드 파일 ${looked.unreadableCodeFiles}개.`,
       ...(looked.skipped.length ? [`  건너뛴 것: ${looked.skipped.map((item) => `${item.reason} ${item.count}`).join(", ")}`] : []),
@@ -1660,6 +1808,14 @@ export const productGraphWalk = (() => {
         ];
         lines.push(`- 읽는 방식이 달라져 새로 생긴 노드 ${changes.readerChanged.newNodes.length}개 (${what.join("; ")}. 신규로 세지 않는다)`);
       }
+    }
+    // Folders read now and not by the baseline, or the reverse (4.7).
+    if (changes.readRange) {
+      const range = changes.readRange;
+      const folders = [...range.leftOut.map((folder) => `${folder}/ 이번에 읽지 않음`), ...range.readAgain.map((folder) => `${folder}/ 이번에 읽음`)];
+      lines.push(
+        `- 읽는 범위가 달라짐: ${folders.join(", ")} — 그래서 사라진 노드 ${range.removed.length}개, 생긴 노드 ${range.added.length}개, 닿는 범위가 달라진 기능 ${range.reach.length}개 (신규·사라짐·닿는 코드가 바뀜에 넣지 않는다)`,
+      );
     }
     lines.push("- 노드 종류별 (ID 기준):");
     for (const group of changes.byType || [])

@@ -291,11 +291,25 @@ export function pythonFacts(text, masked, symbols, starts) {
   const ownerOf = (index) => innermostScope(scopes, index) || moduleScope;
   for (const match of masked.matchAll(/^([ \t]*)([A-Za-z_]\w*)\s*(?::[^=\n]+)?=(?!=)/gm)) {
     const at = match.index + match[1].length;
-    const created = /^\s*([A-Za-z_]\w*)\s*\(/.exec(masked.slice(match.index + match[0].length, match.index + match[0].length + 200));
-    addLocal(ownerOf(at), match[2], { kind: created ? "call-assign" : "assign", className: created?.[1] ?? null, index: at });
+    // The callee may be dotted ("v = mod.Store()"): the product graph resolves
+    // it only through a binding that names a module.
+    const created = /^\s*([A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*)\s*\(/.exec(masked.slice(match.index + match[0].length, match.index + match[0].length + 200));
+    addLocal(ownerOf(at), match[2], { kind: created ? "call-assign" : "assign", className: created?.[1].replace(/\s+/g, "") ?? null, index: at });
   }
+  // An import statement's alias ("import pkg.mod as pm", "from pkg import
+  // mod as m", also inside a function) names the import, not a local of
+  // unknown type; "with … as" and "except … as" stay locals.
+  const importSpans = [];
+  for (const match of masked.matchAll(/^[ \t]*(?:from[ \t]+[\w.]+[ \t]+)?import\b[^\n]*/gm)) {
+    let end = match.index + match[0].length;
+    const open = match[0].indexOf("(");
+    if (open >= 0 && pairs[match.index + open] > 0) end = Math.max(end, pairs[match.index + open] + 1);
+    importSpans.push([match.index, end]);
+  }
+  const inImport = (index) => importSpans.some(([start, end]) => start <= index && index < end);
   for (const match of masked.matchAll(/\b(?:for|as)\s+([A-Za-z_]\w*)\b/g))
-    addLocal(ownerOf(match.index), match[1], { kind: "assign", className: null, index: match.index });
+    if (!(match[0].startsWith("as") && inImport(match.index)))
+      addLocal(ownerOf(match.index), match[1], { kind: "assign", className: null, index: match.index });
   const values = [];
   for (const match of masked.matchAll(/^([A-Za-z_]\w*)\s*(?::[^=\n]+)?=(?!=)/gm)) {
     if (symbols.some((symbol) => symbol.qualifiedName === match[1])) continue;
