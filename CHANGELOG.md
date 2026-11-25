@@ -23,7 +23,7 @@ Host/MCP reload.
   the same summary as before.
 - Fixed: a Project left in "Canon applied, projection pending" by that failure
   completes with `world-docs-apply --review <id>` alone; no record file has to
-  be moved. Review after several captures (accept-all, accept-selected, reject)
+  be moved. Review after several captures (accept-all, accept-selection, reject)
   and the status reads are covered by tests on the latest set.
 - Changed: the refusal for an onboarding candidate set of a protocol the
   current Core does not read says so. It names the version found and the

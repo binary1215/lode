@@ -20,7 +20,7 @@ GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 �
   World의 요약은 전과 같습니다.
 - 수정: 그 실패로 "Canon 적용됨, 투영 대기" 상태에 남은 Project가
   `world-docs-apply --review <id>`만으로 끝납니다. 기록 파일을 옮길 필요가
-  없습니다. 여러 번 캡처한 뒤의 검토(accept-all, accept-selected, reject)와 상태
+  없습니다. 여러 번 캡처한 뒤의 검토(accept-all, accept-selection, reject)와 상태
   읽기를 가장 최근 묶음 기준으로 테스트에 고정했습니다.
 - 변경: 현재 Core가 읽지 않는 프로토콜의 온보딩 후보 묶음을 거절할 때 그 사실을
   말합니다. 발견한 버전과 읽는 버전(`0.4.0`)을 적고, 더 오래된 버전이면
