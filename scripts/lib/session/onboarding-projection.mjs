@@ -167,7 +167,10 @@ export function verifyOnboardingCandidateSetForProjection(document, projectId = 
     ["format", !format],
     ["kind", document.kind !== "OnboardingCandidateSet"],
     ["schemaVersion", document.schemaVersion !== 1],
-    ["projectId", !format || (projectId && document.projectId !== projectId) || !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(document.projectId || "")],
+    [
+      "projectId",
+      !format || (projectId && document.projectId !== projectId) || !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(document.projectId || ""),
+    ],
     ["sessionId", !/^session-[A-Fa-f0-9-]{36}$/.test(document.sessionId || "")],
     ["inputMode", !["existing", "new"].includes(document.inputMode)],
     ["storageSelectionId", !/^onboarding-storage-[a-f0-9]{24}$/.test(document.storageSelectionId || "")],
