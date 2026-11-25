@@ -29,7 +29,7 @@ test("opt-in exact installed SDK registers a fresh synthetic target without a mo
     !captureFile
   )
     return t.skip(
-      "Opt-in synthetic exact-engine metadata integration; no personal home or model calls.",
+      "opt-in: set LODE_NATIVE_CODEX_TEST_EXECUTABLE, LODE_NATIVE_CODEX_TEST_SUPERVISOR_ROOT and LODE_NATIVE_CODEX_TEST_SOURCE_CAPTURE on Windows x64. Synthetic exact-engine metadata integration; no personal home or model calls.",
     );
   const f = fixture(t),
     original = JSON.parse(fs.readFileSync(captureFile));

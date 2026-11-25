@@ -266,7 +266,7 @@ test("Unicode separators and form feed in a literal retain physical Python line 
 test("modern Python mapping-rest binding cannot resolve to a same-name module function", async (t) => {
   const identity = await runPythonSourceWorker({ operation: "identity" }, { onProcess });
   const [major, minor] = identity.result.profile.python.split(/[. ]/).map(Number);
-  if (major < 3 || major === 3 && minor < 10) { t.skip("Requires a real Python 3.10+ parser; separately execute with HEAD_PYTHON on a modern runtime."); return; }
+  if (major < 3 || major === 3 && minor < 10) { t.skip("opt-in: Requires a real Python 3.10+ parser (HEAD_PYTHON); separately execute with HEAD_PYTHON on a modern runtime."); return; }
   const { root, storage } = project(t, "def target(): pass\ndef caller(value):\n    match value:\n        case {**target}:\n            target()\n");
   const result = await prepareSourceContext({ root, task: "Inspect", needs: [need], onProcess });
   assert.equal(result.results[0].status, "unavailable");

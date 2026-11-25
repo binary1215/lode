@@ -13,7 +13,7 @@ const ready = Boolean(process.env.HEAD_LSP_QA_ROOT && process.env.HEAD_LSP_SUPER
 const qaRoot = ready ? path.resolve(process.env.HEAD_LSP_QA_ROOT) : null;
 const supervisorRoot = ready ? path.resolve(process.env.HEAD_LSP_SUPERVISOR_ROOT) : null;
 const selection = ready ? resolveVerifiedProcessSupervisor({ pluginRoot: supervisorRoot }) : null;
-const processTest = ready ? test : test.skip;
+const processTest = ready ? test : (name, fn) => test(name, { skip: "opt-in: set HEAD_LSP_QA_ROOT and HEAD_LSP_SUPERVISOR_ROOT to run the LSP host process tests" }, fn);
 const generationDigest = sha256("lsp-host-generation-v1");
 
 const baseSources = Object.freeze([

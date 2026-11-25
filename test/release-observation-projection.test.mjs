@@ -259,7 +259,7 @@ if (process.argv.slice(1).some(argument => path.resolve(argument) === fileURLToP
     const root = path.join(process.env.HEAD_AGENT_TEST_TMP || os.tmpdir(), `head-release-projection-${crypto.randomUUID()}`);
     createOwnedFixtureRoot(root);
     try {
-      try { restoreReaderSeed(root, scenario); } catch (error) { if (isSymlinkCapabilityError(error, scenario)) { t.skip(`Physical symlink unavailable: ${error.code}: ${error.message}`); return; } throw error; }
+      try { restoreReaderSeed(root, scenario); } catch (error) { if (isSymlinkCapabilityError(error, scenario)) { t.skip(`host-limit: Physical symlink unavailable: ${error.code}: ${error.message}`); return; } throw error; }
       captureReaderScenario(api, root, scenario);
     } finally { cleanupOwnedFixtureRoot(root); }
   });

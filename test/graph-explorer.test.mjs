@@ -190,7 +190,7 @@ test("self-contained HTML escapes repository text, keeps strong CSP and creates 
 test("protected output aliases and symlinked World originals cannot escape the local read boundary", async t => {
   const f = await explorerFixture(t), alias = path.join(f.base, "output-alias");
   try { fs.symlinkSync(path.join(f.root, ".lode"), alias, process.platform === "win32" ? "junction" : "dir"); }
-  catch (error) { if (["EPERM", "EACCES"].includes(error.code)) { t.skip("Host does not permit this synthetic directory-link probe"); return; } throw error; }
+  catch (error) { if (["EPERM", "EACCES"].includes(error.code)) { t.skip("host-limit: Host does not permit this synthetic directory-link probe"); return; } throw error; }
   await assert.rejects(((exportGraphExplorer({ root: f.root, output: path.join(alias, "view.html") }))), { code: "GRAPH_EXPLORER_PROTECTED_OUTPUT" });
   const world = path.join(f.root, ".lode/world-model/snapshots"), retained = path.join(f.base, "retained-outside-project");
   fs.renameSync(world, retained); fs.symlinkSync(retained, world, process.platform === "win32" ? "junction" : "dir");

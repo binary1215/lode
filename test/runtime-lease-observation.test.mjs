@@ -260,7 +260,7 @@ test("lease inspection rejects live and dangling lock links", async (t) => {
   try {
     fs.symlinkSync(target, f.lock, process.platform === "win32" ? "junction" : "dir");
   } catch (error) {
-    if (error.code === "EPERM" || error.code === "EACCES") return t.skip(`Host cannot create fixture directory links: ${error.code}`);
+    if (error.code === "EPERM" || error.code === "EACCES") return t.skip(`host-limit: Host cannot create fixture directory links: ${error.code}`);
     throw error;
   }
   inspectReadOnly(f, null, "UNSAFE_RUNTIME_OPERATIONAL_STATE");

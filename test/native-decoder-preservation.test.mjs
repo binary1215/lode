@@ -17,7 +17,7 @@ import { syntheticNativeCapture, nativeProfile } from "./helpers/native-portabil
 
 test("actual frame limit preserves exact raw bytes while hidden following frames and native qualification remain unverified", async (t) => {
   if (process.platform !== "win32" || process.arch !== "x64")
-    return t.skip("Measured native filesystem profile is Windows x64.");
+    return t.skip("other-os: Measured native filesystem profile is Windows x64.");
   const { f, home, executable, payload } = await syntheticNativeCapture(t);
   const entry = payload.files[0],
     source = path.join(home, entry.path),

@@ -32,7 +32,7 @@ for (const [lockChild, shareDelete, releaseFirst] of [
 ])
   test(
     `real Windows staging ${lockChild ? "child" : "directory"} handle share-delete=${shareDelete} release-first=${releaseFirst} isolates publication rename denial`,
-    { skip: process.platform !== "win32" },
+    { skip: process.platform !== "win32" && "other-os: Windows-only behaviour" },
     async (t) => {
       const parent = fs.realpathSync(process.env.HEAD_AGENT_TEST_TMP || os.tmpdir());
       const control = fs.mkdtempSync(path.join(parent, "head-publication-lock-"));

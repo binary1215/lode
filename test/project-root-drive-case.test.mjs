@@ -17,7 +17,7 @@ import { runCommand } from "../scripts/lode.mjs";
 // written because of the spelling, and a moved Project is still relocated.
 
 const windows = process.platform === "win32";
-const onWindows = { skip: windows ? false : "drive letters exist only on Windows" };
+const onWindows = { skip: windows ? false : "other-os: drive letters exist only on Windows" };
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const flip = (root) => (root[0] === root[0].toUpperCase() ? root[0].toLowerCase() : root[0].toUpperCase()) + root.slice(1);
 const direction = { purpose: "Same Project", approved_decisions: [], current_position: "Tests", next_expected_result: "Green" };
@@ -61,7 +61,7 @@ test("the drive-letter comparison is exact apart from the drive letter, and only
   assert.equal(withRecordedProjectRoot(plain, { platform: "linux" }), plain);
 });
 
-test("off Windows a Project root is read exactly as given (behaviour unchanged)", { skip: windows ? "covered by the Windows tests" : false }, (t) => {
+test("off Windows a Project root is read exactly as given (behaviour unchanged)", { skip: windows ? "other-os: covered by the Windows tests" : false }, (t) => {
   const { root } = fixture(t);
   assert.equal(recordedRootSpelling(root), root);
   const call = request(root, "lode_project_status");

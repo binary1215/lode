@@ -18,7 +18,7 @@ import { codexNativeApiExpectation } from "../scripts/lib/distribution/codex-nat
 
 test("SDK preparation retries safely while delivery, selected targets and concurrent attempts stay bounded", async (t) => {
   if (process.platform !== "win32" || process.arch !== "x64")
-    return t.skip("Measured native filesystem profile is Windows x64.");
+    return t.skip("other-os: Measured native filesystem profile is Windows x64.");
   for (const scenario of [
     "unchanged",
     "external-edit",

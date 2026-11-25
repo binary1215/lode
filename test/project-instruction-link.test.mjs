@@ -147,7 +147,7 @@ test("symlink and dangling-symlink targets are refused before any other host doc
   const codex = fs.readFileSync(path.join(root, "AGENTS.md"));
   fs.writeFileSync(outside, "untouched"); fs.unlinkSync(target);
   try { fs.symlinkSync(outside, target, "file"); }
-  catch (error) { if (process.platform === "win32" && error.code === "EPERM") { t.skip("File symlink creation unavailable on this Windows Host"); return; } throw error; }
+  catch (error) { if (process.platform === "win32" && error.code === "EPERM") { t.skip("host-limit: File symlink creation unavailable on this Windows Host"); return; } throw error; }
   assert.throws(() => linkProjectInstructions({ root, choice: "link" }), { code: "SYMLINK_PATH" });
   fs.unlinkSync(outside);
   assert.throws(() => linkProjectInstructions({ root, choice: "link" }), { code: "SYMLINK_PATH" });

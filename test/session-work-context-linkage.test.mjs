@@ -226,7 +226,7 @@ test("an endpoint symlink is rejected on new publication", (t) => {
     fs.symlinkSync(copy, root.file, "file");
   } catch (error) {
     if (["EPERM", "EACCES", "ENOSYS"].includes(error.code)) {
-      t.skip("Local account cannot create a synthetic file symlink");
+      t.skip("host-limit: Local account cannot create a synthetic file symlink");
       return;
     }
     throw error;

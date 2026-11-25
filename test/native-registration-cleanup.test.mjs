@@ -41,7 +41,7 @@ for (const [name, settings, expected] of [
 ])
   test(name, async (t) => {
     if (process.platform !== "win32" || process.arch !== "x64")
-      return t.skip("Measured witness profile is Windows x64.");
+      return t.skip("other-os: Measured witness profile is Windows x64.");
     const { f, home, executable, payload } = await syntheticNativeCapture(t),
       cwd = path.join(f.base, "cleanup-root");
     fs.mkdirSync(cwd);

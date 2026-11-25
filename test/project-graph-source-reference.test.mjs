@@ -409,7 +409,7 @@ test("C1 observed symlink escape excludes only that new association, retaining o
     fs.symlinkSync(outside, source.file, "file");
   } catch (error) {
     if (["EPERM", "EACCES", "ENOSYS", "ENOTSUP"].includes(error.code)) {
-      t.skip(`Actual symlink fixture unavailable: ${error.code}; physical escape behavior unverified`);
+      t.skip(`host-limit: Actual symlink fixture unavailable: ${error.code}; physical escape behavior unverified`);
       return;
     }
     throw error;

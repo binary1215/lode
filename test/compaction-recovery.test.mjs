@@ -22,6 +22,8 @@ import {
 import { dispatch, operationCatalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/head.mjs";
 
+const windowsOnly = { skip: process.platform !== "win32" && "other-os: Windows-only behaviour" };
+
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 
 function temporaryProject(prefix = "head-compaction-test-") {
@@ -323,7 +325,7 @@ function refreshPublication(source, target) {
     && typeof target === "string" && target.replaceAll("\\", "/").endsWith("/refresh/writer.lock");
 }
 
-test("refresh publication retries the same owned Windows staging without replaying work", { skip: process.platform !== "win32" }, async (t) => {
+test("refresh publication retries the same owned Windows staging without replaying work", windowsOnly, async (t) => {
   const { root, layout } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const projectId = inspectProject(root).project.projectId;
@@ -351,7 +353,7 @@ test("refresh publication retries the same owned Windows staging without replayi
   assert.deepEqual(fs.readdirSync(path.join(root, layout.directory, "refresh")), []);
 });
 
-test("refresh publication exhausts a finite Windows retry bound without running work", { skip: process.platform !== "win32" }, async (t) => {
+test("refresh publication exhausts a finite Windows retry bound without running work", windowsOnly, async (t) => {
   const { root, layout } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const projectId = inspectProject(root).project.projectId;
@@ -402,7 +404,7 @@ test("refresh publication never overwrites an owner appearing during publication
   assert.deepEqual(fs.readdirSync(path.join(root, layout.directory, "refresh")), ["writer.lock"]);
 });
 
-test("refresh publication preserves tampered staging instead of retrying or deleting it", { skip: process.platform !== "win32" }, async (t) => {
+test("refresh publication preserves tampered staging instead of retrying or deleting it", windowsOnly, async (t) => {
   const { root, layout } = initialize(temporaryProject());
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const projectId = inspectProject(root).project.projectId;

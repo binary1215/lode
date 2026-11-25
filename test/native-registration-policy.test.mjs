@@ -115,7 +115,7 @@ test("native metadata verifies current explicit settings without source fallback
 
 test("preexisting target choices stay protected while cache refresh, selected updates and new rows remain distinct", async (t) => {
   if (process.platform !== "win32" || process.arch !== "x64")
-    return t.skip("Measured native filesystem profile is Windows x64.");
+    return t.skip("other-os: Measured native filesystem profile is Windows x64.");
   const { home, payload } = await syntheticNativeCapture(t),
     db = new DatabaseSync(nativeSqlitePath(path.join(home, "state_5.sqlite")));
   const first = payload.threadIds[0],

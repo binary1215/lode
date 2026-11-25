@@ -390,7 +390,7 @@ test("actual native writer inventory is query-only and reaps its hidden helper",
 test("stopped native capture reads committed WAL and copies only selected raw/rows; generation drift never completes", async (t) => {
   if (process.platform !== "win32" || process.arch !== "x64")
     return t.skip(
-      "Exact offline native capture profile is Windows x64 only; portable/pure verifiers remain tested.",
+      "other-os: Exact offline native capture profile is Windows x64 only; portable/pure verifiers remain tested.",
     );
   const f = fixture(t),
     home = path.join(f.base, "capture-home"),
@@ -1065,7 +1065,7 @@ test("native registration reconciles observed completion and never replays uncer
 
 test("native companion binds selected transfer data without becoming a Core import gate", async (t) => {
   if (process.platform !== "win32" || process.arch !== "x64")
-    return t.skip("Measured native filesystem profile is Windows x64.");
+    return t.skip("other-os: Measured native filesystem profile is Windows x64.");
   const { f, destination, payload } = await syntheticNativeCapture(t);
 
   f.save({ summary: "Selected synthetic portable context" });

@@ -874,7 +874,7 @@ test("serializes competing Product decisions and capacity checks across independ
       await Promise.all(workers.map((worker) => worker.started));
     } catch (error) {
       if (error?.code === "EPERM") {
-        t.skip("The local sandbox forbids nested process creation; same-process serialization still runs.");
+        t.skip("host-limit: The local sandbox forbids nested process creation; same-process serialization still runs.");
         return null;
       }
       throw error;
