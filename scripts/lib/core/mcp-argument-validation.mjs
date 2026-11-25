@@ -79,7 +79,7 @@ export function undeclaredArgumentProblems(toolName, schema, args) {
         (near ? `; did you mean ${JSON.stringify(near)}?` : inside ? `; it belongs inside ${JSON.stringify(inside)}` : ""),
     );
   }
-  if (problems.length) problems.push(`declared arguments: ${declared.join(", ")}`);
+  if (problems.length) problems.push(declared.length ? `declared arguments: ${declared.join(", ")}` : `${toolName} takes no arguments`);
   return problems;
 }
 

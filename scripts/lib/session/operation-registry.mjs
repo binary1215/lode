@@ -442,13 +442,27 @@ export const OPERATIONS = Object.freeze([
       handle: async (context) => {
         const { root, options, projectSessionRoute, pluginRoot, inputJson, command } = context;
         // CLI resume resumes a Project; it does not create one (user decision
-        // D1, 2026-11-25). init and the MCP tool keep creating.
+        // D1, 2026-11-25). init and the MCP tool keep creating. "A Project is
+        // recorded here" is what the storage readers look for under .lode or
+        // .head: a project.json (owned here, or moved or copied from elsewhere)
+        // or a project-location journal (a pending relocation or bundle import,
+        // which resume reports). An empty .lode or .head folder records none.
         if (command === "resume") {
           const folder = path.resolve(root);
-          if (fs.existsSync(folder) && ![".lode", ".head"].some((directory) => fs.existsSync(path.join(folder, directory))))
+          const recorded = [".lode", ".head"].some((directory) =>
+            ["project.json", "project-location"].some((entry) => {
+              try {
+                fs.lstatSync(path.join(folder, directory, entry));
+                return true;
+              } catch (error) {
+                return error.code !== "ENOENT" && error.code !== "ENOTDIR";
+              }
+            }),
+          );
+          if (fs.existsSync(folder) && !recorded)
             throw Object.assign(
               new Error(
-                `No Lode Project is here to resume: ${folder} holds no .lode folder. Use init to create a Project in this folder, or resume the folder that holds the Project. Nothing was created.`,
+                `No Lode Project is here to resume: ${folder} holds no Lode Project. Use init to create a Project in this folder, or resume the folder that holds the Project. Nothing was created.`,
               ),
               { code: "NOT_INITIALIZED" },
             );

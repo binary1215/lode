@@ -225,7 +225,7 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
     `${cliDisplay} project-document-status <project>`,
     `${cliDisplay} session-work-read <project> [--scan-evidence] [--after-evidence-id <returned-id>] [--input <read-bounds.json>]`,
     `${cliDisplay} session-restore <project> [--checkpoint <session-run-checkpoint-id>]`,
-    `${cliDisplay} session-continue <project> --runtime <claude|codex|opencode> [--checkpoint <session-run-checkpoint-id>] [--binding-env <environment-name>]`,
+    `${cliDisplay} session-continue <project> --runtime <claude|codex|opencode> [--checkpoint <session-run-checkpoint-id>]`,
     `${cliDisplay} compact-prepare <project> --input <recovery.json>`,
     `${cliDisplay} compact-verify <project> --input <verification.json>`,
     `${cliDisplay} compact-continue <project> --input <continuation.json>`,
@@ -356,11 +356,18 @@ const LOCAL_COMMAND_OPTIONS = Object.freeze({
 // An option the command does not read is refused with its name and, when one
 // is close, the valid spelling (user decision D2, 2026-11-25); before, it was
 // ignored and the command ran without it.
+// The options a command accepts (--json aside, which the entry point strips),
+// or null for a command this check does not cover. The usage text is tested
+// against it so the help and the refusal cannot drift apart.
+export function acceptedCliOptions(command) {
+  const registered = registeredCommand(command);
+  if (!registered && !LOCAL_COMMAND_OPTIONS[command]) return null;
+  return new Set([...(registered?.cli?.flags ?? []), ...(LOCAL_COMMAND_OPTIONS[command] ?? []), "session"]);
+}
+
 function refuseUnknownOptions(parsed) {
-  const registered = registeredCommand(parsed.command);
-  const declared = [...(registered?.cli?.flags ?? []), ...(LOCAL_COMMAND_OPTIONS[parsed.command] ?? [])];
-  if (!registered && !LOCAL_COMMAND_OPTIONS[parsed.command]) return;
-  const known = new Set([...declared, "session"]);
+  const known = acceptedCliOptions(parsed.command);
+  if (!known) return;
   const unknown = Object.keys(parsed.options).filter((key) => key !== "_positional" && !known.has(key));
   if (!unknown.length) return;
   const named = unknown.map((key) => {

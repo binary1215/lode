@@ -798,6 +798,10 @@ async function dispatchRouted(
   try {
     let name = semanticToolName(request.params?.name);
     let args = request.params?.arguments || {};
+    // The routing tools take the same D2 check as every other tool: an
+    // argument outside their schema is named, with the near spelling.
+    const routing = discoveryTools.find((tool) => tool.name === name && tool.name !== READ_CHAIN_TOOL_NAME);
+    if (routing) assertDeclaredArguments(routing.name, routing.inputSchema, args);
     if (name === "lode_tools_discover") {
       const value = discoverTools(args, surface);
       return success(id, { content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });

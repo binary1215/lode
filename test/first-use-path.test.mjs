@@ -171,6 +171,16 @@ test("D1: CLI resume on a folder with no Project refuses and creates nothing; in
   assert.match(error.message, /No Lode Project is here to resume/);
   assert.match(error.message, /Use init/);
   assert.deepEqual(fs.readdirSync(empty), []);
+  // A .lode or .head folder without a Project record is still no Project.
+  for (const directory of [".lode", ".head"]) {
+    const holder = path.join(base, `EMPTY${directory}`);
+    fs.mkdirSync(path.join(holder, directory), { recursive: true });
+    const refused = await refusal(() => runCommand(["resume", holder]));
+    assert.equal(refused.code, "NOT_INITIALIZED", directory);
+    assert.match(refused.message, /holds no Lode Project/);
+    assert.deepEqual(fs.readdirSync(holder), [directory], "nothing was created");
+    assert.deepEqual(fs.readdirSync(path.join(holder, directory)), []);
+  }
   await runCommand(["init", empty, "--runtime", "claude"]);
   assert.ok(fs.existsSync(path.join(empty, ".lode", "project.json")));
   const other = path.join(base, "OTHER");
@@ -197,6 +207,55 @@ test("D2: an unknown CLI option or MCP argument is refused with its name and the
   assert.match(inside.error.message, /"summary" is not an argument of lode_session \(action work_record\); it belongs inside "evidence"/);
   const wrapper = await mcp("lode_session", { action: "work_record", project_root: f.root, work_evidence: { summary: "x" } });
   assert.match(wrapper.error.message, /"work_evidence" .*did you mean "evidence"\?/);
+  // A tool that declares no arguments says so instead of an empty list.
+  const none = await mcp("lode_core_contract", { project_root: f.root });
+  assert.equal(none.error.data.reasonCode, "INVALID_TOOL_ARGUMENTS");
+  assert.match(none.error.message, /"project_root" is not an argument of lode_core_contract; lode_core_contract takes no arguments\./);
+  assert.doesNotMatch(none.error.message, /declared arguments: \./);
+});
+
+test("D2 on the routing tools: discover, read and call name the argument; nested routing keeps its refusal", async (t) => {
+  const f = await project(t);
+  const discover = await mcp("lode_tools_discover", { project_root: f.root, query: "direction", bogus: 2 });
+  assert.equal(discover.error.data.reasonCode, "INVALID_TOOL_ARGUMENTS");
+  assert.match(discover.error.message, /"project_root" is not an argument of lode_tools_discover/);
+  assert.match(discover.error.message, /"query" is not an argument of lode_tools_discover/);
+  assert.match(discover.error.message, /"bogus" is not an argument of lode_tools_discover/);
+  assert.match(discover.error.message, /declared arguments: name, prefix, offset, limit/);
+  const spelled = await mcp("lode_tools_discover", { prefx: "lode_product" });
+  assert.match(spelled.error.message, /"prefx" .*did you mean "prefix"\?/);
+  const read = await mcp("lode_tools_read", { name: "lode_project_status", arguments: { project_root: f.root }, project_root: f.root });
+  assert.equal(read.error.data.reasonCode, "INVALID_TOOL_ARGUMENTS");
+  assert.match(read.error.message, /"project_root" is not an argument of lode_tools_read; declared arguments: name, arguments\./);
+  const call = await mcp("lode_tools_call", { name: "lode_project_status", arguments: { project_root: f.root }, execution_mod: "ordinary" });
+  assert.match(call.error.message, /"execution_mod" .*did you mean "execution_mode"\?/);
+  const nested = await mcp("lode_tools_read", { name: "lode_tools_read", arguments: { name: "lode_project_status", arguments: {} } });
+  assert.match(nested.error.message, /routing cannot be nested/);
+  const ok = await mcp("lode_tools_read", { name: "lode_project_status", arguments: { project_root: f.root } });
+  assert.ok(!ok.error, JSON.stringify(ok.error));
+});
+
+test("every --option a usage line names is accepted by its command, so the help and the D2 check agree", async () => {
+  const { usage, acceptedCliOptions } = await import("../scripts/lode.mjs");
+  const lines = new Set();
+  for (const surface of ["ordinary", "managed-maintenance"]) {
+    const help = usage({ all: true, surface });
+    for (const line of help.commands) lines.add(line);
+    for (const [command, note] of Object.entries(help.commandNotes ?? {})) lines.add(`notes ${command} ${note}`);
+  }
+  let checked = 0;
+  const offered = [];
+  for (const line of lines) {
+    const match = line.match(/^\S+\s+(?:managed-maintenance\s+)?([a-z][a-z0-9-]*)\b(.*)$/);
+    if (!match) continue;
+    const accepted = acceptedCliOptions(match[1]);
+    const options = [...match[2].matchAll(/--([a-z][a-z0-9-]*)/g)].map((item) => item[1]).filter((option) => option !== "json");
+    if (!accepted) continue;
+    checked += 1;
+    for (const option of options) if (!accepted.has(option)) offered.push(`${match[1]} --${option}`);
+  }
+  assert.ok(checked > 150, `usage lines checked: ${checked}`);
+  assert.deepEqual(offered, []);
 });
 
 test("D3: init names the project-root .mcp.json it writes for the claude runtime", async (t) => {
