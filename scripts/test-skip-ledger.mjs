@@ -8,7 +8,8 @@
 //
 //   R1  every skip carries a reason (no bare t.skip(), test.skip() or { skip: true });
 //   R2  every reason starts with "<class>: " for a class the ledger declares;
-//   R3  on Windows a "native-fixture" skip fails, because the runner supplies that fixture;
+//   R3  on Windows a "native-fixture" skip fails, because the runner supplies that fixture
+//       (except a Windows test fixture the runner announced it could not supply without Go);
 //   R4  in a full run, the skipped tests of each pinned class equal the ledger's list for
 //       this operating system; a difference fails and prints the tests that moved.
 //
@@ -84,7 +85,9 @@ function multisetDifference(left, right) {
 }
 
 // Returns { problems: string[], summary: string[], observed } for one finished run.
-export function checkSkips({ records, ledger, platform = process.platform, fullRun }) {
+// `unsupplied` names fixture variables the runner announced it could not supply;
+// a native-fixture skip whose reason names one of them is reported, not failed.
+export function checkSkips({ records, ledger, platform = process.platform, fullRun, unsupplied = [] }) {
   const problems = [];
   const observed = {};
   const counted = {};
@@ -93,6 +96,10 @@ export function checkSkips({ records, ledger, platform = process.platform, fullR
     const { problem, detail, skipClass } = classify(record.reason, ledger);
     if (problem) {
       problems.push(`${problem}: ${where}: ${detail}`);
+      continue;
+    }
+    if (skipClass === "native-fixture" && unsupplied.some((name) => record.reason.includes(name))) {
+      counted["native-fixture (not supplied)"] = (counted["native-fixture (not supplied)"] ?? 0) + 1;
       continue;
     }
     counted[skipClass] = (counted[skipClass] ?? 0) + 1;

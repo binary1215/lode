@@ -22,6 +22,12 @@ const PROFILE_NAMES = [
   "CLAUDE_CONFIG_DIR",
   "CODEX_HOME",
 ];
+const TEST_FIXTURE_NAMES = [
+  "LODE_AGENT_TEST_OWNER_CRASH_FIXTURE",
+  "HEAD_AGENT_TEST_OWNER_CRASH_FIXTURE",
+  "LODE_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT",
+  "HEAD_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT",
+];
 const FIXTURE_NAMES = [
   "LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT",
   "HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT",
@@ -149,6 +155,22 @@ test("skip checks: R1 reason, R2 declared class, R3 Windows native fixture, R4 p
   assert.match(full.problems[0], /no longer skipped: test\/a\.test\.mjs > slept/);
   assert.deepEqual(full.summary, ["opt-in 1", "other-os 2"]);
   assert.match(checkSkips({ records, ledger, platform: "darwin", fullRun: true }).problems.join("\n"), /no entry for darwin/);
+
+  const unsupplied = ["LODE_AGENT_TEST_OWNER_CRASH_FIXTURE", "HEAD_AGENT_TEST_OWNER_CRASH_FIXTURE"];
+  const excused = checkSkips({
+    records: [
+      skip("crash", "native-fixture: LODE_AGENT_TEST_OWNER_CRASH_FIXTURE not set"),
+      skip("wired", "native-fixture: LODE_AGENT_FILE_EFFECT_FIXTURE_ROOT not set"),
+    ],
+    ledger: { ...ledger, skips: { win32: {} } },
+    platform: "win32",
+    fullRun: true,
+    unsupplied,
+  });
+  assert.equal(excused.problems.length, 2, "only the announced fixture is excused, from R3 and R4");
+  assert.match(excused.problems[0], /^R3: test\/a\.test\.mjs > wired:/);
+  assert.match(excused.problems[1], /^R4: win32 "native-fixture" skips: 1 now, 0 pinned\.\n {2}now skipped: test\/a\.test\.mjs > wired$/);
+  assert.deepEqual(excused.summary, ["native-fixture 1", "native-fixture (not supplied) 1"]);
 });
 
 function runnerSandbox(t) {
@@ -168,6 +190,13 @@ function runnerSandbox(t) {
   const temp = path.join(sandbox, "tmp");
   fs.mkdirSync(temp);
   const environment = { ...process.env, LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT: fixture, TMP: temp, TEMP: temp, TMPDIR: temp };
+  for (const name of TEST_FIXTURE_NAMES) delete environment[name];
+  if (process.platform === "win32") {
+    // Ready stand-ins, so the runner does not build the Windows test fixtures from sources the sandbox lacks.
+    const ownerCrash = path.join(sandbox, "owned-worker-crash.exe");
+    fs.writeFileSync(ownerCrash, "stand-in");
+    Object.assign(environment, { LODE_AGENT_TEST_OWNER_CRASH_FIXTURE: ownerCrash, LODE_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT: fixture });
+  }
   delete environment.LODE_AGENT_KEEP_TEST_TMP;
   delete environment.HEAD_AGENT_KEEP_TEST_TMP;
   delete environment.LODE_AGENT_TEST_TIMEOUT_MS;
@@ -175,12 +204,16 @@ function runnerSandbox(t) {
   const run = (args, extra = {}) =>
     spawnSync(process.execPath, ["scripts/run-tests.mjs", ...args], {
       cwd: sandbox,
-      env: { ...environment, ...extra },
+      // Windows environment names ignore case: an override replaces every spelling.
+      env: {
+        ...Object.fromEntries(Object.entries(environment).filter(([key]) => !Object.keys(extra).some((name) => name.toUpperCase() === key.toUpperCase()))),
+        ...extra,
+      },
       encoding: "utf8",
       windowsHide: true,
       timeout: 120_000,
     });
-  return { sandbox, fixture, temp, write, run };
+  return { sandbox, fixture, temp, environment, write, run };
 }
 
 test("the runner gives the suite a fresh profile, drops inherited state roots and exports both fixture names", (t) => {
@@ -212,6 +245,10 @@ test("captures the environment", () => { fs.writeFileSync(${JSON.stringify(captu
   }
   assert.equal(seen.USERPROFILE, seen.HOME);
   for (const name of FIXTURE_NAMES) assert.equal(seen[name], box.fixture, name);
+  for (const name of TEST_FIXTURE_NAMES) {
+    if (process.platform !== "win32") assert.equal(seen[name], undefined, name);
+    else assert.equal(seen[name], box.environment[name.replace(/^HEAD_AGENT_/, "LODE_AGENT_")], `${name} is exported under both names`);
+  }
   assert.equal(fs.existsSync(profileRoot), false, "the temporary profile is removed at the end");
 
   const kept = box.run(["test/environment.test.mjs"], { LODE_AGENT_KEEP_TEST_TMP: "1" });
@@ -248,6 +285,33 @@ test("the runner fails a run on a reasonless or unclassified skip and names a ti
   assert.match(slow.stdout, /test timed out after 500ms/);
   assert.match(slow.stderr, /Timed out after 500 ms: test\/slow\.test\.mjs > sleeps past the limit/);
   assert.equal(box.run(["test/slow.test.mjs"], { LODE_AGENT_TEST_TIMEOUT_MS: "soon" }).status, 2);
+});
+
+test("without Go on Windows the runner names the test fixtures it cannot supply and excuses only skips that name them", (t) => {
+  if (process.platform !== "win32") return t.skip("other-os: the owner-crash and terminal-hold test fixtures exist only on Windows");
+  const box = runnerSandbox(t);
+  box.write(
+    "unsupplied.test.mjs",
+    `import test from "node:test";
+test("owner crash", { skip: "native-fixture: LODE_AGENT_TEST_OWNER_CRASH_FIXTURE not set" }, () => {});
+test("terminal hold", { skip: "native-fixture: LODE_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT not set" }, () => {});
+`,
+  );
+  box.write(
+    "wired.test.mjs",
+    'import test from "node:test";\ntest("file effect", { skip: "native-fixture: LODE_AGENT_FILE_EFFECT_FIXTURE_ROOT not set" }, () => {});\n',
+  );
+  const noGo = { PATH: path.dirname(process.execPath), LODE_AGENT_TEST_OWNER_CRASH_FIXTURE: "", LODE_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT: "" };
+  const excused = box.run(["test/unsupplied.test.mjs"], noGo);
+  assert.equal(excused.status, 0, excused.stderr + excused.stdout);
+  assert.match(
+    excused.stderr,
+    /Go is not available and these Windows test fixtures were not supplied: LODE_AGENT_TEST_OWNER_CRASH_FIXTURE, HEAD_AGENT_TEST_OWNER_CRASH_FIXTURE, LODE_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT, HEAD_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT\./,
+  );
+  assert.match(excused.stdout, /# skipped by class: native-fixture \(not supplied\) 2/);
+  const wired = box.run(["test/wired.test.mjs"], noGo);
+  assert.equal(wired.status, 1);
+  assert.match(wired.stderr, /R3: test\/wired\.test\.mjs > file effect: native-fixture skip on Windows/);
 });
 
 test("a full run compares pinned skips with the ledger and prints the tests that moved", (t) => {
@@ -290,6 +354,17 @@ test("automatic fixture rebuilds changed Go sources while explicit CI fixture re
   const env = { ...process.env };
   delete env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT;
   delete env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT;
+  for (const name of TEST_FIXTURE_NAMES) delete env[name];
+  if (process.platform === "win32") {
+    // Ready stand-ins: the sandbox has no test helpers to build them from.
+    const ownerCrash = path.join(sandbox, "owned-worker-crash.exe");
+    const terminalHold = path.join(sandbox, "terminal-hold", "dist", "windows-" + process.arch);
+    fs.writeFileSync(ownerCrash, "stand-in");
+    fs.mkdirSync(terminalHold, { recursive: true });
+    fs.writeFileSync(path.join(terminalHold, "lode-agent-supervisor.exe"), "stand-in");
+    fs.writeFileSync(path.join(terminalHold, "SUPERVISOR-MANIFEST.json"), "{}");
+    Object.assign(env, { LODE_AGENT_TEST_OWNER_CRASH_FIXTURE: ownerCrash, LODE_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT: path.join(sandbox, "terminal-hold") });
+  }
   const run = (environment) => {
     t.diagnostic(
       JSON.stringify({

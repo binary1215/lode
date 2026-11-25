@@ -57,6 +57,74 @@ function buildFixture() {
   return directory;
 }
 
+let goProbe;
+function goAvailable() {
+  goProbe ??= spawnSync("go", ["version"], { stdio: "ignore", shell: false, windowsHide: true });
+  return !goProbe.error && goProbe.status === 0;
+}
+
+function goBuild(args, cwd, what) {
+  const go = spawnSync("go", args, { cwd, env: { ...process.env, CGO_ENABLED: "0" }, stdio: "inherit", shell: false, windowsHide: true });
+  if (go.error || go.status !== 0) throw Object.assign(new Error(`npm test could not build ${what}.`), { exitCode: go.status || 1 });
+}
+
+function isFile(file) {
+  try {
+    return Boolean(file) && fs.statSync(file).isFile();
+  } catch {
+    return false;
+  }
+}
+
+// Windows-only test fixtures, each under its LODE_AGENT_ and HEAD_AGENT_ name.
+// A ready caller-supplied one is used as given; otherwise the runner builds it
+// into this run's temporary folder when Go is available. Without Go, the
+// runner names the ones it could not supply, and only skips whose reason names
+// them are excused from R3 and R4.
+function windowsTestFixtures(run) {
+  if (process.platform !== "win32") return { exported: {}, unsupplied: [] };
+  const exported = {};
+  const unsupplied = [];
+  const fixtures = [
+    {
+      names: ["LODE_AGENT_TEST_OWNER_CRASH_FIXTURE", "HEAD_AGENT_TEST_OWNER_CRASH_FIXTURE"],
+      ready: isFile,
+      build() {
+        const binary = path.join(run, "fixtures", "owned-worker-crash.exe");
+        fs.mkdirSync(path.dirname(binary), { recursive: true });
+        goBuild(["build", "-trimpath", "-o", binary, "./test/helpers/owned-worker-crash-windows.go"], root, "the owner-crash test helper");
+        return binary;
+      },
+    },
+    {
+      names: ["LODE_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT", "HEAD_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT"],
+      ready,
+      build() {
+        // A test binary that stands in for the supervisor: kept apart from the
+        // normal fixture root and from everything a release packages.
+        const directory = path.join(run, "fixtures", "terminal-hold");
+        const binaryDir = path.join(directory, "dist", `${goos}-${process.arch}`);
+        const binary = path.join(binaryDir, executableName);
+        fs.mkdirSync(binaryDir, { recursive: true });
+        goBuild(
+          ["test", "-c", "-trimpath", "-o", binary, "./cmd/lode-agent-supervisor"],
+          path.join(root, "native", "lode-agent-worker"),
+          "the terminal-hold test supervisor",
+        );
+        const generated = createProcessSupervisorManifest({ platform: process.platform, arch: process.arch, binaryFile: binary, manifestDirectory: binaryDir });
+        atomicWriteArtifact(path.join(binaryDir, "SUPERVISOR-MANIFEST.json"), JSON.stringify(generated, null, 2) + "\n");
+        return directory;
+      },
+    },
+  ];
+  for (const fixture of fixtures) {
+    const value = fixture.names.map((name) => process.env[name]).find((candidate) => fixture.ready(candidate)) ?? (goAvailable() ? fixture.build() : null);
+    if (value) for (const name of fixture.names) exported[name] = value;
+    else unsupplied.push(...fixture.names);
+  }
+  return { exported, unsupplied };
+}
+
 function testTimeout() {
   const raw = process.env.LODE_AGENT_TEST_TIMEOUT_MS;
   if (raw === undefined || raw === "") return DEFAULT_TEST_TIMEOUT_MS;
@@ -103,6 +171,19 @@ const files = fullRun
 const temp = fs.realpathSync.native(os.tmpdir());
 const run = fs.mkdtempSync(path.join(temp, "lode-test-run-"));
 const report = path.join(run, "skip-ledger.jsonl");
+let testFixtures;
+try {
+  testFixtures = windowsTestFixtures(run);
+} catch (error) {
+  console.error(error.message);
+  fs.rmSync(run, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  process.exit(error.exitCode ?? 1);
+}
+if (testFixtures.unsupplied.length) {
+  console.error(
+    `Go is not available and these Windows test fixtures were not supplied: ${testFixtures.unsupplied.join(", ")}. Tests that need them skip, and only those skips are excused from the skip ledger check.`,
+  );
+}
 const env = {
   ...process.env,
   ...temporaryProfile(run),
@@ -117,7 +198,9 @@ const env = {
   HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT: fixture,
   LODE_AGENT_FILE_EFFECT_FIXTURE_ROOT: fixture,
   HEAD_AGENT_FILE_EFFECT_FIXTURE_ROOT: fixture,
+  ...testFixtures.exported,
 };
+for (const name of testFixtures.unsupplied) delete env[name];
 // Tests set their own operational roots; an inherited one makes their fixtures conflict.
 delete env.LODE_AGENT_OPERATIONAL_STATE_ROOT;
 delete env.HEAD_AGENT_OPERATIONAL_STATE_ROOT;
@@ -139,7 +222,7 @@ const child = spawnSync(
 );
 
 const records = readRecords(report);
-const { problems, summary, observed } = checkSkips({ records, ledger: readLedger(), fullRun });
+const { problems, summary, observed } = checkSkips({ records, ledger: readLedger(), fullRun, unsupplied: testFixtures.unsupplied });
 const timedOut = records.filter((record) => record.kind === "timeout");
 console.log(`# skipped by class: ${summary.join(", ") || "none"}`);
 for (const record of timedOut) console.error(`Timed out after ${timeout} ms: ${record.file} > ${record.test}`);
