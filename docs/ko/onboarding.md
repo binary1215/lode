@@ -70,6 +70,12 @@ producer ReviewDecision 및 producer policy로부터 candidate-set identity를 �
 최종 commit marker만 기록합니다. 과거 candidate와 review는 opaque 상태로 남고,
 현재 verifier를 독립적으로 통과한 Product Model revision만 기존 P1 지위를 유지합니다.
 
+현재 Core가 더 오래된 protocol의 candidate set을 만나면, 거절 메시지에 찾은 candidate
+protocol, 현재 읽는 protocol(`0.4.0`), [`onboarding-migrator.md`](onboarding-migrator.md)가
+함께 나옵니다. 플러그인은 migrator를 실행하지 않으며, 별도 migration은 그 문서가
+설명합니다. 더 새로운 protocol의 candidate set은 두 버전과 함께 더 새로운 Lode가 읽는다는
+안내로 거절되고, 버전이 없거나 형식이 틀리면 잘못된 필드로 보고됩니다.
+
 helper를 제거한 뒤에도 정상 status, World, Context, Session recovery와 새 current
 온보딩은 계속 동작합니다. 제품 의미를 변경하려면 provider Lode가
 `lode_onboarding` (`semantic_refresh`) 또는 `onboarding-semantic-refresh`로 fresh current
@@ -320,6 +326,12 @@ candidate set을 생성합니다. 이후의 수락 또는 거부는 그 후속 c
 latest ReviewDecision을 기록하며, 두 identity가 일치할 필요는 없습니다. 추가와 제거에는
 이 두 단계 review 경로가 필요합니다. 같은 결정에서 항목을 도입하고 승격할 수는 없습니다.
 `reject`는 모든 candidate를 rejected로 기록하고 Product Canon을 변경하지 않습니다.
+
+온보딩 review는 Product Canon에 새 항목만 추가합니다. 수락한 candidate의 종류와 key가
+이미 다른 내용의 Canon 항목을 가리키면 `ONBOARDING_PRODUCT_CANON_CONFLICT`로 거절되며,
+거절 메시지가 그 항목을 밝힙니다. 기존 항목을 바꾸는 일은 온보딩 review가 아니라 문서
+변경 review(`world-docs-capture` 다음 `world-docs-review`, [문서 변경 review](document-change-review.md)
+참고)로 합니다.
 
 ```powershell
 node scripts/lode.mjs onboarding-review C:\path\to\project --input .\onboarding-review.json

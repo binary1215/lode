@@ -2522,7 +2522,9 @@ function appendDocumentChangeProjection({ projectId, sourceSnapshotId, projectio
   }
   return {
     documentChangeCandidateSetCount: projection.candidateSets.length,
-    documentChangeCandidateCount: projection.candidateSets.reduce((count, item) => count + item.candidates.length, 0),
+    // A page left unchanged between two captures of one projection keeps its
+    // candidate id, and the graph holds one node for it (contained by both sets).
+    documentChangeCandidateCount: new Set(projection.candidateSets.flatMap((item) => item.candidates.map((candidate) => candidate.candidateId))).size,
     documentChangeReviewDecisionCount: projection.reviewDecisions.length,
     documentChangeProductModelRevisionCount: projection.productModelRevisions.length,
     documentChangeApplicationCount: projection.applicationReceipts.length,
