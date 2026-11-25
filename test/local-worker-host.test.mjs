@@ -118,6 +118,12 @@ async function frontDoor(file, args, root, request = null, environment = process
   assert.equal(code, 0, Buffer.concat(err).toString());
   return JSON.parse(Buffer.concat(out).toString());
 }
+// The supervisor binary the disposable package carries, named by its own
+// verified manifest (the shipped name changed from head-agent- to lode-agent-).
+function installedSupervisor(f) {
+  const directory = path.join(f.installed, "dist", "windows-x64");
+  return path.join(directory, JSON.parse(fs.readFileSync(path.join(directory, "SUPERVISOR-MANIFEST.json"), "utf8")).binary.relativePath);
+}
 async function fixture(t, { nativeFixtureRoot = nativeRoot } = {}) {
   const parent = fs.realpathSync(process.env.HEAD_AGENT_TEST_TMP || os.tmpdir());
   const container = fs.mkdtempSync(path.join(parent, "head-local-worker-host-"));
@@ -460,7 +466,8 @@ test("reviewer source-change regression: same member safely reprepares and concu
     leases = await f.importLocal("lib/runtime/runtime-execution-lease.mjs");
   const prior = lifecycle.readRuntimeInvocationAuthorization({ root: f.root, authorizationId: first.authorizationId }).authorization;
   assert.equal(
-    leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: prior.projectId, authorizationId: prior.authorizationId }).singleUseConsumed,
+    leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: prior.projectId, authorizationId: prior.authorizationId, storage: f.storage })
+      .singleUseConsumed,
     false,
   );
   fs.writeFileSync(path.join(f.root, "selected.txt"), "legitimate updated source\n");
@@ -1077,8 +1084,12 @@ test("public partial launch stays open and can be abandoned without success or P
     fs.readFileSync(path.join(f.root, f.layout.directory, "runtime/execution-authorizations", f.prepared[1].authorizationId + ".json")),
   );
   assert.equal(
-    leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization.authorizationId })
-      .singleUseConsumed,
+    leases.inspectRuntimeExecutionLease({
+      projectRoot: f.root,
+      projectId: authorization.projectId,
+      authorizationId: authorization.authorizationId,
+      storage: f.storage,
+    }).singleUseConsumed,
     false,
   );
   assert.deepEqual(f.pointers(), before);
@@ -1097,7 +1108,8 @@ test("fresh public frontends restore HEAD direction and rediscover completed and
   assert.equal(pending.ownerExitObserved, false);
   const leases = await f.importLocal("lib/runtime/runtime-execution-lease.mjs");
   const authorization = JSON.parse(fs.readFileSync(path.join(f.root, f.layout.directory, "runtime/execution-authorizations", authorization_id + ".json")));
-  const lease = () => leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization_id });
+  const lease = () =>
+    leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization_id, storage: f.storage });
   assert.equal(lease().singleUseConsumed, true);
   for (const restored of [await f.publicCli(["session-restore"]), await f.publicMcp("head_session_restore")]) {
     assert.equal(restored.projection.consumerInstruction.historicalCheckpointContext.nextExpectedResult, direction);
@@ -1152,7 +1164,8 @@ test(
     }
     assert.equal(markers.length, 1, "Observed one real synthetic provider turn before crash");
     const leases = await f.importLocal("lib/runtime/runtime-execution-lease.mjs");
-    const lease = () => leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization_id });
+    const lease = () =>
+      leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization_id, storage: f.storage });
     assert.equal(lease().singleUseConsumed, true);
     assert.equal(fs.existsSync(path.join(directory, "terminal.json")), false);
     const consumption = fs.readFileSync(path.join(f.root, f.layout.directory, "runtime/execution-leases", authorization_id, "consumption.json"));
@@ -1172,7 +1185,7 @@ test(
     const reused = await frontDoor("crash", [staleRequest, staleToken], f.root, null, process.env, helper);
     assert.equal(reused.status, "reused");
     assert.equal(reused.terminationAttempted, false);
-    const supervisor = path.join(f.installed, "dist/windows-x64/head-agent-supervisor.exe");
+    const supervisor = installedSupervisor(f);
     const inspectedReuse = await frontDoor("--job-state", [staleRequest], f.root, null, process.env, supervisor);
     assert.equal(inspectedReuse.ownerState, "reused");
     assert.equal((await frontDoor("inspect", [requestFile, claim.ownerToken], f.root, null, process.env, helper)).status, "present");
@@ -1188,7 +1201,7 @@ test(
       pid: claim.pid,
       ownerToken: claim.ownerToken,
       ownedPids,
-      command: path.join(f.installed, "dist/windows-x64/head-agent-supervisor.exe"),
+      command: installedSupervisor(f),
       cwd: f.root,
       ports: [],
       reason: "Deliberate post-consumption, pre-terminal fault; not ordinary cleanup",
@@ -1297,7 +1310,7 @@ test(
         pid: claim.pid,
         parentPid: marker.parentPid,
         ownerToken: claim.ownerToken,
-        command: path.join(f.installed, "dist/windows-x64/head-agent-supervisor.exe"),
+        command: installedSupervisor(f),
         args: ["--job", requestFile],
         cwd: f.root,
         ports: [],
@@ -1513,7 +1526,10 @@ async function crashIntegration(f, request, boundary) {
   const inputFile = path.join(f.home, `${boundary}-input.json`),
     readyFile = path.join(f.home, `${boundary}-ready.json`);
   fs.writeFileSync(inputFile, JSON.stringify(request), { flag: "wx" });
-  const args = [path.join(pluginRoot, "test/helpers/integration-crash-driver.mjs"), f.installed, f.root, inputFile, boundary, readyFile];
+  // The driver takes the exact integration directory captured from the verified
+  // fixture layout; it never rediscovers storage after fault injection.
+  const integrationDirectory = path.join(fs.realpathSync(f.root), f.layout.directory, "runtime", "worker-integrations");
+  const args = [path.join(pluginRoot, "test/helpers/integration-crash-driver.mjs"), f.installed, f.root, inputFile, boundary, readyFile, integrationDirectory];
   onProcess({ type: "planned", parentPid: process.pid, command: process.execPath, args, cwd: f.root, ports: [] });
   const child = spawn(process.execPath, args, { cwd: f.root, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   onProcess({ type: "spawn", pid: child.pid, parentPid: process.pid, cwd: f.root, ports: [] });

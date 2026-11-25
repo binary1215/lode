@@ -32,7 +32,7 @@ console.log(
     actualProviderInvoked: false,
   }),
 );
-const input = (f) => ({ root: f.root, integrationId: f.integrationId });
+const input = (f) => ({ root: f.root, integrationId: f.integrationId, storage: f.storage });
 const pointers = (f) => [fs.readFileSync(f.sessionFile), fs.readFileSync(f.runFile)];
 function nativeHost(t) {
   const spawned = new Set();

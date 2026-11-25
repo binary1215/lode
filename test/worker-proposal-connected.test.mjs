@@ -321,6 +321,7 @@ test("two native-owned model-free proposals reach exact HEAD effects, combined b
       projectRoot: f.root,
       projectId: member.authorization.projectId,
       authorizationId: member.authorization.authorizationId,
+      storage: f.storage,
     });
     assert.equal(lease.status, "consumed-released");
     consumed.push(lease);
@@ -332,10 +333,13 @@ test("two native-owned model-free proposals reach exact HEAD effects, combined b
   const authorizationIds = f.members.map((member) => member.authorization.authorizationId);
   // This public preparation performs real owner/result capture. No fabricated
   // integration intent or synthetic success receipt is written by this test.
-  const prepared = await operateWorkerIntegration({ action: "prepare", authorizationIds, maxBytes: 4 * 1024 * 1024 }, { root: f.root, onProcess });
+  const prepared = await operateWorkerIntegration(
+    { action: "prepare", authorizationIds, maxBytes: 4 * 1024 * 1024 },
+    { root: f.root, onProcess, storage: f.storage },
+  );
   assert.equal(prepared.status, "prepared");
   const integrationId = prepared.integration.integrationId;
-  const input = { root: f.root, integrationId };
+  const input = { root: f.root, integrationId, storage: f.storage };
   const intent = readWorkerPatchIntegration(input).intent;
   assert.deepEqual(
     intent.members.map((member) => member.authorizationId),
@@ -382,12 +386,12 @@ test("two native-owned model-free proposals reach exact HEAD effects, combined b
       impactRadius: ["left.txt", "right.txt"],
       unknowns: ["Fixed model-free provider protocol fixture; no actual model, account or provider sandbox behavior tested"],
     },
-    { root: f.root },
+    { root: f.root, storage: f.storage },
   );
   assert.deepEqual(p2(), initialP2);
   const published = await operateWorkerIntegration(
     { action: "publish-result", integrationId, verificationId: verified.verification.verificationId },
-    { root: f.root },
+    { root: f.root, storage: f.storage },
   );
   assert.equal(published.status, "published");
   assert.equal(published.application.freshLodeReviewRequired, true);
@@ -421,10 +425,18 @@ test("two native-owned model-free proposals reach exact HEAD effects, combined b
   assert.equal(restored.projection.consumerInstruction.historicalCheckpointContext.nextExpectedResult, recoveryInput.nextExpectedResult);
   assert.equal(restored.projection.reviewedRunIntegration.reviewDecisionId, reviewed.reviewDecision.reviewDecisionId);
   assert.equal(restored.projection.recoveryAuthority, false);
-  assert.equal(inspectWorkerIntegration({ integrationId }, { root: f.root }).result.resultPacket.resultPacketId, published.resultPacket.resultPacketId);
+  assert.equal(
+    inspectWorkerIntegration({ integrationId }, { root: f.root, storage: f.storage }).result.resultPacket.resultPacketId,
+    published.resultPacket.resultPacketId,
+  );
   for (const [index, member] of f.members.entries()) {
     assert.deepEqual(
-      inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: member.authorization.projectId, authorizationId: member.authorization.authorizationId }),
+      inspectRuntimeExecutionLease({
+        projectRoot: f.root,
+        projectId: member.authorization.projectId,
+        authorizationId: member.authorization.authorizationId,
+        storage: f.storage,
+      }),
       consumed[index],
     );
   }
