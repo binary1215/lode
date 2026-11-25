@@ -8,7 +8,7 @@ import { resolveProjectStorage } from "./project-storage-format.mjs";
 import { COPIED_PROJECT_LOCATION_KIND } from "./project-copy-proof.mjs";
 import { withLocalMutation } from "./project-mutation-lock.mjs";
 import { sha256Hex as hash } from "../core/digest.mjs";
-import { failCode as fail } from "../core/errors.mjs";
+import { failExplained as fail, runtimeMismatchText } from "../core/refusal-text.mjs";
 import { summarizeProductGraphTransfer } from "./product-graph-store.mjs";
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
@@ -143,7 +143,7 @@ export function inspectProjectCopyInput({ root, pluginRoot, runtimes, validateSe
     const selected = [
       ...new Set((runtimes.length ? runtimes : ["claude", "codex", "opencode"]).map((value) => value.trim().toLowerCase()).filter(Boolean)),
     ].sort();
-    if (JSON.stringify(selected) !== JSON.stringify(project.runtimes)) fail("PROJECT_RUNTIME_MISMATCH");
+    if (JSON.stringify(selected) !== JSON.stringify(project.runtimes)) fail("PROJECT_RUNTIME_MISMATCH", runtimeMismatchText(project.runtimes, selected));
   }
   validateCopiedManagedPaths({ root: currentRoot, directory, manifest });
   const selectedSession = validateSelection?.({
@@ -192,7 +192,11 @@ export function adoptVerifiedProjectCopy(options = {}) {
     selectedSession: initial.selectedSession,
   });
   const pendingFile = copiedProjectFile(initial.currentRoot, `${initial.directory}/${locationJournalRelative}`);
-  if (fs.existsSync(pendingFile)) fail("PROJECT_RELOCATION_PENDING");
+  if (fs.existsSync(pendingFile))
+    fail(
+      "PROJECT_RELOCATION_PENDING",
+      `A location change of this Project to ${initial.currentRoot} is already pending. Resume the Project here without the copied-project choice to finish it; nothing was adopted.`,
+    );
   if (options.inspectOnly)
     return {
       status: "verified-copy-available",
@@ -224,7 +228,12 @@ export function adoptVerifiedProjectCopy(options = {}) {
         )
           fail("PROJECT_REPAIR_MANIFEST_INVALID");
         managed.add(entry.path);
-        if (hash(read(copiedProjectFile(currentRoot, entry.path))) !== entry.sha256) fail("PROJECT_NOT_READY");
+        const managedFile = copiedProjectFile(currentRoot, entry.path);
+        if (!fs.existsSync(managedFile) || hash(read(managedFile)) !== entry.sha256)
+          fail(
+            "PROJECT_NOT_READY",
+            `Managed file drift prevents adopting this copy: ${entry.path} (${fs.existsSync(managedFile) ? "changed" : "missing"}). Nothing was changed; Lode has no step that repairs a missing or changed managed file. Restore it to its recorded content and resume again.`,
+          );
       }
       if (!managed.has(`${directory}/project.json`)) fail("PROJECT_REPAIR_MANIFEST_INVALID");
       inspectCopiedProjectCanon({

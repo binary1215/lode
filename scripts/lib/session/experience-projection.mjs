@@ -42,6 +42,17 @@ export function buildAttentionProjection(experience, storage = undefined) {
       }),
     );
 
+  if (core.state === "relocation_blocked")
+    items.push(
+      item({
+        id: "managed-projection-drift",
+        owner,
+        severity: "integrity",
+        summary: core.reason || "Managed file drift prevents resuming this existing Project at this folder.",
+        blockedOperations: ["lode-managed-mutation"],
+      }),
+    );
+
   if (core.state === "not_initialized")
     items.push(
       item({

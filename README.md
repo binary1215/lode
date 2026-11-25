@@ -155,7 +155,8 @@ MCP server are loaded, then use [the first-request example](#first-request)
 with your own task. Codex still will not run Lode hooks until you trust them:
 open `/hooks` in the CLI, or Review hooks / Settings > Hooks in the desktop app.
 Trust the project as well, or project-local `.codex` layers stay unloaded.
-`lode doctor <project>` reports whether that trust record is present.
+`node <plugin-root>/scripts/lode.mjs doctor <project>` reports whether that trust record
+is present (a marketplace install has no `lode` launcher).
 
 Installing the plugin does not initialize a project, contact GraphDB, choose
 a model or approve Product Canon. Those operations still use the typed Core
@@ -188,7 +189,10 @@ request the same initialization through the bundled Skill. Lode creates
 `--write-root-instructions` (or MCP `write_root_instruction_files: true`).
 The same opt-in works on later init/resume and distribution `install --project`.
 Without it, generated OpenCode configuration is guidance, not an active connection.
-A verified plugin MCP connection avoids a duplicate project `.mcp.json`.
+With `--runtime claude`, init/resume also write a project-root `.mcp.json` that holds the
+Lode MCP server entry with absolute paths to the plugin, so Claude Code opening the
+folder can start Lode's tools; the init/resume output names it. A verified plugin MCP
+connection avoids this duplicate project `.mcp.json`.
 Standalone Claude uses the verified selected installation launcher, with an exact
 local package fallback. No new environment-variable setup is required. Existing
 files are preserved and generated manual-integration projections remain under

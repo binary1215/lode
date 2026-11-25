@@ -1725,7 +1725,10 @@ async function sendProjectConversationObserved(
           currentPresence.registrationGeneration !== presence.registrationGeneration ||
           JSON.stringify(currentPresence.channel) !== JSON.stringify(presence.channel)
         )
-          fail("CONVERSATION_TARGET_CHANGED");
+          fail(
+            "CONVERSATION_TARGET_CHANGED",
+            "the recipient conversation re-registered or changed its channel before this message was handed over, so Lode stopped before writing to the old channel; the send result says where the message stands. List the conversations again and send to the current one",
+          );
       });
     assertTarget();
     // A live channel takes the older queued mail for this recipient first.

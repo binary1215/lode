@@ -97,7 +97,7 @@ export function decodeProductGraphText(bytes) {
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
-    fail("PRODUCT_GRAPH_FILE_NOT_UTF8");
+    fail("PRODUCT_GRAPH_FILE_NOT_UTF8", "제품 그래프 파일이 UTF-8 글이 아니다. UTF-8로 저장한 뒤 다시 한다.");
   }
   if (text.includes("\0")) fail("PRODUCT_GRAPH_FILE_INVALID");
   return text.startsWith("﻿") ? text.slice(1) : text;
@@ -706,14 +706,15 @@ export function safeRelative(value) {
 // their closed shapes. Returns the classification.
 export function verifyProductGraphCanonFile(relative, bytes, { projectId = null } = {}) {
   const target = classifyProductGraphPath(relative);
-  if (!target?.canon) fail("PRODUCT_GRAPH_PATH_UNSUPPORTED");
+  if (!target?.canon)
+    fail("PRODUCT_GRAPH_PATH_UNSUPPORTED", `${relative}는 제품 그래프가 기록으로 읽는 경로(문서, 줄 파일, 호출 방식 표, 승인)가 아니다. 아무것도 읽지 않았다.`);
   const text = decodeProductGraphText(bytes);
   if (target.role === "rules") {
     let document;
     try {
       document = JSON.parse(text);
     } catch {
-      fail("PRODUCT_GRAPH_RULES_INVALID");
+      fail("PRODUCT_GRAPH_RULES_INVALID", `호출 방식 표 ${relative}가 올바른 JSON이 아니다. 파일을 고친 뒤 다시 한다.`);
     }
     verifyProductGraphRules(document);
   } else if (target.role === "approval") {

@@ -282,7 +282,11 @@ async function verifiedLayer(inventory, layer, entries, model) {
   });
   // Never reuse success on an incomplete dependency observation. A failed
   // optional layer remains local to that layer, not an ordinary-work gate.
-  if (layer !== "sessionWork" && dependencies && (!dependencies.complete || dependencies.unavailable.length)) fail("PROJECT_GRAPH_DEPENDENCY_UNAVAILABLE");
+  if (layer !== "sessionWork" && dependencies && (!dependencies.complete || dependencies.unavailable.length))
+    fail(
+      "PROJECT_GRAPH_DEPENDENCY_UNAVAILABLE",
+      `The ${layer} graph layer depends on records that could not all be read${dependencies.unavailable?.length ? ` (${dependencies.unavailable.length} unavailable)` : ""}. That layer is left out; other layers and ordinary work are not affected.`,
+    );
   if (layer === "sessionWork") return projectSessionWorkLayer(inventory, { nodeFromRecord, relation, authority, id });
   if (!inventory.scope && layerCache.has(key)) return { ...clone(layerCache.get(key)), reused: true };
   const nodes = [],
@@ -301,7 +305,8 @@ async function verifiedLayer(inventory, layer, entries, model) {
   };
   const records = entries.map((entry) => {
     const read = readGraphRecord(root, entry.path);
-    if (read.digest !== entry.sha256) fail("PROJECT_GRAPH_READ_DRIFT");
+    if (read.digest !== entry.sha256)
+      fail("PROJECT_GRAPH_READ_DRIFT", `The graph record ${entry.path} changed after it was listed. Read the graph again; this read used no changed record.`);
     if (read.document.projectId && read.document.projectId !== projectId) fail("PROJECT_GRAPH_CROSS_PROJECT");
     if (read.document.projectRoot && !projectOwnsRecordedRecord(storage, read.document.projectRoot, { path: entry.path, digest: read.digest }))
       fail("PROJECT_GRAPH_CROSS_ROOT");
@@ -720,7 +725,11 @@ function safeObservationPayload(document) {
 function limits(options) {
   const integer = (value, defaultValue, max, minimum = 1) => {
     const number = value === undefined ? defaultValue : value;
-    if (!Number.isInteger(number) || number < minimum || number > max) fail("INVALID_PROJECT_GRAPH_BOUND");
+    if (!Number.isInteger(number) || number < minimum || number > max)
+      fail(
+        "INVALID_PROJECT_GRAPH_BOUND",
+        `A graph read limit is out of range: ${JSON.stringify(value)} (allowed: whole numbers from ${minimum} to ${max}). Leave it out to use ${defaultValue}.`,
+      );
     return number;
   };
   const strings = (values, max) => {

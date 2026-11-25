@@ -122,7 +122,10 @@ at any time:
 node <plugin-root>/scripts/lode.mjs status C:\path\to\project
 ```
 
-Successful human-readable status is intentionally one line. Exceptions name
+Successful human-readable status starts with one line ("Lode is ready — continue the
+task.") and adds one line for each notice that applies, such as root instruction files
+that were not written or a managed file that differs; it is usually two to five lines.
+A moved Project prints five lines that name resume. Exceptions name
 the owner, reason, affected operation, and next action; `doctor` or `--json`
 shows Core, optional Product governance, Context readiness, executing CLI/library
 and configured package versions, and technical details. Host tool loading is not
@@ -136,6 +139,12 @@ not require a Run. This is a non-persisted advisory
 projection: reading it never activates Product, creates a Run, grants authority,
 or repairs drift. `profile` remains a choice for one initialize/resume operation,
 not a hidden project mode.
+
+The CLI `resume` resumes an existing Project and creates nothing: on a folder
+with no `.lode` it refuses and points to `init`. `init` and the MCP tool
+`lode_project_initialize_or_resume` still create a Project. A CLI option a
+command does not read, or an MCP argument outside the tool's schema, is refused
+with its name and, when one is close, the valid spelling; nothing runs.
 
 Top-level status is one of `core_ready`,
 `product_evidence_required`, `product_review_required`, `product_ready`,

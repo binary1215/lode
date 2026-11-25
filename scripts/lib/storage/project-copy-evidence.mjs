@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { createHasher, sha256Hex as digest, sha256Json as copiedEvidenceDigest } from "../core/digest.mjs";
-import { failCode as fail } from "../core/errors.mjs";
+import { failExplained as fail } from "../core/refusal-text.mjs";
 
 // Data-file paths only. Historical absolute roots inside a record are never
 // resolved through this function. Reject Windows alternate streams on every

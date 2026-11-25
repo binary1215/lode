@@ -205,6 +205,7 @@
     "refresh-input-generation.mjs": "world",
     "refresh-trigger.mjs": "world",
     "refresh-writer-lease.mjs": "world",
+    "refusal-text.mjs": "core",
     "release-observation-projection.mjs": "distribution",
     "release-observation.mjs": "distribution",
     "repository-scan.mjs": "world",

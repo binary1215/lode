@@ -11,6 +11,7 @@ import { inspectProjectCopyOrigin } from "./project-location-proof.mjs";
 import { inspectManagedByteRepairs, repairManagedProjectBytes } from "./project-record-byte-repair.mjs";
 import { sha256Hex as hash } from "../core/digest.mjs";
 import { failWith } from "../core/errors.mjs";
+import { runtimeMismatchText } from "../core/refusal-text.mjs";
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 const fail = failWith("PROJECT_RELOCATION_CONFLICT");
@@ -37,8 +38,12 @@ function validateManifest(root, directory, projectBytes, manifestBytes) {
       if (entry.path.includes("/") || entry.path.includes("\\") || !["AGENTS.md", "CLAUDE.md", ".mcp.json", "opencode.json"].includes(entry.path))
         fail("Managed manifest path is invalid.");
       file = path.join(root, entry.path);
-      if (fs.lstatSync(file).isSymbolicLink()) fail("Managed integration is a symlink.");
+      if (fs.existsSync(file) && fs.lstatSync(file).isSymbolicLink()) fail("Managed integration is a symlink.");
     }
+    // A missing managed file is drift like a changed one: the caller names the
+    // blocking files instead of failing on the first missing path.
+    if (entry.path !== `${directory}/project.json` && !fs.existsSync(file))
+      fail(`Managed file drift prevents relocation: ${entry.path} (missing)`, "PROJECT_NOT_READY");
     const bytes = entry.path === `${directory}/project.json` ? projectBytes : fs.readFileSync(file);
     if (hash(bytes) !== entry.sha256) fail(`Managed file drift prevents relocation: ${entry.path}`, "PROJECT_NOT_READY");
   }
@@ -49,7 +54,7 @@ function validateManifest(root, directory, projectBytes, manifestBytes) {
 const blockingFiles = (unresolved) =>
   fail(
     `Managed file drift prevents relocation: ${unresolved.map((item) => `${item.path} (${item.reasonCode})`).join(", ")}. ` +
-      "Resume restores only files whose line endings changed; no file has been changed.",
+      "Resume restores only files whose line endings changed; Lode has no step that repairs a missing or changed managed file. No file has been changed; restore those files to their recorded content and resume again.",
     "PROJECT_NOT_READY",
   );
 
@@ -256,7 +261,7 @@ export function resumeProjectLocation({
       const selected = [
         ...new Set((runtimes.length ? runtimes : ["claude", "codex", "opencode"]).map((value) => value.trim().toLowerCase()).filter(Boolean)),
       ].sort();
-      if (JSON.stringify(selected) !== JSON.stringify(original.runtimes)) fail("Requested runtimes do not match this Project.", "PROJECT_RUNTIME_MISMATCH");
+      if (JSON.stringify(selected) !== JSON.stringify(original.runtimes)) fail(runtimeMismatchText(original.runtimes, selected), "PROJECT_RUNTIME_MISMATCH");
     }
     // The journal has authenticated BOTH acceptable on-disk Project versions.
     // Session preflight compares against the actual version at this boundary,

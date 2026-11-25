@@ -10,7 +10,7 @@ import { verifyRecoveryCheckpointOriginal } from "../session/compaction-recovery
 import { lineageArtifactRelativePath, verifyLineageArtifactOriginal } from "../runtime/execution-lineage.mjs";
 import { sha256Hex } from "../core/digest.mjs";
 import { verifyProductGraphCanonOriginals } from "./product-graph-store.mjs";
-import { failCode as fail } from "../core/errors.mjs";
+import { failExplained as fail } from "../core/refusal-text.mjs";
 
 // Shared source-data verifier. It neither selects a Core owner nor resolves an
 // historical root on disk. read/has/list address an already chosen source.

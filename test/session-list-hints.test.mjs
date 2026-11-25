@@ -15,13 +15,13 @@ test("Session hints expose recorded work pointers and update only; preserve ever
   assert.deepEqual(value, before);
   assert.match(cli, /stored P2 pointers; not freshly verified execution or completion/);
   assert.match(cli, /Stored pointers only; recent work and remaining tasks are uninspected until an exact preview/);
-  assert.match(cli, /sessions\[0\]\.state\.updatedAt: "2000-01-01T00:00:00Z"/);
-  assert.match(cli, /sessions\[0\]\.state\.activeRunId: "run-1"/);
-  assert.match(cli, /sessions\[0\]\.state\.pendingReview: \{"reviewId":"review-1"\}/);
-  assert.match(cli, /sessions\[0\]\.state\.requiredPlanAction: \{"action":"revise"\}/);
-  assert.match(cli, /sessions\[1\]\.state\.activeRunId: null/);
-  assert.match(cli, /sessions\[1\]\.state\.pendingReview: null/);
-  assert.doesNotMatch(cli, /sessions\[1\]\.state\.updatedAt:/);
+  // One line per Session (first-use bundle 4.4); every stored pointer stays on it.
+  const lines = cli.split("\n").filter((line) => line.startsWith("- "));
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /^- chosen \(default; selected when no Session is named\) "Current explicit work": /);
+  assert.match(lines[0], /run run-1; review pending \{"reviewId":"review-1"\}; plan action \{"action":"revise"\}; updated 2000-01-01T00:00:00Z; custom: "retain original"/);
+  assert.match(lines[1], /^- other "Independent work": checkpoint checkpoint-2$/);
+  assert.doesNotMatch(lines[1], /updated|run |review pending/);
   for (const text of ["chosen", "other", "Current explicit work", "Independent work", "run-1", "review-1", "checkpoint-2", "retain original"])
     assert.ok(cli.includes(text), text);
   assert.doesNotMatch(cli, /auto.?archive|inactive|completed successfully|live running/i);
@@ -31,8 +31,11 @@ test("Session hints do not manufacture state, sort, or hide malformed and empty 
   const value = { sessions: [null, { sessionId: "missing-state" }, { sessionId: "empty", state: {} }] };
   const before = structuredClone(value), text = formatCliResult("session-list", value);
   assert.deepEqual(value, before);
-  assert.equal((text.match(/Session\[/g) || []).length, 3);
-  assert.ok(text.indexOf("missing-state") < text.indexOf('"empty"'));
+  assert.equal(text.split("\n").filter((line) => line.startsWith("- ")).length, 3);
+  assert.match(text, /^- Session\[0\]: null$/m);
+  assert.match(text, /^- missing-state \(no purpose\): no stored state$/m);
+  assert.match(text, /^- empty \(no purpose\): no stored run, review or checkpoint pointer$/m);
+  assert.ok(text.indexOf("missing-state") < text.indexOf("- empty"));
   assert.equal((text.match(/Stored pointers only;/g) || []).length, 1);
   assert.doesNotMatch(text, /sessions\[1\]\.state\./);
   assert.doesNotMatch(text, /\.updatedAt:/);

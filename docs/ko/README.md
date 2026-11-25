@@ -120,7 +120,9 @@ node <plugin-root>/scripts/lode.mjs init C:\path\to\project --runtime claude,cod
 node <plugin-root>/scripts/lode.mjs status C:\path\to\project
 ```
 
-정상 상태는 한 줄로 보여줍니다. 예외가 있으면 담당 주체, 이유, 영향을 받는
+정상 상태는 한 줄("Lode is ready — continue the task.")로 시작하고, 해당하는 알림마다
+한 줄씩 더합니다. 쓰지 않은 루트 지시 파일이나 달라진 관리 파일 같은 알림이라 보통 두 줄에서
+다섯 줄입니다. 옮긴 Project는 resume을 적은 다섯 줄을 보여 줍니다. 예외가 있으면 담당 주체, 이유, 영향을 받는
 작업과 다음 행동을 표시합니다. `doctor` 또는 `--json`에서는 Core, 선택적 Product
 관리, Context 준비도, 실행 중인 CLI·라이브러리와 구성된 패키지의 버전, 기술
 세부 정보를 확인할 수 있습니다. 이 패키지 조회만으로 Host 도구 로딩을 확인하지는
@@ -132,6 +134,12 @@ worker는 `requires-session-or-run-authorization`으로 표시됩니다. 일반 
 저장하지 않으며 Product 활성화, Run 생성, 권한 부여나 드리프트 복구를 일으키지
 않습니다. `profile`은 한 번의 초기화·재개 범위를 선택하는 값이며 숨은 프로젝트
 모드가 아닙니다.
+
+CLI `resume`은 있는 Project를 재개할 뿐 아무것도 만들지 않습니다. `.lode`가 없는
+폴더에서는 거절하고 `init`을 알려 줍니다. `init`과 MCP 도구
+`lode_project_initialize_or_resume`은 여전히 Project를 만듭니다. 명령이 읽지 않는
+CLI 옵션이나 도구 스키마에 없는 MCP 인자는 그 이름과, 가까운 것이 있으면 맞는
+철자를 적어 거절하고 아무것도 실행하지 않습니다.
 
 최상위 상태는 `core_ready`, `product_evidence_required`, `product_review_required`,
 `product_ready`, `product_refresh_required`, `core_drifted` 중 하나입니다. 세부 온보딩

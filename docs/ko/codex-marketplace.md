@@ -66,8 +66,9 @@ Codex는 그 hook 정의를 신뢰하기 전에는 플러그인 hook을 실행�
 CLI에서는 `/hooks`를, 데스크톱 앱에서는 Review hooks 또는 Settings > Hooks를 열고
 Lode hook을 신뢰하세요. 프로젝트도 신뢰해야 프로젝트 로컬 `.codex` 층이 로드됩니다.
 플러그인을 설치해도 이 단계는 끝나지 않습니다. hook이 신뢰되지 않으면 SessionStart와
-프롬프트 전달이 조용히 빠집니다. `lode doctor`와 `lode status`는 신뢰 기록 여부와
-같은 절차를 보여 줍니다. `codex exec`는 그 실행에 `--dangerously-bypass-hook-trust`를
+프롬프트 전달이 조용히 빠집니다.
+`node <plugin-root>/scripts/lode.mjs doctor <project>`와 `... status <project>`는 신뢰 기록
+여부와 같은 절차를 보여 줍니다(마켓플레이스 설치에는 `lode` 실행 파일이 없습니다). `codex exec`는 그 실행에 `--dangerously-bypass-hook-trust`를
 주지 않으면 신뢰되지 않은 hook을 건너뜁니다.
 
 마켓플레이스 스냅샷에는 Windows x64, Linux x64/arm64 및 macOS x64/arm64 네이티브

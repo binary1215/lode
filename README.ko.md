@@ -154,8 +154,9 @@ codex plugin add lode-agent-core@lode-agent-plugin
 시작한 뒤 [첫 요청 예시](#first-request)에 원하는 작업을 넣어 요청하세요.
 Codex는 Lode hook을 신뢰하기 전에는 실행하지 않습니다. CLI에서는 `/hooks`를,
 데스크톱 앱에서는 Review hooks 또는 Settings > Hooks를 여세요. 프로젝트도
-신뢰해야 프로젝트 로컬 `.codex` 층이 로드됩니다. `lode doctor <project>`가
-그 신뢰 기록 여부를 알려 줍니다.
+신뢰해야 프로젝트 로컬 `.codex` 층이 로드됩니다.
+`node <plugin-root>/scripts/lode.mjs doctor <project>`가 그 신뢰 기록 여부를 알려 줍니다
+(마켓플레이스 설치에는 `lode` 실행 파일이 없습니다).
 
 플러그인을 설치해도 프로젝트 초기화, GraphDB 접속, 모델 선택이나 Product
 Canon 승인이 자동으로 이뤄지지는 않습니다. 해당 작업은 Core의 정해진 경계를
@@ -184,7 +185,10 @@ Claude Code는 플러그인을 버전별 캐시에 복사하고 `${CLAUDE_PLUGIN
 초기화를 요청할 수 있습니다. `CLAUDE.md`, `AGENTS.md`, `opencode.json`은
 `--write-root-instructions` 또는 MCP `write_root_instruction_files: true`를
 줬을 때만 만들거나 수정합니다. 그 플래그 없는 비대화형 init은 이 파일을 만들지 않습니다.
-검증된 플러그인 MCP 연결이 있으면 중복 프로젝트 `.mcp.json`을 만들지 않습니다.
+`--runtime claude`로 init/resume하면 프로젝트 루트에 `.mcp.json`도 씁니다. 이 파일에는
+플러그인 절대 경로로 된 Lode MCP 서버 항목이 있어, Claude Code가 이 폴더를 열 때 Lode 도구를
+띄울 수 있습니다. init/resume 출력이 이 파일을 적습니다. 검증된 플러그인 MCP 연결이 있으면
+이 중복 프로젝트 `.mcp.json`을 만들지 않습니다.
 선택한 standalone Claude 설치는 검증된 launcher 또는 정확한 로컬 패키지 진입점을
 사용하며 별도 환경 변수 설정을 요구하지 않습니다. 같은 root 파일 동의는 이후
 init/resume 및 distribution `install --project`에서도 적용됩니다. 동의하지 않은

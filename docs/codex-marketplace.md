@@ -66,8 +66,10 @@ Codex does not run the plugin hooks until you trust that exact definition.
 Open `/hooks` in the CLI, or Review hooks / Settings > Hooks in the desktop app,
 and trust the Lode hooks. Also trust the project, or Codex skips project-local
 `.codex` layers. Installing the plugin does not do either step. If the hooks
-stay untrusted, SessionStart and prompt delivery stay silent. `lode doctor`
-and `lode status` report whether a trust record is present and repeat these steps.
+stay untrusted, SessionStart and prompt delivery stay silent.
+`node <plugin-root>/scripts/lode.mjs doctor <project>` and `... status <project>` report
+whether a trust record is present and repeat these steps (a marketplace install has no
+`lode` launcher).
 `codex exec` skips untrusted hooks unless that invocation passes
 `--dangerously-bypass-hook-trust`.
 

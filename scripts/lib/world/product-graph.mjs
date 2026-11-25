@@ -249,7 +249,11 @@ function readDocumentFiles(directory, { readChecks = true } = {}) {
         runs.push({ path: relative, ...target, absolute: path.join(absolute, entry.name) });
         continue;
       }
-      if (files.length >= PRODUCT_GRAPH_MAX_FILES) fail("PRODUCT_GRAPH_TOO_MANY_FILES");
+      if (files.length >= PRODUCT_GRAPH_MAX_FILES)
+        fail(
+          "PRODUCT_GRAPH_TOO_MANY_FILES",
+          `제품 그래프 폴더의 파일이 ${PRODUCT_GRAPH_MAX_FILES}개를 넘는다(${relative}에서 멈춤). 제품 그래프가 읽는 한도이니 폴더에서 파일을 줄인다.`,
+        );
       const bytes = readBounded(path.join(absolute, entry.name));
       files.push({ path: relative, ...target, bytes, sha256: sha256Hex(bytes) });
     }
@@ -395,7 +399,8 @@ function resolveInputs(options) {
         `독립 실행에는 소스 루트, 문서 폴더, 호출 방식 표 파일${requireOutput ? ", 출력 폴더" : ""}를 모두 줘야 한다.`,
       );
     const documents = path.resolve(documentsDirectory);
-    if (!fs.existsSync(documents) || !fs.statSync(documents).isDirectory()) fail("PRODUCT_GRAPH_DOCUMENTS_MISSING");
+    if (!fs.existsSync(documents) || !fs.statSync(documents).isDirectory())
+      fail("PRODUCT_GRAPH_DOCUMENTS_MISSING", `문서 폴더 ${documents}가 없거나 폴더가 아니다. 있는 폴더를 준다.`);
     if (outputDirectory) {
       const output = path.resolve(outputDirectory);
       const inside = (parent) => {
