@@ -90,7 +90,8 @@ function exportProjectBundleUncoordinated({
   if (!["selected-retained-sources", "refs-only"].includes(sourceMode)) fail("PROJECT_BUNDLE_SOURCE_MODE_INVALID");
   check(signal);
   const inspected = readGraphProject(root);
-  if (!inspected.project) fail("NOT_INITIALIZED");
+  if (!inspected.project)
+    fail("NOT_INITIALIZED", `No Lode Project is initialized in ${path.resolve(root)}. Initialize or resume the Project there before exporting a bundle.`);
   const storage = inspected.storage,
     sourceRoot = storage.projectRoot,
     directory = storage.directory,
@@ -291,7 +292,11 @@ function exportProjectBundleUncoordinated({
   if (!fs.existsSync(bundleRoot)) fs.mkdirSync(bundleRoot);
   if (!fs.lstatSync(bundleRoot).isDirectory()) fail("PROJECT_BUNDLE_DESTINATION_INVALID");
   const intentFile = copiedProjectFile(bundleRoot, "export-intent.json");
-  if (!fs.existsSync(intentFile) && fs.readdirSync(bundleRoot).length) fail("PROJECT_BUNDLE_DESTINATION_NOT_EMPTY");
+  if (!fs.existsSync(intentFile) && fs.readdirSync(bundleRoot).length)
+    fail(
+      "PROJECT_BUNDLE_DESTINATION_NOT_EMPTY",
+      `The bundle destination ${bundleRoot} is not empty. Name a new or empty folder; Lode does not write a bundle among other files.`,
+    );
   exactCreate(bundleRoot, "export-intent.json", json({ schemaVersion: 1, kind: "ProjectBundleExportIntent", bundleId, manifestSha256 }));
   const objects = copiedProjectFile(bundleRoot, "objects");
   if (!fs.existsSync(objects)) fs.mkdirSync(objects);

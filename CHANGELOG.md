@@ -11,6 +11,65 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.137 — publication tracked separately
+
+- Fixed: a Project whose folder was moved or copied was told to initialize.
+  Conversation entry (`conversation-enter`, `lode_conversation_enter`) now
+  names one next step, resume, at every depth of its result: no
+  `initialize_core`, no `core-initialization` attention item, and the CLI text
+  carries the sentence `status` prints. Operations called before that resume
+  (`session-list`, `project-direction-read` and the rest) answer
+  `PROJECT_RELOCATION_AVAILABLE` or `PROJECT_RELOCATION_PENDING` with the
+  Project id, the recorded folder and the resume step, instead of `ENOENT` on a
+  `.head\project.json` path. A folder with no Project answers
+  `NOT_INITIALIZED` with a sentence, and a folder that does not exist answers
+  `PROJECT_NOT_FOUND`.
+- Fixed: a moved or copied Project with a managed file missing failed with a
+  raw `ENOENT`, and conversation entry said `NOT_INITIALIZED`. `status`,
+  `resume`, conversation entry and the session-start hook now answer
+  `PROJECT_NOT_READY` naming the file, as the portability document says, for a
+  missing file as well as a changed one. On a Project that was not moved,
+  `resume` names the files that differ. Lode has no step that regenerates a
+  missing or changed managed file; the refusal says so instead of suggesting a
+  repair.
+- Changed: refusals that carried only their reason code now say what is wrong
+  and what to do. `PROJECT_RUNTIME_MISMATCH` has one wording everywhere (the
+  recorded runtimes, the requested ones, and that the set of an existing
+  Project cannot be changed). Text was added for the copy, relocation and
+  line-ending-repair codes on the init, resume, status and conversation-entry
+  paths and for twenty graph, product-graph, bundle and messaging codes a user
+  is likely to meet. Code-only failure sites went from 964 to 879; the codes
+  themselves and `--json` fields are unchanged.
+- Changed: saving direction and work explains its refusals. A direction key
+  that is not accepted is named together with the accepted keys (`goal`,
+  `constraints`, `decisions`, `cancelledActions`); an update without the
+  expected id is told apart from a real conflict and both give the current id;
+  `lode_checkpoint_sync` without a basis id says where the id comes from; a
+  Todo with a bad id, status or origin names the field and the accepted
+  values; `lode_session` (`work_record`) names its `evidence` argument. The
+  skill text now lists the Todo fields and tells `evidence` from
+  `work_evidence`.
+- Changed: CLI `resume` no longer creates a Project. On a folder that holds no
+  Project it refuses, points to `init` and creates nothing. `init` and the MCP
+  tool `lode_project_initialize_or_resume` still create one.
+- Changed: an option a CLI command does not read, and an MCP argument outside
+  the tool's schema, are refused with the name and, when one is close, the
+  valid spelling (`CLI_UNKNOWN_OPTION`, `INVALID_TOOL_ARGUMENTS`). Before,
+  they were dropped silently and the command ran without them. An argument
+  that belongs inside a declared object is pointed there. The MCP metadata key
+  `_meta` is ignored. The `session-continue` help no longer shows
+  `--binding-env`, which nothing read.
+- Changed: `project-direction-read`, `project-direction-update`,
+  `session-create` and `checkpoint` print text without `--json` (what
+  happened, the ids a person needs, the next step); `session-list` prints one
+  line per Session. `--json` output is unchanged.
+- Changed: init and resume say when they write or keep the project-root
+  `.mcp.json` for the claude runtime, and the README lists the file.
+- Documents: `status` is described as it prints (one line plus one per
+  notice), and the trust check is written as
+  `node <plugin-root>/scripts/lode.mjs doctor <project>` because a marketplace
+  install has no `lode` launcher.
+
 ## 0.3.0-beta.136 — publication tracked separately
 
 - Fixed: a product graph build of a large tree failed with the bare code

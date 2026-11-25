@@ -120,14 +120,17 @@ export function readProjectDirectionRevision({ root = ".", directionId, storage 
   );
 }
 
+const DIRECTION_KEYS = ["goal", "constraints", "decisions", "cancelledActions"];
+
 function normalized(input) {
-  if (
-    !input ||
-    typeof input !== "object" ||
-    Array.isArray(input) ||
-    Object.keys(input).some((key) => !["goal", "constraints", "decisions", "cancelledActions"].includes(key))
-  )
-    fail("Expected current caller-supplied Project direction.", "INVALID_PROJECT_DIRECTION_INPUT");
+  if (!input || typeof input !== "object" || Array.isArray(input))
+    fail(`Project direction must be an object with the keys ${DIRECTION_KEYS.join(", ")}.`, "INVALID_PROJECT_DIRECTION_INPUT");
+  const refused = Object.keys(input).filter((key) => !DIRECTION_KEYS.includes(key));
+  if (refused.length)
+    fail(
+      `Project direction does not accept ${refused.map((key) => JSON.stringify(key)).join(", ")}; the accepted keys are ${DIRECTION_KEYS.join(", ")}.`,
+      "INVALID_PROJECT_DIRECTION_INPUT",
+    );
   if (typeof input.goal !== "string") fail("Project goal must be text.", "INVALID_PROJECT_DIRECTION_INPUT");
   const result = { goal: input.goal };
   for (const key of ["constraints", "decisions", "cancelledActions"]) {
@@ -146,8 +149,20 @@ export function updateProjectDirection({ root = ".", expectedDirectionId = null,
     const current = readProjectDirection({ root, storage });
     if (current && hash(current.input) === hash(direction) && [current.directionId, current.previousDirectionId].includes(expectedDirectionId))
       return { status: "reused", direction: current };
-    if ((current?.directionId || null) !== expectedDirectionId)
-      fail("Common Project direction changed; derive against its current exact basis.", "PROJECT_DIRECTION_CONFLICT");
+    if ((current?.directionId || null) !== expectedDirectionId) {
+      // The rule stays: an update names the revision it was derived from. A
+      // missing id is not a conflict, so say which id is current.
+      if (expectedDirectionId == null)
+        fail(
+          `A common Project direction already exists (${current.directionId}); an update must name the revision it was derived from. ` +
+            "Read it (CLI project-direction-read, MCP lode_project_direction_read), then repeat with that id (CLI --expected-direction, MCP expected_direction_id).",
+          "PROJECT_DIRECTION_CONFLICT",
+        );
+      fail(
+        `Common Project direction changed; derive against its current exact basis. The current revision is ${current?.directionId ?? "none (no direction recorded)"}, not ${expectedDirectionId}.`,
+        "PROJECT_DIRECTION_CONFLICT",
+      );
+    }
     if (current && hash(current.input) === hash(direction)) return { status: "reused", direction: current };
     const project = read(safeSessionPath(root, formatForVerifiedOwner(storage).directory, "project.json"));
     const payload = {

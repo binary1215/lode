@@ -9,6 +9,56 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.137 — 게시 결과는 별도 확인
+
+- 수정: 폴더를 옮기거나 복사한 Project에 초기화를 안내했습니다. 이제 대화
+  진입(`conversation-enter`, `lode_conversation_enter`)은 결과의 어느 깊이에서도
+  다음 단계를 재개 하나로만 적습니다. `initialize_core`도, `core-initialization`
+  주의 항목도 없고, CLI 문구는 `status`가 보여 주는 문장을 그대로 씁니다. 재개
+  전에 부른 작업(`session-list`, `project-direction-read` 등)은 `.head\project.json`
+  경로의 `ENOENT` 대신 `PROJECT_RELOCATION_AVAILABLE` 또는
+  `PROJECT_RELOCATION_PENDING`으로 답하며 Project ID, 기록된 폴더, 재개 단계를
+  적습니다. Project가 없는 폴더는 문장과 함께 `NOT_INITIALIZED`로, 없는 폴더는
+  `PROJECT_NOT_FOUND`로 답합니다.
+- 수정: 옮기거나 복사한 Project에서 관리 파일이 빠져 있으면 날것의 `ENOENT`로
+  실패했고, 대화 진입은 `NOT_INITIALIZED`라고 했습니다. 이제 `status`, `resume`,
+  대화 진입, 세션 시작 훅이 이식성 문서대로 파일 이름을 적어
+  `PROJECT_NOT_READY`로 답합니다. 바뀐 파일뿐 아니라 빠진 파일도 같습니다.
+  옮기지 않은 Project에서도 `resume`이 달라진 파일을 적습니다. Lode에는 빠지거나
+  바뀐 관리 파일을 다시 만드는 단계가 없으므로, 거절문은 복구를 권하지 않고
+  그 사실을 적습니다.
+- 변경: 이유 코드만 내던 거절이 무엇이 잘못됐고 무엇을 하면 되는지 적습니다.
+  `PROJECT_RUNTIME_MISMATCH`는 어디서나 같은 문구입니다(기록된 runtime, 요청한
+  runtime, 있는 Project의 runtime 집합은 바꿀 수 없다는 점). init, resume, status,
+  대화 진입 경로의 복사·이동·줄 끝 복구 코드와, 사용자가 만나기 쉬운 그래프·제품
+  그래프·번들·메시지 코드 20개에 문구를 넣었습니다. 코드만 내는 실패 지점은
+  964곳에서 879곳으로 줄었습니다. 코드 자체와 `--json` 필드는 그대로입니다.
+- 변경: 방향과 작업을 저장할 때의 거절이 이유를 설명합니다. 받지 않는 방향 키는
+  받는 키(`goal`, `constraints`, `decisions`, `cancelledActions`)와 함께 이름을
+  적습니다. 기대 ID 없이 한 수정은 실제 충돌과 구분하고, 둘 다 현재 ID를
+  적습니다. basis ID 없는 `lode_checkpoint_sync`는 그 ID를 어디서 얻는지
+  적습니다. ID, status, origin이 틀린 Todo는 필드와 받는 값을 적습니다.
+  `lode_session`(`work_record`)은 `evidence` 인자를 적습니다. 스킬 문서는 이제
+  Todo 필드를 나열하고 `evidence`와 `work_evidence`를 구분합니다.
+- 변경: CLI `resume`은 더 이상 Project를 만들지 않습니다. Project가 없는
+  폴더에서는 거절하고 `init`을 알려 주며 아무것도 만들지 않습니다. `init`과 MCP
+  도구 `lode_project_initialize_or_resume`은 여전히 만듭니다.
+- 변경: CLI 명령이 읽지 않는 옵션과 도구 스키마에 없는 MCP 인자는 그 이름과,
+  가까운 것이 있으면 맞는 철자를 적어 거절합니다(`CLI_UNKNOWN_OPTION`,
+  `INVALID_TOOL_ARGUMENTS`). 전에는 조용히 버리고 그것 없이 실행했습니다. 선언된
+  객체 안에 들어가야 하는 인자는 그 객체를 알려 줍니다. MCP 메타데이터 키
+  `_meta`는 무시합니다. `session-continue` 도움말에서 아무 코드도 읽지 않던
+  `--binding-env`를 뺐습니다.
+- 변경: `project-direction-read`, `project-direction-update`, `session-create`,
+  `checkpoint`는 `--json` 없이 글로 출력합니다(무슨 일이 있었는지, 사람이 쓸 ID,
+  다음 단계). `session-list`는 Session마다 한 줄을 출력합니다. `--json` 출력은
+  그대로입니다.
+- 변경: init과 resume은 claude runtime용 프로젝트 루트 `.mcp.json`을 쓰거나
+  유지할 때 그렇게 적고, README도 이 파일을 적습니다.
+- 문서: `status`가 실제로 출력하는 대로 적었습니다(한 줄, 그리고 알림마다 한
+  줄). 신뢰 확인은 `node <plugin-root>/scripts/lode.mjs doctor <project>`로
+  적었습니다. 마켓플레이스 설치에는 `lode` 실행 파일이 없기 때문입니다.
+
 ## 0.3.0-beta.136 — 게시 결과는 별도 확인
 
 - 수정: 큰 트리에서 제품 그래프 빌드가 `PRODUCT_GRAPH_SOURCE_TOO_LARGE` 코드만

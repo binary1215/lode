@@ -66,8 +66,11 @@ independent authorized work. Retained storage formats:
 - `workContext.records[].content` is original; `recordExcerpts` name exact owner,
   field and range. Read missing originals with `lode_session` (`work_read`) only when
   the next action needs them. Excerpts alone are neither empty history nor recovery.
-- Todos: write optional work-evidence `todos` (stable ID, task, next action,
-  explicit status, exact prior revision on update) at meaningful changes only.
+- Todos: write optional work-evidence `todos` at meaningful changes only. Each
+  item: `todoId` (`todo-` plus lowercase letters, digits, `-`), `task`, `status`
+  (`pending`, `partial`, `waiting`, `completed`, `cancelled`), `origin`
+  (`user-directed`, or `lode-proposed` for a Lode proposal), `nextAction` while
+  unresolved, `reason` for waiting/cancelled, and the exact `prior` on update.
   Partial and waiting remain open; elapsed time never completes a task.
   Current user direction/cancellations and P2 take precedence over every Todo.
 - Common direction: read `lode_project_direction_read`; publish user direction
@@ -128,8 +131,9 @@ messaging authority; see
   stays unverified. Test presence is not an executed PASS. See
   [after integrated changes](references/project-discovery.md#after-integrated-changes).
 - Preserve otherwise-unrepresented reasons, alternatives and unknowns only at a
-  meaningful handoff: `work_evidence` on `lode_checkpoint_sync`, or
-  `lode_session` (`work_record`) for Run-free work. Optional `workLink`,
+  meaningful handoff: the argument `work_evidence` on `lode_checkpoint_sync`,
+  or `lode_session` (`work_record`) for Run-free work, which takes the same
+  object as `evidence` (fields go inside it, not at the top level). Optional `workLink`,
   `executionObservation` and `workTopics` reuse returned exact selectors.
   No per-turn save, save approval or user JSON.
 - Work documents: `lode_work_document` (`prepare`/`publish`/`status`); Project documents:

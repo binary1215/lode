@@ -33,8 +33,8 @@ const authority = {
   executionAuthority: false,
   ordinaryWorkBlocked: false,
 };
-const fail = (code) => {
-  const error = new Error(code);
+const fail = (code, message = code) => {
+  const error = new Error(message);
   error.code = code;
   throw error;
 };
@@ -94,7 +94,11 @@ function exactRead(root, relative, storage) {
 export function readProjectGraphInventoryPage(options, normalized) {
   if (options.inventoryPage !== true) fail("INVALID_PROJECT_GRAPH_INVENTORY_PAGE");
   const owner = readGraphProject(options.root || ".");
-  if (!owner.project) fail("PROJECT_GRAPH_NOT_INITIALIZED");
+  if (!owner.project)
+    fail(
+      "PROJECT_GRAPH_NOT_INITIALIZED",
+      `No Lode Project is initialized in ${path.resolve(options.root || ".")}; the project graph inventory reads one. Initialize or resume the Project there first.`,
+    );
   const { projectRoot: root, project, storage } = owner;
   const roots = projectGraphRecordDirectories(storage),
     singles = projectGraphSingletonPaths(storage);
@@ -121,7 +125,11 @@ export function readProjectGraphInventoryPage(options, normalized) {
   let cursor = null;
   if (options.inventoryCursor != null) {
     const raw = options.inventoryCursor;
-    if (typeof raw !== "string" || !raw || raw.length > MAX_CURSOR || !/^[A-Za-z0-9_-]+$/.test(raw)) fail("INVALID_PROJECT_GRAPH_INVENTORY_CURSOR");
+    if (typeof raw !== "string" || !raw || raw.length > MAX_CURSOR || !/^[A-Za-z0-9_-]+$/.test(raw))
+      fail(
+        "INVALID_PROJECT_GRAPH_INVENTORY_CURSOR",
+        `The inventory cursor is not one a page returned (letters, digits, "-" and "_", at most ${MAX_CURSOR} characters). Pass the next cursor of the previous page, or omit it to start at the first page.`,
+      );
     try {
       cursor = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
     } catch {

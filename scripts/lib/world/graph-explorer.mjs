@@ -19,8 +19,10 @@ export const GRAPH_EXPLORER_VIEWS = Object.freeze(["status", "product", "gaps", 
 export const GRAPH_EXPLORER_LANGUAGES = Object.freeze(["en", "ko"]);
 
 function checkViewOptions({ view, lang }) {
-  if (view !== null && !GRAPH_EXPLORER_VIEWS.includes(view)) fail("GRAPH_EXPLORER_INVALID_VIEW");
-  if (!GRAPH_EXPLORER_LANGUAGES.includes(lang)) fail("GRAPH_EXPLORER_INVALID_LANG");
+  if (view !== null && !GRAPH_EXPLORER_VIEWS.includes(view))
+    fail("GRAPH_EXPLORER_INVALID_VIEW", `Unknown view ${JSON.stringify(view)}. Use one of: ${GRAPH_EXPLORER_VIEWS.join(", ")}, or leave it out.`);
+  if (!GRAPH_EXPLORER_LANGUAGES.includes(lang))
+    fail("GRAPH_EXPLORER_INVALID_LANG", `Unknown language ${JSON.stringify(lang)}. Use one of: ${GRAPH_EXPLORER_LANGUAGES.join(", ")}.`);
 }
 
 // 4.1: the start view. Without --view, options that only mean something on the
@@ -346,7 +348,8 @@ export async function exportGraphExplorer({
     protect(resolved);
     file = path.resolve(resolved, path.relative(ancestor, file));
   }
-  if (file && fs.existsSync(file)) fail("GRAPH_EXPLORER_OUTPUT_EXISTS");
+  if (file && fs.existsSync(file))
+    fail("GRAPH_EXPLORER_OUTPUT_EXISTS", `The output file ${file} already exists. Name a new file; the explorer does not overwrite one.`);
   const snapshot = await buildGraphExplorerSnapshot({ root, query, anchorIds, paths, layer, history, share, view, lang }),
     html = renderGraphExplorer(snapshot);
   const bytes = Buffer.byteLength(html);

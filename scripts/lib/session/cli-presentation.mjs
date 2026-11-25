@@ -260,6 +260,16 @@ export function formatProjectStatus(value, { doctor = false } = {}) {
   return `${lines.join("\n")}\n`;
 }
 
+// init/resume write .mcp.json for the claude runtime unless the plugin itself
+// serves this Project (user decision D3, 2026-11-25: keep writing it, say so).
+function mcpProjectFileNotice(value) {
+  const mcp = value.project?.integrations?.claude?.mcp;
+  if (mcp?.status !== "managed" || typeof mcp.path !== "string") return [];
+  return [
+    `Claude Code MCP: Lode wrote or keeps ${mcp.path} at the project root. It holds the Lode MCP server entry with absolute paths to this plugin, so Claude Code opening this folder can start Lode's tools; Lode manages the file and reports it if it changes.`,
+  ];
+}
+
 export function formatProjectBootstrap(value) {
   if (value?.status === "session_selection_unresolved") return formatUnavailableSession(value);
   const core = value.readiness?.core;
@@ -294,6 +304,7 @@ export function formatProjectBootstrap(value) {
     `User decision: ${needsProductReview ? "required before Product candidates can be approved; ordinary work remains available" : "none"}`,
     ...(instructionNotice ? [instructionNotice] : []),
     ...integrationNotices(value),
+    ...mcpProjectFileNotice(value),
     ...(formatCodexHookTrust(value.codexHookTrust) ? [formatCodexHookTrust(value.codexHookTrust)] : []),
     ...(integrityAttention
       ? [
@@ -431,6 +442,12 @@ export function formatConversationRecovery(value) {
       "Ordinary independent work remains available; only work that depends on the unverified checkpoint is paused.",
       "User action: none unless Lode identifies a material decision after inspection.",
     );
+    // A moved Project: the same sentence status prints (blocking files come as a follow-up).
+    const location = entry?.projectLocation?.status;
+    if (["relocation_available", "relocation_pending"].includes(location))
+      lines.push(
+        "Lode found an existing Project here. Resume this existing Project explicitly; do not initialize a replacement. Independent work can continue.",
+      );
   }
   if (
     ["quiet", "notice"].includes(value?.presentation?.mode) &&
@@ -1412,45 +1429,73 @@ export function formatDeliveryStatus(value) {
   return `${lines.join("\n")}\n`;
 }
 
+// One line per Session (4.4): id, whether it is the default (selected when no
+// Session is named), purpose and its stored pointers. Every stored value still
+// appears on that line; nothing is inferred about live state.
+const SESSION_LINE_SKIP = new Set(["schemaVersion", "projectId", "sessionId", "purpose"]);
+function sessionLine(session, index, value) {
+  if (!originalObject(session)) return `- Session[${index}]: ${JSON.stringify(session)}\n`;
+  const parts = [];
+  const state = originalObject(session.state) ? session.state : null;
+  if (state) {
+    const shown = new Set(SESSION_LINE_SKIP);
+    const add = (key, label) => {
+      shown.add(key);
+      if (state[key] != null) parts.push(`${label} ${typeof state[key] === "string" ? state[key] : JSON.stringify(state[key])}`);
+    };
+    add("activeRunId", "run");
+    add("pendingReview", "review pending");
+    add("requiredPlanAction", "plan action");
+    add("latestCheckpoint", "checkpoint");
+    if (!parts.length) parts.push("no stored run, review or checkpoint pointer");
+    add("updatedAt", "updated");
+    if (state.mode === "session") shown.add("mode");
+    for (const [key, item] of Object.entries(state)) if (!shown.has(key) && item != null) parts.push(`${key}: ${JSON.stringify(item)}`);
+  } else if (Object.hasOwn(session, "state")) parts.push(`state: ${JSON.stringify(session.state)}`);
+  else parts.push("no stored state");
+  for (const [key, item] of Object.entries(session))
+    if (!["sessionId", "purpose", "default", "state", "source"].includes(key)) parts.push(`${key}: ${JSON.stringify(item)}`);
+  const id = typeof session.sessionId === "string" ? session.sessionId : JSON.stringify(session.sessionId ?? null);
+  const flag = session.default === true ? " (default; selected when no Session is named)" : "";
+  const purpose = typeof session.purpose === "string" && session.purpose ? ` "${compactText(session.purpose, 200)}"` : " (no purpose)";
+  const preview = value.preview?.sessionId === session.sessionId ? " [previewed below]" : "";
+  return `- ${id}${flag}${purpose}${preview}: ${parts.join("; ")}\n`;
+}
+
 function formatSessionList(value) {
   if (!originalObject(value) || !Array.isArray(value.sessions)) return JSON.stringify(value);
-  const handled = new Set(["sessions"]);
+  const handled = new Set(["sessions", "projectId", "defaultSessionId"]);
   let text = "Logical Sessions: purpose and stored P2 pointers; not freshly verified execution or completion.\n";
-  text += originalFacts(value, ["projectId", "defaultSessionId"], "sessions", handled);
-  for (const [index, session] of value.sessions.entries()) {
-    text += `Session[${index}]:\n`;
-    if (!originalObject(session)) {
-      text += originalField(`sessions[${index}]`, session);
-      continue;
-    }
-    const fields = new Set();
-    text += originalFacts(session, ["purpose", "sessionId", "default"], `sessions[${index}]`, fields);
-    if (originalObject(session.state)) {
-      const state = session.state,
-        stateFields = new Set();
-      fields.add("state");
-      for (const [key, shown] of [
-        ["purpose", session.purpose],
-        ["sessionId", session.sessionId],
-        ["projectId", value.projectId],
-      ]) {
-        if (Object.hasOwn(state, key) && isDeepStrictEqual(state[key], shown)) stateFields.add(key);
-      }
-      text +=
-        value.preview?.sessionId === session.sessionId
-          ? "Stored pointers only; the requested exact work preview follows with its own coverage/errors.\n"
-          : "Stored pointers only; recent work and remaining tasks are uninspected until an exact preview.\n";
-      text += originalFacts(
-        state,
-        ["updatedAt", "activeRunId", "pendingReview", "requiredPlanAction", "latestCheckpoint"],
-        `sessions[${index}].state`,
-        stateFields,
-      );
-      text += originalRemainder(state, stateFields, `sessions[${index}].state`);
-    }
-    if (value.preview?.sessionId !== session.sessionId)
-      text += `Preview this Session with the existing list session_id / --session ${JSON.stringify(session.sessionId)}; no selection change.\n`;
-    text += originalRemainder(session, fields, `sessions[${index}]`);
+  text += `Project ${value.projectId ?? "unknown"}; ${value.sessions.length} Session(s).\n`;
+  for (const [index, session] of value.sessions.entries()) text += sessionLine(session, index, value);
+  if (value.sessions.some((session) => originalObject(session?.state)))
+    text += "Stored pointers only; recent work and remaining tasks are uninspected until an exact preview.\n";
+  if (value.sessions.some((session) => originalObject(session) && value.preview?.sessionId !== session.sessionId))
+    text += "Preview one Session with the existing list session_id / --session <id>; no selection change. Exact fields: --json\n";
+  // The page itself in one line; unreadable entries are named, never dropped.
+  if (originalObject(value.coverage) || Array.isArray(value.unavailable) || Object.hasOwn(value, "nextAfterSessionId")) {
+    const coverage = originalObject(value.coverage) ? value.coverage : {};
+    const unavailable = Array.isArray(value.unavailable) ? value.unavailable : [];
+    const page = [
+      Number.isSafeInteger(coverage.returnedEntries) && Number.isSafeInteger(coverage.discoveredEntries)
+        ? `${coverage.returnedEntries} of ${coverage.discoveredEntries} stored Session entries returned`
+        : null,
+      unavailable.length ? `${unavailable.length} unreadable: ${unavailable.map((item) => JSON.stringify(item)).join(", ")}` : null,
+      value.nextAfterSessionId ? `more: --after-session ${value.nextAfterSessionId}` : null,
+    ].filter(Boolean);
+    if (page.length) text += `Page: ${page.join("; ")}.\n`;
+    for (const key of [
+      "coverage",
+      "unavailable",
+      "nextAfterSessionId",
+      "projectSource",
+      "status",
+      "persisted",
+      "recoveryAuthority",
+      "instructionAuthority",
+      "ordinaryWorkBlocked",
+    ])
+      handled.add(key);
   }
   if (!value.sessions.length) text += originalField("sessions", value.sessions);
   if (originalObject(value.preview)) {
@@ -1587,6 +1632,71 @@ export function formatCliError(error) {
   );
 }
 
+// Text forms for the first-use commands that printed raw JSON (first-use
+// bundle 4.4): what happened, the ids a person needs and the next step. The
+// whole object stays under --json.
+function directionLines(direction) {
+  const input = direction?.input || {};
+  const lines = [`Goal: ${compactText(input.goal ?? "", 300)}`];
+  for (const [key, label] of [
+    ["constraints", "Constraint"],
+    ["decisions", "Decision"],
+    ["cancelledActions", "Cancelled action"],
+  ])
+    for (const item of Array.isArray(input[key]) ? input[key] : []) lines.push(`${label}: ${compactText(item, 300)}`);
+  return lines;
+}
+
+export function formatProjectDirectionRead(value) {
+  if (value == null)
+    return "No common Project direction is recorded (not an approved empty direction).\nRecord the user's direction with project-direction-update; the first one needs no --expected-direction.\n";
+  if (!originalObject(value) || typeof value.directionId !== "string") return `${JSON.stringify(value, null, 2)}\n`;
+  return `${[
+    `Common Project direction ${value.directionId} (previous: ${value.previousDirectionId ?? "none"}).`,
+    ...directionLines(value),
+    `To change it: project-direction-update <project> --input <file> --expected-direction ${value.directionId}.`,
+    "Full record: --json",
+  ].join("\n")}\n`;
+}
+
+export function formatProjectDirectionUpdate(value) {
+  const direction = value?.direction;
+  if (!originalObject(direction) || typeof direction.directionId !== "string") return `${JSON.stringify(value, null, 2)}\n`;
+  const head =
+    value.status === "reused"
+      ? `Common Project direction unchanged: ${direction.directionId} already records this input.`
+      : `Common Project direction recorded: ${direction.directionId} (previous: ${direction.previousDirectionId ?? "none"}).`;
+  return `${[
+    head,
+    ...directionLines(direction),
+    `Next: continue the task. A later update names --expected-direction ${direction.directionId}.`,
+    "Full record: --json",
+  ].join("\n")}\n`;
+}
+
+export function formatSessionCreate(value) {
+  if (!originalObject(value) || typeof value.sessionId !== "string") return `${JSON.stringify(value, null, 2)}\n`;
+  const purpose = value.state?.purpose ? ` "${compactText(value.state.purpose, 200)}"` : "";
+  return `${[
+    `Session ${value.status === "created" ? "created" : (value.status ?? "returned")}: ${value.sessionId}${purpose} in Project ${value.projectId ?? "unknown"}.`,
+    "It is not selected and the default Session is unchanged; route a command to it with --session " + value.sessionId + " (MCP session_id).",
+    "Full record: --json",
+  ].join("\n")}\n`;
+}
+
+export function formatCheckpoint(value) {
+  const checkpoint = value?.checkpoint;
+  if (!originalObject(checkpoint)) return `${JSON.stringify(value, null, 2)}\n`;
+  const id = checkpoint.checkpointId ?? (typeof value.file === "string" ? value.file.replace(/^.*[\/]/, "").replace(/\.json$/, "") : "unknown");
+  return `${[
+    `Recovery checkpoint ${value.status === "checkpointed" ? "recorded" : (value.status ?? "returned")}: ${id} in Session ${checkpoint.sessionId ?? "unknown"}.`,
+    `Purpose: ${compactText(checkpoint.purpose ?? "", 300)}`,
+    ...(checkpoint.nextExpectedResult ? [`Next expected result: ${compactText(checkpoint.nextExpectedResult, 300)}`] : []),
+    "A new conversation restores this direction on entry; nothing else needs saving now.",
+    "Full record: --json",
+  ].join("\n")}\n`;
+}
+
 export function formatCliResult(command, value, presentation = {}) {
   if (["product-graph-build", "product-graph-check"].includes(command) && typeof value?.text === "string")
     return command === "product-graph-build"
@@ -1631,6 +1741,10 @@ export function formatCliResult(command, value, presentation = {}) {
   if (command === "checkpoint-diagnose") return formatCheckpointDiagnosis(value);
   if (command === "checkpoint-sync") return formatCheckpointSync(value);
   if (command === "session-work-record") return formatSessionWorkRecord(value);
+  if (command === "project-direction-read") return formatProjectDirectionRead(value);
+  if (command === "project-direction-update") return formatProjectDirectionUpdate(value);
+  if (command === "session-create") return formatSessionCreate(value);
+  if (command === "checkpoint") return formatCheckpoint(value);
   if (command === "session-work-read") return formatSessionWorkContext(value) || "No selected Session work evidence is recorded. Ordinary work continues.\n";
   if (
     [

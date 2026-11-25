@@ -21,6 +21,7 @@ import { buildRuntimeProjectBinding, buildRuntimeProtocolEvidence } from "../run
 import { SCHEMA_VERSION, SUPPORTED_RUNTIMES } from "../core/core-contract.mjs";
 import { sha256Hex as sha256 } from "../core/digest.mjs";
 import { failWith } from "../core/errors.mjs";
+import { runtimeMismatchText } from "../core/refusal-text.mjs";
 import { escapesRoot } from "../core/path-safety.mjs";
 export { SCHEMA_VERSION, SUPPORTED_RUNTIMES, coreContract } from "../core/core-contract.mjs";
 
@@ -408,6 +409,20 @@ export function initializeProject({ root = ".", pluginRoot, runtimes, installati
   }
 }
 
+// The refusal names the managed files that differ, as status does. Lode has no
+// step that regenerates a missing or changed managed file (only line-ending
+// changes are restored by resume), so the text says that instead of a repair.
+export function managedDriftRefusal(inspected) {
+  const drift = Array.isArray(inspected?.drift) ? inspected.drift : [];
+  if (!drift.length) return `Managed project files must be drift-free before resume or installation; current status: ${inspected?.status}.`;
+  const named = drift.slice(0, 8).map((item) => `${item.path || item.kind || "managed artifact"} (${item.reason || "changed"})`);
+  return (
+    `Managed project files must be drift-free; these differ from their recorded versions: ${named.join(", ")}${drift.length > 8 ? `, and ${drift.length - 8} more` : ""}. ` +
+    "Lode does not regenerate or overwrite a managed file, and has no step that repairs a missing or changed one; resume restores only files whose line endings changed. " +
+    "Nothing was changed. Ordinary work is not blocked; restore those files to their recorded content and run resume again."
+  );
+}
+
 export function convergeProjectInstallation({
   root = ".",
   pluginRoot,
@@ -421,12 +436,12 @@ export function convergeProjectInstallation({
   const inspected = inspectProject(root);
   if (inspected.status === "not_initialized") fail("Lode Agent Core is not initialized.", "NOT_INITIALIZED");
   if (inspected.status !== "ready") {
-    fail(`Managed project files must be drift-free before installation convergence; current status: ${inspected.status}.`, "PROJECT_NOT_READY");
+    fail(managedDriftRefusal(inspected), "PROJECT_NOT_READY");
   }
   if (runtimes != null) {
     const requested = normalizeRuntimes(runtimes);
     if (JSON.stringify(requested) !== JSON.stringify(inspected.project.runtimes)) {
-      fail("Requested runtimes do not match the initialized project runtime set.", "PROJECT_RUNTIME_MISMATCH");
+      fail(runtimeMismatchText(inspected.project.runtimes, requested), "PROJECT_RUNTIME_MISMATCH");
     }
   }
   const projectRoot = inspected.project.projectRoot;

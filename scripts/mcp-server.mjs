@@ -2,7 +2,7 @@
 import readline from "node:readline";
 import { resolveOperation } from "./lib/core/lode-operation-contract.mjs";
 import { callRegistered, registeredOperation, registryCatalog, WORLD_MODEL_STATUS_MCP_MAX_BYTES } from "./lib/session/operation-registry.mjs";
-import { assertProjectRootArgument } from "./lib/core/mcp-argument-validation.mjs";
+import { assertDeclaredArguments, assertProjectRootArgument } from "./lib/core/mcp-argument-validation.mjs";
 import { legacyReasonCodeFields } from "./lib/core/errors.mjs";
 import { ARTIFACT_COMPOSITION, publicToolName } from "./lib/lode-artifact-composition.mjs";
 import { DISCOVERY_PREFIX_PAIRS, legacyOperationName } from "../compat/head/public-names.mjs";
@@ -798,6 +798,10 @@ async function dispatchRouted(
   try {
     let name = semanticToolName(request.params?.name);
     let args = request.params?.arguments || {};
+    // The routing tools take the same D2 check as every other tool: an
+    // argument outside their schema is named, with the near spelling.
+    const routing = discoveryTools.find((tool) => tool.name === name && tool.name !== READ_CHAIN_TOOL_NAME);
+    if (routing) assertDeclaredArguments(routing.name, routing.inputSchema, args);
     if (name === "lode_tools_discover") {
       const value = discoverTools(args, surface);
       return success(id, { content: [{ type: "text", text: JSON.stringify(value) }], structuredContent: value });
@@ -831,6 +835,14 @@ async function dispatchRouted(
     const registered = registeredOperation(name);
     const declaredSchema = registered?.tool?.inputSchema;
     if (declaredSchema) assertProjectRootArgument(publicToolName(name), declaredSchema, args);
+    // The published schema (with its session route) is the contract for names.
+    const publishedSchema = allTools.find((tool) => semanticToolName(tool.name) === semanticToolName(name))?.inputSchema;
+    if (publishedSchema) {
+      // A grouped member is named as the caller called it: lode_session (action work_record).
+      const membership = groupMembership(semanticToolName(name));
+      const presented = membership ? `${publicToolName(membership.group.name)} (action ${membership.action})` : publicToolName(name);
+      assertDeclaredArguments(presented, publishedSchema, args);
+    }
     if (!registered) throw new Error(`Unknown tool: ${publicToolName(name)}`);
     // Only a view the native bridge issued to a verified caller counts (4-D).
     const basisMemory =

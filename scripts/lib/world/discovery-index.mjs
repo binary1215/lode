@@ -73,8 +73,8 @@ export function canonicalGraphJson(value) {
   return JSON.stringify(sort(value));
 }
 export const projectGraphDigest = (value) => hash(typeof value === "string" || Buffer.isBuffer(value) ? value : canonicalGraphJson(value));
-const fail = (code) => {
-  const error = new Error(code);
+const fail = (code, message = code) => {
+  const error = new Error(message);
   error.code = code;
   throw error;
 };
@@ -99,7 +99,10 @@ export function readGraphProject(root) {
       const legacyFile = safeGraphFile(projectRoot, ".head/project.json");
       const project = JSON.parse(fs.readFileSync(legacyFile, "utf8"));
       if (project.schemaVersion !== 1 || project.projectRoot !== projectRoot || !/^head-[a-f0-9]{20}$/.test(project.projectId || ""))
-        fail("PROJECT_IDENTITY_MISMATCH");
+        fail(
+          "PROJECT_IDENTITY_MISMATCH",
+          `The .head/project.json in ${projectRoot} records another folder or an invalid Project ID, so it is not this folder's Project. Resume the Project at this folder, or name the folder it records.`,
+        );
       return project;
     },
   });

@@ -10,6 +10,9 @@ import { createRecoveryBasisMemory } from "../scripts/lib/session/recovery-basis
 import { dispatch, entryHoldSession, initHoldSession, tools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { createHeadSession } from "../scripts/lib/session/session-routing.mjs";
+// First-use bundle 3.3: the refusal now names where the basis id comes from.
+const BASIS_REQUIRED =
+  /^Expected recovery basis id is required: read it with lode_checkpoint_basis \(CLI checkpoint-basis\), or take it from the last created sync/;
 
 // 4-D part (b), user decision 4-2 (a): a Host-verified caller may omit
 // expected_recovery_basis_id on lode_checkpoint_sync. Explicit ids, unverified
@@ -152,7 +155,7 @@ test("nothing held: verified callers get the basis-read refusal; unverified call
   const before2 = snapshot(root);
   const routedUnverified = await codex(bridge, root, "lode_checkpoint_sync", { ...direction, session_id: sessionId }, null);
   for (const response of [plain, legacy, routedUnverified]) {
-    assert.equal(response.error?.message, "Expected recovery basis id is required.", JSON.stringify(response));
+    assert.match(response.error?.message, BASIS_REQUIRED, JSON.stringify(response));
     assert.equal(response.error.data.reasonCode, "INVALID_COMPACTION_INPUT");
   }
   assert.deepEqual(snapshot(root), before2);
@@ -255,12 +258,12 @@ test("only the native bridge supplies a held basis: an embedder option is ignore
   embedded.hold(root, basis.sessionId, basis.basisId);
   const before = snapshot(root);
   const noBridge = await plain("lode_checkpoint_sync", direction, { recoveryBasisMemory: embedded });
-  assert.equal(noBridge.error?.message, "Expected recovery basis id is required.", JSON.stringify(noBridge));
+  assert.match(noBridge.error?.message, BASIS_REQUIRED, JSON.stringify(noBridge));
   assert.equal(noBridge.error.data.reasonCode, "INVALID_COMPACTION_INPUT");
   const bridge = createNativeSessionHostBridge({ runtime: "codex", environment });
   t.after(() => bridge.dispose());
   const viaBridge = await plain("lode_checkpoint_sync", direction, { nativeSessionBridge: bridge, recoveryBasisMemory: embedded });
-  assert.equal(viaBridge.error?.message, "Expected recovery basis id is required.");
+  assert.match(viaBridge.error?.message, BASIS_REQUIRED);
   assert.deepEqual(snapshot(root), before);
 });
 
@@ -270,7 +273,7 @@ test("a verified caller on an uninitialized directory gets the operation's own r
   const bridge = createNativeSessionHostBridge({ runtime: "codex", environment: { HEAD_AGENT_OPERATIONAL_STATE_ROOT: path.join(base, "host") } });
   t.after(() => bridge.dispose());
   const response = await codex(bridge, base, "lode_checkpoint_sync", direction, "thread-A");
-  assert.equal(response.error?.message, "Expected recovery basis id is required.", JSON.stringify(response));
+  assert.match(response.error?.message, BASIS_REQUIRED, JSON.stringify(response));
   assert.deepEqual(
     fs.readdirSync(base).filter((name) => name !== "host"),
     [],
@@ -291,7 +294,7 @@ test("CLI is unchanged: the basis id is still required", async (t) => {
   );
   await assert.rejects(runCommand(["checkpoint-sync", root, "--input", input]), (error) => {
     assert.equal(error.code, "INVALID_COMPACTION_INPUT");
-    assert.equal(error.message, "Expected recovery basis id is required.");
+    assert.match(error.message, BASIS_REQUIRED);
     return true;
   });
 });
@@ -423,7 +426,7 @@ test("a view the bridge issued for one request cannot be reused outside it", asy
     { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "lode_checkpoint_sync", arguments: { project_root: root, ...direction } } },
     { recoveryBasisMemory: captured },
   );
-  assert.equal(reused.error?.message, "Expected recovery basis id is required.", JSON.stringify(reused));
+  assert.match(reused.error?.message, BASIS_REQUIRED, JSON.stringify(reused));
   assert.deepEqual(snapshot(root), before);
 });
 

@@ -4,7 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
 import { legacyReasonCodeFields } from "./lib/core/errors.mjs";
-import { callRegistered, registeredCommand } from "./lib/session/operation-registry.mjs";
+import { callRegistered, explainUnownedProjectRoot, unownedRootModeForCommand, registeredCommand } from "./lib/session/operation-registry.mjs";
+import { nearName } from "./lib/core/mcp-argument-validation.mjs";
 import { commandEntry, isManagedMutation, requireOperationSurface, requireSurface } from "./lib/session/managed-maintenance-surface.mjs";
 import { withSessionCallContext, sessionCallRequiresBinding, sessionSelectionUnresolved } from "./lib/session/session-routing.mjs";
 import { inspectProjectLocationExperience } from "./lib/session/project-bootstrap.mjs";
@@ -81,7 +82,7 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
     `${cliDisplay} session-create <project> [--purpose <text>] [--new-session <session-id>]  # session-id format: session-<36 hex digits and hyphens>, e.g. session-12345678-1234-1234-1234-123456789abc; omit to generate one`,
     `${cliDisplay} session-list <project> [--session <id>] [--max-sessions <1..64>] [--after-session <cursor>] [--conversation-candidates <json-file>]  # read-only preview and optional stored mappings; preserves selection`,
     `${cliDisplay} project-direction-read <project>`,
-    `${cliDisplay} project-direction-update <project> --input <current-user-direction.json> [--expected-direction <id>]`,
+    `${cliDisplay} project-direction-update <project> --input <current-user-direction.json> [--expected-direction <id>]  # JSON keys: goal (text), constraints[], decisions[], cancelledActions[]; an update of an existing direction names its current id (project-direction-read); e.g. {"goal":"Ship the login fix","constraints":["No schema change"],"decisions":[],"cancelledActions":[]}`,
     `${cliDisplay} runtime-adapters <project>`,
     `${cliDisplay} runtime-invocation-authorize <project> --input <authorization.json>`,
     `${cliDisplay} runtime-invocation-read <project> --authorization <execution-authorization-id>`,
@@ -224,7 +225,7 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
     `${cliDisplay} project-document-status <project>`,
     `${cliDisplay} session-work-read <project> [--scan-evidence] [--after-evidence-id <returned-id>] [--input <read-bounds.json>]`,
     `${cliDisplay} session-restore <project> [--checkpoint <session-run-checkpoint-id>]`,
-    `${cliDisplay} session-continue <project> --runtime <claude|codex|opencode> [--checkpoint <session-run-checkpoint-id>] [--binding-env <environment-name>]`,
+    `${cliDisplay} session-continue <project> --runtime <claude|codex|opencode> [--checkpoint <session-run-checkpoint-id>]`,
     `${cliDisplay} compact-prepare <project> --input <recovery.json>`,
     `${cliDisplay} compact-verify <project> --input <verification.json>`,
     `${cliDisplay} compact-continue <project> --input <continuation.json>`,
@@ -344,6 +345,43 @@ function requireRuntimeSurface(command, surface, root, authorization) {
   requireOperationSurface(command, surface, { workerBound });
 }
 
+// Options a command handled in this file reads; registered commands declare
+// theirs as cli.flags. --session routes any project command.
+const LOCAL_COMMAND_OPTIONS = Object.freeze({
+  "session-list": ["max-sessions", "after-session", "conversation-candidates"],
+  "tools-read-chain": ["input"],
+  "storage-gc": ["apply", "diagnostics"],
+});
+
+// An option the command does not read is refused with its name and, when one
+// is close, the valid spelling (user decision D2, 2026-11-25); before, it was
+// ignored and the command ran without it.
+// The options a command accepts (--json aside, which the entry point strips),
+// or null for a command this check does not cover. The usage text is tested
+// against it so the help and the refusal cannot drift apart.
+export function acceptedCliOptions(command) {
+  const registered = registeredCommand(command);
+  if (!registered && !LOCAL_COMMAND_OPTIONS[command]) return null;
+  return new Set([...(registered?.cli?.flags ?? []), ...(LOCAL_COMMAND_OPTIONS[command] ?? []), "session"]);
+}
+
+function refuseUnknownOptions(parsed) {
+  const known = acceptedCliOptions(parsed.command);
+  if (!known) return;
+  const unknown = Object.keys(parsed.options).filter((key) => key !== "_positional" && !known.has(key));
+  if (!unknown.length) return;
+  const named = unknown.map((key) => {
+    const near = nearName(key, [...known]);
+    return `--${key}${near ? ` (did you mean --${near}?)` : ""}`;
+  });
+  throw Object.assign(
+    new Error(
+      `${parsed.command} does not accept ${named.join(", ")}. Its options: ${[...known].map((key) => `--${key}`).join(", ")}, and --json for machine-readable output. Nothing was run.`,
+    ),
+    { code: "CLI_UNKNOWN_OPTION" },
+  );
+}
+
 export async function runCommand(argv = process.argv.slice(2), options = {}) {
   // A root that differs from the recorded one only in drive-letter case is the
   // same Project (Windows only; a read of project.json, never a write).
@@ -354,7 +392,14 @@ export async function runCommand(argv = process.argv.slice(2), options = {}) {
   const withRoot = (root) => (root === given ? argv : [...argv.slice(0, offset + 1), root, ...argv.slice(offset + 2)]);
   // A root that differs only in directory-name case is retried with the
   // recorded spelling after its Project was not found (no read when found).
-  return await withOnDiskSpellingRetry(recordedRootSpelling(given), (root) => runSpelledCommand(withRoot(root), options));
+  try {
+    return await withOnDiskSpellingRetry(recordedRootSpelling(given), (root) => runSpelledCommand(withRoot(root), options));
+  } catch (error) {
+    // The same explanation as a registered call, for the commands this file
+    // handles itself (status, session-list): a missing folder, a Project not
+    // resumed here, or no Project, instead of a raw ENOENT.
+    throw await explainUnownedProjectRoot(error, given, { storage: unownedRootModeForCommand(argv[offset]) });
+  }
 }
 
 async function runSpelledCommand(
@@ -374,6 +419,7 @@ async function runSpelledCommand(
 ) {
   const entry = commandEntry(argv);
   const parsed = parse(entry.argv);
+  refuseUnknownOptions(parsed);
   const index = argv.indexOf("--session");
   if (["project-import", "project-bundle-inspect", "project-native-history"].includes(parsed.command) && index >= 0)
     throw new Error("The bundle carries its exact Session selection; omit --session for import/inspection.");

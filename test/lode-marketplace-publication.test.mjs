@@ -141,8 +141,13 @@ test("host-d: actual packaged plugin request omits only its own new MCP file wit
     const manifest = JSON.parse(fs.readFileSync(path.join(positive, ".lode", "generated", "manifest.json")));
     assert(!manifest.managed.some(file => file.path === ".mcp.json"));
     const pointer = fs.readFileSync(path.join(positive, ".lode", "sessions", "current.json"));
-    // The same live plugin process supplies no permanent loaded/caller proof.
-    const later = await initialize(call, positive, { prepare: false, sessionId: value.project.sessionId, extra: { plugin_loaded: true } });
+    // The same live plugin process supplies no permanent loaded/caller proof; an
+    // argument claiming it is outside the schema and refused (D2, first-use bundle).
+    const forged = await call("tools/call", { name: "lode_project_initialize_or_resume", arguments: {
+      project_root: positive, profile: "core", runtimes: ["claude"], session_id: value.project.sessionId, plugin_loaded: true } });
+    assert.equal(forged.error?.data?.reasonCode, "INVALID_TOOL_ARGUMENTS", JSON.stringify(forged));
+    assert.equal(fs.existsSync(path.join(positive, ".mcp.json")), false);
+    const later = await initialize(call, positive, { prepare: false, sessionId: value.project.sessionId });
     assert.equal(later.projectAction, "resumed"); assert.equal(fs.existsSync(path.join(positive, ".mcp.json")), true);
     assert.deepEqual(fs.readFileSync(path.join(positive, ".lode", "sessions", "current.json")), pointer);
     assert.equal(fs.readFileSync(path.join(positive, "CLAUDE.md"), "utf8"), userInstructions);

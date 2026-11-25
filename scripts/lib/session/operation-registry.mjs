@@ -440,7 +440,33 @@ export const OPERATIONS = Object.freeze([
       aliases: ["resume"],
       flags: ["copied-project", "input", "instruction-integration", "profile", "runtime", "write-root-instructions"],
       handle: async (context) => {
-        const { root, options, projectSessionRoute, pluginRoot, inputJson } = context;
+        const { root, options, projectSessionRoute, pluginRoot, inputJson, command } = context;
+        // CLI resume resumes a Project; it does not create one (user decision
+        // D1, 2026-11-25). init and the MCP tool keep creating. "A Project is
+        // recorded here" is what the storage readers look for under .lode or
+        // .head: a project.json (owned here, or moved or copied from elsewhere)
+        // or a project-location journal (a pending relocation or bundle import,
+        // which resume reports). An empty .lode or .head folder records none.
+        if (command === "resume") {
+          const folder = path.resolve(root);
+          const recorded = [".lode", ".head"].some((directory) =>
+            ["project.json", "project-location"].some((entry) => {
+              try {
+                fs.lstatSync(path.join(folder, directory, entry));
+                return true;
+              } catch (error) {
+                return error.code !== "ENOENT" && error.code !== "ENOTDIR";
+              }
+            }),
+          );
+          if (fs.existsSync(folder) && !recorded)
+            throw Object.assign(
+              new Error(
+                `No Lode Project is here to resume: ${folder} holds no Lode Project. Use init to create a Project in this folder, or resume the folder that holds the Project. Nothing was created.`,
+              ),
+              { code: "NOT_INITIALIZED" },
+            );
+        }
         const { initializeOrResumeProject } = await import("./project-bootstrap.mjs");
         return await initializeOrResumeProject({
           root,
@@ -2679,7 +2705,19 @@ export const OPERATIONS = Object.freeze([
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    mcp: { args: (args) => [{ root: args.project_root, input: args.evidence, documentSelection: args.document_selection }] },
+    mcp: {
+      args: (args) => {
+        // The work goes under `evidence` (lode_checkpoint_sync calls the same object work_evidence).
+        if (args.evidence === undefined)
+          throw Object.assign(
+            new Error(
+              "lode_session work_record needs the argument evidence: an object with at least one of summary, judgments, observedWork, pending, unknowns, suggestedFollowUp, references, todos (lode_checkpoint_sync names the same object work_evidence).",
+            ),
+            { code: "INVALID_SESSION_WORK_EVIDENCE" },
+          );
+        return [{ root: args.project_root, input: args.evidence, documentSelection: args.document_selection }];
+      },
+    },
     impl: () => import("./session-work-document-workflow.mjs").then((module) => module.recordSessionWorkAndProjectDocuments),
   },
   {
@@ -6359,6 +6397,89 @@ export function registeredCommand(command) {
 // optional Host capability); call(...args) runs the implementation. A surface
 // may also name its own impl when it calls a different export.
 export async function callRegistered(entry, surface, input, context = input) {
+  try {
+    return await callRegisteredSide(entry, surface, input, context);
+  } catch (error) {
+    throw await explainUnownedProjectRoot(error, surface === "cli" ? input?.root : input?.project_root, {
+      storage: unownedRootMode(entry.name),
+    });
+  }
+}
+
+// Operations that create a Project or read a folder that is not a Project
+// (a bundle, an import target): their failures are their own and pass through.
+const READS_NON_PROJECT_PATH = new Set(["lode_project_bundle_export", "lode_project_bundle_read", "lode_project_bundle_import", "lode_project_native_history"]);
+function unownedRootMode(name) {
+  if (READS_NON_PROJECT_PATH.has(name)) return "none";
+  return name === "lode_project_initialize_or_resume" ? "own" : "explain";
+}
+export function unownedRootModeForCommand(command) {
+  const entry = registeredCommand(command);
+  return entry ? unownedRootMode(entry.name) : "explain";
+}
+
+// A raw ENOENT on <root>/.head or <root>/.lode (the storage a reader falls back
+// to when no Project is owned here), or on the root itself, becomes a refusal
+// in the caller's terms: the folder does not exist, holds a Project not yet
+// resumed here, or holds none. Any other failure passes through unchanged.
+// storage: "explain" (a Project operation), "own" (init/resume: only a missing
+// folder is explained) or "none" (a bundle or native history path, which is
+// not a project folder: everything passes through).
+export async function explainUnownedProjectRoot(error, root, { storage = "explain" } = {}) {
+  if (typeof root !== "string" || !root || !error || storage === "none") return error;
+  const notInitialized = error.code === "NOT_INITIALIZED";
+  if (!notInitialized && !/\bENOENT\b/.test(`${error.code ?? ""} ${error.message ?? ""}`)) return error;
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const resolved = path.resolve(root);
+  const text = `${error.path ?? ""} ${error.message ?? ""}`.toLowerCase();
+  if (!fs.existsSync(resolved)) {
+    if (!notInitialized && !text.includes(resolved.toLowerCase())) return error;
+    return Object.assign(new Error(`The folder ${resolved} does not exist. Name an existing project folder; Lode does not create it.`), {
+      code: "PROJECT_NOT_FOUND",
+      cause: error,
+    });
+  }
+  if (storage === "own") return error;
+  let real;
+  try {
+    real = fs.realpathSync(resolved);
+  } catch {
+    return error;
+  }
+  const underStorage = [".head", ".lode"].some((directory) =>
+    [path.join(resolved, directory), path.join(real, directory)].some((folder) => text.includes(folder.toLowerCase())),
+  );
+  if (!underStorage && !notInitialized) return error;
+  const { resolveProjectStorage } = await import("../storage/project-storage-format.mjs");
+  try {
+    if (resolveProjectStorage(real)) return error;
+  } catch {
+    return error;
+  }
+  const { projectRelocationHint } = await import("./compaction-lifecycle.mjs");
+  const hint = projectRelocationHint(real);
+  if (hint?.reasonCode === "PROJECT_NOT_READY") return Object.assign(new Error(hint.projectLocation.reason), { code: "PROJECT_NOT_READY", cause: error });
+  if (hint) return Object.assign(new Error(projectNotResumedText(real, hint)), { code: hint.reasonCode, cause: error });
+  return Object.assign(
+    new Error(
+      `No Lode Project is initialized in ${real}. Initialize one there (CLI init <project>, MCP lode_project_initialize_or_resume) only when Lode use was requested, or name the folder that holds the Project. Nothing was changed.`,
+    ),
+    { code: "NOT_INITIALIZED", cause: error },
+  );
+}
+
+export function projectNotResumedText(root, hint) {
+  const id = hint.projectLocation?.projectId ? ` ${hint.projectLocation.projectId}` : "";
+  const previous = hint.projectLocation?.previousRoot ? `, recorded at ${hint.projectLocation.previousRoot},` : "";
+  const state = hint.reasonCode === "PROJECT_RELOCATION_PENDING" ? "its move to this folder is pending" : "it has not been resumed at this folder";
+  return (
+    `This folder holds the existing Lode Project${id}${previous} but ${state}. ` +
+    "Resume it here first (CLI resume <project>, MCP lode_project_initialize_or_resume); do not initialize a replacement. Nothing was changed."
+  );
+}
+
+async function callRegisteredSide(entry, surface, input, context) {
   const side = entry[surface];
   side.before?.(input, context);
   const loader = side.impl ?? entry.impl;

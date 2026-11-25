@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { copiedProjectFile, verifyCopiedProjectFile } from "./project-copy-evidence.mjs";
 import { sha256Hex } from "../core/digest.mjs";
-import { failCode as fail } from "../core/errors.mjs";
+import { failExplained as fail } from "../core/refusal-text.mjs";
 
 function original(root, admission, relative, maximum) {
   const entry = admission?.inventory.files.find((item) => item.path === relative);

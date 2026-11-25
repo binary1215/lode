@@ -900,10 +900,41 @@ export async function inspectProjectExperience({ root = ".", recoveryOverride = 
   return projectExperience(project, await inspectOptionalOnboarding({ root }), recoveryOverride);
 }
 
+function conversationLocationExperience(root) {
+  try {
+    return inspectProjectLocationExperience({ root });
+  } catch (error) {
+    if (error?.code !== "PROJECT_NOT_READY") return null;
+    return withExperienceProjections({
+      kind: "LodeProjectExperienceProjection",
+      protocolVersion: PROJECT_BOOTSTRAP_PROTOCOL_VERSION,
+      status: "relocation_blocked",
+      projectRoot: path.resolve(root),
+      projectLocation: { status: "relocation_blocked", adopted: false, reason: error.message, authorityPlane: "P4", executionReplayAllowed: false },
+      selectedSession: { status: "not-inspected", selectionClaimed: false },
+      readiness: {
+        core: { state: "relocation_blocked", reason: error.message },
+        product: { state: "not-inspected" },
+        context: { state: "not-inspected" },
+        recovery: { state: "not-inspected", directionRestored: false, headActionRequired: false },
+      },
+      nextAction: { id: "review_managed_projection_drift", summary: error.message, entrypoint: { tool: "lode_project_status" } },
+      authority: { plane: "P4", advisoryOnly: true, persisted: false, mutatesProject: false, grantsAuthorization: false, writesRecoveryDirection: false },
+    });
+  }
+}
+
 // Fixed internal consumer boundary. Keep the later managed-file/selected-owner
 // observation; the entry's final pointer check does not rehash managed files.
 export async function inspectConversationProjectExperience({ root = ".", recoveryOverride = null } = {}) {
   const project = inspectProject(root);
+  if (project.status === "not_initialized") {
+    // A folder holding a Project recorded for another root is an existing
+    // Project: the nested status names resume (or the blocking files), the
+    // same as the entry's top level, never Core initialization.
+    const location = conversationLocationExperience(root);
+    if (location) return location;
+  }
   if (project.status !== "ready") return projectExperience(project, null, recoveryOverride);
   return projectExperience(project, await inspectOptionalOnboardingForEntry({ root }), recoveryOverride);
 }

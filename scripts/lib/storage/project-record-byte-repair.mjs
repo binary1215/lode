@@ -3,7 +3,7 @@ import { atomicCreateArtifact, atomicWriteArtifact } from "../core/fs-atomic.mjs
 import { copiedProjectFile, inspectCopiedProjectFile, validateCopiedManagedPaths } from "./project-copy-evidence.mjs";
 import { withLocalMutation } from "./project-mutation-lock.mjs";
 import { sha256Hex as hash } from "../core/digest.mjs";
-import { failCode as fail } from "../core/errors.mjs";
+import { failExplained as fail } from "../core/refusal-text.mjs";
 
 const json = (value) => `${JSON.stringify(value, null, 2)}\n`;
 

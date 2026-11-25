@@ -747,7 +747,15 @@ export function syncRecoveryCheckpoint(options = {}) {
   const unexpected = Object.keys(options).filter((key) => !allowed.has(key));
   if (unexpected.length)
     fail(`Recovery checkpoint sync contains unsupported fields: ${unexpected.sort().join(", ")}`, "INVALID_RECOVERY_CHECKPOINT_SYNC_INPUT");
-  const expectedBasisId = requiredText(options.expectedRecoveryBasisId, "Expected recovery basis id");
+  // The same rule as the tool description: only a Host-verified caller whose
+  // Host holds a basis may omit the id; everyone else names where to get it.
+  if (typeof options.expectedRecoveryBasisId !== "string" || !options.expectedRecoveryBasisId.trim())
+    fail(
+      "Expected recovery basis id is required: read it with lode_checkpoint_basis (CLI checkpoint-basis), or take it from the last created sync, and pass it as expected_recovery_basis_id (CLI input key expectedRecoveryBasisId). " +
+        "Only a Host-verified caller may omit it, after its Host saw lode_checkpoint_basis or a created sync; a conflict or deferral needs a fresh basis read.",
+      "INVALID_COMPACTION_INPUT",
+    );
+  const expectedBasisId = options.expectedRecoveryBasisId.trim();
   if (!/^recovery-basis-[a-f0-9]{24}$/.test(expectedBasisId)) fail("Expected recovery basis id is invalid.", "INVALID_RECOVERY_CHECKPOINT_BASIS_ID");
   if (options.workEvidence !== undefined) normalizeSessionWorkEvidence(options.workEvidence);
   return withProjectMutation({ root: options.root, scope: "session-recovery" }, () => {
