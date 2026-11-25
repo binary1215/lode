@@ -120,7 +120,8 @@ jobs:
   javascript:
     name: Full JavaScript regression suite
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # About twice the slowest measured run (17.7 min, run 45652364138).
+    timeout-minutes: 40
     steps:
       - name: Checkout source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -175,7 +176,8 @@ jobs:
     needs: prepare
     if: ${{ needs.prepare.outputs.enabled == 'true' }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 100
+    # About twice the slowest measured job (Windows: 43.4 min on main, 38.5 min without the install steps in run 45652364138).
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
