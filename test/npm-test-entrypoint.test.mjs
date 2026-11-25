@@ -216,7 +216,7 @@ function runnerSandbox(t) {
   return { sandbox, fixture, temp, environment, write, run };
 }
 
-test("the runner gives the suite a fresh profile, drops inherited state roots and exports both fixture names", (t) => {
+test("the runner gives the suite a fresh profile, drops inherited state roots and the Claude messaging endpoint, and exports both fixture names", (t) => {
   const box = runnerSandbox(t);
   const capture = path.join(box.sandbox, "environment.json");
   box.write(
@@ -231,11 +231,15 @@ test("captures the environment", () => { fs.writeFileSync(${JSON.stringify(captu
     ...callerProfile,
     LODE_AGENT_OPERATIONAL_STATE_ROOT: path.join(caller, "state"),
     HEAD_AGENT_OPERATIONAL_STATE_ROOT: path.join(caller, "state"),
+    CLAUDE_CODE_MESSAGING_SOCKET: path.join(caller, "messaging.sock"),
+    CLAUDE_CODE_MESSAGING_TOKEN: "caller-token-never-inherited",
   });
   assert.equal(result.status, 0, result.stderr + result.stdout);
   const seen = JSON.parse(fs.readFileSync(capture, "utf8"));
   assert.equal(seen.LODE_AGENT_OPERATIONAL_STATE_ROOT, undefined);
   assert.equal(seen.HEAD_AGENT_OPERATIONAL_STATE_ROOT, undefined);
+  assert.equal(seen.CLAUDE_CODE_MESSAGING_SOCKET, undefined, "the caller's Claude messaging endpoint is not inherited");
+  assert.equal(seen.CLAUDE_CODE_MESSAGING_TOKEN, undefined, "the caller's Claude messaging token is not inherited");
   const profileRoot = path.dirname(seen.HOME);
   assert.ok(path.basename(profileRoot).startsWith("lode-test-run-"), seen.HOME);
   assert.equal(path.dirname(profileRoot), fs.realpathSync.native(box.temp));

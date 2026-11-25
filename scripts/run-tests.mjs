@@ -204,6 +204,9 @@ for (const name of testFixtures.unsupplied) delete env[name];
 // Tests set their own operational roots; an inherited one makes their fixtures conflict.
 delete env.LODE_AGENT_OPERATIONAL_STATE_ROOT;
 delete env.HEAD_AGENT_OPERATIONAL_STATE_ROOT;
+// A Claude session's shell carries its live messaging endpoint; the suite must not reach it.
+delete env.CLAUDE_CODE_MESSAGING_SOCKET;
+delete env.CLAUDE_CODE_MESSAGING_TOKEN;
 
 const child = spawnSync(
   process.execPath,
