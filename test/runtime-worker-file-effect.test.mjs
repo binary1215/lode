@@ -16,6 +16,7 @@ import {
   WORKER_FILE_EFFECT_TRANSPORT_MAX_BYTES,
 } from "../scripts/lib/runtime/runtime-worker-file-effect.mjs";
 import { createProcessSupervisorManifest } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
+import { fileEffectFixtureRoot, windowsNativeSkip } from "./helpers/native-fixtures.mjs";
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 function fixture(t) {
@@ -711,11 +712,12 @@ test("unconfirmed termination reports cleanup uncertainty and never claims relea
 });
 
 test("real verified native bridge edits and inspects a synthetic file without replay", async (t) => {
-  const pluginRoot = process.env.LODE_AGENT_FILE_EFFECT_FIXTURE_ROOT || process.env.HEAD_AGENT_FILE_EFFECT_FIXTURE_ROOT;
-  if (!pluginRoot || process.platform !== "win32") {
-    t.skip("requires an explicitly selected verified Windows file-effect fixture");
+  const skip = windowsNativeSkip("the verified file-effect bridge", { supervisor: false, fileEffect: true });
+  if (skip) {
+    t.skip(skip);
     return;
   }
+  const pluginRoot = fileEffectFixtureRoot();
   const { root } = fixture(t);
   const source = path.join(root, "source");
   const journal = path.join(root, "journal");
@@ -763,11 +765,12 @@ test("real verified native bridge edits and inspects a synthetic file without re
 });
 
 test("real native no-write evidence permits only an exact linked retry after basis restoration", async (t) => {
-  const pluginRoot = process.env.LODE_AGENT_FILE_EFFECT_FIXTURE_ROOT || process.env.HEAD_AGENT_FILE_EFFECT_FIXTURE_ROOT;
-  if (!pluginRoot || process.platform !== "win32") {
-    t.skip("requires an explicitly selected verified Windows file-effect fixture");
+  const skip = windowsNativeSkip("the verified file-effect bridge", { supervisor: false, fileEffect: true });
+  if (skip) {
+    t.skip(skip);
     return;
   }
+  const pluginRoot = fileEffectFixtureRoot();
   const { root } = fixture(t);
   const source = path.join(root, "source");
   const journal = path.join(root, "journal");
@@ -819,11 +822,12 @@ test("real native no-write evidence permits only an exact linked retry after bas
 });
 
 test("real image bridge distinguishes create, edit, mode and delete with exact exit evidence", async (t) => {
-  const pluginRoot = process.env.LODE_AGENT_FILE_EFFECT_FIXTURE_ROOT || process.env.HEAD_AGENT_FILE_EFFECT_FIXTURE_ROOT;
-  if (!pluginRoot || process.platform !== "win32") {
-    t.skip("requires an explicitly selected verified Windows file-image fixture");
+  const skip = windowsNativeSkip("the verified file-image bridge", { supervisor: false, fileEffect: true });
+  if (skip) {
+    t.skip(skip);
     return;
   }
+  const pluginRoot = fileEffectFixtureRoot();
   const { root } = fixture(t);
   const source = path.join(root, "source");
   const journal = path.join(root, "journal");
@@ -882,11 +886,12 @@ test("real image bridge distinguishes create, edit, mode and delete with exact e
 });
 
 test("real image preflight is nonmutating and a create conflict requires exact no-write retry evidence", async (t) => {
-  const pluginRoot = process.env.LODE_AGENT_FILE_EFFECT_FIXTURE_ROOT || process.env.HEAD_AGENT_FILE_EFFECT_FIXTURE_ROOT;
-  if (!pluginRoot || process.platform !== "win32") {
-    t.skip("requires an explicitly selected verified Windows file-image fixture");
+  const skip = windowsNativeSkip("the verified file-image bridge", { supervisor: false, fileEffect: true });
+  if (skip) {
+    t.skip(skip);
     return;
   }
+  const pluginRoot = fileEffectFixtureRoot();
   const { root } = fixture(t);
   const source = path.join(root, "source");
   const journal = path.join(root, "journal");
@@ -948,11 +953,12 @@ test("real image preflight is nonmutating and a create conflict requires exact n
 });
 
 test("real initial prepublication proof binds the exact native request and never reclassifies an existing intent", async (t) => {
-  const pluginRoot = process.env.LODE_AGENT_FILE_EFFECT_FIXTURE_ROOT || process.env.HEAD_AGENT_FILE_EFFECT_FIXTURE_ROOT;
-  if (!pluginRoot || process.platform !== "win32") {
-    t.skip("requires an explicitly selected verified Windows prepublication fixture");
+  const skip = windowsNativeSkip("the verified prepublication bridge", { supervisor: false, fileEffect: true });
+  if (skip) {
+    t.skip(skip);
     return;
   }
+  const pluginRoot = fileEffectFixtureRoot();
   const { root } = fixture(t);
   const source = path.join(root, "source&scope");
   const journal = path.join(root, "journal");

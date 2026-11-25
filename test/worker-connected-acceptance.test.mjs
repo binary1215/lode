@@ -26,6 +26,7 @@ import { readRuntimeInvocationRecord } from "../scripts/lib/runtime/runtime-invo
 import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
 import { captureWorkerSourceBasis } from "../scripts/lib/worker/worker-source-basis.mjs";
 import { prepareWorkerWorkspace, verifyWorkerWorkspace, workerExecutionBoundary } from "../scripts/lib/worker/worker-workspace.mjs";
+import { skipReason, supervisorFixtureRoot } from "./helpers/native-fixtures.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const emit = (value) => console.log(JSON.stringify({ ...value, at: new Date().toISOString() }));
@@ -173,11 +174,11 @@ async function git(root, args, expectedCode = 0) {
 
 test(
   "C02 same-model workers actually overlap with distinct authorization/owners and replay never respawns",
-  { skip: process.platform !== "win32" },
+  { skip: process.platform !== "win32" && skipReason.otherOperatingSystem("Windows", "the connected native worker") },
   async (t) => {
     const f = await fixture(t);
     const selection = resolveVerifiedProcessSupervisor({
-      pluginRoot: process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot,
+      pluginRoot: supervisorFixtureRoot() || pluginRoot,
     });
     const policy = {
       kind: "protocol-fixture",

@@ -40,6 +40,7 @@ import {
   createCodexNativePrefixProposalFixtureTransport,
 } from "../scripts/lib/runtime/runtime-codex-app-server-transport.mjs";
 import { buildCodexProposalResultSchema } from "../scripts/lib/runtime/runtime-codex-proposal.mjs";
+import { skipReason, supervisorFixtureRoot } from "./helpers/native-fixtures.mjs";
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const installedExecutable = process.env.LODE_AGENT_PREFIX_CAPTURE_EXECUTABLE || process.env.HEAD_AGENT_PREFIX_CAPTURE_EXECUTABLE;
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
@@ -180,7 +181,7 @@ async function fixture(t, scenario = "normal", options = {}) {
     executionRoot: workspaceBinding.executionRoot,
     controlFile: path.join(operational, "control.jsonl"),
     supervisorSelection: resolveVerifiedProcessSupervisor({
-      pluginRoot: process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot,
+      pluginRoot: supervisorFixtureRoot() || pluginRoot,
     }),
     ...(options.nativePrefix ? { resultSchema } : {}),
     ...(options.actualExecutable ? { executablePath: policy.executablePath, executableDigest: policy.executableIdentity.contentDigest } : {}),
@@ -663,9 +664,7 @@ test("native prefix fixed flow owns one seed and one child with exact prefix and
 test(
   "native prefix actual constructor reaches fixed preflight recipe but is stopped before any process or account call",
   {
-    skip:
-      !installedExecutable &&
-      "Set LODE_AGENT_PREFIX_CAPTURE_EXECUTABLE (legacy HEAD_AGENT_PREFIX_CAPTURE_EXECUTABLE is also accepted) for read-only installed binary capture",
+    skip: !installedExecutable && skipReason.optInExternalProgram("LODE_AGENT_PREFIX_CAPTURE_EXECUTABLE", "read-only capture of an installed Codex binary"),
   },
   async (t) => {
     let captured = null;

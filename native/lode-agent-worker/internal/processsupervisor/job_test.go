@@ -65,6 +65,10 @@ func TestJobLauncherHelper(t *testing.T) {
 		return
 	}
 	file := os.Getenv("HEAD_JOB_TEST_REQUEST")
+	if err := enterFrontendJob(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(3)
+	}
 	if err := launchJob(file, os.Args[0], []string{"-test.run=^TestJobOwnerHelper$"}, []string{"HEAD_JOB_TEST_HELPER=owner"}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)

@@ -19,6 +19,7 @@ import { deliverClaudeInbox } from "../scripts/lib/session/conversation-messagin
 import { deliverOpenCodePrompt } from "../scripts/lib/session/conversation-messaging-opencode.mjs";
 import { inspectCopiedProjectFiles } from "../scripts/lib/storage/project-copy-evidence.mjs";
 import { withLocalMutation } from "../scripts/lib/storage/project-mutation-lock.mjs";
+import { supervisorFixtureRoot } from "./helpers/native-fixtures.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const who = (runtime, nativeSessionId) => ({ runtime, nativeSessionId, agentId: null, subagent: false, parentSessionId: null });
@@ -267,7 +268,7 @@ test("hardlinked and symlinked Host keys are rejected without creating a signed 
 });
 
 test("real native supervisor owns a synthetic Codex proxy and verifies cleanup without provider calls", async t => {
-  const f = fixture(t), selectionRoot = process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot;
+  const f = fixture(t), selectionRoot = supervisorFixtureRoot() || pluginRoot;
   const selection = resolveVerifiedProcessSupervisor({ pluginRoot: selectionRoot });
   const bin = path.join(f.base, "synthetic-bin"); fs.mkdirSync(bin);
   const script = path.join(bin, "fake.js");

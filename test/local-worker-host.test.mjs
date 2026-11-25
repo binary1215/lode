@@ -14,10 +14,28 @@ import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
 import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/runtime/execution-lineage.mjs";
 import { startRun } from "../scripts/lib/runtime/run-lineage.mjs";
 import { isManagedMutation } from "../scripts/lib/session/managed-maintenance-surface.mjs";
+import {
+  NATIVE_FIXTURE_SETTINGS,
+  codexHostDiscoverySelected,
+  codexTestBinary,
+  ownerCrashFixture,
+  missingSettingsSkip,
+  skipReason,
+  supervisorFixtureRoot,
+  terminalHoldFixtureRoot,
+  windowsNativeSkip,
+} from "./helpers/native-fixtures.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
-const nativeRoot = process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT;
-const skip = process.platform !== "win32" || !nativeRoot ? "Packaged Windows native test artifact not supplied" : false;
+const nativeRoot = supervisorFixtureRoot();
+const skip = windowsNativeSkip("the packaged Windows native worker host");
+// The runner builds both from source on Windows: the exact-owner crash helper
+// from test/helpers/owned-worker-crash-windows.go, and the terminal-hold
+// supervisor as a `go test -c` build of native/lode-agent-worker/cmd/lode-agent-supervisor.
+const ownerCrashSkip = skip || missingSettingsSkip("the exact-owner crash test", [NATIVE_FIXTURE_SETTINGS.ownerCrashFixture]);
+const terminalHoldSkip =
+  skip ||
+  missingSettingsSkip("the terminal-publication owner crash test", [NATIVE_FIXTURE_SETTINGS.ownerCrashFixture, NATIVE_FIXTURE_SETTINGS.terminalHoldRoot]);
 const onProcess = (event) => console.log(JSON.stringify({ ...event, at: new Date().toISOString() }));
 onProcess({ type: "test", pid: process.pid, parentPid: process.ppid, command: process.execPath, args: process.argv.slice(1), cwd: process.cwd(), ports: [] });
 const pause = () => new Promise((resolve) => setTimeout(resolve, 100));
@@ -91,6 +109,12 @@ async function frontDoor(file, args, root, request = null, environment = process
   if (failure) throw failure;
   assert.equal(code, 0, Buffer.concat(err).toString());
   return JSON.parse(Buffer.concat(out).toString());
+}
+// The supervisor binary the disposable package carries, named by its own
+// verified manifest (the shipped name changed from head-agent- to lode-agent-).
+function installedSupervisor(f) {
+  const directory = path.join(f.installed, "dist", "windows-x64");
+  return path.join(directory, JSON.parse(fs.readFileSync(path.join(directory, "SUPERVISOR-MANIFEST.json"), "utf8")).binary.relativePath);
 }
 async function fixture(t, { nativeFixtureRoot = nativeRoot } = {}) {
   const parent = fs.realpathSync(process.env.HEAD_AGENT_TEST_TMP || os.tmpdir());
@@ -434,7 +458,8 @@ test("reviewer source-change regression: same member safely reprepares and concu
     leases = await f.importLocal("lib/runtime/runtime-execution-lease.mjs");
   const prior = lifecycle.readRuntimeInvocationAuthorization({ root: f.root, authorizationId: first.authorizationId }).authorization;
   assert.equal(
-    leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: prior.projectId, authorizationId: prior.authorizationId }).singleUseConsumed,
+    leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: prior.projectId, authorizationId: prior.authorizationId, storage: f.storage })
+      .singleUseConsumed,
     false,
   );
   fs.writeFileSync(path.join(f.root, "selected.txt"), "legitimate updated source\n");
@@ -1051,8 +1076,12 @@ test("public partial launch stays open and can be abandoned without success or P
     fs.readFileSync(path.join(f.root, f.layout.directory, "runtime/execution-authorizations", f.prepared[1].authorizationId + ".json")),
   );
   assert.equal(
-    leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization.authorizationId })
-      .singleUseConsumed,
+    leases.inspectRuntimeExecutionLease({
+      projectRoot: f.root,
+      projectId: authorization.projectId,
+      authorizationId: authorization.authorizationId,
+      storage: f.storage,
+    }).singleUseConsumed,
     false,
   );
   assert.deepEqual(f.pointers(), before);
@@ -1071,7 +1100,8 @@ test("fresh public frontends restore HEAD direction and rediscover completed and
   assert.equal(pending.ownerExitObserved, false);
   const leases = await f.importLocal("lib/runtime/runtime-execution-lease.mjs");
   const authorization = JSON.parse(fs.readFileSync(path.join(f.root, f.layout.directory, "runtime/execution-authorizations", authorization_id + ".json")));
-  const lease = () => leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization_id });
+  const lease = () =>
+    leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization_id, storage: f.storage });
   assert.equal(lease().singleUseConsumed, true);
   for (const restored of [await f.publicCli(["session-restore"]), await f.publicMcp("head_session_restore")]) {
     assert.equal(restored.projection.consumerInstruction.historicalCheckpointContext.nextExpectedResult, direction);
@@ -1092,7 +1122,7 @@ test("fresh public frontends restore HEAD direction and rediscover completed and
 test(
   "public consumed owner crash stays unknown without relaunch and preserves a completed sibling",
   {
-    skip: skip || !process.env.HEAD_AGENT_TEST_OWNER_CRASH_FIXTURE ? "Explicit Windows exact-owner crash fixture not supplied" : false,
+    skip: ownerCrashSkip,
   },
   async (t) => {
     const f = await twoRunMembers(t, "fixture-hold-until-cancel"),
@@ -1126,11 +1156,12 @@ test(
     }
     assert.equal(markers.length, 1, "Observed one real synthetic provider turn before crash");
     const leases = await f.importLocal("lib/runtime/runtime-execution-lease.mjs");
-    const lease = () => leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization_id });
+    const lease = () =>
+      leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization_id, storage: f.storage });
     assert.equal(lease().singleUseConsumed, true);
     assert.equal(fs.existsSync(path.join(directory, "terminal.json")), false);
     const consumption = fs.readFileSync(path.join(f.root, f.layout.directory, "runtime/execution-leases", authorization_id, "consumption.json"));
-    const helper = process.env.HEAD_AGENT_TEST_OWNER_CRASH_FIXTURE;
+    const helper = ownerCrashFixture();
     // A mismatched generation must not reach termination, even for this owned PID.
     const refused = await frontDoor("crash", [requestFile, "windows-filetime-0000000000000000"], f.root, null, process.env, helper);
     assert.equal(refused.status, "generation-mismatch");
@@ -1146,7 +1177,7 @@ test(
     const reused = await frontDoor("crash", [staleRequest, staleToken], f.root, null, process.env, helper);
     assert.equal(reused.status, "reused");
     assert.equal(reused.terminationAttempted, false);
-    const supervisor = path.join(f.installed, "dist/windows-x64/head-agent-supervisor.exe");
+    const supervisor = installedSupervisor(f);
     const inspectedReuse = await frontDoor("--job-state", [staleRequest], f.root, null, process.env, supervisor);
     assert.equal(inspectedReuse.ownerState, "reused");
     assert.equal((await frontDoor("inspect", [requestFile, claim.ownerToken], f.root, null, process.env, helper)).status, "present");
@@ -1162,7 +1193,7 @@ test(
       pid: claim.pid,
       ownerToken: claim.ownerToken,
       ownedPids,
-      command: path.join(f.installed, "dist/windows-x64/head-agent-supervisor.exe"),
+      command: installedSupervisor(f),
       cwd: f.root,
       ports: [],
       reason: "Deliberate post-consumption, pre-terminal fault; not ordinary cleanup",
@@ -1208,13 +1239,10 @@ test(
 test(
   "public native owner crash after terminal publication preserves exact completion without premature success or relaunch",
   {
-    skip:
-      skip || !process.env.HEAD_AGENT_TEST_OWNER_CRASH_FIXTURE || !process.env.HEAD_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT
-        ? "Explicit test-only terminal-hold native build and exact-owner crash helper not supplied"
-        : false,
+    skip: terminalHoldSkip,
   },
   async (t) => {
-    const f = await twoRunMembers(t, "second-member", { nativeFixtureRoot: process.env.HEAD_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT });
+    const f = await twoRunMembers(t, "second-member", { nativeFixtureRoot: terminalHoldFixtureRoot() });
     const before = f.pointers(),
       projectId = JSON.parse(fs.readFileSync(path.join(f.root, f.layout.directory, "project.json"))).projectId;
     const directories = f.prepared.map((member) => path.join(f.operational, "worker-jobs", projectId, member.authorizationId));
@@ -1258,7 +1286,7 @@ test(
       ].map((name) => path.join(directory, name));
       frozenFiles.push(path.join(f.root, f.layout.directory, "runtime/execution-leases", authorization_id, "consumption.json"));
       const frozen = frozenFiles.map((file) => fs.readFileSync(file));
-      const helper = process.env.HEAD_AGENT_TEST_OWNER_CRASH_FIXTURE;
+      const helper = ownerCrashFixture();
       assert.equal((await frontDoor("inspect", [requestFile, claim.ownerToken], f.root, null, process.env, helper)).status, "present");
       for (const name of ["head_bounded_worker_job_status", "head_bounded_worker_job_reconcile", "head_bounded_worker_start"]) {
         const state = await f.publicMcp(name, name === "head_bounded_worker_start" ? { task_key: held.taskKey } : { authorization_id });
@@ -1274,7 +1302,7 @@ test(
         pid: claim.pid,
         parentPid: marker.parentPid,
         ownerToken: claim.ownerToken,
-        command: path.join(f.installed, "dist/windows-x64/head-agent-supervisor.exe"),
+        command: installedSupervisor(f),
         args: ["--job", requestFile],
         cwd: f.root,
         ports: [],
@@ -1490,7 +1518,10 @@ async function crashIntegration(f, request, boundary) {
   const inputFile = path.join(f.home, `${boundary}-input.json`),
     readyFile = path.join(f.home, `${boundary}-ready.json`);
   fs.writeFileSync(inputFile, JSON.stringify(request), { flag: "wx" });
-  const args = [path.join(pluginRoot, "test/helpers/integration-crash-driver.mjs"), f.installed, f.root, inputFile, boundary, readyFile];
+  // The driver takes the exact integration directory captured from the verified
+  // fixture layout; it never rediscovers storage after fault injection.
+  const integrationDirectory = path.join(fs.realpathSync(f.root), f.layout.directory, "runtime", "worker-integrations");
+  const args = [path.join(pluginRoot, "test/helpers/integration-crash-driver.mjs"), f.installed, f.root, inputFile, boundary, readyFile, integrationDirectory];
   onProcess({ type: "planned", parentPid: process.pid, command: process.execPath, args, cwd: f.root, ports: [] });
   const child = spawn(process.execPath, args, { cwd: f.root, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   onProcess({ type: "spawn", pid: child.pid, parentPid: process.pid, cwd: f.root, ports: [] });
@@ -1748,11 +1779,18 @@ test("selected-only scope never silently inherits a nonempty Host instruction fi
 test(
   "default shipped CLI prepares fresh and native-prefix against stock Codex without a thread, account or model call",
   {
-    skip: skip || process.env.HEAD_AGENT_TEST_CODEX_HOST_DISCOVERY !== "1" ? "Explicit local stock discovery test not selected" : false,
+    skip:
+      skip ||
+      (codexHostDiscoverySelected()
+        ? false
+        : skipReason.optInExternalProgram(
+            NATIVE_FIXTURE_SETTINGS.codexHostDiscovery,
+            "a stock Codex install (set it to 1 and name the Codex directory in LODE_AGENT_TEST_CODEX_BIN)",
+          )),
   },
   async (t) => {
     const f = await fixture(t);
-    const codex = process.env.HEAD_AGENT_TEST_CODEX_BIN;
+    const codex = codexTestBinary();
     assert.ok(codex && path.isAbsolute(codex), "Explicit test-only installed executable directory");
     const environment = { ...process.env, CODEX_HOME: f.home, PATH: codex + path.delimiter + process.env.PATH };
     delete environment.Path;

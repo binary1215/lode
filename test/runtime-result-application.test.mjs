@@ -60,6 +60,8 @@ import {
 import { formatCliResult, formatMcpToolContent } from "../scripts/lib/session/cli-presentation.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { dispatch as dispatchMcp, catalogTools as mcpTools } from "../scripts/mcp-server.mjs";
+import { skipReason, supervisorFixtureRoot } from "./helpers/native-fixtures.mjs";
+const windowsOnly = process.platform !== "win32" && skipReason.otherOperatingSystem("Windows", "the detached public job");
 
 // head_* request inputs below deliberately exercise compatibility dispatch;
 // generated catalog and Hook assertions use the canonical Lode vocabulary.
@@ -298,7 +300,7 @@ test("wave guidance separates seal readiness, wait cancellation, member failure 
   assert.equal(formatCliResult("worker-wave-wait", failed), formatMcpToolContent("head_bounded_worker_wave_wait", failed));
 });
 
-test("public detached job survives its CLI frontend and reconciles one lease without relaunch", { skip: process.platform !== "win32" }, async (t) => {
+test("public detached job survives its CLI frontend and reconciles one lease without relaunch", { skip: windowsOnly }, async (t) => {
   const f = await fixture(t, { withWrite: true });
   const layers = JSON.parse(fs.readFileSync(path.join(pluginRoot, "scripts", "lib-layers.json"), "utf8"));
   const moduleUrl = (file) => pathToFileURL(path.join(pluginRoot, "scripts", "lib", layers.modules[file], file)).href;
@@ -367,7 +369,7 @@ test("public detached job survives its CLI frontend and reconciles one lease wit
     persist: true,
   }).authorization;
   const selection = resolveVerifiedProcessSupervisor({
-    pluginRoot: process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot,
+    pluginRoot: supervisorFixtureRoot() || pluginRoot,
   });
   const frontendFile = path.join(path.dirname(f.root), "synthetic-frontend.mjs");
   fs.writeFileSync(
