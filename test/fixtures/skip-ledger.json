@@ -1,0 +1,13 @@
+{
+  "//": "Checked by scripts/run-tests.mjs through scripts/test-skip-ledger.mjs. Every skip reason starts with \"<class>: \" for a class below. A full run fails when the skipped tests of a pinned class differ from the list for its operating system; the runner prints the tests that moved and the list it observed.",
+  "classes": {
+    "other-os": { "pinned": true, "meaning": "The test covers another operating system or a measured platform profile." },
+    "filesystem": { "pinned": true, "meaning": "The filesystem lacks a property the test needs: case sensitivity or insensitivity, 8.3 aliases, distinct Unicode spellings." },
+    "native-fixture": { "pinned": true, "meaning": "The test needs a native fixture that scripts/run-tests.mjs supplies. On Windows this skip fails the run." },
+    "ci-step": { "pinned": true, "meaning": "The test runs in a dedicated CI step that supplies what it needs; the reason names the step and the variable." },
+    "no-source": { "pinned": true, "meaning": "The test needs a fixture or helper that has no source in the repository." },
+    "opt-in": { "pinned": false, "meaning": "The test needs an external program, a real account or an opt-in variable that npm test does not supply; the reason names the variable or program. Counted, not pinned: it depends on the caller's machine." },
+    "host-limit": { "pinned": false, "meaning": "This machine or account refuses something the test needs: link creation rights, nested process creation, an optional helper blocked by policy, a runtime without native zstd. Counted, not pinned: it depends on the caller's machine." }
+  },
+  "skips": {}
+}
