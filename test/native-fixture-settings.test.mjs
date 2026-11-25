@@ -37,15 +37,37 @@ function sources(directory) {
   return result;
 }
 
+// A read is any member access of one of the names on any object (`.X`, `?.X`,
+// `["X"]`), one of the names as a whole string literal that is not an object
+// key (it can index an environment later), or the name destructured from an
+// object. Allowed: object-literal keys, `delete <chain>.X`, an assignment
+// target, and mentions inside longer text, comments or regex literals.
+const quotes = ["'", '"', "`"];
+function occurrenceIsRead(text, index, name) {
+  const before = text.slice(Math.max(0, index - 200), index);
+  let after = text.slice(index + name.length, index + name.length + 200);
+  const quote = before.at(-1);
+  const quoted = quotes.includes(quote) && after.startsWith(quote);
+  const head = quoted ? before.slice(0, -1) : before;
+  const indexed = quoted && /\[\s*$/.test(head) && /^.\s*\]/s.test(after);
+  const member = !quoted && /(?<!\.)\.\s*$/.test(before);
+  if (indexed) after = after.replace(/^.\s*\]/s, "");
+  if (member || indexed) {
+    const chain = indexed ? head.replace(/\[\s*$/, "") : before.replace(/\??\.\s*$/, "");
+    const deleted = /\bdelete\s+[\w$.?[\]"'`]*$/.test(chain);
+    const assigned = /^\s*=(?![=>])/.test(after);
+    return !deleted && !assigned;
+  }
+  // A whole-name string literal is a read unless it is an object key.
+  if (quoted) return !/^.\s*:/s.test(after);
+  return false;
+}
 function directReads(text) {
   const found = [];
   for (const name of names) {
-    const reads = [
-      new RegExp(`process\\.env\\.${escape(name)}\\b`),
-      new RegExp(`process\\.env\\[\\s*(["'\`])${escape(name)}\\1\\s*\\]`),
-      new RegExp(`\\{[^{}]*\\b${escape(name)}\\b[^{}]*\\}\\s*=\\s*process\\.env\\b`),
-    ];
-    if (reads.some((pattern) => pattern.test(text))) found.push(name);
+    const occurrences = [...text.matchAll(new RegExp(`(?<![A-Za-z0-9_$])${escape(name)}(?![A-Za-z0-9_$])`, "g"))];
+    const destructured = new RegExp(`\\{[^{}]*\\b${escape(name)}\\b[^{}]*\\}\\s*=(?![=>])`).test(text);
+    if (destructured || occurrences.some(({ index }) => occurrenceIsRead(text, index, name))) found.push(name);
   }
   return found;
 }
@@ -63,7 +85,24 @@ test("no test file reads a native fixture setting from process.env itself", () =
   assert.deepEqual(directReads("x = process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT;"), ["HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT"]);
   assert.deepEqual(directReads('x = process.env["LODE_AGENT_FILE_EFFECT_FIXTURE_ROOT"];'), ["LODE_AGENT_FILE_EFFECT_FIXTURE_ROOT"]);
   assert.deepEqual(directReads("const { LODE_AGENT_GO_WORKER_FIXTURE_ROOT: root } = process.env;"), ["LODE_AGENT_GO_WORKER_FIXTURE_ROOT"]);
+  assert.deepEqual(directReads("x = globalThis.process.env['HEAD_AGENT_GO_WORKER_FIXTURE_ROOT'];"), ["HEAD_AGENT_GO_WORKER_FIXTURE_ROOT"]);
+  assert.deepEqual(directReads("const root = process.env?.LODE_AGENT_GO_WORKER_FIXTURE_ROOT;"), ["LODE_AGENT_GO_WORKER_FIXTURE_ROOT"]);
+  assert.deepEqual(directReads("const e = process.env; const root = e.HEAD_AGENT_FILE_EFFECT_FIXTURE_ROOT;"), ["HEAD_AGENT_FILE_EFFECT_FIXTURE_ROOT"]);
+  assert.deepEqual(directReads("const { env } = process; const root = env.LODE_AGENT_TEST_OWNER_CRASH_FIXTURE;"), ["LODE_AGENT_TEST_OWNER_CRASH_FIXTURE"]);
+  assert.deepEqual(directReads('const name = "LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT"; const root = process.env[name];'), [
+    "LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT",
+  ]);
+  assert.deepEqual(directReads("const { HEAD_AGENT_TEST_CODEX_BIN } = env;"), ["HEAD_AGENT_TEST_CODEX_BIN"]);
+  // Not reads: removal, assignment, object keys, longer text, regex literals.
   assert.deepEqual(directReads("delete env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT;"), []);
+  assert.deepEqual(directReads('delete env["HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT"];'), []);
+  assert.deepEqual(directReads("env.LODE_AGENT_FILE_EFFECT_FIXTURE_ROOT = root;"), []);
+  assert.deepEqual(directReads("run({ ...process.env, LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT: root });"), []);
+  assert.deepEqual(directReads('x = { "LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT": root };'), []);
+  assert.deepEqual(directReads('t.skip("needs LODE_AGENT_TEST_CODEX_BIN set");'), []);
+  assert.deepEqual(directReads("assert.match(runner, /LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT/);"), []);
+  // The runner pin (group G's) only sets and removes the supervisor variable.
+  assert.deepEqual(directReads(fs.readFileSync(path.join(testRoot, "npm-test-entrypoint.test.mjs"), "utf8")), []);
 });
 
 test("settings are read under the canonical name first and the historical name second", () => {

@@ -4253,7 +4253,10 @@ test("verifies Go worker distribution identity and discloses safe JavaScript fal
   // The fixture is built for the operating system that runs the test (the
   // Windows job and the Linux job both run this lane).
   assert.equal(resolved.manifest.target.platform, process.platform);
-  assert.equal(resolved.workerRelativePath, `dist/${resolved.manifest.target.directory}/lode-agent-worker${process.platform === "win32" ? ".exe" : ""}`);
+  // The expected folder is the distribution's naming, not read from the
+  // manifest under test: windows-x64, linux-x64, darwin-arm64, ...
+  const expectedDirectory = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
+  assert.equal(resolved.workerRelativePath, `dist/${expectedDirectory}/lode-agent-worker${process.platform === "win32" ? ".exe" : ""}`);
 
   const absentRoot = temporaryProject();
   t.after(() => fs.rmSync(absentRoot, { recursive: true, force: true }));
