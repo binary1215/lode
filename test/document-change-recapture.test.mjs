@@ -34,7 +34,11 @@ async function recaptured(t, captures) {
   await materializeWorldMarkdownProjection({ root });
   const knowledge = path.join(root, layout.directory, "generated", "knowledge");
   const pageA = path.join(knowledge, "index.md");
-  const pageB = path.join(knowledge, "nodes", fs.readdirSync(path.join(knowledge, "nodes")).find((name) => name.startsWith("file-")));
+  const pageB = path.join(
+    knowledge,
+    "nodes",
+    fs.readdirSync(path.join(knowledge, "nodes")).find((name) => name.startsWith("file-")),
+  );
   fs.appendFileSync(pageA, "\nEdit of page A, once.\n");
   const sets = [];
   for (let index = 1; index <= captures; index++) {
@@ -45,7 +49,10 @@ async function recaptured(t, captures) {
   assert.ok(shared, "page A candidate");
   for (const set of sets) {
     assert.equal(set.candidates.length, 2);
-    assert.ok(set.candidates.some((candidate) => candidate.candidateId === shared.candidateId), "unchanged page A keeps one candidate id in every set");
+    assert.ok(
+      set.candidates.some((candidate) => candidate.candidateId === shared.candidateId),
+      "unchanged page A keeps one candidate id in every set",
+    );
   }
   assert.equal(new Set(sets.map((set) => set.candidateSetId)).size, captures);
   return { root, layout, sets, latest: sets.at(-1), shared, pageB };
@@ -109,7 +116,15 @@ for (const captures of [2, 3]) {
     assert.equal(cli("world-docs-status", root, "--json").json.status, "current");
     await assertWorldBuilds(root);
     assert.equal(
-      (await reviewDocumentChanges({ root, candidateSetId: latest.candidateSetId, disposition: "accept-all", rationale: "Adopt.", resultingProductModel: model("Deliver a message.") })).status,
+      (
+        await reviewDocumentChanges({
+          root,
+          candidateSetId: latest.candidateSetId,
+          disposition: "accept-all",
+          rationale: "Adopt.",
+          resultingProductModel: model("Deliver a message."),
+        })
+      ).status,
       "already-applied",
     );
     await assertEarlierSetsStayUnreviewable(root, sets);
@@ -153,8 +168,18 @@ test("an earlier set reviewed while a later set exists is refused; the latest se
     reviewDocumentChanges({ root, candidateSetId: sets[0].candidateSetId, disposition: "accept-all", rationale: "First.", resultingProductModel: model("v1") }),
     { code: "DOCUMENT_CHANGE_CANDIDATE_PUBLISHED_DRIFT" },
   );
-  assert.equal(fs.readdirSync(path.join(root, inspectProject(root).storage.directory, "document-changes")).includes("review-decisions"), false, "no decision saved");
-  const result = await reviewDocumentChanges({ root, candidateSetId: latest.candidateSetId, disposition: "accept-all", rationale: "Second.", resultingProductModel: model("v2") });
+  assert.equal(
+    fs.readdirSync(path.join(root, inspectProject(root).storage.directory, "document-changes")).includes("review-decisions"),
+    false,
+    "no decision saved",
+  );
+  const result = await reviewDocumentChanges({
+    root,
+    candidateSetId: latest.candidateSetId,
+    disposition: "accept-all",
+    rationale: "Second.",
+    resultingProductModel: model("v2"),
+  });
   assert.equal(result.status, "applied");
 });
 
@@ -196,7 +221,8 @@ test("a Project left with Canon applied and projection pending completes with wo
   assert.equal(readProductModelCanon({ storage: layout, projectRoot: root }).model.productModelId, reviewed.reviewDecision.resultingProductModelId);
   assert.equal((await inspectDocumentChangeReviewStatus({ root, candidateSetId: latest.candidateSetId })).status, "canon-applied-projection-pending");
   const before = new Map(
-    fs.readdirSync(changes, { recursive: true, withFileTypes: true })
+    fs
+      .readdirSync(changes, { recursive: true, withFileTypes: true })
       .filter((entry) => entry.isFile())
       .map((entry) => [path.join(entry.parentPath, entry.name), fs.readFileSync(path.join(entry.parentPath, entry.name))]),
   );

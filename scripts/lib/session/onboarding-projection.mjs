@@ -46,15 +46,24 @@ const ARRAY_BY_KIND = Object.freeze({
 
 const fail = failWith("ONBOARDING_PROJECTION_ERROR");
 
-// Names the versions and the separate migration document. Lode itself never
-// ships, imports or runs the migrator.
+const PROTOCOL_VERSION_PATTERN = /^(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})\.(0|[1-9]\d{0,5})$/;
+
+// For a well-formed candidate protocol other than the one read, names both
+// versions and the way out: an older record has the separate migration
+// document (Lode itself never ships, imports or runs the migrator), a newer one
+// needs a newer Lode. A missing or malformed version is a damaged record and
+// returns null, so the caller keeps its field wording.
 function unreadCandidateProtocolMessage(candidateSetId, foundVersion) {
-  const found = typeof foundVersion === "string" && /^[0-9A-Za-z.+-]{1,32}$/.test(foundVersion) ? foundVersion : "missing or unreadable";
+  if (typeof foundVersion !== "string" || foundVersion === CANDIDATE_PROTOCOL_VERSION) return null;
+  const found = PROTOCOL_VERSION_PATTERN.exec(foundVersion);
+  if (!found) return null;
+  const read = PROTOCOL_VERSION_PATTERN.exec(CANDIDATE_PROTOCOL_VERSION);
+  const order = [1, 2, 3].map((index) => Math.sign(Number(found[index]) - Number(read[index]))).find((sign) => sign !== 0);
   const subject = /^onboarding-candidates-[a-f0-9]{24}$/.test(candidateSetId || "") ? `Onboarding candidate set ${candidateSetId}` : "Onboarding candidate set";
-  return (
-    `${subject} uses candidate protocol ${found}; this Lode reads only candidate protocol ${CANDIDATE_PROTOCOL_VERSION}. ` +
-    "docs/onboarding-migrator.md describes the separate, standalone migration of older onboarding records; Lode does not run it."
-  );
+  const versions = `${subject} uses candidate protocol ${foundVersion}; this Lode reads only candidate protocol ${CANDIDATE_PROTOCOL_VERSION}. `;
+  return order < 0
+    ? `${versions}docs/onboarding-migrator.md describes the separate, standalone migration of older onboarding records; Lode does not run it.`
+    : `${versions}The record comes from a newer candidate protocol than this Lode reads; a newer Lode reads it.`;
 }
 
 function compareText(left, right) {
@@ -160,12 +169,13 @@ export function verifyOnboardingCandidateSetForProjection(document, projectId = 
   });
   const candidateProtocolVersion = document.protocol?.version;
   const format = familyFormatForOriginal("lode-agent-core-onboarding-candidates", document, storage);
-  if (format && document.kind === "OnboardingCandidateSet" && candidateProtocolVersion !== CANDIDATE_PROTOCOL_VERSION) {
-    fail(unreadCandidateProtocolMessage(document.candidateSetId, candidateProtocolVersion), "INVALID_ONBOARDING_PROJECTION_CANDIDATE_SET");
-  }
+  const unreadProtocol =
+    format && document.kind === "OnboardingCandidateSet" ? unreadCandidateProtocolMessage(document.candidateSetId, candidateProtocolVersion) : null;
+  if (unreadProtocol) fail(unreadProtocol, "INVALID_ONBOARDING_PROJECTION_CANDIDATE_SET");
   const invalidField = [
     ["format", !format],
     ["kind", document.kind !== "OnboardingCandidateSet"],
+    ["protocol.version", candidateProtocolVersion !== CANDIDATE_PROTOCOL_VERSION],
     ["schemaVersion", document.schemaVersion !== 1],
     [
       "projectId",
@@ -458,8 +468,9 @@ export function loadOnboardingGraphProjection({
       const entry = historicalEntryForPath(historical, relative, role);
       if (!entry) {
         if (familyFormatForOriginal("lode-agent-core-onboarding-candidates", document) && document.protocol?.version !== CANDIDATE_PROTOCOL_VERSION) {
+          const unreadProtocol = unreadCandidateProtocolMessage(null, document.protocol?.version);
           fail(
-            `Unsupported historical artifact is outside the committed boundary: ${relative}. ${unreadCandidateProtocolMessage(null, document.protocol?.version)}`,
+            `Unsupported historical artifact is outside the committed boundary: ${relative}${unreadProtocol ? `. ${unreadProtocol}` : ""}`,
             "HISTORICAL_BOUNDARY_COVERAGE_DRIFT",
           );
         }

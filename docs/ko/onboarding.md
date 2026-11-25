@@ -70,10 +70,11 @@ producer ReviewDecision 및 producer policy로부터 candidate-set identity를 �
 최종 commit marker만 기록합니다. 과거 candidate와 review는 opaque 상태로 남고,
 현재 verifier를 독립적으로 통과한 Product Model revision만 기존 P1 지위를 유지합니다.
 
-현재 Core가 다른 protocol의 candidate set을 만나면, 거절 메시지에 찾은 candidate
+현재 Core가 더 오래된 protocol의 candidate set을 만나면, 거절 메시지에 찾은 candidate
 protocol, 현재 읽는 protocol(`0.4.0`), [`onboarding-migrator.md`](onboarding-migrator.md)가
 함께 나옵니다. 플러그인은 migrator를 실행하지 않으며, 별도 migration은 그 문서가
-설명합니다.
+설명합니다. 더 새로운 protocol의 candidate set은 두 버전과 함께 더 새로운 Lode가 읽는다는
+안내로 거절되고, 버전이 없거나 형식이 틀리면 잘못된 필드로 보고됩니다.
 
 helper를 제거한 뒤에도 정상 status, World, Context, Session recovery와 새 current
 온보딩은 계속 동작합니다. 제품 의미를 변경하려면 provider Lode가

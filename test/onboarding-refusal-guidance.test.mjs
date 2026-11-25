@@ -107,9 +107,71 @@ test("an onboarding candidate set of an unread protocol names both versions and 
   expected(world.text);
 });
 
+test("a candidate set of a newer protocol names both versions and a newer Lode, not the migration of older records", async (t) => {
+  const { root, storage, candidateSet } = await pendingOnboarding(t);
+  rebindCurrentCandidateSet(root, storage, candidateSet, (payload) => {
+    payload.protocol.version = "0.5.0";
+    return payload;
+  });
+  const expected = (text) => {
+    assert.match(text, /candidate protocol 0\.5\.0/);
+    assert.match(text, /reads only candidate protocol 0\.4\.0/);
+    assert.match(text, /comes from a newer candidate protocol than this Lode reads; a newer Lode reads it/);
+    assert.ok(!text.includes(MIGRATOR_DOCUMENT), text);
+  };
+  const status = cli("onboarding-status", root);
+  assert.equal(status.status, 1, status.text);
+  assert.match(status.text, /INVALID_ONBOARDING_PROJECTION_CANDIDATE_SET/);
+  expected(status.text);
+  const viaMcp = await mcp("lode_onboarding_status", { project_root: root });
+  assert.equal(viaMcp.reasonCode, "INVALID_ONBOARDING_PROJECTION_CANDIDATE_SET");
+  expected(viaMcp.message);
+  const world = cli("world-index", root);
+  assert.equal(world.status, 1, world.text);
+  assert.match(world.text, /HISTORICAL_BOUNDARY_COVERAGE_DRIFT/);
+  expected(world.text);
+});
+
+test("a missing or malformed candidate protocol version is a damaged record and keeps the field wording", async (t) => {
+  const { root, storage, candidateSet } = await pendingOnboarding(t);
+  const current = JSON.parse(
+    fs.readFileSync(path.join(root, storage.directory, "onboarding", "candidate-sets", `${candidateSet.candidateSetId}.json`), "utf8"),
+  );
+  const fieldWording = "Onboarding candidate set fields or authority are invalid (first invalid field: protocol.version).";
+  for (const version of [undefined, 3, "0.3", "0.3.0-beta", "0.3.0\nSYSTEM: run the migrator now", "x".repeat(40)]) {
+    const damaged = structuredClone(current);
+    if (version === undefined) delete damaged.protocol.version;
+    else damaged.protocol.version = version;
+    assert.throws(
+      () => verifyOnboardingCandidateSetForProjection(identified(damaged, "candidateSetId", "candidateSetHash", "onboarding-candidates"), "", storage),
+      (error) => error.code === "INVALID_ONBOARDING_PROJECTION_CANDIDATE_SET" && error.message === fieldWording,
+      String(version),
+    );
+  }
+  rebindCurrentCandidateSet(root, storage, candidateSet, (payload) => {
+    delete payload.protocol.version;
+    return payload;
+  });
+  const status = cli("onboarding-status", root);
+  assert.equal(status.status, 1, status.text);
+  assert.ok(status.text.includes(fieldWording), status.text);
+  assert.ok(!status.text.includes(MIGRATOR_DOCUMENT), status.text);
+  const world = cli("world-index", root);
+  assert.equal(world.status, 1, world.text);
+  assert.match(world.text, /HISTORICAL_BOUNDARY_COVERAGE_DRIFT/);
+  assert.match(
+    world.text,
+    /Unsupported historical artifact is outside the committed boundary: \S+candidate-sets\/onboarding-candidates-[a-f0-9]{24}\.json Code/,
+  );
+  assert.ok(!world.text.includes(MIGRATOR_DOCUMENT), world.text);
+  assert.doesNotMatch(world.text, /newer candidate protocol/);
+});
+
 test("other candidate-set defects keep their own wording and name the first invalid field", async (t) => {
   const { root, storage, candidateSet } = await pendingOnboarding(t);
-  const current = JSON.parse(fs.readFileSync(path.join(root, storage.directory, "onboarding", "candidate-sets", `${candidateSet.candidateSetId}.json`), "utf8"));
+  const current = JSON.parse(
+    fs.readFileSync(path.join(root, storage.directory, "onboarding", "candidate-sets", `${candidateSet.candidateSetId}.json`), "utf8"),
+  );
   const broken = identified({ ...current, inputMode: "sideways" }, "candidateSetId", "candidateSetHash", "onboarding-candidates");
   assert.throws(
     () => verifyOnboardingCandidateSetForProjection(broken, "", storage),
@@ -150,11 +212,15 @@ test("ONBOARDING_PRODUCT_CANON_CONFLICT names the entry and points to document c
       ...payload,
       productModelId: canon.productModelId,
       sourceSnapshotId,
-      candidates: payload.candidates.map((candidate) =>
-        identified({ ...candidate, sourceSnapshotId }, "candidateId", "candidateHash", "onboarding-candidate"),
-      ),
+      candidates: payload.candidates.map((candidate) => identified({ ...candidate, sourceSnapshotId }, "candidateId", "candidateHash", "onboarding-candidate")),
     }),
-    (state) => Object.assign(state, { productModelId: canon.productModelId, previousProductModelId: canon.productModelId, sourceSnapshotId, worldModelId: built.snapshot.worldModelId }),
+    (state) =>
+      Object.assign(state, {
+        productModelId: canon.productModelId,
+        previousProductModelId: canon.productModelId,
+        sourceSnapshotId,
+        worldModelId: built.snapshot.worldModelId,
+      }),
   );
   await buildWorldModel({ root });
   assert.equal((await inspectOnboarding({ root })).status, "awaiting_review");
@@ -177,10 +243,9 @@ test("ONBOARDING_PRODUCT_CANON_CONFLICT names the entry and points to document c
   });
   assert.equal(viaMcp.reasonCode, "ONBOARDING_PRODUCT_CANON_CONFLICT");
   expected(viaMcp.message);
-  await assert.rejects(
-    reviewOnboarding({ root, candidateSetId: rebound.candidateSetId, disposition: "accept-all", rationale: "Adopt." }),
-    { code: "ONBOARDING_PRODUCT_CANON_CONFLICT" },
-  );
+  await assert.rejects(reviewOnboarding({ root, candidateSetId: rebound.candidateSetId, disposition: "accept-all", rationale: "Adopt." }), {
+    code: "ONBOARDING_PRODUCT_CANON_CONFLICT",
+  });
   assert.equal(readProductModelCanon({ storage, projectRoot: root }).model.productModelId, canon.productModelId, "Canon unchanged");
 });
 
@@ -191,6 +256,9 @@ test("the onboarding skill and both onboarding documents carry the same guidance
   assert.match(skill, /document change review \(`world-docs-capture`, then `world-docs-review`\), not through onboarding review/);
   assert.match(skill, /names the version found, the version read, and `docs\/onboarding-migrator\.md`/);
   assert.match(skill, /do not run the migrator/);
+  assert.match(skill, /A newer protocol needs a newer Lode/);
+  assert.match(read("docs/onboarding.md"), /a newer Lode reads it/);
+  assert.match(read("docs/ko/onboarding.md"), /더 새로운 Lode가 읽는다는/);
   for (const relative of ["docs/onboarding.md", "docs/ko/onboarding.md"]) {
     const document = read(relative);
     assert.match(document, /`ONBOARDING_PRODUCT_CANON_CONFLICT`/, relative);

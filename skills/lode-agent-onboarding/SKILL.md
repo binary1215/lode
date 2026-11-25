@@ -112,10 +112,11 @@ direction, or Canon authority.
 If status reports an incomplete boundary, unsupported legacy state, missing
 historical bytes, or integrity drift, stop Product governance mutation and
 report the exact recovery condition. Do not reset state, synthesize an empty
-Canon, or rerun onboarding to bypass it. A refusal for an onboarding candidate
-protocol this Lode does not read names the version found, the version read,
-and `docs/onboarding-migrator.md`; tell the user that document describes the
-separate migration, and do not run the migrator.
+Canon, or rerun onboarding to bypass it. A refusal for an older onboarding
+candidate protocol names the version found, the version read, and
+`docs/onboarding-migrator.md`; tell the user that document describes the
+separate migration, and do not run the migrator. A newer protocol needs a newer
+Lode.
 
 ## Activate optional GraphDB projection
 

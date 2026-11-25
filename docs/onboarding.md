@@ -55,10 +55,12 @@ commit marker. Historical candidates and their reviews then remain opaque,
 while Product Model revisions that independently pass the current verifier keep
 their original P1 status.
 
-When current Core meets a candidate set of another protocol, the refusal names
+When current Core meets a candidate set of an older protocol, the refusal names
 the candidate protocol it found, the one it reads (`0.4.0`), and
 [`onboarding-migrator.md`](onboarding-migrator.md). The plugin does not run the
-migrator; that document describes the separate migration.
+migrator; that document describes the separate migration. A candidate set of a
+newer protocol is refused with both versions and the note that a newer Lode
+reads it; a missing or malformed version is reported as an invalid field.
 
 Normal status, World, Context, Session recovery, and new current onboarding work
 continue without the helper. If product meaning should change, the provider
