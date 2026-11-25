@@ -20,7 +20,11 @@ async function recaptured(t, captures) {
   await buildWorldModel({ root });
   await materializeWorldMarkdownProjection({ root });
   const knowledge = path.join(root, layout.directory, "generated/knowledge");
-  const pageB = path.join(knowledge, "nodes", fs.readdirSync(path.join(knowledge, "nodes")).find((name) => name.startsWith("file-")));
+  const pageB = path.join(
+    knowledge,
+    "nodes",
+    fs.readdirSync(path.join(knowledge, "nodes")).find((name) => name.startsWith("file-")),
+  );
   fs.appendFileSync(path.join(knowledge, "index.md"), "\nEdit of page A, once.\n");
   const sets = [];
   for (let capture = 1; capture <= captures; capture += 1) {
@@ -41,7 +45,11 @@ for (const captures of [2, 3]) {
   test(`${captures} captures sharing an unchanged page build a World whose candidate count is the node count`, async (t) => {
     const { root, sets } = await recaptured(t, captures);
     const shared = sets[0].candidates.find((candidate) => candidate.relativePath === "index.md").candidateId;
-    for (const set of sets) assert.ok(set.candidates.some((candidate) => candidate.candidateId === shared), "the unchanged page keeps its candidate id");
+    for (const set of sets)
+      assert.ok(
+        set.candidates.some((candidate) => candidate.candidateId === shared),
+        "the unchanged page keeps its candidate id",
+      );
     const distinct = new Set(sets.flatMap((set) => set.candidates.map((candidate) => candidate.candidateId)));
     assert.equal(distinct.size, captures + 1, "one shared page A candidate and one page B candidate per capture");
 
@@ -52,7 +60,8 @@ for (const captures of [2, 3]) {
     assert.equal(view.summary.documentChangeCandidateCount, distinct.size);
     assert.equal(view.summary.documentChangeCandidateCount, view.nodes.length);
     assert.deepEqual(view.nodes.map((node) => node.nodeId).sort(), [...distinct].sort());
-    for (const set of sets) for (const candidate of set.candidates) assert.ok(view.contains(set.candidateSetId, candidate.candidateId), "every set keeps its own CONTAINS edge");
+    for (const set of sets)
+      for (const candidate of set.candidates) assert.ok(view.contains(set.candidateSetId, candidate.candidateId), "every set keeps its own CONTAINS edge");
 
     // A later build on the same records keeps working (the reported failure hit every later build).
     await buildWorldModel({ root });
