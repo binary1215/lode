@@ -1260,7 +1260,11 @@ function mergeAcceptedIntoCanon(previousModel, acceptedItems, storageOwner) {
   for (const item of acceptedItems) {
     const identity = `${item.kind}:${item.entity.key}`;
     if (existing.has(identity) && onboardingCanonicalJson(existing.get(identity)) !== onboardingCanonicalJson(item.entity)) {
-      fail(`Product Canon conflict for ${identity}.`, "ONBOARDING_PRODUCT_CANON_CONFLICT");
+      fail(
+        `Product Canon already has ${item.kind} "${item.entity.key}" with different content. Onboarding review only adds new entries; ` +
+          "change an existing entry through document change review (world-docs-capture, then world-docs-review), not through onboarding review.",
+        "ONBOARDING_PRODUCT_CANON_CONFLICT",
+      );
     }
     if (!existing.has(identity)) document[ARRAY_BY_KIND[item.kind]].push(item.entity);
     existing.set(identity, item.entity);

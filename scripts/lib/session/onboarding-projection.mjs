@@ -46,6 +46,17 @@ const ARRAY_BY_KIND = Object.freeze({
 
 const fail = failWith("ONBOARDING_PROJECTION_ERROR");
 
+// Names the versions and the separate migration document. Lode itself never
+// ships, imports or runs the migrator.
+function unreadCandidateProtocolMessage(candidateSetId, foundVersion) {
+  const found = typeof foundVersion === "string" && /^[0-9A-Za-z.+-]{1,32}$/.test(foundVersion) ? foundVersion : "missing or unreadable";
+  const subject = /^onboarding-candidates-[a-f0-9]{24}$/.test(candidateSetId || "") ? `Onboarding candidate set ${candidateSetId}` : "Onboarding candidate set";
+  return (
+    `${subject} uses candidate protocol ${found}; this Lode reads only candidate protocol ${CANDIDATE_PROTOCOL_VERSION}. ` +
+    "docs/onboarding-migrator.md describes the separate, standalone migration of older onboarding records; Lode does not run it."
+  );
+}
+
 function compareText(left, right) {
   const a = String(left);
   const b = String(right);
@@ -149,24 +160,26 @@ export function verifyOnboardingCandidateSetForProjection(document, projectId = 
   });
   const candidateProtocolVersion = document.protocol?.version;
   const format = familyFormatForOriginal("lode-agent-core-onboarding-candidates", document, storage);
-  if (
-    !format ||
-    document.kind !== "OnboardingCandidateSet" ||
-    candidateProtocolVersion !== CANDIDATE_PROTOCOL_VERSION ||
-    document.schemaVersion !== 1 ||
-    (projectId && document.projectId !== projectId) ||
-    !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(document.projectId || "") ||
-    !/^session-[A-Fa-f0-9-]{36}$/.test(document.sessionId || "") ||
-    !["existing", "new"].includes(document.inputMode) ||
-    !/^onboarding-storage-[a-f0-9]{24}$/.test(document.storageSelectionId || "") ||
-    document.worldModelId != null ||
-    !/^source-snapshot-[a-f0-9]{24}$/.test(document.sourceSnapshotId || "") ||
-    !/^product-model-[a-f0-9]{24}$/.test(document.productModelId || "") ||
-    document.authorityClass !== "candidate-set" ||
-    document.instructionAuthority !== false ||
-    document.promotionAuthority !== false
-  ) {
-    fail("Onboarding candidate set fields or authority are invalid.", "INVALID_ONBOARDING_PROJECTION_CANDIDATE_SET");
+  if (format && document.kind === "OnboardingCandidateSet" && candidateProtocolVersion !== CANDIDATE_PROTOCOL_VERSION) {
+    fail(unreadCandidateProtocolMessage(document.candidateSetId, candidateProtocolVersion), "INVALID_ONBOARDING_PROJECTION_CANDIDATE_SET");
+  }
+  const invalidField = [
+    ["format", !format],
+    ["kind", document.kind !== "OnboardingCandidateSet"],
+    ["schemaVersion", document.schemaVersion !== 1],
+    ["projectId", !format || (projectId && document.projectId !== projectId) || !new RegExp(`^${format.projectPrefix}[a-f0-9]{20}$`).test(document.projectId || "")],
+    ["sessionId", !/^session-[A-Fa-f0-9-]{36}$/.test(document.sessionId || "")],
+    ["inputMode", !["existing", "new"].includes(document.inputMode)],
+    ["storageSelectionId", !/^onboarding-storage-[a-f0-9]{24}$/.test(document.storageSelectionId || "")],
+    ["worldModelId", document.worldModelId != null],
+    ["sourceSnapshotId", !/^source-snapshot-[a-f0-9]{24}$/.test(document.sourceSnapshotId || "")],
+    ["productModelId", !/^product-model-[a-f0-9]{24}$/.test(document.productModelId || "")],
+    ["authorityClass", document.authorityClass !== "candidate-set"],
+    ["instructionAuthority", document.instructionAuthority !== false],
+    ["promotionAuthority", document.promotionAuthority !== false],
+  ].find(([, invalid]) => invalid)?.[0];
+  if (invalidField) {
+    fail(`Onboarding candidate set fields or authority are invalid (first invalid field: ${invalidField}).`, "INVALID_ONBOARDING_PROJECTION_CANDIDATE_SET");
   }
   if (canonicalJson(document.limits) !== canonicalJson(CURRENT_CANDIDATE_SET_LIMITS)) {
     fail("Onboarding candidate set limits do not match the protocol bounds.", "INVALID_ONBOARDING_PROJECTION_CANDIDATE_SET");
@@ -442,7 +455,10 @@ export function loadOnboardingGraphProjection({
       const entry = historicalEntryForPath(historical, relative, role);
       if (!entry) {
         if (familyFormatForOriginal("lode-agent-core-onboarding-candidates", document) && document.protocol?.version !== CANDIDATE_PROTOCOL_VERSION) {
-          fail(`Unsupported historical artifact is outside the committed boundary: ${relative}`, "HISTORICAL_BOUNDARY_COVERAGE_DRIFT");
+          fail(
+            `Unsupported historical artifact is outside the committed boundary: ${relative}. ${unreadCandidateProtocolMessage(null, document.protocol?.version)}`,
+            "HISTORICAL_BOUNDARY_COVERAGE_DRIFT",
+          );
         }
         current.push(document);
         continue;

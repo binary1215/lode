@@ -112,7 +112,10 @@ direction, or Canon authority.
 If status reports an incomplete boundary, unsupported legacy state, missing
 historical bytes, or integrity drift, stop Product governance mutation and
 report the exact recovery condition. Do not reset state, synthesize an empty
-Canon, or rerun onboarding to bypass it.
+Canon, or rerun onboarding to bypass it. A refusal for an onboarding candidate
+protocol this Lode does not read names the version found, the version read,
+and `docs/onboarding-migrator.md`; tell the user that document describes the
+separate migration, and do not run the migrator.
 
 ## Activate optional GraphDB projection
 
@@ -161,6 +164,11 @@ Do not choose a disposition for the user. Collect one explicit decision:
 Then call `lode_onboarding` (`review`) with the exact current candidate-set ID and
 the user's rationale. Stop on stale source, Canon drift, digest failure, or an
 active/pending Run; do not reinterpret a failed mutation as success.
+
+Onboarding review only adds new Product Canon entries. When it refuses with
+`ONBOARDING_PRODUCT_CANON_CONFLICT`, the refusal names the existing entry (kind
+and key); changing an existing entry goes through document change review
+(`world-docs-capture`, then `world-docs-review`), not through onboarding review.
 
 ## Verify readiness
 

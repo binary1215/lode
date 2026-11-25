@@ -55,6 +55,11 @@ commit marker. Historical candidates and their reviews then remain opaque,
 while Product Model revisions that independently pass the current verifier keep
 their original P1 status.
 
+When current Core meets a candidate set of another protocol, the refusal names
+the candidate protocol it found, the one it reads (`0.4.0`), and
+[`onboarding-migrator.md`](onboarding-migrator.md). The plugin does not run the
+migrator; that document describes the separate migration.
+
 Normal status, World, Context, Session recovery, and new current onboarding work
 continue without the helper. If product meaning should change, the provider
 Lode authors a fresh current semantic proposal with
@@ -270,6 +275,13 @@ latest ReviewDecision over that successor; the two identities are not required
 to match. Additions and removals require this two-review path; they cannot be
 introduced and promoted in the same decision. `reject` records all candidates as
 rejected and leaves Product Canon unchanged.
+
+Onboarding review only adds new Product Canon entries. An accepted candidate
+whose kind and key already name a different Canon entry is refused with
+`ONBOARDING_PRODUCT_CANON_CONFLICT`, which names that entry. Changing an
+existing entry goes through document change review (`world-docs-capture`, then
+`world-docs-review`; see [Document change review](document-change-review.md)),
+not through onboarding review.
 
 ```powershell
 node scripts/lode.mjs onboarding-review C:\path\to\project --input .\onboarding-review.json
