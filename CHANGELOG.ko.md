@@ -9,6 +9,30 @@
 GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 태그를 소급 생성하지
 않습니다. 마켓플레이스 게시가 로컬 설치나 Host/MCP 재로드를 입증하지는 않습니다.
 
+## 0.3.0-beta.138 — 게시 결과는 별도 확인
+
+- 수정: 게시된 Markdown의 편집을 두 번째로 캡처하면 그 뒤의 World 빌드가 모두
+  실패했습니다. 같은 문서 투영을 두 번 캡처하는 사이에 바뀌지 않은 페이지는 두
+  묶음에서 후보 ID가 같습니다. 시간 그래프는 그 후보를 노드 하나로 두는데 요약은
+  묶음별 후보 수를 더했기 때문에, 검토 여부와 상관없이 `world-index`,
+  `world-docs-review`, `world-docs-apply`가 모두 `TEMPORAL_SUMMARY_MISMATCH`로
+  멈췄습니다. 이제 요약은 서로 다른 문서 변경 후보의 수를 셉니다. 전에 빌드되던
+  World의 요약은 전과 같습니다.
+- 수정: 그 실패로 "Canon 적용됨, 투영 대기" 상태에 남은 Project가
+  `world-docs-apply --review <id>`만으로 끝납니다. 기록 파일을 옮길 필요가
+  없습니다. 여러 번 캡처한 뒤의 검토(accept-all, accept-selected, reject)와 상태
+  읽기를 가장 최근 묶음 기준으로 테스트에 고정했습니다.
+- 변경: 현재 Core가 읽지 않는 프로토콜의 온보딩 후보 묶음을 거절할 때 그 사실을
+  말합니다. 발견한 버전과 읽는 버전(`0.4.0`)을 적고, 더 오래된 버전이면
+  `docs/onboarding-migrator.md`를, 더 새로운 버전이면 더 새로운 Lode가 읽는다는
+  것을 적습니다. 버전이 없거나 형식이 틀리면 잘못된 필드 `protocol.version`으로
+  알립니다. 플러그인은 여전히 migrator를 싣지도 실행하지도 않습니다. 이유 코드는
+  그대로입니다(`INVALID_ONBOARDING_PROJECTION_CANDIDATE_SET`).
+- 변경: `ONBOARDING_PRODUCT_CANON_CONFLICT`가 Canon 항목(kind와 key)을 적고, 기존
+  항목을 바꾸는 일은 온보딩 검토가 아니라 문서 변경 검토(`world-docs-capture`,
+  이어서 `world-docs-review`)로 한다고 말합니다. 온보딩 Skill과
+  `docs/onboarding.md`도 같은 내용을 적습니다.
+
 ## 0.3.0-beta.137 — 게시 결과는 별도 확인
 
 - 수정: 폴더를 옮기거나 복사한 Project에 초기화를 안내했습니다. 이제 대화

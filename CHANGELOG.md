@@ -11,6 +11,32 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.138 — publication tracked separately
+
+- Fixed: capturing edits of published Markdown a second time broke every later
+  World build. A page that did not change between two captures of the same
+  document projection has the same candidate id in both sets; the temporal
+  graph keeps one node for it, but its summary added up the sets' lengths, so
+  `world-index`, `world-docs-review` and `world-docs-apply` all stopped with
+  `TEMPORAL_SUMMARY_MISMATCH`, with or without a review. The summary now counts
+  distinct document-change candidates. A World that could be built before has
+  the same summary as before.
+- Fixed: a Project left in "Canon applied, projection pending" by that failure
+  completes with `world-docs-apply --review <id>` alone; no record file has to
+  be moved. Review after several captures (accept-all, accept-selected, reject)
+  and the status reads are covered by tests on the latest set.
+- Changed: the refusal for an onboarding candidate set of a protocol the
+  current Core does not read says so. It names the version found and the
+  version read (`0.4.0`), and for an older one `docs/onboarding-migrator.md`;
+  for a newer one it says a newer Lode reads it. A missing or malformed version
+  is reported as the invalid field `protocol.version`. The plugin still neither
+  ships nor runs the migrator. The reason code is unchanged
+  (`INVALID_ONBOARDING_PROJECTION_CANDIDATE_SET`).
+- Changed: `ONBOARDING_PRODUCT_CANON_CONFLICT` names the Canon entry (kind and
+  key) and says that changing an existing entry goes through document change
+  review (`world-docs-capture`, then `world-docs-review`), not through
+  onboarding review. The onboarding skill and `docs/onboarding.md` say the same.
+
 ## 0.3.0-beta.137 — publication tracked separately
 
 - Fixed: a Project whose folder was moved or copied was told to initialize.
