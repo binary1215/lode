@@ -4,8 +4,11 @@
 // TypeError. Everything else an inputSchema declares (enumerations, patterns,
 // bounds, confirmation flags) stays with the operation's own refusal: those
 // messages explain the operation's rule, and the CLI and MCP paths are
-// contracted to fail identically there. Unknown fields are refused here (D2,
-// below).
+// contracted to fail identically there. A field outside the tool's schema is
+// different: the MCP path refuses it here, before the operation runs, with
+// INVALID_TOOL_ARGUMENTS naming the field (D2, below), so its message differs
+// from the CLI's own refusal of the same field. A declared field the action
+// does not take still reaches the operation and fails as on the CLI.
 // Returns a list of human-readable problems; empty = valid.
 
 export function validateProjectRootArgument(schema, args, where = "arguments") {

@@ -187,11 +187,15 @@ test("unobservable read dependency guides HEAD without creating claims or blocki
 test("both public paths reject request-injected Host hooks and irrelevant action fields before mutation", async (t) => {
   const f = await workerIntegrationFixture(t);
   const before = snapshot(f.root);
-  for (const extra of [
-    { fileEffect: "execute-me" },
-    { root: "other-project" },
-    { authorizationIds: [] },
-    { verificationId: `worker-integration-verification-${"1".repeat(24)}` },
+  // undeclared: the MCP field is outside the tool's schema, so the MCP path
+  // refuses it before the operation (D2, first-use bundle); a declared field
+  // the action does not take reaches the operation, and both paths refuse it
+  // with the same message. The CLI refuses all four in the operation.
+  for (const [extra, undeclared] of [
+    [{ fileEffect: "execute-me" }, "fileEffect"],
+    [{ root: "other-project" }, "root"],
+    [{ authorizationIds: [] }, null],
+    [{ verificationId: `worker-integration-verification-${"1".repeat(24)}` }, null],
   ]) {
     const request = { action: "apply", integrationId: f.integrationId, ...extra };
     let commandError;
@@ -201,11 +205,16 @@ test("both public paths reject request-injected Host hooks and irrelevant action
       commandError = error;
     }
     assert.ok(commandError);
+    assert.match(commandError.message, /Unsupported worker integration fields: /);
     const response = await call("head_worker_integration", mcpArgs(f.root, request));
-    assert.equal(response.error.message, commandError.message);
+    if (undeclared) {
+      assert.equal(response.error.data.reasonCode, "INVALID_TOOL_ARGUMENTS");
+      assert.match(response.error.message, new RegExp(`"${undeclared}" is not an argument of lode_worker_integration`));
+    } else assert.equal(response.error.message, commandError.message);
   }
   const read = await call("head_worker_integration_status", { project_root: f.root, integration_id: f.integrationId, action: "apply" });
-  assert.match(read.error.message, /Unsupported worker integration fields: action/);
+  assert.equal(read.error.data.reasonCode, "INVALID_TOOL_ARGUMENTS");
+  assert.match(read.error.message, /"action" is not an argument of lode_worker_integration_status/);
   assert.deepEqual(snapshot(f.root), before);
 });
 
