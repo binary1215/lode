@@ -80,6 +80,14 @@ export function nativeFixtureSkip(what, { supervisor = true, fileEffect = false,
   return false;
 }
 
+// The gate of a test that needs several test-only settings: names every one
+// that is missing (the runner matches the canonical names it could not supply).
+export function missingSettingsSkip(what, canonicalNames, environment) {
+  const missing = canonicalNames.filter((canonical) => !testSetting(canonical, environment));
+  if (!missing.length) return false;
+  return `native-fixture: ${missing.map(settingNames).join(" and ")} not set; ${what} needs ${missing.length > 1 ? "them" : "it"}`;
+}
+
 // The usual gate of the Windows native lanes: other OS first, then a missing
 // fixture.
 export function windowsNativeSkip(what, options = {}) {

@@ -19,6 +19,7 @@ import {
   codexHostDiscoverySelected,
   codexTestBinary,
   ownerCrashFixture,
+  missingSettingsSkip,
   skipReason,
   supervisorFixtureRoot,
   terminalHoldFixtureRoot,
@@ -28,22 +29,13 @@ import {
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const nativeRoot = supervisorFixtureRoot();
 const skip = windowsNativeSkip("the packaged Windows native worker host");
-const ownerCrashSkip =
-  skip ||
-  (ownerCrashFixture()
-    ? false
-    : skipReason.nativeFixture(
-        NATIVE_FIXTURE_SETTINGS.ownerCrashFixture,
-        "the exact-owner crash helper built from test/helpers/owned-worker-crash-windows.go",
-      ));
+// The runner builds both from source on Windows: the exact-owner crash helper
+// from test/helpers/owned-worker-crash-windows.go, and the terminal-hold
+// supervisor as a `go test -c` build of native/lode-agent-worker/cmd/lode-agent-supervisor.
+const ownerCrashSkip = skip || missingSettingsSkip("the exact-owner crash test", [NATIVE_FIXTURE_SETTINGS.ownerCrashFixture]);
 const terminalHoldSkip =
-  ownerCrashSkip ||
-  (terminalHoldFixtureRoot()
-    ? false
-    : skipReason.nativeFixture(
-        NATIVE_FIXTURE_SETTINGS.terminalHoldRoot,
-        "the terminal-hold supervisor (a `go test -c` build of native/lode-agent-worker/cmd/lode-agent-supervisor with its manifest)",
-      ));
+  skip ||
+  missingSettingsSkip("the terminal-publication owner crash test", [NATIVE_FIXTURE_SETTINGS.ownerCrashFixture, NATIVE_FIXTURE_SETTINGS.terminalHoldRoot]);
 const onProcess = (event) => console.log(JSON.stringify({ ...event, at: new Date().toISOString() }));
 onProcess({ type: "test", pid: process.pid, parentPid: process.ppid, command: process.execPath, args: process.argv.slice(1), cwd: process.cwd(), ports: [] });
 const pause = () => new Promise((resolve) => setTimeout(resolve, 100));

@@ -8,6 +8,7 @@ import { createProcessSupervisorManifest } from "../scripts/lib/runtime/runtime-
 import {
   NATIVE_FIXTURE_SETTINGS,
   fileEffectFixtureRoot,
+  missingSettingsSkip,
   nativeFixtureSkip,
   settingNames,
   skipReason,
@@ -112,6 +113,16 @@ test("skip reasons start with their class and name both spellings of a setting",
   assert.match(reasons[1], /LODE_AGENT_GO_WORKER_FIXTURE_ROOT \(or HEAD_AGENT_GO_WORKER_FIXTURE_ROOT\)/);
   assert.equal(nativeFixtureSkip("x", { environment: { [NATIVE_FIXTURE_SETTINGS.supervisorRoot]: "root" } }), false);
   assert.ok(nativeFixtureSkip("x", { environment: {} }).startsWith("native-fixture: "));
+  const both = [NATIVE_FIXTURE_SETTINGS.ownerCrashFixture, NATIVE_FIXTURE_SETTINGS.terminalHoldRoot];
+  assert.equal(
+    missingSettingsSkip("x", both, {}),
+    "native-fixture: LODE_AGENT_TEST_OWNER_CRASH_FIXTURE (or HEAD_AGENT_TEST_OWNER_CRASH_FIXTURE) and LODE_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT (or HEAD_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT) not set; x needs them",
+  );
+  assert.equal(
+    missingSettingsSkip("x", both, { HEAD_AGENT_TEST_OWNER_CRASH_FIXTURE: "helper" }),
+    "native-fixture: LODE_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT (or HEAD_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT) not set; x needs it",
+  );
+  assert.equal(missingSettingsSkip("x", both, { LODE_AGENT_TEST_OWNER_CRASH_FIXTURE: "a", LODE_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT: "b" }), false);
   const windows = windowsNativeSkip("x", { environment: {} });
   assert.ok(windows.startsWith(process.platform === "win32" ? "native-fixture: " : "other-os: "), windows);
 });
