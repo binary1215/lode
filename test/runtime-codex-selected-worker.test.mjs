@@ -32,6 +32,8 @@ import {
 } from "../scripts/lib/worker/bounded-worker-job.mjs";
 import { connectCodexWorkerHost } from "./helpers/codex-selected-fixture-host.mjs";
 import runCodexWorker from "../scripts/lib/runtime/runtime-codex-worker-runner.mjs";
+import { skipReason, supervisorFixtureRoot } from "./helpers/native-fixtures.mjs";
+const windowsOnly = process.platform !== "win32" && skipReason.otherOperatingSystem("Windows", "the fixed detached Host reconnect");
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const hostModuleFile = path.join(import.meta.dirname, "helpers", "codex-selected-fixture-host.mjs");
@@ -414,7 +416,7 @@ for (const reason of ["cancel", "timeout"]) {
 
 async function transport(f) {
   const supervisorSelection = resolveVerifiedProcessSupervisor({
-    pluginRoot: process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot,
+    pluginRoot: supervisorFixtureRoot() || pluginRoot,
   });
   fs.writeFileSync(
     path.join(f.container, "fixture-connection.json"),
@@ -650,7 +652,7 @@ for (const mode of ["success", "expose-root"]) {
 }
 
 for (const mode of ["success", "write", "cancel", "timeout"]) {
-  test(`fixed detached Host reconnect settles exact selected job: ${mode}`, { skip: process.platform !== "win32" }, async (t) => {
+  test(`fixed detached Host reconnect settles exact selected job: ${mode}`, { skip: windowsOnly }, async (t) => {
     const f = await fixture(t, { mode: mode === "cancel" || mode === "timeout" ? "wait" : mode, timeoutMs: mode === "timeout" ? 1500 : 8000 });
     const connection = await transport(f);
     const capability = f.bind({ host: connection.policyHost });

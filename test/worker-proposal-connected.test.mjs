@@ -33,12 +33,12 @@ import { operateWorkerIntegration, inspectWorkerIntegration } from "../scripts/l
 import { readWorkerPatchIntegration } from "../scripts/lib/worker/worker-patch-integration.mjs";
 import { applyWorkerPatchIntegration } from "../scripts/lib/worker/worker-integration-application.mjs";
 import { readWorkerIntegrationBasis } from "../scripts/lib/worker/worker-integration-basis.mjs";
+import { fileEffectFixtureRoot, supervisorFixtureRoot, windowsNativeSkip } from "./helpers/native-fixtures.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
-const supervisorRoot = process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT;
-const nativeRoot = process.env.HEAD_AGENT_FILE_EFFECT_FIXTURE_ROOT;
-const skip =
-  process.platform !== "win32" || !supervisorRoot || !nativeRoot ? "Windows native owner and image-effect fixtures not supplied; no provider test" : false;
+const skip = windowsNativeSkip("the Windows native owner and image-effect bridge (no provider test)", { fileEffect: true });
+const supervisorRoot = skip ? null : supervisorFixtureRoot();
+const nativeRoot = skip ? null : fileEffectFixtureRoot();
 const pause = () => new Promise((resolve) => setTimeout(resolve, 100));
 const onProcess = (event) => console.log(JSON.stringify({ event: "owned-proposal-connected-process", observedAt: new Date().toISOString(), ...event }));
 console.log(

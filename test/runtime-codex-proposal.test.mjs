@@ -30,6 +30,7 @@ import { resolveVerifiedProcessSupervisor } from "../scripts/lib/runtime/runtime
 import { RUNTIME_OPERATIONAL_STATE_ENV, inspectRuntimeExecutionLease } from "../scripts/lib/runtime/runtime-execution-lease.mjs";
 import { readRuntimeInvocationRecord } from "../scripts/lib/runtime/runtime-invocation-record.mjs";
 import { readRuntimeOutputSpool } from "../scripts/lib/runtime/runtime-output-spool.mjs";
+import { supervisorFixtureRoot } from "./helpers/native-fixtures.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -149,7 +150,7 @@ async function fixture(t, { timeoutMs = 6000, taskKey = "fresh-proposal", native
   };
   const selection = () =>
     resolveVerifiedProcessSupervisor({
-      pluginRoot: process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot,
+      pluginRoot: supervisorFixtureRoot() || pluginRoot,
     });
   const options = () => ({
     root,

@@ -8,6 +8,7 @@ import test from "node:test";
 import { createCodexAppServerTransport, createCodexAppServerProtocolFixtureTransport } from "../scripts/lib/runtime/runtime-codex-app-server-transport.mjs";
 import { resolveVerifiedProcessSupervisor, verifyRuntimeProcessSupervisorHandle } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
 import { finishCodexAppServerFixture, waitForFixturePidsAbsent } from "./helpers/codex-app-server-fixture-cleanup.mjs";
+import { supervisorFixtureRoot } from "./helpers/native-fixtures.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const realTimeout = setTimeout,
@@ -46,7 +47,7 @@ function fixture(t, scenario = "normal", options = {}) {
   const dir = fs.mkdtempSync(path.join(process.env.LODE_AGENT_TEST_TMP || process.env.HEAD_AGENT_TEST_TMP || os.tmpdir(), "codex-rpc-"));
   const journal = [];
   const selection = resolveVerifiedProcessSupervisor({
-    pluginRoot: process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || root,
+    pluginRoot: supervisorFixtureRoot() || root,
   });
   const config = {
     supervisorSelection: selection,

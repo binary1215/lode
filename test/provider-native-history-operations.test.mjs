@@ -12,6 +12,7 @@ import { nativeEnvironment, createProviderNativeHost } from "../scripts/lib/sess
 import { fileURLToPath } from "node:url";
 import { runCommand } from "../scripts/lode.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
+import { nativeFixtureSkip, supervisorFixtureRoot } from "./helpers/native-fixtures.mjs";
 
 const id = "11111111-2222-4333-8444-555555555555";
 const claudeRows = [ { type: "user", uuid: "message_selected", sessionId: id, parentUuid: null,
@@ -305,8 +306,8 @@ test("Host callbacks cannot be supplied through public CLI or MCP data arguments
 });
 
 test("finite hidden driver supervises a synthetic Node tree and cancellation; it does not qualify either official client", async t => {
-  const pluginRoot = process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT;
-  if (!pluginRoot) return t.skip("An existing verified supervisor fixture is required; no download/build is performed.");
+  const pluginRoot = supervisorFixtureRoot();
+  if (!pluginRoot) return t.skip(nativeFixtureSkip("the finite hidden driver (no download or build is performed)"));
   const f = fixture(t), events = [], home = path.join(f.base, "finite-home"); fs.mkdirSync(home);
   const script = path.join(f.base, "import");
   fs.writeFileSync(script, 'const {spawn}=require("node:child_process");const c=spawn(process.execPath,["-e","setInterval(()=>{},1000)"],{stdio:"ignore",windowsHide:true});c.unref();process.stdout.write("synthetic-driver-ok");');
@@ -324,8 +325,8 @@ test("finite hidden driver supervises a synthetic Node tree and cancellation; it
 });
 
 test("dedicated SDK reader uses only list/message APIs against a synthetic module, never query", async t => {
-  const pluginRoot = process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT;
-  if (!pluginRoot) return t.skip("An existing verified supervisor fixture is required; no SDK is downloaded.");
+  const pluginRoot = supervisorFixtureRoot();
+  if (!pluginRoot) return t.skip(nativeFixtureSkip("the dedicated SDK reader (no SDK is downloaded)"));
   const f = fixture(t), home = path.join(f.base, "reader-home"); fs.mkdirSync(home);
   const module = path.join(f.base, "synthetic-sdk.mjs"), reader = fileURLToPath(new URL("../scripts/read-claude-native-history.mjs", import.meta.url));
   fs.writeFileSync(module, 'export async function query(){throw Error("Query must never run")};export async function listSessions(){return [{sessionId:' + JSON.stringify(id) + '}]};export async function getSessionMessages(){return ' + JSON.stringify(claudeRows.map(x => ({ uuid: x.uuid, message: x.message }))) + '}');

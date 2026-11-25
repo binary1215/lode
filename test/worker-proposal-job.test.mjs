@@ -29,6 +29,8 @@ import {
   reconcileBoundedWorkerJob,
 } from "../scripts/lib/worker/bounded-worker-job.mjs";
 import runCodexProposal from "../scripts/lib/runtime/runtime-codex-proposal-runner.mjs";
+import { skipReason, supervisorFixtureRoot } from "./helpers/native-fixtures.mjs";
+const windowsOnly = process.platform !== "win32" && skipReason.otherOperatingSystem("Windows", "the fixed native proposal owner");
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -185,7 +187,7 @@ async function fixture(t, nativePrefix = false) {
     sessionFile: path.join(root, relativeProjectArtifact(storage, "sessions", "current.json")),
     async start() {
       const supervisorSelection = resolveVerifiedProcessSupervisor({
-        pluginRoot: process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot,
+        pluginRoot: supervisorFixtureRoot() || pluginRoot,
       });
       const host = createBoundedWorkerJobHost({ policy, workspaceBinding });
       started = true;
@@ -201,24 +203,20 @@ async function fixture(t, nativePrefix = false) {
   };
 }
 
-test(
-  "native prefix public job composition reconnects its fixed owner and freezes a proposal without P2 integration",
-  { skip: process.platform !== "win32" },
-  async (t) => {
-    const f = await fixture(t, true),
-      before = fs.readFileSync(f.sessionFile);
-    const state = await f.start();
-    assert.equal(state.status, "completed");
-    assert.equal(state.result.actualProviderInvoked, false);
-    const patch = readBoundedWorkerPatch(f.input, { onProcess });
-    assert.equal(patch.origin, "provider-patch-proposal");
-    assert.equal(patch.applied, false);
-    assert.deepEqual(fs.readFileSync(f.sessionFile), before);
-    const consumed = f.lease().consumption.consumptionId;
-    await f.start();
-    assert.equal(f.lease().consumption.consumptionId, consumed);
-  },
-);
+test("native prefix public job composition reconnects its fixed owner and freezes a proposal without P2 integration", { skip: windowsOnly }, async (t) => {
+  const f = await fixture(t, true),
+    before = fs.readFileSync(f.sessionFile);
+  const state = await f.start();
+  assert.equal(state.status, "completed");
+  assert.equal(state.result.actualProviderInvoked, false);
+  const patch = readBoundedWorkerPatch(f.input, { onProcess });
+  assert.equal(patch.origin, "provider-patch-proposal");
+  assert.equal(patch.applied, false);
+  assert.deepEqual(fs.readFileSync(f.sessionFile), before);
+  const consumed = f.lease().consumption.consumptionId;
+  await f.start();
+  assert.equal(f.lease().consumption.consumptionId, consumed);
+});
 
 test("proposal Host admits only its fixed runner and explicitly bound read-only intent", async (t) => {
   const f = await fixture(t);
@@ -256,7 +254,7 @@ test("proposal Host admits only its fixed runner and explicitly bound read-only 
   assert.equal(fs.existsSync(f.directory), false);
 });
 
-test("fixed proposal owner freezes settled provider output, never a workspace diff or new execution", { skip: process.platform !== "win32" }, async (t) => {
+test("fixed proposal owner freezes settled provider output, never a workspace diff or new execution", { skip: windowsOnly }, async (t) => {
   const f = await fixture(t);
   const beforeP2 = fs.readFileSync(f.sessionFile),
     beforeSource = fs.readFileSync(path.join(f.root, "selected.txt"));
@@ -371,7 +369,7 @@ test("fixed proposal owner freezes settled provider output, never a workspace di
   }
 });
 
-test("proposal freeze recovery requires exact settled result and complete native owner terminal", { skip: process.platform !== "win32" }, async (t) => {
+test("proposal freeze recovery requires exact settled result and complete native owner terminal", { skip: windowsOnly }, async (t) => {
   const f = await fixture(t);
   assert.equal((await f.start()).status, "completed");
   const patchFile = path.join(f.directory, "workspace-patch.json");

@@ -35,6 +35,7 @@ import {
   createCodexNativeForkOwnedTransport,
   CODEX_NATIVE_FORK_ACTUAL_UNAVAILABLE,
 } from "../scripts/lib/runtime/runtime-codex-native-fork.mjs";
+import { supervisorFixtureRoot } from "./helpers/native-fixtures.mjs";
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const copy = (value) => structuredClone(value);
@@ -743,7 +744,7 @@ test("final hydration cannot silently replace the completed result items", async
 test("supervisor handle provenance rejects JSON, copies, synthetic spawn and other invocation/source ownership", async (t) => {
   const f = await fixture(t);
   const selection = resolveVerifiedProcessSupervisor({
-    pluginRoot: process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot,
+    pluginRoot: supervisorFixtureRoot() || pluginRoot,
   });
   const ownershipBinding = {
     authorizationHash: f.authorization.authorizationHash,
@@ -818,7 +819,7 @@ test("supervisor handle provenance rejects JSON, copies, synthetic spawn and oth
 test("real native supervisor identity proof uses a model-free owned Node child", async (t) => {
   const f = await fixture(t);
   const selection = resolveVerifiedProcessSupervisor({
-    pluginRoot: process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot,
+    pluginRoot: supervisorFixtureRoot() || pluginRoot,
   });
   const ownershipBinding = {
     authorizationHash: f.authorization.authorizationHash,
