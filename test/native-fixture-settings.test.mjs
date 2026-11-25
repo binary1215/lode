@@ -72,11 +72,15 @@ function directReads(text) {
   return found;
 }
 
+// Files that name the settings without reading a fixture location for a test:
+// the helper reads them, this pin names them in its checker cases, and the
+// runner's own pin (group G's) lists the names the runner exports.
+const exempt = [helperFile, import.meta.filename, path.join(testRoot, "npm-test-entrypoint.test.mjs")];
+
 test("no test file reads a native fixture setting from process.env itself", () => {
   const offenders = [];
   for (const file of sources(testRoot)) {
-    // The helper reads the settings; this file only names them in checker cases.
-    if (file === helperFile || file === import.meta.filename) continue;
+    if (exempt.includes(file)) continue;
     const found = directReads(fs.readFileSync(file, "utf8"));
     if (found.length) offenders.push(`${path.relative(testRoot, file)}: ${found.join(", ")}`);
   }
@@ -101,8 +105,16 @@ test("no test file reads a native fixture setting from process.env itself", () =
   assert.deepEqual(directReads('x = { "LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT": root };'), []);
   assert.deepEqual(directReads('t.skip("needs LODE_AGENT_TEST_CODEX_BIN set");'), []);
   assert.deepEqual(directReads("assert.match(runner, /LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT/);"), []);
-  // The runner pin (group G's) only sets and removes the supervisor variable.
-  assert.deepEqual(directReads(fs.readFileSync(path.join(testRoot, "npm-test-entrypoint.test.mjs"), "utf8")), []);
+  // A list of whole names (as the runner's pin keeps) counts as a read in any
+  // other file; the runner's pin passes only because it is exempt by name.
+  assert.deepEqual(directReads('const exported = ["LODE_AGENT_FILE_EFFECT_FIXTURE_ROOT", "HEAD_AGENT_FILE_EFFECT_FIXTURE_ROOT"];'), [
+    "LODE_AGENT_FILE_EFFECT_FIXTURE_ROOT",
+    "HEAD_AGENT_FILE_EFFECT_FIXTURE_ROOT",
+  ]);
+  assert.deepEqual(
+    exempt.map((file) => path.relative(testRoot, file).replaceAll("\\", "/")),
+    ["helpers/native-fixtures.mjs", "native-fixture-settings.test.mjs", "npm-test-entrypoint.test.mjs"],
+  );
 });
 
 test("settings are read under the canonical name first and the historical name second", () => {
