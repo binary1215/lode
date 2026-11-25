@@ -1471,7 +1471,7 @@ function formatSessionList(value) {
   if (value.sessions.some((session) => originalObject(session?.state)))
     text += "Stored pointers only; recent work and remaining tasks are uninspected until an exact preview.\n";
   if (value.sessions.some((session) => originalObject(session) && value.preview?.sessionId !== session.sessionId))
-    text += "Preview one Session with --session <id> (MCP session_id); no selection change. Exact fields: --json\n";
+    text += "Preview one Session with the existing list session_id / --session <id>; no selection change. Exact fields: --json\n";
   // The page itself in one line; unreadable entries are named, never dropped.
   if (originalObject(value.coverage) || Array.isArray(value.unavailable) || Object.hasOwn(value, "nextAfterSessionId")) {
     const coverage = originalObject(value.coverage) ? value.coverage : {};

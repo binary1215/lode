@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ARTIFACT_COMPOSITION } from "./lib/lode-artifact-composition.mjs";
 import { legacyReasonCodeFields } from "./lib/core/errors.mjs";
-import { callRegistered, explainUnownedProjectRoot, explainsUnownedRoot, registeredCommand } from "./lib/session/operation-registry.mjs";
+import { callRegistered, explainUnownedProjectRoot, unownedRootModeForCommand, registeredCommand } from "./lib/session/operation-registry.mjs";
 import { nearName } from "./lib/core/mcp-argument-validation.mjs";
 import { commandEntry, isManagedMutation, requireOperationSurface, requireSurface } from "./lib/session/managed-maintenance-surface.mjs";
 import { withSessionCallContext, sessionCallRequiresBinding, sessionSelectionUnresolved } from "./lib/session/session-routing.mjs";
@@ -391,7 +391,7 @@ export async function runCommand(argv = process.argv.slice(2), options = {}) {
     // The same explanation as a registered call, for the commands this file
     // handles itself (status, session-list): a missing folder, a Project not
     // resumed here, or no Project, instead of a raw ENOENT.
-    throw await explainUnownedProjectRoot(error, given, { storage: explainsUnownedRoot(argv[offset]) });
+    throw await explainUnownedProjectRoot(error, given, { storage: unownedRootModeForCommand(argv[offset]) });
   }
 }
 

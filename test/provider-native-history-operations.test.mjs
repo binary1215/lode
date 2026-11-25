@@ -298,7 +298,9 @@ test("Host callbacks cannot be supplied through public CLI or MCP data arguments
   await assert.rejects(() => runCommand(["project-native-history", f.bundle, "--action", "restore", "--native-history-host", "synthetic-test"]));
   const result = await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "head_project_native_history",
     arguments: { action: "restore", bundle_root: f.bundle, nativeHistoryHost: { evidenceKind: "synthetic-test" } } } });
-  assert.ok(result.error); assert.match(result.error.message, /Unsupported native history arguments/);
+  assert.ok(result.error);
+  // D2 (first-use bundle): an argument outside the schema is refused before the operation runs.
+  assert.match(result.error.message, /"nativeHistoryHost" is not an argument of lode_project_native_history/);
   assert.deepEqual(snapshot(f.home), before);
 });
 

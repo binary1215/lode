@@ -248,7 +248,7 @@ test("capacity-inventory: cursor owner/query/scope/path validation and changed f
     { worldModelId: "different" },
     { inventoryCursor: "x".repeat(4097) },
   ])
-    await assert.rejects(queryProjectGraph({ ...args, ...change }), /INVALID_PROJECT_GRAPH_INVENTORY_CURSOR/);
+    await assert.rejects(queryProjectGraph({ ...args, ...change }), { code: "INVALID_PROJECT_GRAPH_INVENTORY_CURSOR" });
   const bad = JSON.parse(Buffer.from(args.inventoryCursor, "base64url"));
   bad.frontier.path = ".lode/observations/../../project.json";
   await assert.rejects(

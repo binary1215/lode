@@ -414,10 +414,10 @@ export function initializeProject({ root = ".", pluginRoot, runtimes, installati
 // changes are restored by resume), so the text says that instead of a repair.
 export function managedDriftRefusal(inspected) {
   const drift = Array.isArray(inspected?.drift) ? inspected.drift : [];
-  if (!drift.length) return `Managed project files must be unchanged before resume or installation; current status: ${inspected?.status}.`;
+  if (!drift.length) return `Managed project files must be drift-free before resume or installation; current status: ${inspected?.status}.`;
   const named = drift.slice(0, 8).map((item) => `${item.path || item.kind || "managed artifact"} (${item.reason || "changed"})`);
   return (
-    `Managed project files differ from their recorded versions: ${named.join(", ")}${drift.length > 8 ? `, and ${drift.length - 8} more` : ""}. ` +
+    `Managed project files must be drift-free; these differ from their recorded versions: ${named.join(", ")}${drift.length > 8 ? `, and ${drift.length - 8} more` : ""}. ` +
     "Lode does not regenerate or overwrite a managed file, and has no step that repairs a missing or changed one; resume restores only files whose line endings changed. " +
     "Nothing was changed. Ordinary work is not blocked; restore those files to their recorded content and run resume again."
   );

@@ -243,7 +243,8 @@ test("4.4: four first-use commands print text without --json and keep the object
   assert.ok(lines.some((line) => line.includes(created.sessionId) && line.includes('"synthetic review"')));
   assert.ok(lines.some((line) => line.includes("(default; selected when no Session is named)")));
   const noSummary = await refusal(() => runCommand(["checkpoint", f.root]));
-  assert.match(noSummary.message, /checkpoint needs --summary/);
+  // Already refused with text on main; unchanged.
+  assert.match(noSummary.message, /Checkpoint purpose is required/);
 });
 
 test("saving direction: a refused key is named with the accepted keys; a missing id is told apart from a conflict", async (t) => {

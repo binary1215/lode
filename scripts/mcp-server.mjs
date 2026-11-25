@@ -837,7 +837,7 @@ async function dispatchRouted(
       // A grouped member is named as the caller called it: lode_session (action work_record).
       const membership = groupMembership(semanticToolName(name));
       const presented = membership ? `${publicToolName(membership.group.name)} (action ${membership.action})` : publicToolName(name);
-      assertDeclaredArguments(presented, publishedSchema, args, semanticToolName(name));
+      assertDeclaredArguments(presented, publishedSchema, args);
     }
     if (!registered) throw new Error(`Unknown tool: ${publicToolName(name)}`);
     // Only a view the native bridge issued to a verified caller counts (4-D).

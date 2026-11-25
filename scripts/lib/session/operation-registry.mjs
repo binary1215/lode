@@ -6134,13 +6134,6 @@ export const OPERATIONS = Object.freeze([
       flags: ["next", "summary"],
       handle: async (context) => {
         const { root, options } = context;
-        if (typeof options.summary !== "string" || !options.summary.trim())
-          throw Object.assign(
-            new Error(
-              'checkpoint needs --summary "<text>": the purpose and current position to restore in a new conversation. --next "<text>" (the next expected result) is optional.',
-            ),
-            { code: "INVALID_COMPACTION_INPUT" },
-          );
         const { createRecoveryCheckpoint } = await import("./compaction-recovery.mjs");
         return createRecoveryCheckpoint({
           root,
@@ -6394,31 +6387,32 @@ export async function callRegistered(entry, surface, input, context = input) {
     return await callRegisteredSide(entry, surface, input, context);
   } catch (error) {
     throw await explainUnownedProjectRoot(error, surface === "cli" ? input?.root : input?.project_root, {
-      storage: !CREATES_OR_READS_UNOWNED_ROOT.has(entry.name),
+      storage: unownedRootMode(entry.name),
     });
   }
 }
 
 // Operations that create a Project or read a folder that is not a Project
-// (a bundle, an import target): their storage failures are their own.
-const CREATES_OR_READS_UNOWNED_ROOT = new Set([
-  "lode_project_initialize_or_resume",
-  "lode_project_bundle_export",
-  "lode_project_bundle_read",
-  "lode_project_bundle_import",
-  "lode_project_native_history",
-]);
-export function explainsUnownedRoot(command) {
+// (a bundle, an import target): their failures are their own and pass through.
+const READS_NON_PROJECT_PATH = new Set(["lode_project_bundle_export", "lode_project_bundle_read", "lode_project_bundle_import", "lode_project_native_history"]);
+function unownedRootMode(name) {
+  if (READS_NON_PROJECT_PATH.has(name)) return "none";
+  return name === "lode_project_initialize_or_resume" ? "own" : "explain";
+}
+export function unownedRootModeForCommand(command) {
   const entry = registeredCommand(command);
-  return !entry || !CREATES_OR_READS_UNOWNED_ROOT.has(entry.name);
+  return entry ? unownedRootMode(entry.name) : "explain";
 }
 
 // A raw ENOENT on <root>/.head or <root>/.lode (the storage a reader falls back
 // to when no Project is owned here), or on the root itself, becomes a refusal
 // in the caller's terms: the folder does not exist, holds a Project not yet
 // resumed here, or holds none. Any other failure passes through unchanged.
-export async function explainUnownedProjectRoot(error, root, { storage = true } = {}) {
-  if (typeof root !== "string" || !root || !error) return error;
+// storage: "explain" (a Project operation), "own" (init/resume: only a missing
+// folder is explained) or "none" (a bundle or native history path, which is
+// not a project folder: everything passes through).
+export async function explainUnownedProjectRoot(error, root, { storage = "explain" } = {}) {
+  if (typeof root !== "string" || !root || !error || storage === "none") return error;
   const notInitialized = error.code === "NOT_INITIALIZED";
   if (!notInitialized && !/\bENOENT\b/.test(`${error.code ?? ""} ${error.message ?? ""}`)) return error;
   const fs = await import("node:fs");
@@ -6432,7 +6426,7 @@ export async function explainUnownedProjectRoot(error, root, { storage = true } 
       cause: error,
     });
   }
-  if (!storage) return error;
+  if (storage === "own") return error;
   let real;
   try {
     real = fs.realpathSync(resolved);

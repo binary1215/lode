@@ -33,11 +33,12 @@ export function assertProjectRootArgument(toolName, schema, args) {
 // 2026-11-25): before, an unknown or misspelled field was dropped silently and
 // the call ran without it. The refusal names each field and, when one is
 // close, the declared spelling; a field that belongs inside a declared object
-// (a work-evidence field given at the top level) names that object.
-const NEAR_NAMES = Object.freeze({
-  lode_session_work_record: { work_evidence: "evidence" },
-  lode_checkpoint_sync: { evidence: "work_evidence" },
-});
+// (a work-evidence field given at the top level) names that object. The two
+// operations that take work evidence name the object differently; a caller
+// using the other spelling is pointed at the one this tool declares.
+// "_meta" is the MCP metadata key and is not a tool argument; it is ignored.
+const NEAR_NAMES = Object.freeze({ work_evidence: "evidence", evidence: "work_evidence" });
+const IGNORED_ARGUMENTS = new Set(["_meta"]);
 
 export function editDistance(left, right) {
   const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
@@ -63,14 +64,14 @@ export function nearName(name, names) {
   return best?.candidate ?? null;
 }
 
-export function undeclaredArgumentProblems(toolName, schema, args, operation = toolName) {
+export function undeclaredArgumentProblems(toolName, schema, args) {
   const properties = schema?.properties;
   if (!properties || !args || typeof args !== "object" || Array.isArray(args)) return [];
   const declared = Object.keys(properties);
   const problems = [];
   for (const key of Object.keys(args)) {
-    if (Object.hasOwn(properties, key)) continue;
-    const named = NEAR_NAMES[operation]?.[key];
+    if (Object.hasOwn(properties, key) || IGNORED_ARGUMENTS.has(key)) continue;
+    const named = Object.hasOwn(NEAR_NAMES, key) && Object.hasOwn(properties, NEAR_NAMES[key]) ? NEAR_NAMES[key] : null;
     const inside = declared.find((field) => properties[field]?.properties && Object.hasOwn(properties[field].properties, key));
     const near = named ?? nearName(key, declared);
     problems.push(
@@ -82,8 +83,8 @@ export function undeclaredArgumentProblems(toolName, schema, args, operation = t
   return problems;
 }
 
-export function assertDeclaredArguments(toolName, schema, args, operation = toolName) {
-  const problems = undeclaredArgumentProblems(toolName, schema, args, operation);
+export function assertDeclaredArguments(toolName, schema, args) {
+  const problems = undeclaredArgumentProblems(toolName, schema, args);
   if (!problems.length) return;
   throw Object.assign(new Error(`Invalid arguments for ${toolName}: ${problems.join("; ")}.`), { code: "INVALID_TOOL_ARGUMENTS", problems });
 }
