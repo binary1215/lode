@@ -123,6 +123,15 @@ function denial(method) {
   return { error: { code: -32601, message: "This bounded worker does not grant server actions." } };
 }
 
+// A stop sent after the process had already ended by itself changed nothing.
+// Two independent witnesses must both say so: the observed close (exit code 0
+// and no signal) and the supervisor's own provider.exited record (exit code 0;
+// a provider the supervisor stopped is recorded as 143 or a failure code).
+// Anything missing or unreadable means the stop counted.
+export function codexStopHadNoEffect({ stopSent, closeObserved, closeCode, closeSignal, providerExitedCode }) {
+  return stopSent === true && closeObserved === true && closeCode === 0 && closeSignal === null && providerExitedCode === 0;
+}
+
 function makeTransport(options, fixture, readOnlyProbe = false, proposal = null, preparation = null) {
   const {
     executablePath,
@@ -208,6 +217,12 @@ function makeTransport(options, fixture, readOnlyProbe = false, proposal = null,
   let stderrBytes = 0;
   const stderrHash = createHasher("sha256");
   let forced = false;
+  // Witnesses for codexStopHadNoEffect; undefined until observed.
+  let closeSignal;
+  let providerExitCode;
+  // Which runs the no-effect rule covers: proposal runs, as approved.
+  const noEffectStopRuleApplies = proposal !== null;
+  let stopWithoutEffect = false;
   let verifiedCleanup = null;
   const record = (event) => {
     const value = {
@@ -447,14 +462,18 @@ function makeTransport(options, fixture, readOnlyProbe = false, proposal = null,
       terminationGraceMs,
       ownershipBinding,
       interactive: { timeoutMs: Math.min(3_600_000, Math.max(100, requestedDeadline - Date.now())) },
-      onControlEvent: (event) => record({ event: "supervisor-control", control: event }),
+      onControlEvent: (event) => {
+        if (event.type === "provider.exited" && providerExitCode === undefined) providerExitCode = event.exitCode;
+        record({ event: "supervisor-control", control: event });
+      },
     });
     // Register close and stream sinks before any fallible post-spawn operation.
     exactClose = new Promise((resolve) =>
-      handle.child.once("close", (code) => {
+      handle.child.once("close", (code, signalName) => {
         processCloseAtMs = performance.now();
         observedClose = true;
         closeCode = code;
+        closeSignal = signalName;
         clearTimeout(lifetimeTimer);
         if ((proposal || preparation) && buffered.length) stop(error("CODEX_RPC_PARTIAL_FRAME"));
         else if (!closing) stop(error(buffered.length ? "CODEX_RPC_PARTIAL_FRAME" : "CODEX_RPC_PROVIDER_LOST"));
@@ -770,7 +789,12 @@ function makeTransport(options, fixture, readOnlyProbe = false, proposal = null,
       // Fresh proposal cannot return its consumed lease or erase its control
       // journal while the exact owned process may still be alive.
       if ((proposal || preparation) && !observedClose) await exactClose;
+      // finalize reads the rest of the control file, so provider.exited is known
+      // after it. Cleanup verification keeps the stop that was actually sent.
       const supervision = handle.finalize({ exactSupervisorExitObserved: observedClose, terminationRequested: forced });
+      stopWithoutEffect =
+        noEffectStopRuleApplies &&
+        codexStopHadNoEffect({ stopSent: forced, closeObserved: observedClose, closeCode, closeSignal, providerExitedCode: providerExitCode });
       record({
         event: "process-closed",
         pid: handle.child.pid,
@@ -778,6 +802,7 @@ function makeTransport(options, fixture, readOnlyProbe = false, proposal = null,
         exitCode: closeCode,
         exactExitObserved: observedClose,
         forced,
+        stopWithoutEffect,
         supervision,
         ports: [],
         cleanupTiming: { ...cleanupTiming, processCloseAtMs },
@@ -785,7 +810,7 @@ function makeTransport(options, fixture, readOnlyProbe = false, proposal = null,
       if (!observedClose || !supervision.treeCleanupVerified || !supervision.ownershipEstablished || !supervision.requestWritten)
         fail("CODEX_RPC_CLEANUP_UNCERTAIN");
       verifiedCleanup = Object.freeze({ started: true, actualProviderInvoked: !fixture, supervision });
-      if (forced || closeCode !== 0) fail("CODEX_RPC_UNCLEAN_EXIT");
+      if ((forced && !stopWithoutEffect) || closeCode !== 0) fail("CODEX_RPC_UNCLEAN_EXIT");
       return verifiedCleanup;
     })();
     closePromise.catch(() => {});
@@ -831,7 +856,9 @@ function makeTransport(options, fixture, readOnlyProbe = false, proposal = null,
               : null,
             cleanup: verifiedCleanup
               ? structuredClone(
-                  handle ? { ...verifiedCleanup, exitCode: closeCode, terminationRequested: forced, exactExitObserved: observedClose } : verifiedCleanup,
+                  handle
+                    ? { ...verifiedCleanup, exitCode: closeCode, terminationRequested: forced && !stopWithoutEffect, exactExitObserved: observedClose }
+                    : verifiedCleanup,
                 )
               : null,
           }

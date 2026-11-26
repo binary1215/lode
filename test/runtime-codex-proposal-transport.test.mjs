@@ -34,6 +34,7 @@ import {
   inspectCodexFreshProposalFixtureCapability,
   createCodexFreshProposalProtocolFixtureTransport,
   startCodexFreshProposalTransport,
+  codexStopHadNoEffect,
 } from "../scripts/lib/runtime/runtime-codex-app-server-transport.mjs";
 import {
   createCodexNativePrefixProposalTransport,
@@ -41,6 +42,7 @@ import {
 } from "../scripts/lib/runtime/runtime-codex-app-server-transport.mjs";
 import { buildCodexProposalResultSchema } from "../scripts/lib/runtime/runtime-codex-proposal.mjs";
 import { skipReason, supervisorFixtureRoot } from "./helpers/native-fixtures.mjs";
+import { holdLoopAfterInputEnded } from "./helpers/late-close.mjs";
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const installedExecutable = process.env.LODE_AGENT_PREFIX_CAPTURE_EXECUTABLE || process.env.HEAD_AGENT_PREFIX_CAPTURE_EXECUTABLE;
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
@@ -393,6 +395,87 @@ test("fresh pending turn cancellation keeps uncertain delivery and exact owned c
     assert.equal(f.journal.find((item) => item.event === "request-failed" && item.method === "turn/start").state, "uncertain");
     assert.equal(f.transport.inspect().cleanup.supervision.treeCleanupVerified, true);
   });
+});
+
+// The owned close sends EOF and soft-stops a provider whose close it has not
+// seen within a third of the grace. Under CPU load the close of a provider that
+// already ended by itself is seen late; that stop changed nothing and must not
+// throw away a finished run. A provider that really had to be stopped still
+// fails. The fixture marks input-ended and then stays alive stayMs.
+async function closeAfterFinishedTurn(t, { stayMs, holdLoop }) {
+  const f = await fixture(t, "normal");
+  const codexHome = f.config.providerEnvironment.CODEX_HOME;
+  fs.writeFileSync(path.join(codexHome, "fixture-after-input.json"), JSON.stringify({ stayMs }));
+  const hold = holdLoop
+    ? holdLoopAfterInputEnded({
+        codexHome,
+        supervisorPid: () => f.journal.find((item) => item.event === "process-started").pid,
+        minimumMs: f.config.terminationGraceMs,
+      })
+    : null;
+  let closing;
+  try {
+    await f.run(async (context) => {
+      await f.launch(context);
+      await f.ready();
+      const response = await f.request("thread/start", f.startParams);
+      await f.request("turn/start", f.turnParams(response.thread.id));
+      await terminal(f.transport, response.thread.id);
+      closing = await f.transport.cleanup({ reason: "completed", commit: () => "committed" }).then(
+        (value) => ({ value }),
+        (error) => ({ error }),
+      );
+    });
+  } finally {
+    hold?.stop();
+  }
+  assert.equal(fs.existsSync(path.join(codexHome, "fixture-input-ended")), true, "the provider saw EOF from the owned close");
+  return { hold: hold?.state, closing, closed: f.journal.find((item) => item.event === "process-closed"), observed: f.transport.inspect() };
+}
+
+test("fresh close keeps a finished run when its stop reaches a provider that already exited by itself", async (t) => {
+  const { hold, closing, closed, observed } = await closeAfterFinishedTurn(t, { stayMs: 400, holdLoop: true });
+  assert.deepEqual(hold, { held: true, endedBeforeHold: false, endedDuringHold: true });
+  assert.equal(closed.forced, true, "the soft stop was sent after the EOF phase");
+  assert.ok(Number.isFinite(closed.cleanupTiming.softStopAtMs), "the stop and its time stay recorded");
+  assert.equal(closed.exactExitObserved, true);
+  assert.equal(closed.exitCode, 0);
+  assert.equal(closing.error, undefined, "a stop without effect does not fail the close");
+  assert.equal(closing.value, "committed");
+  assert.equal(closed.stopWithoutEffect, true);
+  assert.equal(observed.failureCode, null);
+  assert.equal(observed.cleanup.exitCode, 0);
+  assert.equal(observed.cleanup.terminationRequested, false);
+  assert.equal(observed.cleanup.supervision.providerChildExitObserved, true);
+  assert.equal(observed.cleanup.supervision.treeCleanupVerified, true);
+});
+
+test("fresh close still fails a provider that had to be stopped", async (t) => {
+  const { closing, closed, observed } = await closeAfterFinishedTurn(t, { stayMs: 5000, holdLoop: false });
+  assert.equal(closed.forced, true);
+  assert.notEqual(closed.stopWithoutEffect, true);
+  assert.equal(closing.error?.code, "CODEX_RPC_UNCLEAN_EXIT");
+  assert.equal(observed.cleanup.terminationRequested, true);
+  assert.equal(observed.cleanup.supervision.treeCleanupVerified, true);
+});
+
+test("a stop counts as without effect only when both witnesses say the process ended by itself with 0", () => {
+  const witnessed = { stopSent: true, closeObserved: true, closeCode: 0, closeSignal: null, providerExitedCode: 0 };
+  assert.equal(codexStopHadNoEffect(witnessed), true);
+  for (const [field, value] of [
+    ["stopSent", false],
+    ["closeObserved", false],
+    ["closeCode", 1],
+    ["closeCode", null],
+    ["closeSignal", "SIGTERM"],
+    ["closeSignal", undefined],
+    ["providerExitedCode", 143],
+    ["providerExitedCode", 1],
+    ["providerExitedCode", undefined],
+    ["providerExitedCode", null],
+  ])
+    assert.equal(codexStopHadNoEffect({ ...witnessed, [field]: value }), false, `${field} = ${value}`);
+  assert.equal(codexStopHadNoEffect({}), false);
 });
 
 test("fresh environment cannot inject Node code, credentials, endpoint or debug overrides", async (t) => {

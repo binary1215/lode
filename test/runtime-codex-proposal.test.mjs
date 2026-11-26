@@ -31,6 +31,7 @@ import { RUNTIME_OPERATIONAL_STATE_ENV, inspectRuntimeExecutionLease } from "../
 import { readRuntimeInvocationRecord } from "../scripts/lib/runtime/runtime-invocation-record.mjs";
 import { readRuntimeOutputSpool } from "../scripts/lib/runtime/runtime-output-spool.mjs";
 import { supervisorFixtureRoot } from "./helpers/native-fixtures.mjs";
+import { holdLoopAfterInputEnded } from "./helpers/late-close.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -382,6 +383,52 @@ test("normal fresh fixture consumes/releases once and persists exact proposal wi
   await assert.rejects(f.execute(), /consum|already|replay/i);
   assert.equal(f.processEvents.filter((event) => event.type === "spawn").length, spawned);
   f.assertP2();
+});
+
+// Owned close under CPU load (see test/helpers/late-close.mjs): the provider
+// ended by itself with 0, the close was seen after the EOF phase and the stop it
+// sent had no effect. The finished proposal is kept. A provider that was still
+// running and had to be stopped stays failed without a result.
+async function proposalAfterInputEnded(t, { stayMs, holdLoop }) {
+  const f = await fixture(t);
+  fs.writeFileSync(path.join(f.codexHome, "fixture-after-input.json"), JSON.stringify({ stayMs }));
+  const hold = holdLoop
+    ? holdLoopAfterInputEnded({
+        codexHome: f.codexHome,
+        supervisorPid: () => f.processEvents.findLast((event) => event.type === "spawn" && event.phase === "provider").pid,
+        minimumMs: f.authorization.limits.terminationGraceMs,
+      })
+    : null;
+  try {
+    const result = await f.execute();
+    assert.equal(fs.existsSync(path.join(f.codexHome, "fixture-input-ended")), true, "the provider saw EOF from the owned close");
+    return { f, result, hold: hold?.state };
+  } finally {
+    hold?.stop();
+  }
+}
+
+test("finished fresh proposal is kept when the close's stop reached a provider that already exited by itself", async (t) => {
+  const { f, result, hold } = await proposalAfterInputEnded(t, { stayMs: 400, holdLoop: true });
+  assert.deepEqual(hold, { held: true, endedBeforeHold: false, endedDuringHold: true });
+  assert.deepEqual(result.operationalErrors, [], "no CODEX_RPC_UNCLEAN_EXIT retained at cleanup");
+  assert.equal(result.receipt.status, "completed");
+  assert.equal(result.status, "provider_invocation_completed");
+  assert.equal(result.receipt.exitCode, 0);
+  assert.equal(result.receipt.processBoundary.terminationRequested, false);
+  assert.equal(result.receipt.processBoundary.treeCleanupAttempted, true, "the stop that was sent stays visible");
+  assert.equal(result.receipt.processBoundary.treeCleanupVerified, true);
+  const candidate = buildWorkerPatchProposalCandidate({ authorization: f.authorization, structuredResult: result.draft.providerResult });
+  assert.equal(candidate.patches.length, 1);
+  assert.equal(readRuntimeInvocationRecord({ root: f.root, storage: f.storage, authorizationId: f.authorization.authorizationId }).receipt.status, "completed");
+});
+
+test("fresh proposal whose provider had to be stopped at close stays failed without a result", async (t) => {
+  const { result } = await proposalAfterInputEnded(t, { stayMs: 5000, holdLoop: false });
+  assert.deepEqual(result.operationalErrors, [{ phase: "cleanup", code: "CODEX_RPC_UNCLEAN_EXIT" }]);
+  assert.equal(result.receipt.status, "failed");
+  assert.equal(result.receipt.processBoundary.terminationRequested, true);
+  assert.equal(result.draft.providerResult, null);
 });
 
 test("missing/forged fixture capability, oldpolicy and selected source drift never consume", async (t) => {
