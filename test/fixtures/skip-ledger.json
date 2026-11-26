@@ -1,13 +1,13 @@
 {
-  "//": "Checked by scripts/run-tests.mjs through scripts/test-skip-ledger.mjs. Every skip reason starts with \"<class>: \" for a class below. A full run fails when the skipped tests of a pinned class differ from the list for its operating system; the runner prints the tests that moved and the list it observed.",
+  "//": "Checked by scripts/run-tests.mjs through scripts/test-skip-ledger.mjs. Every skip reason starts with \"<class>: \" for a class below. A full run fails when the skipped tests of a pinned class differ from the list for its operating system, or when a skip of a bounded class is not on that list (a listed test that runs is fine); the runner prints the tests that moved and the lists it observed. The opt-in lists hold what CI skips plus the tests only a developer machine skips (Git, Go or Python 3.10 missing).",
   "classes": {
     "other-os": { "pinned": true, "meaning": "The test covers another operating system or a measured platform profile." },
     "filesystem": { "pinned": true, "meaning": "The filesystem lacks a property the test needs: case sensitivity or insensitivity, 8.3 aliases, distinct Unicode spellings." },
     "native-fixture": { "pinned": true, "meaning": "The test needs a native fixture that scripts/run-tests.mjs supplies. On Windows this skip fails the run." },
     "ci-step": { "pinned": true, "meaning": "The test runs in a dedicated CI step that supplies what it needs; the reason names the step and the variable." },
     "no-source": { "pinned": true, "meaning": "The test needs a fixture or helper that has no source in the repository." },
-    "opt-in": { "pinned": false, "meaning": "The test needs an external program, a real account or an opt-in variable that npm test does not supply; the reason names the variable or program. Counted, not pinned: it depends on the caller's machine." },
-    "host-limit": { "pinned": false, "meaning": "This machine or account refuses something the test needs: link creation rights, nested process creation, an optional helper blocked by policy, a runtime without native zstd. Counted, not pinned: it depends on the caller's machine." }
+    "opt-in": { "pinned": false, "bounded": true, "meaning": "The test needs an external program, a real account or an opt-in variable that npm test does not supply; the reason names the variable or program. Bounded, not pinned: every such skip must be on the list for its operating system, and a listed test may run when the caller supplies what it needs." },
+    "host-limit": { "pinned": false, "meaning": "This machine or account refuses something the test needs: link creation rights, nested process creation, an optional helper blocked by policy, a runtime without native zstd. Counted, not listed: which tests skip depends on the caller's rights and policy, and several sites skip from shared helpers and scenario loops; CI shows none." }
   },
   "skips": {
     "darwin": {
@@ -141,6 +141,26 @@
       ],
       "ci-step": [
         "test/head-core.test.mjs > verifies Go worker distribution identity and discloses safe JavaScript fallback"
+      ],
+      "opt-in": [
+        "test/head-core.test.mjs > Git CLI history excludes Host-only commits and decorations while retaining product refs",
+        "test/lsp-host-process.test.mjs > P01/P02 ready fake derives barrel and direct outgoing relations from didOpen",
+        "test/lsp-host-process.test.mjs > P03/P04 semantic negatives and empty completion remain candidate-free",
+        "test/lsp-host-process.test.mjs > P05/P06 allowed notifications and server requests do not create authority or side effects",
+        "test/lsp-host-process.test.mjs > P07/P09 protocol corruption, ambiguity, timeout, cancellation, and crash fail closed",
+        "test/lsp-host-process.test.mjs > P08/P11 ownership and endpoint contamination never publish candidates",
+        "test/lsp-host-process.test.mjs > P10 repeated and reordered execution preserves semantic digest",
+        "test/lsp-host-process.test.mjs > P12/P18 shared deadlines, stderr, final producer, and setup cleanup are actual branches",
+        "test/lsp-host-process.test.mjs > P13/P17 ready profile exercises owned bridge, fake server, and intentional grandchild cleanup",
+        "test/lsp-host-real-process.test.mjs > RQ U01-U07 fresh A/B, E-GOLDEN, V05, and F01-F04 satisfy the closed real fixture contract",
+        "test/lsp-host-real-process.test.mjs > RQ create-only evidence retains actual A/B raw data across a B wrapper assertion failure",
+        "test/lsp-host-real-process.test.mjs > RQ fixed publisher trust and admission handles fail closed before launch",
+        "test/native-codex-registration.test.mjs > opt-in exact installed SDK registers a fresh synthetic target without a model turn",
+        "test/npm-test-entrypoint.test.mjs > automatic fixture rebuilds changed Go sources while explicit CI fixture remains caller-owned",
+        "test/opencode-atomic-history.test.mjs > qualified offline CLI/MCP routes restore once, reconcile a lost receipt and keep register read-only",
+        "test/runtime-codex-installed-policy.test.mjs > optional developer preflight recognizes retained installed bytes but still issues no proof",
+        "test/runtime-codex-proposal-transport.test.mjs > native prefix actual constructor reaches fixed preflight recipe but is stopped before any process or account call",
+        "test/source-context-workflow.test.mjs > modern Python mapping-rest binding cannot resolve to a same-name module function"
       ]
     },
     "linux": {
@@ -280,6 +300,26 @@
       ],
       "ci-step": [
         "test/head-core.test.mjs > verifies Go worker distribution identity and discloses safe JavaScript fallback"
+      ],
+      "opt-in": [
+        "test/head-core.test.mjs > Git CLI history excludes Host-only commits and decorations while retaining product refs",
+        "test/lsp-host-process.test.mjs > P01/P02 ready fake derives barrel and direct outgoing relations from didOpen",
+        "test/lsp-host-process.test.mjs > P03/P04 semantic negatives and empty completion remain candidate-free",
+        "test/lsp-host-process.test.mjs > P05/P06 allowed notifications and server requests do not create authority or side effects",
+        "test/lsp-host-process.test.mjs > P07/P09 protocol corruption, ambiguity, timeout, cancellation, and crash fail closed",
+        "test/lsp-host-process.test.mjs > P08/P11 ownership and endpoint contamination never publish candidates",
+        "test/lsp-host-process.test.mjs > P10 repeated and reordered execution preserves semantic digest",
+        "test/lsp-host-process.test.mjs > P12/P18 shared deadlines, stderr, final producer, and setup cleanup are actual branches",
+        "test/lsp-host-process.test.mjs > P13/P17 ready profile exercises owned bridge, fake server, and intentional grandchild cleanup",
+        "test/lsp-host-real-process.test.mjs > RQ U01-U07 fresh A/B, E-GOLDEN, V05, and F01-F04 satisfy the closed real fixture contract",
+        "test/lsp-host-real-process.test.mjs > RQ create-only evidence retains actual A/B raw data across a B wrapper assertion failure",
+        "test/lsp-host-real-process.test.mjs > RQ fixed publisher trust and admission handles fail closed before launch",
+        "test/native-codex-registration.test.mjs > opt-in exact installed SDK registers a fresh synthetic target without a model turn",
+        "test/npm-test-entrypoint.test.mjs > automatic fixture rebuilds changed Go sources while explicit CI fixture remains caller-owned",
+        "test/opencode-atomic-history.test.mjs > qualified offline CLI/MCP routes restore once, reconcile a lost receipt and keep register read-only",
+        "test/runtime-codex-installed-policy.test.mjs > optional developer preflight recognizes retained installed bytes but still issues no proof",
+        "test/runtime-codex-proposal-transport.test.mjs > native prefix actual constructor reaches fixed preflight recipe but is stopped before any process or account call",
+        "test/source-context-workflow.test.mjs > modern Python mapping-rest binding cannot resolve to a same-name module function"
       ]
     },
     "win32": {
@@ -296,6 +336,27 @@
       ],
       "ci-step": [
         "test/head-core.test.mjs > verifies Go worker distribution identity and discloses safe JavaScript fallback"
+      ],
+      "opt-in": [
+        "test/head-core.test.mjs > Git CLI history excludes Host-only commits and decorations while retaining product refs",
+        "test/local-worker-host.test.mjs > default shipped CLI prepares fresh and native-prefix against stock Codex without a thread, account or model call",
+        "test/lsp-host-process.test.mjs > P01/P02 ready fake derives barrel and direct outgoing relations from didOpen",
+        "test/lsp-host-process.test.mjs > P03/P04 semantic negatives and empty completion remain candidate-free",
+        "test/lsp-host-process.test.mjs > P05/P06 allowed notifications and server requests do not create authority or side effects",
+        "test/lsp-host-process.test.mjs > P07/P09 protocol corruption, ambiguity, timeout, cancellation, and crash fail closed",
+        "test/lsp-host-process.test.mjs > P08/P11 ownership and endpoint contamination never publish candidates",
+        "test/lsp-host-process.test.mjs > P10 repeated and reordered execution preserves semantic digest",
+        "test/lsp-host-process.test.mjs > P12/P18 shared deadlines, stderr, final producer, and setup cleanup are actual branches",
+        "test/lsp-host-process.test.mjs > P13/P17 ready profile exercises owned bridge, fake server, and intentional grandchild cleanup",
+        "test/lsp-host-real-process.test.mjs > RQ U01-U07 fresh A/B, E-GOLDEN, V05, and F01-F04 satisfy the closed real fixture contract",
+        "test/lsp-host-real-process.test.mjs > RQ create-only evidence retains actual A/B raw data across a B wrapper assertion failure",
+        "test/lsp-host-real-process.test.mjs > RQ fixed publisher trust and admission handles fail closed before launch",
+        "test/native-codex-registration.test.mjs > opt-in exact installed SDK registers a fresh synthetic target without a model turn",
+        "test/npm-test-entrypoint.test.mjs > automatic fixture rebuilds changed Go sources while explicit CI fixture remains caller-owned",
+        "test/opencode-atomic-history.test.mjs > qualified offline CLI/MCP routes restore once, reconcile a lost receipt and keep register read-only",
+        "test/runtime-codex-installed-policy.test.mjs > optional developer preflight recognizes retained installed bytes but still issues no proof",
+        "test/runtime-codex-proposal-transport.test.mjs > native prefix actual constructor reaches fixed preflight recipe but is stopped before any process or account call",
+        "test/source-context-workflow.test.mjs > modern Python mapping-rest binding cannot resolve to a same-name module function"
       ]
     }
   }
