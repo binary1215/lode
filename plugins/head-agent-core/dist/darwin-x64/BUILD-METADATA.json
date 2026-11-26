@@ -1,0 +1,7 @@
+{
+  "version": "0.3.0-beta.139",
+  "commit": "1cde228862df5c9c162a9d749ed78df3e10722d8",
+  "goos": "darwin",
+  "goarch": "amd64",
+  "cgoEnabled": false
+}
