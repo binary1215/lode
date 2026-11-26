@@ -217,11 +217,11 @@ function makeTransport(options, fixture, readOnlyProbe = false, proposal = null,
   let stderrBytes = 0;
   const stderrHash = createHasher("sha256");
   let forced = false;
-  // Witnesses for codexStopHadNoEffect; undefined until observed.
+  // Witnesses for codexStopHadNoEffect; undefined until observed. The rule
+  // covers every use of this close: proposal runs, the worker host
+  // connection, the host inventory check and the read-only probe.
   let closeSignal;
   let providerExitCode;
-  // Which runs the no-effect rule covers: proposal runs, as approved.
-  const noEffectStopRuleApplies = proposal !== null;
   let stopWithoutEffect = false;
   let verifiedCleanup = null;
   const record = (event) => {
@@ -792,9 +792,7 @@ function makeTransport(options, fixture, readOnlyProbe = false, proposal = null,
       // finalize reads the rest of the control file, so provider.exited is known
       // after it. Cleanup verification keeps the stop that was actually sent.
       const supervision = handle.finalize({ exactSupervisorExitObserved: observedClose, terminationRequested: forced });
-      stopWithoutEffect =
-        noEffectStopRuleApplies &&
-        codexStopHadNoEffect({ stopSent: forced, closeObserved: observedClose, closeCode, closeSignal, providerExitedCode: providerExitCode });
+      stopWithoutEffect = codexStopHadNoEffect({ stopSent: forced, closeObserved: observedClose, closeCode, closeSignal, providerExitedCode: providerExitCode });
       record({
         event: "process-closed",
         pid: handle.child.pid,

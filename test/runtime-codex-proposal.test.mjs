@@ -394,7 +394,7 @@ async function proposalAfterInputEnded(t, { stayMs, holdLoop }) {
   fs.writeFileSync(path.join(f.codexHome, "fixture-after-input.json"), JSON.stringify({ stayMs }));
   const hold = holdLoop
     ? holdLoopAfterInputEnded({
-        codexHome: f.codexHome,
+        directory: f.codexHome,
         supervisorPid: () => f.processEvents.findLast((event) => event.type === "spawn" && event.phase === "provider").pid,
         minimumMs: f.authorization.limits.terminationGraceMs,
       })

@@ -9,6 +9,7 @@ import { createCodexAppServerTransport, createCodexAppServerProtocolFixtureTrans
 import { resolveVerifiedProcessSupervisor, verifyRuntimeProcessSupervisorHandle } from "../scripts/lib/runtime/runtime-process-supervisor.mjs";
 import { finishCodexAppServerFixture, waitForFixturePidsAbsent } from "./helpers/codex-app-server-fixture-cleanup.mjs";
 import { supervisorFixtureRoot } from "./helpers/native-fixtures.mjs";
+import { holdLoopAfterInputEnded } from "./helpers/late-close.mjs";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const realTimeout = setTimeout,
@@ -388,6 +389,34 @@ for (const action of ["end-input", "abort", "deadline", "async-guard"]) {
     assert.equal(f.journal.find((event) => event.event === "process-closed").forced, false);
   });
 }
+
+// The worker host connection uses the same owned close as proposal runs. A soft
+// stop that reached a provider which had already ended by itself with 0 (seen
+// late, as under CPU load) changed nothing and does not fail the close.
+test("worker host close stays clean when its stop reached a provider that already exited by itself", async (t) => {
+  const f = fixture(t, "exit-after-eof-delayed");
+  await f.request();
+  const hold = holdLoopAfterInputEnded({ directory: f.config.executionRoot, supervisorPid: () => f.handle.child.pid, minimumMs: f.config.terminationGraceMs });
+  let closing;
+  try {
+    closing = await f.transport.close().then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    );
+  } finally {
+    hold.stop();
+  }
+  assert.deepEqual(hold.state, { held: true, endedBeforeHold: false, endedDuringHold: true });
+  const closed = f.journal.find((event) => event.event === "process-closed");
+  assert.equal(closed.forced, true, "the soft stop was sent after the EOF phase");
+  assert.ok(Number.isFinite(closed.cleanupTiming.softStopAtMs), "the stop and its time stay recorded");
+  assert.equal(closed.exitCode, 0);
+  assert.equal(closing.error, undefined, "a stop without effect does not fail the close");
+  assert.equal(closed.stopWithoutEffect, true);
+  assert.equal(closed.supervision.treeCleanupVerified, true);
+  assert.equal(f.transport.inspect().closed, true);
+  assert.equal(f.transport.inspect().failureCode, null);
+});
 
 test("fork write entry followed by cancellation remains uncertain and is never replayed", async (t) => {
   const f = fixture(t);

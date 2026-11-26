@@ -408,7 +408,7 @@ async function closeAfterFinishedTurn(t, { stayMs, holdLoop }) {
   fs.writeFileSync(path.join(codexHome, "fixture-after-input.json"), JSON.stringify({ stayMs }));
   const hold = holdLoop
     ? holdLoopAfterInputEnded({
-        codexHome,
+        directory: codexHome,
         supervisorPid: () => f.journal.find((item) => item.event === "process-started").pid,
         minimumMs: f.config.terminationGraceMs,
       })
