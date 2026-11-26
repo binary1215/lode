@@ -221,7 +221,7 @@ function makeTransport(options, fixture, readOnlyProbe = false, proposal = null,
   // covers every use of this close: proposal runs, the worker host
   // connection, the host inventory check and the read-only probe.
   let closeSignal;
-  let providerExitCode;
+  let providerExitedCode;
   let stopWithoutEffect = false;
   let verifiedCleanup = null;
   const record = (event) => {
@@ -463,7 +463,7 @@ function makeTransport(options, fixture, readOnlyProbe = false, proposal = null,
       ownershipBinding,
       interactive: { timeoutMs: Math.min(3_600_000, Math.max(100, requestedDeadline - Date.now())) },
       onControlEvent: (event) => {
-        if (event.type === "provider.exited" && providerExitCode === undefined) providerExitCode = event.exitCode;
+        if (event.type === "provider.exited" && providerExitedCode === undefined) providerExitedCode = event.exitCode;
         record({ event: "supervisor-control", control: event });
       },
     });
@@ -792,7 +792,7 @@ function makeTransport(options, fixture, readOnlyProbe = false, proposal = null,
       // finalize reads the rest of the control file, so provider.exited is known
       // after it. Cleanup verification keeps the stop that was actually sent.
       const supervision = handle.finalize({ exactSupervisorExitObserved: observedClose, terminationRequested: forced });
-      stopWithoutEffect = codexStopHadNoEffect({ stopSent: forced, closeObserved: observedClose, closeCode, closeSignal, providerExitedCode: providerExitCode });
+      stopWithoutEffect = codexStopHadNoEffect({ stopSent: forced, closeObserved: observedClose, closeCode, closeSignal, providerExitedCode });
       record({
         event: "process-closed",
         pid: handle.child.pid,
