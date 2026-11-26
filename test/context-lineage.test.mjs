@@ -31,6 +31,8 @@ import { explorerCodec } from "../scripts/graph-explorer/codec.js";
 import { GitCliHistoryAdapter } from "../scripts/lib/world/git-history.mjs";
 import { resolveLocalGitRepository } from "../scripts/lib/world/local-git-repository.mjs";
 
+const windowsOnly = { skip: process.platform !== "win32" && "other-os: Windows-only behaviour" };
+
 const oldSource = "export function f() { return 'allow'; }\nexport function g() { return 2; }\n";
 const newSource = oldSource.replace("'allow'", "'block'");
 const version = (text, file = "src/action.mjs", projectId = "synthetic-project") => ({ text, digest: sha(text), path: file, projectId, basis: { kind: "synthetic-exact-version" } });
@@ -838,7 +840,7 @@ test("normal external linked worktrees retain exact source and World history wit
 });
 
 
-test("Windows native 8.3 aliases identify the same exact Git metadata without weakening link checks", { skip: process.platform !== "win32" }, async t => {
+test("Windows native 8.3 aliases identify the same exact Git metadata without weakening link checks", windowsOnly, async t => {
   const f = fixture(t); const git = await localGit(t, f);
   const script = path.join(f.base, "short-path.ps1");
   fs.writeFileSync(script, 'param([string]$Folder)\n$ErrorActionPreference="Stop"\n$fso=New-Object -ComObject Scripting.FileSystemObject\n[Console]::Out.Write($fso.GetFolder($Folder).ShortPath)\n');
@@ -848,9 +850,9 @@ test("Windows native 8.3 aliases identify the same exact Git metadata without we
   catch (error) {
     if (!/UnauthorizedAccess/.test(error.message) || !/Execution_Policies/.test(error.message)) throw error;
     t.diagnostic("OS execution-policy denial preserved; no policy change or alternate execution: " + error.message.slice(0, 2500));
-    return t.skip("OS execution policy denied the optional 8.3 discovery helper; no bypass attempted.");
+    return t.skip("host-limit: OS execution policy denied the optional 8.3 discovery helper; no bypass attempted.");
   }
-  if (aliasBase === f.base) return t.skip("This filesystem does not expose an 8.3 alias; ordinary exact Git cases still execute.");
+  if (aliasBase === f.base) return t.skip("filesystem: This filesystem does not expose an 8.3 alias; ordinary exact Git cases still execute.");
   const aliasRoot = path.join(aliasBase, "project");
   const { LOCAL_GIT_DISCOVERY_ARGS } = await import("../scripts/lib/world/local-git-repository.mjs");
   const actual = resolveLocalGitRepository(aliasRoot);

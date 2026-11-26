@@ -51,7 +51,7 @@ test("journal rejects asynchronous authority without delivery, artifacts or an u
 });
 test("native publication and metadata registration drain rejected authority promises before effects", async (t) => {
   if (process.platform !== "win32" || process.arch !== "x64")
-    return t.skip("Measured native filesystem profile is Windows x64.");
+    return t.skip("other-os: Measured native filesystem profile is Windows x64.");
   const { f, executable, destination } = await syntheticNativeCapture(t),
     home = path.join(f.base, "async-target"),
     cwd = path.join(f.base, "async-current-workspace");

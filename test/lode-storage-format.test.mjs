@@ -81,7 +81,7 @@ function directoryAlias(t, alias, target) {
   try { fs.symlinkSync(target, alias, process.platform === "win32" ? "junction" : "dir"); }
   catch (error) {
     if (["EPERM", "EACCES", "ENOTSUP", "ENOSYS"].includes(error.code)) {
-      t.skip(`Physical ${process.platform === "win32" ? "junction" : "directory symlink"} unavailable: ${error.code}: ${error.message}`); return false;
+      t.skip(`host-limit: Physical ${process.platform === "win32" ? "junction" : "directory symlink"} unavailable: ${error.code}: ${error.message}`); return false;
     }
     throw error;
   }
@@ -293,7 +293,7 @@ test("worker source parts reject only the exact owned Lode root before effects w
 });
 
 test("POSIX distinct-case .LODE source is not silently treated as the owned .lode directory", {
-  skip: process.platform === "win32" ? "POSIX case-sensitive path semantics are not applicable on Windows; Windows owned-root case folding is checked separately." : false,
+  skip: process.platform === "win32" ? "other-os: POSIX case-sensitive path semantics are not applicable on Windows; Windows owned-root case folding is checked separately." : false,
 }, t => {
   const root = temporary(t); initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   const storage = inspectProject(root).storage;
@@ -487,7 +487,7 @@ test("an unselected foreign legacy directory junction cannot gate the owned Lode
 });
 
 test("Windows owned management case alias keeps full incremental and freshness coverage aligned", {
-  skip: process.platform !== "win32" ? "Windows case-alias identity; distinct filesystem case is tested separately." : false,
+  skip: process.platform !== "win32" ? "other-os: Windows case-alias identity; distinct filesystem case is tested separately." : false,
 }, async t => {
   const root = temporary(t); initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   fs.mkdirSync(path.join(root, "src", ".LODE"), { recursive: true });
@@ -499,7 +499,7 @@ test("Windows owned management case alias keeps full incremental and freshness c
   let logical;
   try { logical = fs.lstatSync(path.join(root, ".lode"), { bigint: true }); }
   catch (error) {
-    if (error.code === "ENOENT") { t.skip("Actual Windows fixture directory is case-sensitive; distinct-case preservation has its own case."); return; }
+    if (error.code === "ENOENT") { t.skip("filesystem: Actual Windows fixture directory is case-sensitive; distinct-case preservation has its own case."); return; }
     throw error;
   }
   const physical = fs.lstatSync(path.join(root, ".LODE"), { bigint: true });
@@ -537,7 +537,7 @@ test("a distinct physical root case variant remains source on POSIX or case-sens
   const root = temporary(t); initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   try { fs.mkdirSync(path.join(root, ".LODE")); }
   catch (error) {
-    if (error.code === "EEXIST") { t.skip("This filesystem cannot represent distinct .lode and .LODE directories."); return; }
+    if (error.code === "EEXIST") { t.skip("filesystem: This filesystem cannot represent distinct .lode and .LODE directories."); return; }
     throw error;
   }
   fs.writeFileSync(path.join(root, ".LODE", "foreign.mjs"), "export const differentPhysicalDirectory = true;\n");
@@ -552,12 +552,12 @@ test("a distinct physical root case variant remains source on POSIX or case-sens
 });
 
 test("Windows owned case-alias identity permission errors retain their exact cause", {
-  skip: process.platform !== "win32" ? "Only Windows case variants require an additional physical identity lookup." : false,
+  skip: process.platform !== "win32" ? "other-os: Only Windows case variants require an additional physical identity lookup." : false,
 }, t => {
   const root = temporary(t); initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   const intermediate = path.join(root, "renaming-owned-storage");
   fs.renameSync(path.join(root, ".lode"), intermediate); fs.renameSync(intermediate, path.join(root, ".LODE"));
-  if (!fs.existsSync(path.join(root, ".lode"))) { t.skip("This Windows fixture directory is case-sensitive."); return; }
+  if (!fs.existsSync(path.join(root, ".lode"))) { t.skip("filesystem: This Windows fixture directory is case-sensitive."); return; }
   const inspected = inspectProject(root), options = { projectRoot: root, storage: inspected.storage,
     managedRootFiles: managedRootFilesForProject(inspected.project, inspected.storage) };
   const input = buildRepositoryScanInput(options), original = fs.lstatSync;

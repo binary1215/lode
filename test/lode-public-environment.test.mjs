@@ -20,6 +20,8 @@ import { prepareWorkerWorkspace } from "../scripts/lib/worker/worker-workspace.m
 import { workerPatchProposalExecutionBoundary } from "../scripts/lib/worker/worker-patch-proposal.mjs";
 import { buildCodexFreshProposalPolicyPlan } from "../scripts/lib/runtime/runtime-codex-proposal-policy.mjs";
 
+const windowsOnly = { skip: process.platform !== "win32" && "other-os: Windows-only behaviour" };
+
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const hash = value => crypto.createHash("sha256").update(value).digest("hex");
 const encode = value => Buffer.from(JSON.stringify(value));
@@ -163,7 +165,7 @@ for (const proposal of [false, true]) test(`recorded ${proposal ? "proposal" : "
   }
 });
 
-test("new worker requests emit canonical operational root and preserve no-replay after launcher loss", { skip: process.platform !== "win32" }, async t => {
+test("new worker requests emit canonical operational root and preserve no-replay after launcher loss", windowsOnly, async t => {
   const f = await jobFixture(t);
   const host = createBoundedWorkerJobHost({ runnerFile: path.join(pluginRoot, "scripts/lib/runtime/runtime-codex-worker-runner.mjs"),
     policy: f.policy, environment: { head_agent_operational_state_root: f.operational, Lode_Agent_Operational_State_Root: f.operational } });
@@ -180,7 +182,7 @@ test("new worker requests emit canonical operational root and preserve no-replay
   assert.equal(attempts, 1); assert.deepEqual(fs.readFileSync(path.join(f.directory, "request.json")), bytes);
 });
 
-test("new worker launch refuses a conflicting Host alias before dispatch or job artifacts", { skip: process.platform !== "win32" }, async t => {
+test("new worker launch refuses a conflicting Host alias before dispatch or job artifacts", windowsOnly, async t => {
   const f = await jobFixture(t, false, { retained: false });
   const operationalBefore = fs.readdirSync(f.operational, { recursive: true });
   assert.equal(fs.existsSync(f.dispatchFile), false);
@@ -196,7 +198,7 @@ test("new worker launch refuses a conflicting Host alias before dispatch or job 
   assert.deepEqual(fs.readdirSync(f.operational, { recursive: true }), operationalBefore);
 });
 
-test("empty or whitespace Host operational aliases retain the resolver's unset semantics", { skip: process.platform !== "win32" }, async t => {
+test("empty or whitespace Host operational aliases retain the resolver's unset semantics", windowsOnly, async t => {
   for (const name of [RUNTIME_OPERATIONAL_STATE_CANONICAL_ENV, RUNTIME_OPERATIONAL_STATE_ENV]) {
     for (const value of ["", " \t\r\n "]) await t.test(`${name}: ${value ? "whitespace" : "empty"}`, async child => {
       const f = await jobFixture(child, false, { retained: false });

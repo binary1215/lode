@@ -197,7 +197,7 @@ test("Claude/OpenCode public operational calls never enter the Codex home/probe/
 });
 
 test("Codex public routing retains verified legacy-link reads and reaches its own overlap guard for each effect", async t => {
-  if (process.platform !== "win32" || process.arch !== "x64") return t.skip("Measured native filesystem profile is Windows x64.");
+  if (process.platform !== "win32" || process.arch !== "x64") return t.skip("other-os: Measured native filesystem profile is Windows x64.");
   const { f, destination, executable, payload } = await syntheticNativeCapture(t);
   const bundle = path.join(f.base, "codex-public-routing");
   f.route(() => exportProjectBundle({ root: f.root, destination: bundle }));

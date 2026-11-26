@@ -7,6 +7,8 @@ import { captureWorkerSourceBasis, verifyWorkerSourceBasis } from "../scripts/li
 import { prepareWorkerWorkspace, verifyWorkerWorkspace, collectWorkerWorkspacePatch } from "../scripts/lib/worker/worker-workspace.mjs";
 import { captureWorkerWriteBasis } from "../scripts/lib/worker/worker-patch-basis.mjs";
 
+const windowsOnly = { skip: process.platform !== "win32" && "other-os: Windows-only behaviour" };
+
 console.log(
   JSON.stringify({
     event: "owned-worker-workspace-test",
@@ -122,7 +124,7 @@ test("workspace creation never reuses canonical root or traverses an injected ju
   assert.equal(fs.existsSync(path.join(f.root, "child")), false);
 });
 
-test("workspace rejects platform path alias before materializing any source", { skip: process.platform !== "win32" }, (t) => {
+test("workspace rejects platform path alias before materializing any source", windowsOnly, (t) => {
   const f = fixture(t);
   const entry = f.sourceBasis[0];
   for (const paths of [["A.txt", "a.txt"], ["NUL"], ["aux.txt"], ["a?.txt"]]) {

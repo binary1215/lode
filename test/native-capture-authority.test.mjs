@@ -10,7 +10,7 @@ import { attachProjectNativeTransfer } from "../scripts/lib/session/project-nati
 
 test("request revocation after observation or partial copy stops dependent capture/attachment without hiding its primary cause", async (t) => {
   if (process.platform !== "win32" || process.arch !== "x64")
-    return t.skip("Measured native filesystem profile is Windows x64.");
+    return t.skip("other-os: Measured native filesystem profile is Windows x64.");
   const { f, home, executable, destination } = await syntheticNativeCapture(t);
   for (const mode of ["after-observation", "before-publication", "after-raw", "signal"]) {
     let denied = false,

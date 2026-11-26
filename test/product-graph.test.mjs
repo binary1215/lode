@@ -901,7 +901,7 @@ test("S1: a linked build/ or 승인/ is refused before anything is written", (t)
   const outside = path.join(f.base, "outside");
   fs.mkdirSync(outside);
   fs.writeFileSync(path.join(outside, "graph.json"), "keep\n");
-  if (!link(t, outside, path.join(f.family, "build"))) return t.skip("cannot create a directory link here");
+  if (!link(t, outside, path.join(f.family, "build"))) return t.skip("host-limit: cannot create a directory link here");
   assert.throws(() => buildProductGraph({ root: f.root }), { code: "PRODUCT_GRAPH_LINKED_PATH" });
   assert.deepEqual(fs.readdirSync(outside), ["graph.json"]);
   assert.equal(fs.readFileSync(path.join(outside, "graph.json"), "utf8"), "keep\n");
@@ -945,7 +945,8 @@ const nfd = (text) => text.normalize("NFD");
 test("S4: NFC and NFD spellings of one document name are a listed problem, never two documents", (t) => {
   const f = productProject(t);
   fs.writeFileSync(path.join(f.family, nfd("정책.md")), "# 정책\n\n다른 내용\n");
-  if (fs.readdirSync(f.family).filter((name) => name.normalize("NFC") === "정책.md").length < 2) return t.skip("this filesystem keeps one spelling");
+  if (fs.readdirSync(f.family).filter((name) => name.normalize("NFC") === "정책.md").length < 2)
+    return t.skip("filesystem: this filesystem keeps one spelling");
   const result = checkProductGraph({ root: f.root });
   assert(!result.documents.list.some((item) => item.path === "정책.md"));
   assert(result.lists.formatIssues.some((item) => item.path === "정책.md" && item.kind.startsWith("유니코드 정규화만 다른")));
@@ -1181,7 +1182,7 @@ test("H: the preservation closure names a link in the family as a link", async (
   const f = productProject(t);
   const outside = path.join(f.base, "outside-notes");
   fs.mkdirSync(outside);
-  if (!link(t, outside, path.join(f.family, "메모"))) return t.skip("cannot create a directory link here");
+  if (!link(t, outside, path.join(f.family, "메모"))) return t.skip("host-limit: cannot create a directory link here");
   const preservation = await inspectSnapshotPreservationClosure({ root: f.root });
   assert.deepEqual(preservation.productGraphKept, [{ path: ".lode/context/product-graph/메모", kind: "link" }]);
 });

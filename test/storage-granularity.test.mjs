@@ -105,7 +105,7 @@ test("typed closure follows durable Capsule references and preserves missing/unk
  fs.unlinkSync(first.file);const missing=await inspectSnapshotPreservationClosure({root:f.root});assert(missing.issues.some(i=>i.subject===first.snapshot.worldModelId));assert.equal(missing.deletedCount,0);
 });
 test("native zstd domain bundles reconstruct current and historical World without changing the gzip default",async t=>{
- if(typeof zlib.zstdCompressSync!=="function")return t.skip("runtime has no native zstd; no installation attempted");
+ if(typeof zlib.zstdCompressSync!=="function")return t.skip("host-limit: runtime has no native zstd; no installation attempted");
  const f=fixture(t,{bundleEncoding:"zstd"});const first=await buildWorldModel({root:f.root,storeAdapter:f.world,graphProjectionAdapter:f.graph});
  assert(first.file.endsWith(".json.gz"),"composition encoding remains the explicit gzip default");
  const read=await f.world.readSnapshot(first.snapshot.worldModelId);assert(read.snapshotStorage.dependencies.every(d=>d.encoding==="zstd"));

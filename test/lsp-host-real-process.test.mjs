@@ -21,7 +21,9 @@ const goldenFile = path.join(root, "test", "fixtures", "lsp-real-golden.json");
 const goldenBytes = fs.readFileSync(goldenFile);
 const golden = JSON.parse(goldenBytes);
 const ready = Boolean(process.env.HEAD_LSP_REAL_PROFILE_MANIFEST && process.env.HEAD_LSP_QA_ROOT && process.env.HEAD_LSP_SUPERVISOR_ROOT);
-const realTest = ready ? test : test.skip;
+const realTest = ready
+  ? test
+  : (name, fn) => test(name, { skip: "opt-in: set HEAD_LSP_REAL_PROFILE_MANIFEST, HEAD_LSP_QA_ROOT and HEAD_LSP_SUPERVISOR_ROOT to run the real LSP process tests" }, fn);
 const qaRoot = ready ? path.resolve(process.env.HEAD_LSP_QA_ROOT) : null;
 const profileManifestFile = ready ? path.resolve(process.env.HEAD_LSP_REAL_PROFILE_MANIFEST) : null;
 const supervisorSelection = ready ? resolveVerifiedProcessSupervisor({ pluginRoot: process.env.HEAD_LSP_SUPERVISOR_ROOT }) : null;
