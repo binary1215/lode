@@ -6,3 +6,6 @@
 
 # Stage 3-E: move scripts/lib modules into their layer directories (path edits only)
 541b114a52c129639886bf6a92ba7cbb870062f3
+
+# Format the 76 test files prettier never checked (formatting only)
+901b6c978996af9349d14c3880326877b13f227e
