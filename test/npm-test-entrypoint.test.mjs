@@ -205,7 +205,11 @@ test("skip checks: R1 reason, R2 declared class, R3 Windows native fixture, R4 p
   const limited = [skip("linked", "host-limit: cannot create a directory link here"), skip("kept", "other-os: Windows only")];
   for (const fullRun of [false, true]) {
     const local = checkSkips({ records: limited, ledger, platform: "linux", fullRun, ci: false });
-    assert.deepEqual(local.problems.filter((problem) => problem.startsWith("H:")), [], "outside CI a host-limit skip is only counted");
+    assert.deepEqual(
+      local.problems.filter((problem) => problem.startsWith("H:")),
+      [],
+      "outside CI a host-limit skip is only counted",
+    );
     assert.ok(local.summary.includes("host-limit 1"));
     const inCi = checkSkips({ records: limited, ledger, platform: "linux", fullRun, ci: true });
     assert.deepEqual(
