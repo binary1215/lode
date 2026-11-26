@@ -452,8 +452,20 @@ test("lease release loses shared-parent cleanup races without failing and keeps 
     { name: "folder removed before readdir", method: "readdirSync", race: "remove" },
     { name: "folder removed before rmdir", method: "rmdirSync", race: "remove" },
     { name: "member created before rmdir", method: "rmdirSync", race: "member" },
-    ...(process.platform === "win32" ? [{ name: "delete-pending EPERM for a removed folder", method: "rmdirSync", race: "remove", error: "EPERM" }] : []),
+    // Windows reports a folder in delete-pending state as EPERM or EBUSY, at
+    // whichever step the other owner's removal overtakes.
+    ...(process.platform === "win32"
+      ? [
+          { name: "delete-pending EPERM at lstat for a removed folder", method: "lstatSync", race: "remove", error: "EPERM" },
+          { name: "delete-pending EPERM at realpath for a removed folder", method: "realpathSync", race: "remove", error: "EPERM" },
+          { name: "delete-pending EPERM at readdir for a removed folder", method: "readdirSync", race: "remove", error: "EPERM" },
+          { name: "delete-pending EPERM at rmdir for a removed folder", method: "rmdirSync", race: "remove", error: "EPERM" },
+          { name: "delete-pending EBUSY at rmdir for a removed folder", method: "rmdirSync", race: "remove", error: "EBUSY" },
+        ]
+      : []),
     { name: "EPERM for a folder that is still there", method: "rmdirSync", race: "none", error: "EPERM", rejects: "EPERM" },
+    { name: "EPERM at lstat for a folder that is still there", method: "lstatSync", race: "none", error: "EPERM", rejects: "EPERM" },
+    { name: "EBUSY for a folder that is still there", method: "rmdirSync", race: "none", error: "EBUSY", rejects: "EBUSY" },
     { name: "EIO before realpath", method: "lstatSync", race: "none", error: "EIO", rejects: "EIO" },
   ];
   for (const scenario of cases) {

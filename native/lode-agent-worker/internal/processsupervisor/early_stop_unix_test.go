@@ -50,6 +50,17 @@ func earlyStopIdentityGone(identity earlyStopProcessIdentity) bool {
 	return os.IsNotExist(err) || err == nil && current.birth != identity.birth
 }
 
+// publishEarlyStopEvidence makes a whole evidence file appear at once. The
+// parent polls with os.ReadFile, and os.WriteFile creates the file before it
+// writes the content, so the parent could otherwise read an empty identity.
+func publishEarlyStopEvidence(dir, name string, data []byte) error {
+	staged := filepath.Join(dir, "."+name+".staged")
+	if err := os.WriteFile(staged, data, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(staged, filepath.Join(dir, name))
+}
+
 // Hold the exact ownership publication boundary until the parent has delivered
 // SIGTERM and the subscription has acknowledged it. This is a deterministic
 // startup race test, not a sleep before an ordinary later interrupt.
@@ -65,7 +76,7 @@ func (writer earlyStopWriter) Write(data []byte) (int, error) {
 	}
 	var event controlEvent
 	if json.Unmarshal(data, &event) == nil && event.Type == "provider.started" {
-		if err := os.WriteFile(filepath.Join(writer.dir, "ownership"), []byte(strconv.Itoa(event.ProviderPID)), 0o600); err != nil {
+		if err := publishEarlyStopEvidence(writer.dir, "ownership", []byte(strconv.Itoa(event.ProviderPID))); err != nil {
 			return n, err
 		}
 		deadline := time.Now().Add(8 * time.Second)
@@ -139,7 +150,7 @@ func TestEarlyStopProviderHelper(t *testing.T) {
 		if err := child.Start(); err != nil {
 			os.Exit(14)
 		}
-		_ = os.WriteFile(filepath.Join(dir, "descendant"), []byte(strconv.Itoa(child.Process.Pid)), 0o600)
+		_ = publishEarlyStopEvidence(dir, "descendant", []byte(strconv.Itoa(child.Process.Pid)))
 	}
 	for {
 		time.Sleep(time.Second)

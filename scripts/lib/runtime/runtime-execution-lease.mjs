@@ -486,6 +486,13 @@ function removeEmptyOperationalParents(operationalStateRoot, projectId, authoriz
   // Another owner may remove an empty parent, or create a member in it, between
   // these steps. Losing that race is not an error; a folder that is still there
   // must pass the safety check before it is read or removed.
+  const lostRace = (error, candidate) =>
+    error.code === "ENOENT" ||
+    error.code === "ENOTEMPTY" ||
+    error.code === "EEXIST" ||
+    // Windows reports a folder that another process is deleting as EPERM or
+    // EBUSY. Only a folder that is gone afterwards counts as the lost race.
+    (process.platform === "win32" && (error.code === "EPERM" || error.code === "EBUSY") && !fs.existsSync(candidate));
   for (const candidate of candidates) {
     let stat;
     let resolved;
@@ -494,7 +501,7 @@ function removeEmptyOperationalParents(operationalStateRoot, projectId, authoriz
       stat = fs.lstatSync(candidate);
       resolved = fs.realpathSync(candidate);
     } catch (error) {
-      if (error.code === "ENOENT") break;
+      if (lostRace(error, candidate)) break;
       throw error;
     }
     if (!stat.isDirectory() || stat.isSymbolicLink() || !isWithin(operationalStateRoot, resolved) || resolved === operationalStateRoot) {
@@ -504,10 +511,7 @@ function removeEmptyOperationalParents(operationalStateRoot, projectId, authoriz
       if (fs.readdirSync(candidate).length) break;
       fs.rmdirSync(candidate);
     } catch (error) {
-      if (error.code === "ENOENT" || error.code === "ENOTEMPTY" || error.code === "EEXIST") break;
-      // Windows reports a folder that another process is deleting as EPERM or
-      // EBUSY. Only a folder that is gone afterwards counts as the lost race.
-      if (process.platform === "win32" && (error.code === "EPERM" || error.code === "EBUSY") && !fs.existsSync(candidate)) break;
+      if (lostRace(error, candidate)) break;
       throw error;
     }
   }
