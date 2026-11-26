@@ -23,13 +23,22 @@ function project(t, files, rules) {
   const rulesFile = path.join(base, "rules.json");
   fs.writeFileSync(rulesFile, JSON.stringify({ ...RULES_HEAD, rules }, null, 2));
   const out = path.join(base, "out");
-  const build = () => buildProductGraph({ sourceRoot: path.join(base, "source"), documentsDirectory: path.join(base, "documents"), rulesFile, outputDirectory: out });
+  const build = () =>
+    buildProductGraph({ sourceRoot: path.join(base, "source"), documentsDirectory: path.join(base, "documents"), rulesFile, outputDirectory: out });
   return { base, out, build };
 }
 
 const SOURCE = {
   "src/registry.js": lines('import { run } from "./tools.js";', 'export const TOOLS = [{ name: "run", run: run }];'),
-  "src/tools.js": lines("export function run(options = {}) {", "  function inner() {", "    return 1;", "  }", "  return inner();", "}", "export const helper = (x) => x;"),
+  "src/tools.js": lines(
+    "export function run(options = {}) {",
+    "  function inner() {",
+    "    return 1;",
+    "  }",
+    "  return inner();",
+    "}",
+    "export const helper = (x) => x;",
+  ),
 };
 const toolRule = (extra = {}) => ({ 종류: "tool", 판단: true, 파일: ["src/registry.js"], 패턴: 'name: "(\\w+)"', "처리 코드": "항목", ...extra });
 
@@ -108,7 +117,10 @@ const READER_OLD = { ...READER_NOW, sourceAnalysis: "0.3.3" };
 const DOC = "화면/main.md";
 
 function checkGraph(rowTargets, extraNodes = []) {
-  const nodes = [{ id: "screen:main", type: "화면", contentSha256: "s" }, ...[...rowTargets, ...extraNodes].map((id) => ({ id, type: "코드", contentSha256: `c-${id}` }))];
+  const nodes = [
+    { id: "screen:main", type: "화면", contentSha256: "s" },
+    ...[...rowTargets, ...extraNodes].map((id) => ({ id, type: "코드", contentSha256: `c-${id}` })),
+  ];
   const edges = rowTargets.map((to, index) => ({ type: "화면→코드", from: "screen:main", to, at: { path: DOC, line: 3 + index }, basis: { status: "승인" } }));
   return { nodes, edges, inputs: { reader: READER_NOW } };
 }
@@ -119,7 +131,9 @@ const record = (to, reader = READER_OLD, checkId = `check-${to}`) => ({
   checkedAt: "2026-11-20T00:00:00.000Z",
   reader,
   supersedes: [],
-  items: [{ kind: "documentRow", document: DOC, type: "화면→코드", from: "screen:main", to, documentTextSha256: "d", basis: [{ id: to, contentSha256: `c-${to}` }] }],
+  items: [
+    { kind: "documentRow", document: DOC, type: "화면→코드", from: "screen:main", to, documentTextSha256: "d", basis: [{ id: to, contentSha256: `c-${to}` }] },
+  ],
 });
 const status = (graph, records) => confirmationStatus({ graph, meaningDocument: null, documents, records });
 

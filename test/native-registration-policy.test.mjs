@@ -11,10 +11,7 @@ import {
   verifyCodexNativeTargetChoices,
   backupCodexNativeTargetChoices,
 } from "../scripts/lib/distribution/codex-native-target-choices.mjs";
-import {
-  selectCodexNativeRegistrationPolicy,
-  verifyCodexNativeRegistrationPolicy,
-} from "../scripts/lib/distribution/codex-native-registration.mjs";
+import { selectCodexNativeRegistrationPolicy, verifyCodexNativeRegistrationPolicy } from "../scripts/lib/distribution/codex-native-registration.mjs";
 
 test("native metadata verifies current explicit settings without source fallback or permission flattening", () => {
   const root = path.resolve("synthetic-current-workspace");
@@ -43,9 +40,7 @@ test("native metadata verifies current explicit settings without source fallback
     sandbox: { type: "readOnly", networkAccess: false },
     activePermissionProfile: null,
   };
-  assert.doesNotThrow(() =>
-    verifyCodexNativeRegistrationPolicy(response, policy, "selected", root),
-  );
+  assert.doesNotThrow(() => verifyCodexNativeRegistrationPolicy(response, policy, "selected", root));
   for (const mutate of [
     (value) => {
       value.model = "historical-source-model";
@@ -103,19 +98,11 @@ test("native metadata verifies current explicit settings without source fallback
     approval_policy: "never",
     sandbox_mode: "danger-full-access",
   });
-  assert.doesNotThrow(() =>
-    verifyCodexNativeRegistrationPolicy(
-      { ...response, sandbox: { type: "dangerFullAccess" } },
-      full,
-      "selected",
-      root,
-    ),
-  );
+  assert.doesNotThrow(() => verifyCodexNativeRegistrationPolicy({ ...response, sandbox: { type: "dangerFullAccess" } }, full, "selected", root));
 });
 
 test("preexisting target choices stay protected while cache refresh, selected updates and new rows remain distinct", async (t) => {
-  if (process.platform !== "win32" || process.arch !== "x64")
-    return t.skip("other-os: Measured native filesystem profile is Windows x64.");
+  if (process.platform !== "win32" || process.arch !== "x64") return t.skip("other-os: Measured native filesystem profile is Windows x64.");
   const { home, payload } = await syntheticNativeCapture(t),
     db = new DatabaseSync(nativeSqlitePath(path.join(home, "state_5.sqlite")));
   const first = payload.threadIds[0],
@@ -161,14 +148,8 @@ test("preexisting target choices stay protected while cache refresh, selected up
     } finally {
       DatabaseSync.prototype.prepare = originalPrepare;
     }
-    assert(
-      !queries.some((sql) =>
-        /creator_user_id|creator_account_id|first_user_message|preview/.test(sql),
-      ),
-    );
-    db.prepare("UPDATE threads SET recency_at=99,preview='new cache',updated_at=99 WHERE id=?").run(
-      other,
-    );
+    assert(!queries.some((sql) => /creator_user_id|creator_account_id|first_user_message|preview/.test(sql)));
+    db.prepare("UPDATE threads SET recency_at=99,preview='new cache',updated_at=99 WHERE id=?").run(other);
     db.prepare("UPDATE threads SET model='new selected target policy' WHERE id=?").run(first);
     db.prepare(
       "INSERT INTO threads (" +
@@ -210,10 +191,7 @@ test("preexisting target choices stay protected while cache refresh, selected up
         sha256: crypto.createHash("sha256").update(fs.readFileSync(currentBackup)).digest("hex"),
       }),
     );
-    await assert.rejects(
-      backupCodexNativeTargetChoices(witness, backupOptions),
-      "rewritten checksum metadata cannot make a non-SQLite backup usable",
-    );
+    await assert.rejects(backupCodexNativeTargetChoices(witness, backupOptions), "rewritten checksum metadata cannot make a non-SQLite backup usable");
     db.prepare("UPDATE threads SET preview=? WHERE id=?").run("x".repeat(1024 * 1024), other);
     const sourceBefore = crypto
       .createHash("sha256")
@@ -261,10 +239,7 @@ test("preexisting target choices stay protected while cache refresh, selected up
       "external-current-choice",
       "verification does not restore a whole backup over an external edit",
     );
-    assert.throws(
-      () => verifyCodexNativeTargetChoices(witness, { ...options, deadlineAt: Date.now() - 1 }),
-      { code: "NATIVE_CODEX_REGISTRATION_DEADLINE" },
-    );
+    assert.throws(() => verifyCodexNativeTargetChoices(witness, { ...options, deadlineAt: Date.now() - 1 }), { code: "NATIVE_CODEX_REGISTRATION_DEADLINE" });
     const denied = Object.assign(Error("Synthetic current denial"), { code: "SYNTHETIC_DENIED" });
     assert.throws(
       () =>

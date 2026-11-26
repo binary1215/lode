@@ -25,14 +25,16 @@ function productModelDocument() {
     schemaVersion: 1,
     featureGroups: [{ key: "coordination", name: "Coordination", description: "Coordinate one whole outcome." }],
     capabilities: [{ key: "continuity", name: "Continuity", description: "Preserve verified lineage." }],
-    features: [{
-      key: "head-continuity",
-      name: "Lode continuity",
-      description: "Continue from verified project artifacts.",
-      featureGroupKeys: ["coordination"],
-      capabilityKeys: ["continuity"],
-      governedBy: [],
-    }],
+    features: [
+      {
+        key: "head-continuity",
+        name: "Lode continuity",
+        description: "Continue from verified project artifacts.",
+        featureGroupKeys: ["coordination"],
+        capabilityKeys: ["continuity"],
+        governedBy: [],
+      },
+    ],
     requirements: [],
     constraints: [],
     decisions: [],
@@ -53,11 +55,12 @@ function createProject(t, label) {
 }
 
 function authorityBytes(root, layout) {
-  return Object.fromEntries([
-    `${layout.directory}/project.json`,
-    `${layout.directory}/sessions/current.json`,
-    `${layout.directory}/context/product-model.json`,
-  ].map((relativePath) => [relativePath, fs.readFileSync(path.join(root, ...relativePath.split("/")))]));
+  return Object.fromEntries(
+    [`${layout.directory}/project.json`, `${layout.directory}/sessions/current.json`, `${layout.directory}/context/product-model.json`].map((relativePath) => [
+      relativePath,
+      fs.readFileSync(path.join(root, ...relativePath.split("/"))),
+    ]),
+  );
 }
 
 function currentRevision(graph, kind, predicate) {
@@ -66,25 +69,11 @@ function currentRevision(graph, kind, predicate) {
 
 test("refresh drops deleted revision-parent keys while preserving surviving and historical lineage", async (t) => {
   const { root, layout } = createProject(t, "linked-delete");
-  fs.writeFileSync(path.join(root, "src", "tokens.py"), [
-    "def removed_token():",
-    "    return 1",
-    "",
-    "def surviving_token():",
-    "    return 9",
-    "",
-  ].join("\n"));
+  fs.writeFileSync(path.join(root, "src", "tokens.py"), ["def removed_token():", "    return 1", "", "def surviving_token():", "    return 9", ""].join("\n"));
   fs.writeFileSync(path.join(root, "src", "stable.py"), "def stable_token():\n    return 3\n");
   await buildWorldModel({ root });
 
-  fs.writeFileSync(path.join(root, "src", "tokens.py"), [
-    "def removed_token():",
-    "    return 2",
-    "",
-    "def surviving_token():",
-    "    return 9",
-    "",
-  ].join("\n"));
+  fs.writeFileSync(path.join(root, "src", "tokens.py"), ["def removed_token():", "    return 2", "", "def surviving_token():", "    return 9", ""].join("\n"));
   const evolvedProductModel = productModelDocument();
   evolvedProductModel.features[0].description = "Continue from exact verified project artifacts.";
   fs.writeFileSync(path.join(root, layout.directory, "context", "product-model.json"), `${JSON.stringify(evolvedProductModel, null, 2)}\n`);
@@ -108,7 +97,10 @@ test("refresh drops deleted revision-parent keys while preserving surviving and 
   assert.equal(deleted.status, "refreshed");
   const afterDeletion = (await readWorldModel({ root })).snapshot;
   const afterGraph = afterDeletion.temporalProvenanceGraph;
-  assert.equal(afterGraph.nodes.some((node) => node.logicalEntityId === removedRevision.logicalEntityId), false);
+  assert.equal(
+    afterGraph.nodes.some((node) => node.logicalEntityId === removedRevision.logicalEntityId),
+    false,
+  );
   assert.equal(Object.hasOwn(afterGraph.revisionParentIds, removedRevision.logicalEntityId), false);
   const survivingAfter = currentRevision(afterGraph, "SymbolRevision", (node) => node.name === "surviving_token");
   const stableAfter = currentRevision(afterGraph, "FileRevision", (node) => node.path === "src/stable.py");
@@ -120,11 +112,11 @@ test("refresh drops deleted revision-parent keys while preserving surviving and 
   assert.deepEqual(featureAfter.parentRevisionIds, featureRevision.parentRevisionIds);
   assert.ok(afterGraph.parentSourceSnapshotIds.includes(beforeGraph.sourceSnapshotId));
 
-  const lineageDiff = (await diffGraphLineage({
+  const lineageDiff = await diffGraphLineage({
     root,
     fromWorldModelId: beforeDeletion.worldModelId,
     toWorldModelId: afterDeletion.worldModelId,
-  }));
+  });
   assert.equal(lineageDiff.kind, "GraphLineageDiffProjection");
   assert.ok(lineageDiff.changes.removedNodes.count > 0);
   assert.deepEqual(authorityBytes(root, layout), protectedBefore);
@@ -135,14 +127,20 @@ test("refresh drops deleted revision-parent keys while preserving surviving and 
   assert.deepEqual(authorityBytes(root, layout), protectedBefore);
 
   const currentWorldModelId = afterDeletion.worldModelId;
-  await assert.rejects(((buildWorldModel({
-    root,
-    expectedWorldModelId: `world-model-${"0".repeat(24)}`,
-  }))), { code: "REFRESH_PREVIEW_DRIFT" });
-  await assert.rejects(((buildWorldModel({
-    root,
-    expectedCurrentWorldModelId: `world-model-${"f".repeat(24)}`,
-  }))), { code: "REFRESH_POINTER_CONFLICT" });
+  await assert.rejects(
+    buildWorldModel({
+      root,
+      expectedWorldModelId: `world-model-${"0".repeat(24)}`,
+    }),
+    { code: "REFRESH_PREVIEW_DRIFT" },
+  );
+  await assert.rejects(
+    buildWorldModel({
+      root,
+      expectedCurrentWorldModelId: `world-model-${"f".repeat(24)}`,
+    }),
+    { code: "REFRESH_POINTER_CONFLICT" },
+  );
   assert.equal((await readWorldModel({ root })).snapshot.worldModelId, currentWorldModelId);
 });
 
@@ -175,24 +173,32 @@ test("refresh handles linked symbol rename, file deletion, and source-scope excl
     else writeRepositorySourceScope({ projectRoot: root, storage, selection: { includeRoots: [], excludeRoots: ["src/item.py"] } });
     assert.equal((await refreshWorldModel({ root })).status, "refreshed");
     const after = (await readWorldModel({ root })).snapshot.temporalProvenanceGraph;
-    assert.equal(after.nodes.some((node) => node.logicalEntityId === itemRevision.logicalEntityId), false);
+    assert.equal(
+      after.nodes.some((node) => node.logicalEntityId === itemRevision.logicalEntityId),
+      false,
+    );
     assert.equal(Object.hasOwn(after.revisionParentIds, itemRevision.logicalEntityId), false);
   }
 });
 
 test("current logical-entity filtering shares graph identity rules and keeps strict explicit validation", () => {
   const projectId = "project-current-temporal-entities";
-  const files = [{
-    path: "test/continuity.test.py",
-    digest: crypto.createHash("sha256").update("def continuity(): pass\n").digest("hex"),
-    language: "python",
-    classification: "test",
-    symbols: [{ name: "continuity", kind: "function", line: 1 }],
-  }];
+  const files = [
+    {
+      path: "test/continuity.test.py",
+      digest: crypto.createHash("sha256").update("def continuity(): pass\n").digest("hex"),
+      language: "python",
+      classification: "test",
+      symbols: [{ name: "continuity", kind: "function", line: 1 }],
+    },
+  ];
   const productModel = normalizeProductModelDocument(productModelDocument());
   const graph = buildTemporalProvenanceGraph({ projectId, files, productModel });
   const logicalKinds = new Set(["File", "Symbol", "Test", "FeatureGroup", "Capability", "Feature", "Requirement", "Constraint", "Decision"]);
-  const graphLogicalIds = graph.nodes.filter((node) => logicalKinds.has(node.kind)).map((node) => node.nodeId).sort();
+  const graphLogicalIds = graph.nodes
+    .filter((node) => logicalKinds.has(node.kind))
+    .map((node) => node.nodeId)
+    .sort();
   assert.deepEqual(currentTemporalLogicalEntityIds({ projectId, files, productModel }), graphLogicalIds);
 
   const feature = graph.nodes.find((node) => node.kind === "Feature");
@@ -209,10 +215,14 @@ test("current logical-entity filtering shares graph identity rules and keeps str
     revisionParentIds: candidateParents,
   });
   assert.deepEqual(filtered, { [feature.nodeId]: [featureRevision.nodeId] });
-  assert.throws(() => buildTemporalProvenanceGraph({
-    projectId,
-    files,
-    productModel,
-    revisionParentIds: candidateParents,
-  }), { code: "UNKNOWN_REVISION_PARENT_ENTITY" });
+  assert.throws(
+    () =>
+      buildTemporalProvenanceGraph({
+        projectId,
+        files,
+        productModel,
+        revisionParentIds: candidateParents,
+      }),
+    { code: "UNKNOWN_REVISION_PARENT_ENTITY" },
+  );
 });

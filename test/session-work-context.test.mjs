@@ -39,30 +39,39 @@ function originals(root) {
   return files;
 }
 const direction = (purpose = "Investigate the cache") => ({
-  purpose, approvedDecisions: [], currentPosition: "No execution started", nextExpectedResult: "Explain the result",
+  purpose,
+  approvedDecisions: [],
+  currentPosition: "No execution started",
+  nextExpectedResult: "Explain the result",
 });
-const sync = (root, fields) => syncRecoveryCheckpoint({
-  root, expectedRecoveryBasisId: inspectRecoveryCheckpointBasis({ root }).basis.basisId, ...fields,
-});
+const sync = (root, fields) =>
+  syncRecoveryCheckpoint({
+    root,
+    expectedRecoveryBasisId: inspectRecoveryCheckpointBasis({ root }).basis.basisId,
+    ...fields,
+  });
 
 test("existing Run-free P2 preserves Session-local purpose, constraints and latest cancellation without shared promotion", async (t) => {
   const { root, storage } = project(t);
   const a = createHeadSession({ root, purpose: "Investigate cache only; do not deploy" });
   const b = createHeadSession({ root, purpose: "Independent documentation" });
-  (await withSessionRoute(root, a.sessionId, async () => {
+  await withSessionRoute(root, a.sessionId, async () => {
     sync(root, { ...direction("Investigate cache only; do not deploy"), approvedDecisions: ["Current user scope: local files only; no network"] });
     const old = inspectProject(root).state.latestCheckpoint;
-    const final = sync(root, { ...direction("Investigate cache only; do not deploy"),
+    const final = sync(root, {
+      ...direction("Investigate cache only; do not deploy"),
       approvedDecisions: ["Current user scope: local files only; no network", "User cancelled cache rewrite for this Session"],
-      currentPosition: "Rewrite cancelled; earlier rewrite proposal is historical", nextExpectedResult: "Read-only explanation; no rewrite" });
+      currentPosition: "Rewrite cancelled; earlier rewrite proposal is historical",
+      nextExpectedResult: "Read-only explanation; no rewrite",
+    });
     assert.equal(final.outcome, "created");
-    const entry = (await enterConversationRecovery({ root }));
+    const entry = await enterConversationRecovery({ root });
     assert.equal(entry.restore.checkpoint.purpose, "Investigate cache only; do not deploy");
     assert.ok(entry.restore.checkpoint.approvedDecisions.includes("User cancelled cache rewrite for this Session"));
     assert.equal(entry.restore.checkpoint.nextExpectedResult, "Read-only explanation; no rewrite");
     assert.equal(entry.restore.projection.consumerInstruction.historicalApprovalGrantsCurrentEffect, false);
     assert.equal(readRecoveryCheckpoint({ root, checkpointId: old }).checkpoint.nextExpectedResult, "Explain the result");
-  }));
+  });
   assert.equal(readProjectDirection({ root }), null);
   withSessionRoute(root, b.sessionId, () => {
     assert.equal(inspectProject(root).state.purpose, "Independent documentation");
@@ -74,15 +83,22 @@ test("one Run-free evidence save -> same Session read-only entry; no Run, checkp
   const { root, storage } = project(t);
   const a = createHeadSession({ root, purpose: "Cache investigation" });
   const originalDefault = fs.readFileSync(sessionStatePath(root, storage));
-  (await withSessionRoute(root, a.sessionId, async () => {
-    const retained = recordSessionWorkEvidence({ root, input: {
-      judgments: [{ assessment: "Reuse the original cache", reason: "Rebuilding would discard observed provenance", alternatives: ["Rebuild from lexical matches"] }],
-      observedWork: ["Inspected cache read path"], pending: ["Verify replacement behavior"], unknowns: ["Real Host behavior untested"],
-    } });
+  await withSessionRoute(root, a.sessionId, async () => {
+    const retained = recordSessionWorkEvidence({
+      root,
+      input: {
+        judgments: [
+          { assessment: "Reuse the original cache", reason: "Rebuilding would discard observed provenance", alternatives: ["Rebuild from lexical matches"] },
+        ],
+        observedWork: ["Inspected cache read path"],
+        pending: ["Verify replacement behavior"],
+        unknowns: ["Real Host behavior untested"],
+      },
+    });
     assert.equal(retained.writes, 1);
     assert.equal(retained.evidence.authorityBoundary.planeId, "P3");
     const before = originals(root);
-    const entry = (await enterConversationRecovery({ root }));
+    const entry = await enterConversationRecovery({ root });
     assert.equal(entry.status, "conversation_ready");
     assert.equal(entry.workContext.records[0].evidenceId, retained.evidence.evidenceId);
     assert.equal(entry.workContext.sessionPurpose, "Cache investigation");
@@ -91,7 +107,7 @@ test("one Run-free evidence save -> same Session read-only entry; no Run, checkp
     assert.deepEqual(originals(root), before);
     assert.equal(inspectProject(root).state.latestCheckpoint, null);
     assert.equal(inspectProject(root).state.activeRunId, null);
-  }));
+  });
   assert.deepEqual(fs.readFileSync(sessionStatePath(root, storage)), originalDefault);
   assert.equal((await enterConversationRecovery({ root })).workContext.records.length, 0);
 });
@@ -117,11 +133,15 @@ test("P3 retention stays P3 when checkpoint basis conflicts; common cancellation
   const basis = inspectRecoveryCheckpointBasis({ root }).basis.basisId;
   sync(root, direction("Current local investigation"));
   updateProjectDirection({ root, expectedDirectionId: null, input: { goal: "Investigate", cancelledActions: ["deploy"] } });
-  const outcome = syncRecoveryCheckpoint({ root, expectedRecoveryBasisId: basis, ...direction("Stale proposal"),
-    workEvidence: { suggestedFollowUp: ["Historical suggestion: deploy"], unknowns: ["Deployment outcome unknown; do not replay"] } });
+  const outcome = syncRecoveryCheckpoint({
+    root,
+    expectedRecoveryBasisId: basis,
+    ...direction("Stale proposal"),
+    workEvidence: { suggestedFollowUp: ["Historical suggestion: deploy"], unknowns: ["Deployment outcome unknown; do not replay"] },
+  });
   assert.equal(outcome.outcome, "conflict");
   assert.equal(outcome.workEvidence.writes, 1);
-  const entry = (await enterConversationRecovery({ root }));
+  const entry = await enterConversationRecovery({ root });
   assert.equal(entry.restore.checkpoint.purpose, "Current local investigation");
   assert.deepEqual(entry.restore.projection.currentProjectDirection.input.cancelledActions, ["deploy"]);
   assert.equal(entry.workContext.executionReplayAllowed, false);
@@ -136,15 +156,21 @@ test("optional evidence storage failure does not block explicit P2; retry repair
     return original(source, target);
   };
   let outcome;
-  try { outcome = sync(root, { ...direction(), workEvidence: { summary: "Useful selected evidence" } }); }
-  finally { fs.linkSync = original; }
+  try {
+    outcome = sync(root, { ...direction(), workEvidence: { summary: "Useful selected evidence" } });
+  } finally {
+    fs.linkSync = original;
+  }
   assert.equal(outcome.outcome, "created");
   assert.equal(outcome.workEvidence.status, "work_evidence_retention_unconfirmed");
   const checkpointBytes = fs.readFileSync(path.join(root, relativeProjectArtifact(storage, "sessions", "ledger"), outcome.checkpoint.checkpointId + ".json"));
   const retry = sync(root, { ...direction(), workEvidence: { summary: "Useful selected evidence" } });
   assert.equal(retry.outcome, "reused");
   assert.equal(retry.workEvidence.writes, 1);
-  assert.deepEqual(fs.readFileSync(path.join(root, relativeProjectArtifact(storage, "sessions", "ledger"), outcome.checkpoint.checkpointId + ".json")), checkpointBytes);
+  assert.deepEqual(
+    fs.readFileSync(path.join(root, relativeProjectArtifact(storage, "sessions", "ledger"), outcome.checkpoint.checkpointId + ".json")),
+    checkpointBytes,
+  );
 });
 
 test("publication succeeded but acknowledgement failed: exact retry reuses bytes, not completed work", (t) => {
@@ -155,8 +181,11 @@ test("publication succeeded but acknowledgement failed: exact retry reuses bytes
     if (target.includes("work-evidence")) throw Object.assign(new Error("Synthetic post-publication failure"), { code: "EIO" });
     return result;
   };
-  try { assert.throws(() => recordSessionWorkEvidence({ root, input: { summary: "Already inspected source" } }), { code: "EIO" }); }
-  finally { fs.linkSync = original; }
+  try {
+    assert.throws(() => recordSessionWorkEvidence({ root, input: { summary: "Already inspected source" } }), { code: "EIO" });
+  } finally {
+    fs.linkSync = original;
+  }
   const before = originals(root);
   const retry = recordSessionWorkEvidence({ root, input: { summary: "Already inspected source" } });
   assert.equal(retry.writes, 0);
@@ -175,7 +204,8 @@ test("retries reuse identical input; distinct occurrences and changed judgments 
 });
 
 test("exact source refs disclose changed/missing bytes; retries do not require redoing original effects", (t) => {
-  const { root, storage } = project(t), file = path.join(root, "cache.mjs");
+  const { root, storage } = project(t),
+    file = path.join(root, "cache.mjs");
   fs.writeFileSync(file, "export const cache = 1;");
   const input = { summary: "Observed original cache", references: [{ path: "cache.mjs", digest: sha(fs.readFileSync(file)), kind: "source" }] };
   recordSessionWorkEvidence({ root, input });
@@ -193,7 +223,8 @@ test("one damaged original does not block valid evidence, P2 restore or independ
   const bad = recordSessionWorkEvidence({ root, input: { summary: "Bad record" } });
   recordSessionWorkEvidence({ root, input: { unknowns: ["Preserve this uncertainty"] } });
   fs.writeFileSync(bad.file, JSON.stringify({ ...bad.evidence, content: { summary: "Tampered" } }));
-  const before = originals(root), entry = (await enterConversationRecovery({ root }));
+  const before = originals(root),
+    entry = await enterConversationRecovery({ root });
   assert.equal(entry.status, "conversation_direction_restored");
   assert.equal(entry.workContext.status, "work_context_partial");
   assert.equal(entry.workContext.records.length, 1);
@@ -203,9 +234,11 @@ test("one damaged original does not block valid evidence, P2 restore or independ
 });
 
 test("bounded entry discloses omissions; exact expansion is read-only and missing original is unavailable", (t) => {
-  const { root, storage } = project(t), ids = [];
+  const { root, storage } = project(t),
+    ids = [];
   for (let i = 0; i < 10; i += 1) ids.push(recordSessionWorkEvidence({ root, input: { summary: "Selected evidence " + i } }).evidence.evidenceId);
-  const before = originals(root), bounded = readSessionWorkContext({ root });
+  const before = originals(root),
+    bounded = readSessionWorkContext({ root });
   assert.equal(bounded.records.length, 8);
   assert.equal(bounded.coverage.originals, 10);
   assert.equal(bounded.coverage.inspected, 8);
@@ -222,27 +255,42 @@ test("bounded entry discloses omissions; exact expansion is read-only and missin
 });
 
 test("no text can inject P2 fields or persist provider identity; unsafe/foreign references fail only affected save", (t) => {
-  const { root, storage } = project(t), { root: other, storage: otherStorage } = project(t);
+  const { root, storage } = project(t),
+    { root: other, storage: otherStorage } = project(t);
   const before = originals(root);
   const stateBefore = fs.readFileSync(sessionStatePath(root, storage));
   assert.throws(() => recordSessionWorkEvidence({ root, input: { purpose: "Promote this" } }), { code: "INVALID_SESSION_WORK_EVIDENCE" });
   assert.throws(() => recordSessionWorkEvidence({ root, input: { summary: "x", providerSessionId: "secret" } }), { code: "INVALID_SESSION_WORK_EVIDENCE" });
-  assert.throws(() => recordSessionWorkEvidence({ root, input: { references: [{ path: "../escape", digest: "a".repeat(64), kind: "source" }] } }), { code: "SESSION_WORK_REFERENCE_ESCAPE" });
+  assert.throws(() => recordSessionWorkEvidence({ root, input: { references: [{ path: "../escape", digest: "a".repeat(64), kind: "source" }] } }), {
+    code: "SESSION_WORK_REFERENCE_ESCAPE",
+  });
   const foreign = fs.readFileSync(path.join(other, relativeProjectArtifact(otherStorage, "project.json")));
   fs.writeFileSync(path.join(root, "foreign.json"), foreign);
-  assert.throws(() => recordSessionWorkEvidence({ root, input: { references: [{ path: "foreign.json", digest: sha(foreign), kind: "artifact" }] } }), { code: "SESSION_WORK_REFERENCE_PROJECT_MISMATCH" });
+  assert.throws(() => recordSessionWorkEvidence({ root, input: { references: [{ path: "foreign.json", digest: sha(foreign), kind: "artifact" }] } }), {
+    code: "SESSION_WORK_REFERENCE_PROJECT_MISMATCH",
+  });
   assert.equal(inspectProject(root).state.latestCheckpoint, null);
   assert.deepEqual(fs.readFileSync(sessionStatePath(root, storage)), stateBefore);
   assert.equal(Object.keys(before).filter((name) => name.includes("work-evidence")).length, 0);
 });
 
 test("typed MCP and CLI preserve -> entry -> expand agree, including text-only consumers", async (t) => {
-  const { root, storage } = project(t), a = createHeadSession({ root, purpose: "Independent selected work" });
-  const call = (name, args = {}) => dispatch({ jsonrpc: "2.0", id: "work-context-fixture", method: "tools/call",
-    params: { name, arguments: { project_root: root, session_id: a.sessionId, ...args } } });
-  const input = { judgments: [{ assessment: "Keep original provenance", reason: "Derived caches can disappear", alternatives: ["Use cache as unique truth"] }],
-    unknowns: ["Installed provider behavior not verified"], todos: [{ todoId: "todo-retained-task", task: "Verify original provenance", status: "pending",
-      nextAction: "Inspect exact evidence", origin: "user-directed" }] };
+  const { root, storage } = project(t),
+    a = createHeadSession({ root, purpose: "Independent selected work" });
+  const call = (name, args = {}) =>
+    dispatch({
+      jsonrpc: "2.0",
+      id: "work-context-fixture",
+      method: "tools/call",
+      params: { name, arguments: { project_root: root, session_id: a.sessionId, ...args } },
+    });
+  const input = {
+    judgments: [{ assessment: "Keep original provenance", reason: "Derived caches can disappear", alternatives: ["Use cache as unique truth"] }],
+    unknowns: ["Installed provider behavior not verified"],
+    todos: [
+      { todoId: "todo-retained-task", task: "Verify original provenance", status: "pending", nextAction: "Inspect exact evidence", origin: "user-directed" },
+    ],
+  };
   const retained = await call("head_session_work_record", { evidence: input });
   assert.equal(retained.result.structuredContent.writes, 1);
   const before = originals(root);
@@ -254,31 +302,45 @@ test("typed MCP and CLI preserve -> entry -> expand agree, including text-only c
   assert.equal(entry.result.structuredContent.workContext.recoveryAuthority, false);
   assert.match(entry.result.content[0].text, /content\.todos\[0\]\.todoId: "todo-retained-task"/);
   assert.match(entry.result.content[0].text, /content\.todos\[0\]\.status: "pending"/);
-  for (const text of ["Verify original provenance", "Inspect exact evidence", "user-directed"])
-    assert.ok(entry.result.content[0].text.includes(text), text);
+  for (const text of ["Verify original provenance", "Inspect exact evidence", "user-directed"]) assert.ok(entry.result.content[0].text.includes(text), text);
   assert.equal(entry.result.structuredContent.workContext.todoContext.items[0].todoId, "todo-retained-task");
-  const cliEntry = (await runCommand(["conversation-enter", root, "--session", a.sessionId]));
+  const cliEntry = await runCommand(["conversation-enter", root, "--session", a.sessionId]);
   assert.deepEqual(cliEntry.workContext, entry.result.structuredContent.workContext);
   assert.match(formatCliResult("conversation-enter", cliEntry), /Installed provider behavior not verified/);
   const read = await call("head_session_work_read", { evidence_ids: [retained.result.structuredContent.evidence.evidenceId] });
   assert.equal(read.result.structuredContent.records.length, 1);
   assert.deepEqual((await runCommand(["session-work-read", root, "--session", a.sessionId])).records, read.result.structuredContent.records);
-  const todoRead = await dispatch({ jsonrpc: "2.0", id: "todo-router", method: "tools/call", params: {
-    name: "head_tools_read", arguments: { name: "head_session_work_read", arguments: { project_root: root, session_id: a.sessionId, todo_id: "todo-retained-task" } } } });
+  const todoRead = await dispatch({
+    jsonrpc: "2.0",
+    id: "todo-router",
+    method: "tools/call",
+    params: {
+      name: "head_tools_read",
+      arguments: { name: "head_session_work_read", arguments: { project_root: root, session_id: a.sessionId, todo_id: "todo-retained-task" } },
+    },
+  });
   assert.equal(todoRead.result.structuredContent.todoContext.items[0].task, "Verify original provenance");
   assert.deepEqual(originals(root), before);
 });
 
-test("explicit Todo revisions outlive recent work and preserve conflicting branches without P2 changes", async t => {
-  const { root, storage } = project(t), session = createHeadSession({ root, purpose: "Inspect locally; no deployment" });
-  (await withSessionRoute(root, session.sessionId, async () => {
+test("explicit Todo revisions outlive recent work and preserve conflicting branches without P2 changes", async (t) => {
+  const { root, storage } = project(t),
+    session = createHeadSession({ root, purpose: "Inspect locally; no deployment" });
+  await withSessionRoute(root, session.sessionId, async () => {
     const state = fs.readFileSync(sessionStatePath(root, storage));
-    const save = todos => recordSessionWorkEvidence({ root, input: { todos } });
-    const exact = saved => ({ evidenceId: saved.evidence.evidenceId, evidenceDigest: saved.evidence.evidenceDigest });
-    const item = { todoId: "todo-old-open", task: "Finish bounded validation", status: "pending", nextAction: "Run focused validation", origin: "user-directed" };
-    const first = save([item]), firstBytes = fs.readFileSync(first.file);
+    const save = (todos) => recordSessionWorkEvidence({ root, input: { todos } });
+    const exact = (saved) => ({ evidenceId: saved.evidence.evidenceId, evidenceDigest: saved.evidence.evidenceDigest });
+    const item = {
+      todoId: "todo-old-open",
+      task: "Finish bounded validation",
+      status: "pending",
+      nextAction: "Run focused validation",
+      origin: "user-directed",
+    };
+    const first = save([item]),
+      firstBytes = fs.readFileSync(first.file);
     for (let index = 0; index < 10; index++) recordSessionWorkEvidence({ root, input: { summary: "Unrelated later note " + index } });
-    const entry = (await enterConversationRecovery({ root }));
+    const entry = await enterConversationRecovery({ root });
     assert.equal(entry.workContext.todoContext.items[0].todoId, item.todoId);
     assert.equal(entry.workContext.todoContext.coverage.recentWorkLimitApplied, false);
     assert.match(startupProjection(entry, root, "claude"), /todo-old-open/);
@@ -293,12 +355,13 @@ test("explicit Todo revisions outlive recent work and preserve conflicting branc
     const cancelled = save([{ ...item, status: "cancelled", reason: "User changed scope", prior: exact(waiting) }]);
     const conflict = readSessionWorkContext({ root }).todoContext.items[0];
     assert.equal(conflict.status, "conflict");
-    assert.deepEqual(conflict.revisions.map(value => value.status).sort(), ["cancelled", "completed"]);
+    assert.deepEqual(conflict.revisions.map((value) => value.status).sort(), ["cancelled", "completed"]);
     assert.throws(() => save([{ ...item, todoId: "todo-different", prior: exact(cancelled) }]), { code: "SESSION_TODO_PRIOR_MISMATCH" });
     assert.deepEqual(fs.readFileSync(first.file), firstBytes);
     assert.deepEqual(fs.readFileSync(sessionStatePath(root, storage)), state);
     assert.equal(readProjectDirection({ root }), null);
-    const indexPath = path.join(root, storage.directory, "graph-discovery/index.json"), indexBytes = fs.readFileSync(indexPath);
+    const indexPath = path.join(root, storage.directory, "graph-discovery/index.json"),
+      indexBytes = fs.readFileSync(indexPath);
     fs.unlinkSync(indexPath);
     const unknown = readSessionWorkContext({ root });
     assert.equal(unknown.todoContext.coverage.indexCoverage, "unknown");
@@ -313,47 +376,64 @@ test("explicit Todo revisions outlive recent work and preserve conflicting branc
     assert.equal(resolved.coverage.inspectedOriginals, 1, "Read the indexed head, not the entire Todo revision history");
     const pageSave = save(Array.from({ length: 12 }, (_, index) => ({ ...item, todoId: "todo-page-" + String(index).padStart(2, "0") })));
     const page = readSessionWorkContext({ root, maxRecords: 2 }).todoContext;
-    assert.equal(page.items.length, 2); assert.equal(page.knownOpenCount, 13); assert(page.nextAfterTodoId);
+    assert.equal(page.items.length, 2);
+    assert.equal(page.knownOpenCount, 13);
+    assert(page.nextAfterTodoId);
     const next = readSessionWorkContext({ root, maxRecords: 2, afterTodoId: page.nextAfterTodoId }).todoContext;
-    assert(next.items.every(value => value.todoId > page.nextAfterTodoId));
+    assert(next.items.every((value) => value.todoId > page.nextAfterTodoId));
     assert.equal(readSessionWorkContext({ root, todoId: "todo-page-11" }).todoContext.items[0].todoId, "todo-page-11");
     const tiny = readSessionWorkContext({ root, maxCharacters: 2 }).todoContext;
-    assert.equal(tiny.items.length, 0); assert.equal(tiny.coverage.omittedItems, 13); assert(tiny.coverage.omittedItemIds.length);
-    const healthy = fs.readFileSync(indexPath), forged = JSON.parse(healthy);
-    const row = forged.sessionTodoNavigation.rows.find(value => value.todoRevisions.some(todo => todo.todoId === "todo-page-11"));
-    row.todoRevisions[0].status = "cancelled"; fs.writeFileSync(indexPath, JSON.stringify(forged));
+    assert.equal(tiny.items.length, 0);
+    assert.equal(tiny.coverage.omittedItems, 13);
+    assert(tiny.coverage.omittedItemIds.length);
+    const healthy = fs.readFileSync(indexPath),
+      forged = JSON.parse(healthy);
+    const row = forged.sessionTodoNavigation.rows.find((value) => value.todoRevisions.some((todo) => todo.todoId === "todo-page-11"));
+    row.todoRevisions[0].status = "cancelled";
+    fs.writeFileSync(indexPath, JSON.stringify(forged));
     const forgedBytes = fs.readFileSync(indexPath);
     const drift = readSessionWorkContext({ root, todoId: "todo-page-11" }).todoContext;
     assert.equal(drift.items[0].status, "pending", "A fresh original overrides the untrusted index hint");
     assert.equal(drift.coverage.indexHintMismatchCount, 1);
     assert.deepEqual(fs.readFileSync(indexPath), forgedBytes, "Reading does not repair the index");
     fs.writeFileSync(indexPath, healthy);
-    const rename = fs.renameSync; let deferred;
+    const rename = fs.renameSync;
+    let deferred;
     fs.renameSync = (from, to, ...args) => {
       if (path.resolve(to) === indexPath) throw Object.assign(new Error("Synthetic deferred index"), { code: "EACCES" });
       return rename(from, to, ...args);
     };
-    try { deferred = save([{ ...item, todoId: "todo-page-11", status: "waiting", reason: "Await local evidence", prior: exact(pageSave) }]); }
-    finally { fs.renameSync = rename; }
+    try {
+      deferred = save([{ ...item, todoId: "todo-page-11", status: "waiting", reason: "Await local evidence", prior: exact(pageSave) }]);
+    } finally {
+      fs.renameSync = rename;
+    }
     assert.equal(deferred.graphIndex.status, "deferred");
     const recovered = readSessionWorkContext({ root, todoId: "todo-page-11" }).todoContext;
     assert.equal(recovered.items[0].status, "waiting", "An unindexed canonical revision joins this same read");
     assert.equal(recovered.items[0].revision.evidenceId, deferred.evidence.evidenceId);
-  }));
+  });
 });
 
 test("new work calls preserve known-loss boundaries without blocking independent Project facts", async (t) => {
-  const { root, storage } = project(t), context = createSessionCallContext();
+  const { root, storage } = project(t),
+    context = createSessionCallContext();
   context.lose(root);
   const before = originals(root);
   for (const name of ["head_session_work_record", "head_session_work_read"]) {
-    const result = await dispatch({ jsonrpc: "2.0", id: "lost-work", method: "tools/call",
-      params: { name, arguments: { project_root: root, ...(name.endsWith("record") ? { evidence: { summary: "Do not write default" } } : {}) } } },
-    { sessionContext: context });
+    const result = await dispatch(
+      {
+        jsonrpc: "2.0",
+        id: "lost-work",
+        method: "tools/call",
+        params: { name, arguments: { project_root: root, ...(name.endsWith("record") ? { evidence: { summary: "Do not write default" } } : {}) } },
+      },
+      { sessionContext: context },
+    );
     assert.equal(result.result.structuredContent.status, "session_selection_unresolved");
     assert.equal(result.result.structuredContent.ordinaryWorkBlocked, false);
   }
-  const independent = (await runCommand(["project-direction-read", root], { sessionContext: context }));
+  const independent = await runCommand(["project-direction-read", root], { sessionContext: context });
   assert.equal(independent, null);
   assert.deepEqual(originals(root), before);
 });
@@ -362,18 +442,20 @@ test("existing uppercase logical Session identities remain exact through record 
   const { root, storage } = project(t);
   const id = "session-AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
   createHeadSession({ root, sessionId: id, purpose: "Case-preserving identity" });
-  (await withSessionRoute(root, id, async () => {
+  await withSessionRoute(root, id, async () => {
     recordSessionWorkEvidence({ root, input: { unknowns: ["Host not verified"] } });
-    const entry = (await enterConversationRecovery({ root }));
+    const entry = await enterConversationRecovery({ root });
     assert.equal(entry.workContext.sessionId, id);
     assert.equal(entry.workContext.records[0].sessionId, id);
-  }));
+  });
 });
 
 test("output budget accounts for enriched references; omissions retain exact expansion identities", (t) => {
-  const { root, storage } = project(t), references = [];
+  const { root, storage } = project(t),
+    references = [];
   for (let i = 0; i < 30; i += 1) {
-    const name = "reference-" + i + ".mjs", body = "export const item = " + i + ";";
+    const name = "reference-" + i + ".mjs",
+      body = "export const item = " + i + ";";
     fs.writeFileSync(path.join(root, name), body);
     references.push({ path: name, digest: sha(body), kind: "source" });
   }
@@ -381,7 +463,8 @@ test("output budget accounts for enriched references; omissions retain exact exp
   const small = readSessionWorkContext({ root, maxCharacters: 4460 });
   assert.ok(JSON.stringify(small.records).length <= 4460);
   const delivered = small.recordExcerpts?.length
-    ? JSON.stringify({ records: small.records, recordExcerpts: small.recordExcerpts }) : JSON.stringify(small.records);
+    ? JSON.stringify({ records: small.records, recordExcerpts: small.recordExcerpts })
+    : JSON.stringify(small.records);
   assert.equal(small.coverage.usedCharacters, delivered.length);
   assert.ok(delivered.length <= 4460);
   assert.equal(small.recordExcerpts[0].source.evidenceId, saved.evidence.evidenceId);
@@ -408,110 +491,164 @@ test("a new common cancellation during evidence composition cannot accompany a s
     return bytes;
   };
   let entry;
-  try { entry = (await enterConversationRecovery({ root })); } finally { fs.readFileSync = read; }
+  try {
+    entry = await enterConversationRecovery({ root });
+  } finally {
+    fs.readFileSync = read;
+  }
   assert.equal(changed, true);
   assert.equal(entry.reasonCode, "CONVERSATION_ENTRY_BASIS_CHANGED");
   assert.equal(entry.ordinaryWorkBlocked, false);
   assert.equal(entry.restore, undefined);
   assert.equal(entry.workContext.records.length, 0);
   assert.deepEqual(entry.currentProjectDirection.input.cancelledActions, ["deploy"]);
-  const before = originals(root), retry = (await enterConversationRecovery({ root }));
+  const before = originals(root),
+    retry = await enterConversationRecovery({ root });
   assert.equal(retry.status, "conversation_direction_restored");
   assert.deepEqual(retry.restore.projection.currentProjectDirection.input.cancelledActions, ["deploy"]);
   assert.deepEqual(originals(root), before);
 });
 
-
-test("Todo counts classify verified states independently of detail and display pagination", async t => {
-  const { root, storage } = project(t), session = createHeadSession({ root, purpose: "Synthetic Todo count scope only" });
+test("Todo counts classify verified states independently of detail and display pagination", async (t) => {
+  const { root, storage } = project(t),
+    session = createHeadSession({ root, purpose: "Synthetic Todo count scope only" });
   await withSessionRoute(root, session.sessionId, async () => {
-    const save = todos => recordSessionWorkEvidence({ root, input: { todos } });
-    const exact = saved => ({ evidenceId: saved.evidence.evidenceId, evidenceDigest: saved.evidence.evidenceDigest });
-    const task = (todoId, status) => ({ todoId, task: "Synthetic " + todoId, status, origin: "user-directed",
+    const save = (todos) => recordSessionWorkEvidence({ root, input: { todos } });
+    const exact = (saved) => ({ evidenceId: saved.evidence.evidenceId, evidenceDigest: saved.evidence.evidenceDigest });
+    const task = (todoId, status) => ({
+      todoId,
+      task: "Synthetic " + todoId,
+      status,
+      origin: "user-directed",
       ...(["pending", "partial", "waiting"].includes(status) ? { nextAction: "Inspect local evidence" } : {}),
-      ...(["waiting", "cancelled"].includes(status) ? { reason: "Synthetic recorded condition" } : {}) });
+      ...(["waiting", "cancelled"].includes(status) ? { reason: "Synthetic recorded condition" } : {}),
+    });
     const states = ["pending", "partial", "waiting", "completed", "cancelled"];
     const saved = save([...states.map((status, index) => task("todo-state-" + index, status)), task("todo-state-5", "pending")]);
     save([{ ...task("todo-state-5", "completed"), prior: exact(saved) }]);
     save([{ ...task("todo-state-5", "cancelled"), prior: exact(saved) }]);
-    const before = originals(root), state = fs.readFileSync(sessionStatePath(root, storage));
-    const read = options => readSessionWorkContext({ root, ...options }).todoContext;
+    const before = originals(root),
+      state = fs.readFileSync(sessionStatePath(root, storage));
+    const read = (options) => readSessionWorkContext({ root, ...options }).todoContext;
     const all = read();
-    assert.equal(all.knownOpenCount, 4); assert.equal(all.knownItemCount, 6);
-    assert.deepEqual(all.items.map(item => item.status), ["pending", "partial", "waiting", "conflict"]);
+    assert.equal(all.knownOpenCount, 4);
+    assert.equal(all.knownItemCount, 6);
+    assert.deepEqual(
+      all.items.map((item) => item.status),
+      ["pending", "partial", "waiting", "conflict"],
+    );
     for (const [index, status] of [...states, "conflict"].entries()) {
       const detail = read({ todoId: "todo-state-" + index });
-      assert.equal(detail.items.length, 1); assert.equal(detail.items[0].status, status);
+      assert.equal(detail.items.length, 1);
+      assert.equal(detail.items[0].status, status);
       assert.equal(detail.knownItemCount, 1);
-      assert.equal(detail.knownOpenCount, ["completed", "cancelled"].includes(status) ? 0 : 1, status + " detail must not count as open merely because it is displayed");
+      assert.equal(
+        detail.knownOpenCount,
+        ["completed", "cancelled"].includes(status) ? 0 : 1,
+        status + " detail must not count as open merely because it is displayed",
+      );
       assert.equal(detail.currentness, "within-inspected-originals-only");
       const scanned = read({ todoId: "todo-state-" + index, scanTodos: true });
-      assert.equal(scanned.items[0].status, status); assert.equal(scanned.knownOpenCount, detail.knownOpenCount);
+      assert.equal(scanned.items[0].status, status);
+      assert.equal(scanned.knownOpenCount, detail.knownOpenCount);
     }
     const branch = read({ todoId: "todo-state-5" }).items[0];
-    assert.deepEqual(branch.revisions.map(revision => revision.status).sort(), ["cancelled", "completed"]);
+    assert.deepEqual(branch.revisions.map((revision) => revision.status).sort(), ["cancelled", "completed"]);
     assert.equal(branch.authorityChanged, false);
     const page = read({ maxRecords: 1 });
-    assert.equal(page.items.length, 1); assert.equal(page.knownOpenCount, 4); assert.equal(page.knownItemCount, 6);
-    assert.equal(page.coverage.omittedItems, 3); assert.equal(page.nextAfterTodoId, page.items[0].todoId);
+    assert.equal(page.items.length, 1);
+    assert.equal(page.knownOpenCount, 4);
+    assert.equal(page.knownItemCount, 6);
+    assert.equal(page.coverage.omittedItems, 3);
+    assert.equal(page.nextAfterTodoId, page.items[0].todoId);
     const next = read({ maxRecords: 1, afterTodoId: page.nextAfterTodoId });
-    assert.equal(next.knownOpenCount, 4); assert.equal(next.knownItemCount, 6);
-    assert(next.items.every(item => item.todoId > page.nextAfterTodoId));
+    assert.equal(next.knownOpenCount, 4);
+    assert.equal(next.knownItemCount, 6);
+    assert(next.items.every((item) => item.todoId > page.nextAfterTodoId));
     const tiny = read({ maxCharacters: 2 });
-    assert.equal(tiny.items.length, 0); assert.equal(tiny.knownOpenCount, 4); assert.equal(tiny.coverage.omittedItems, 4);
+    assert.equal(tiny.items.length, 0);
+    assert.equal(tiny.knownOpenCount, 4);
+    assert.equal(tiny.coverage.omittedItems, 4);
     const pastDetail = read({ todoId: "todo-state-3", afterTodoId: "todo-zzzz" });
-    assert.equal(pastDetail.items.length, 0); assert.equal(pastDetail.knownOpenCount, 0); assert.equal(pastDetail.knownItemCount, 1);
+    assert.equal(pastDetail.items.length, 0);
+    assert.equal(pastDetail.knownOpenCount, 0);
+    assert.equal(pastDetail.knownItemCount, 1);
     assert.deepEqual(fs.readFileSync(sessionStatePath(root, storage)), state);
-    assert.deepEqual(originals(root), before); assert.equal(readProjectDirection({ root }), null);
+    assert.deepEqual(originals(root), before);
+    assert.equal(readProjectDirection({ root }), null);
   });
 });
 
-test("Todo zero remains scoped knowledge while unavailable or undiscovered originals stay unknown", async t => {
-  const { root, storage } = project(t), session = createHeadSession({ root, purpose: "Synthetic partial Todo coverage" });
+test("Todo zero remains scoped knowledge while unavailable or undiscovered originals stay unknown", async (t) => {
+  const { root, storage } = project(t),
+    session = createHeadSession({ root, purpose: "Synthetic partial Todo coverage" });
   await withSessionRoute(root, session.sessionId, async () => {
-    const read = options => readSessionWorkContext({ root, ...options }).todoContext;
-    const empty = read(); assert.equal(empty.knownOpenCount, 0); assert.equal(empty.knownItemCount, 0);
-    const saved = recordSessionWorkEvidence({ root, input: { todos: [{ todoId: "todo-terminal", task: "Synthetic completed inspection", status: "completed", origin: "lode-proposed" }] } });
+    const read = (options) => readSessionWorkContext({ root, ...options }).todoContext;
+    const empty = read();
+    assert.equal(empty.knownOpenCount, 0);
+    assert.equal(empty.knownItemCount, 0);
+    const saved = recordSessionWorkEvidence({
+      root,
+      input: { todos: [{ todoId: "todo-terminal", task: "Synthetic completed inspection", status: "completed", origin: "lode-proposed" }] },
+    });
     const intact = fs.readFileSync(saved.file);
     for (let index = 0; index < 10; index++) recordSessionWorkEvidence({ root, input: { summary: "Synthetic unrelated later note " + index } });
-    const indexFile = path.join(root, storage.directory, "graph-discovery/index.json"), healthyIndex = fs.readFileSync(indexFile);
+    const indexFile = path.join(root, storage.directory, "graph-discovery/index.json"),
+      healthyIndex = fs.readFileSync(indexFile);
     const partial = read({ todoId: "todo-terminal" });
-    assert.equal(partial.knownOpenCount, 0); assert.equal(partial.knownItemCount, 1);
+    assert.equal(partial.knownOpenCount, 0);
+    assert.equal(partial.knownItemCount, 1);
     assert.equal(partial.status, "partial-indexed-knowledge");
     assert.equal(partial.coverage.status, "unknown-outside-inspected-originals");
-    const forged = JSON.parse(healthyIndex), row = forged.sessionTodoNavigation.rows.find(value => value.todoRevisions.some(todo => todo.todoId === "todo-terminal"));
-    row.todoRevisions[0].status = "pending"; fs.writeFileSync(indexFile, JSON.stringify(forged));
+    const forged = JSON.parse(healthyIndex),
+      row = forged.sessionTodoNavigation.rows.find((value) => value.todoRevisions.some((todo) => todo.todoId === "todo-terminal"));
+    row.todoRevisions[0].status = "pending";
+    fs.writeFileSync(indexFile, JSON.stringify(forged));
     const drift = read({ todoId: "todo-terminal" });
     assert.equal(drift.knownOpenCount, null, "An unverified indexed declaration cannot supply a known zero");
     assert.equal(drift.coverage.status, "unknown-outside-inspected-originals");
     const driftScan = read({ todoId: "todo-terminal", scanTodos: true });
-    assert.equal(driftScan.knownOpenCount, 0); assert.equal(driftScan.items[0].status, "completed");
-    fs.writeFileSync(indexFile, healthyIndex); fs.unlinkSync(indexFile);
+    assert.equal(driftScan.knownOpenCount, 0);
+    assert.equal(driftScan.items[0].status, "completed");
+    fs.writeFileSync(indexFile, healthyIndex);
+    fs.unlinkSync(indexFile);
     const unknown = read({ todoId: "todo-terminal" });
-    assert.equal(unknown.knownOpenCount, 0); assert.equal(unknown.knownItemCount, 1);
+    assert.equal(unknown.knownOpenCount, 0);
+    assert.equal(unknown.knownItemCount, 1);
     assert.equal(unknown.items[0].status, "completed", "Canonical observations may recover the item when the optional index is absent");
-    assert.equal(unknown.coverage.indexCoverage, "unknown"); assert.equal(unknown.ordinaryWorkBlocked, false);
+    assert.equal(unknown.coverage.indexCoverage, "unknown");
+    assert.equal(unknown.ordinaryWorkBlocked, false);
     assert.equal(unknown.coverage.status, "unknown-outside-inspected-originals");
     const scanned = read({ todoId: "todo-terminal", scanTodos: true });
-    assert.equal(scanned.knownOpenCount, 0); assert.equal(scanned.items[0].status, "completed");
+    assert.equal(scanned.knownOpenCount, 0);
+    assert.equal(scanned.items[0].status, "completed");
     assert.equal(scanned.coverage.status, "all-current-originals-inspected");
-    fs.writeFileSync(indexFile, healthyIndex); fs.writeFileSync(saved.file, "{broken synthetic original");
+    fs.writeFileSync(indexFile, healthyIndex);
+    fs.writeFileSync(saved.file, "{broken synthetic original");
     const broken = read({ todoId: "todo-terminal" });
-    assert.equal(broken.knownOpenCount, null); assert.equal(broken.knownItemCount, null);
-    assert.equal(broken.status, "partial-unavailable"); assert(broken.coverage.unavailable.length);
-    fs.writeFileSync(saved.file, intact); fs.unlinkSync(saved.file);
+    assert.equal(broken.knownOpenCount, null);
+    assert.equal(broken.knownItemCount, null);
+    assert.equal(broken.status, "partial-unavailable");
+    assert(broken.coverage.unavailable.length);
+    fs.writeFileSync(saved.file, intact);
+    fs.unlinkSync(saved.file);
     const missing = read({ todoId: "todo-terminal" });
-    assert.equal(missing.knownOpenCount, null); assert.equal(missing.knownItemCount, null);
+    assert.equal(missing.knownOpenCount, null);
+    assert.equal(missing.knownItemCount, null);
     assert.equal(missing.currentness, "within-inspected-originals-only");
   });
 });
 
-
-test("Todo scan counts belong to the inspected original page before display limits", async t => {
-  const { root, storage } = project(t), session = createHeadSession({ root, purpose: "Synthetic bounded Todo pages" });
+test("Todo scan counts belong to the inspected original page before display limits", async (t) => {
+  const { root, storage } = project(t),
+    session = createHeadSession({ root, purpose: "Synthetic bounded Todo pages" });
   await withSessionRoute(root, session.sessionId, async () => {
-    const { normalizeSessionWorkEvidence, inputIdentity, encoded, verifySessionWorkEvidenceOriginal } = await import("../scripts/lib/session/session-work-evidence-original.mjs");
-    const seed = recordSessionWorkEvidence({ root, input: { todos: [{ todoId: "todo-scan-seed", task: "Synthetic terminal seed", status: "completed", origin: "lode-proposed" }] } });
+    const { normalizeSessionWorkEvidence, inputIdentity, encoded, verifySessionWorkEvidenceOriginal } =
+      await import("../scripts/lib/session/session-work-evidence-original.mjs");
+    const seed = recordSessionWorkEvidence({
+      root,
+      input: { todos: [{ todoId: "todo-scan-seed", task: "Synthetic terminal seed", status: "completed", origin: "lode-proposed" }] },
+    });
     const { evidenceDigest: unusedDigest, ...template } = seed.evidence;
     const owner = { root, storage, projectId: seed.evidence.projectId, sessionId: session.sessionId };
     const states = new Map([[seed.evidence.evidenceId, "completed"]]);
@@ -519,24 +656,43 @@ test("Todo scan counts belong to the inspected original page before display limi
     // independently accepted by the existing typed original verifier before use.
     for (let index = 0; index < 512; index++) {
       const status = index % 2 ? "completed" : "pending";
-      const content = normalizeSessionWorkEvidence({ todos: [{ todoId: "todo-scan-" + String(index).padStart(3, "0"), task: "Synthetic page item " + index,
-        status, origin: "lode-proposed", ...(status === "pending" ? { nextAction: "Inspect synthetic page" } : {}) }] });
-      const evidenceId = "work-evidence-" + inputIdentity(owner, content).slice(0, 24), payload = { ...template, content, evidenceId };
-      const record = { ...payload, evidenceDigest: sha(encoded(payload)) }, bytes = Buffer.from(JSON.stringify(record));
+      const content = normalizeSessionWorkEvidence({
+        todos: [
+          {
+            todoId: "todo-scan-" + String(index).padStart(3, "0"),
+            task: "Synthetic page item " + index,
+            status,
+            origin: "lode-proposed",
+            ...(status === "pending" ? { nextAction: "Inspect synthetic page" } : {}),
+          },
+        ],
+      });
+      const evidenceId = "work-evidence-" + inputIdentity(owner, content).slice(0, 24),
+        payload = { ...template, content, evidenceId };
+      const record = { ...payload, evidenceDigest: sha(encoded(payload)) },
+        bytes = Buffer.from(JSON.stringify(record));
       verifySessionWorkEvidenceOriginal({ owner, evidenceId, bytes });
-      fs.writeFileSync(path.join(path.dirname(seed.file), evidenceId + ".json"), bytes, { flag: "wx" }); states.set(evidenceId, status);
+      fs.writeFileSync(path.join(path.dirname(seed.file), evidenceId + ".json"), bytes, { flag: "wx" });
+      states.set(evidenceId, status);
     }
-    const before = originals(root), ids = [...states.keys()].sort();
+    const before = originals(root),
+      ids = [...states.keys()].sort();
     const first = readSessionWorkContext({ root, scanTodos: true, maxRecords: 1 }).todoContext;
-    const expectedOpen = ids.slice(0, 512).filter(id => states.get(id) === "pending").length;
-    assert.equal(first.knownItemCount, 512); assert.equal(first.knownOpenCount, expectedOpen);
-    assert.equal(first.items.length, 1); assert.equal(first.coverage.omittedItems, expectedOpen - 1);
-    assert.equal(first.coverage.uninspectedCandidateRevisions, 1); assert.equal(first.coverage.uninspectedOriginals, 1);
-    assert.equal(first.nextScanAfterEvidenceId, ids[511]); assert.equal(first.nextAfterTodoId, first.items[0].todoId);
+    const expectedOpen = ids.slice(0, 512).filter((id) => states.get(id) === "pending").length;
+    assert.equal(first.knownItemCount, 512);
+    assert.equal(first.knownOpenCount, expectedOpen);
+    assert.equal(first.items.length, 1);
+    assert.equal(first.coverage.omittedItems, expectedOpen - 1);
+    assert.equal(first.coverage.uninspectedCandidateRevisions, 1);
+    assert.equal(first.coverage.uninspectedOriginals, 1);
+    assert.equal(first.nextScanAfterEvidenceId, ids[511]);
+    assert.equal(first.nextAfterTodoId, first.items[0].todoId);
     assert.equal(first.coverage.status, "unknown-outside-inspected-originals");
     const last = readSessionWorkContext({ root, scanTodos: true, afterEvidenceId: first.nextScanAfterEvidenceId }).todoContext;
-    assert.equal(last.knownItemCount, 1); assert.equal(last.knownOpenCount, states.get(ids[512]) === "pending" ? 1 : 0);
-    assert.equal(last.nextScanAfterEvidenceId, null); assert.equal(last.coverage.verifiedOriginals, 1);
+    assert.equal(last.knownItemCount, 1);
+    assert.equal(last.knownOpenCount, states.get(ids[512]) === "pending" ? 1 : 0);
+    assert.equal(last.nextScanAfterEvidenceId, null);
+    assert.equal(last.coverage.verifiedOriginals, 1);
     assert.equal(last.coverage.status, "unknown-outside-inspected-originals", "End of one scan page does not make it a complete-history count");
     assert.equal(last.currentness, "within-inspected-originals-only");
     assert.deepEqual(originals(root), before);

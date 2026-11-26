@@ -3,11 +3,7 @@ import path from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fixture } from "./helpers/session-work-linkage-fixture.mjs";
-import {
-  syntheticNativeCapture,
-  syntheticNativeDatabase,
-  nativeProfile,
-} from "./helpers/native-portability-fixture.mjs";
+import { syntheticNativeCapture, syntheticNativeDatabase, nativeProfile } from "./helpers/native-portability-fixture.mjs";
 import { requestNativeRegistration } from "../scripts/lib/distribution/native-registration-journal.mjs";
 import { prepareCodexNativeOffline } from "../scripts/lib/distribution/codex-native-offline.mjs";
 import { publishCodexNativeHistory } from "../scripts/lib/distribution/codex-native-publication.mjs";
@@ -50,27 +46,20 @@ test("journal rejects asynchronous authority without delivery, artifacts or an u
   assert.deepEqual(fs.readdirSync(operationRoot), []);
 });
 test("native publication and metadata registration drain rejected authority promises before effects", async (t) => {
-  if (process.platform !== "win32" || process.arch !== "x64")
-    return t.skip("other-os: Measured native filesystem profile is Windows x64.");
+  if (process.platform !== "win32" || process.arch !== "x64") return t.skip("other-os: Measured native filesystem profile is Windows x64.");
   const { f, executable, destination } = await syntheticNativeCapture(t),
     home = path.join(f.base, "async-target"),
     cwd = path.join(f.base, "async-current-workspace");
   fs.mkdirSync(home);
   fs.mkdirSync(cwd);
-  for (const file of ["state_5.sqlite", "thread_history_1.sqlite"])
-    syntheticNativeDatabase(t, file, path.join(home, file)).close();
+  for (const file of ["state_5.sqlite", "thread_history_1.sqlite"]) syntheticNativeDatabase(t, file, path.join(home, file)).close();
   const offline = await prepareCodexNativeOffline({
     home,
     executable,
     probe: async () => ({ status: "observed", rows: [] }),
     versionProbe: async () => ({ status: "verified", version: nativeProfile.engineVersion }),
   });
-  const before = new Map(
-    ["state_5.sqlite", "thread_history_1.sqlite"].map((name) => [
-      name,
-      fs.readFileSync(path.join(home, name)),
-    ]),
-  );
+  const before = new Map(["state_5.sqlite", "thread_history_1.sqlite"].map((name) => [name, fs.readFileSync(path.join(home, name))]));
   await assert.rejects(
     publishCodexNativeHistory({
       witness: offline.witness,
@@ -131,17 +120,11 @@ test("journal preparation digest binds exact evidence without changing its stabl
     },
   };
   for (const preparationDigest of [null, "", "x".repeat(64), "a", {}, undefined])
-    await assert.rejects(
-      requestNativeRegistration({ ...callbacks, input: { ...base, preparationDigest } }),
-      { code: "NATIVE_REGISTRATION_INPUT_INVALID" },
-    );
+    await assert.rejects(requestNativeRegistration({ ...callbacks, input: { ...base, preparationDigest } }), { code: "NATIVE_REGISTRATION_INPUT_INVALID" });
   assert.equal(deliveries, 0);
   assert.deepEqual(fs.readdirSync(operationRoot), []);
   const input = { ...base, preparationDigest: "f".repeat(64) };
-  assert.equal(
-    (await requestNativeRegistration({ ...callbacks, input })).status,
-    "native-registration-uncertain",
-  );
+  assert.equal((await requestNativeRegistration({ ...callbacks, input })).status, "native-registration-uncertain");
   for (const altered of [
     { ...input, preparationDigest: "0".repeat(64) },
     base,
@@ -151,10 +134,7 @@ test("journal preparation digest binds exact evidence without changing its stabl
     await assert.rejects(requestNativeRegistration({ ...callbacks, input: altered }), {
       code: "NATIVE_REGISTRATION_JOURNAL_INVALID",
     });
-  assert.equal(
-    (await requestNativeRegistration({ ...callbacks, input })).status,
-    "native-registration-uncertain",
-  );
+  assert.equal((await requestNativeRegistration({ ...callbacks, input })).status, "native-registration-uncertain");
   assert.equal(deliveries, 1);
 });
 

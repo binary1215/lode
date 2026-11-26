@@ -62,7 +62,11 @@ test("TypeScript type parameters, return types and declarations without a body",
     [["function f(x: unknown): x is Foo {", "  return g();", "}"], ["function f 1-3 scope= [function f(x: unknown): x is Foo]"], ["g@2<-f"]],
     [
       ["function f(a: string): { a: string };", "function f(a: number): void;", "function f(a: any) {", "  g();", "}"],
-      ["function f 1-1 scope= [function f(a: string): { a: string };]", "function f 2-2 scope= [function f(a: number): void;]", "function f 3-5 scope= [function f(a: any)]"],
+      [
+        "function f 1-1 scope= [function f(a: string): { a: string };]",
+        "function f 2-2 scope= [function f(a: number): void;]",
+        "function f 3-5 scope= [function f(a: any)]",
+      ],
       ["g@4<-f"],
     ],
     [
@@ -72,7 +76,11 @@ test("TypeScript type parameters, return types and declarations without a body",
     ],
     [
       ["class C {", "  load(): Promise<{ a: string }> {", "    return g();", "  }", "  get value(): { a: string } {", "    return h();", "  }", "}"],
-      ["class C 1-8 scope= [class C]", "function C.load 2-4 scope=C [load(): Promise<{ a: string }>]", "function C.value 5-7 scope=C [get value(): { a: string }]"],
+      [
+        "class C 1-8 scope= [class C]",
+        "function C.load 2-4 scope=C [load(): Promise<{ a: string }>]",
+        "function C.value 5-7 scope=C [get value(): { a: string }]",
+      ],
       ["g@3<-C.load", "h@6<-C.value"],
     ],
   ];
@@ -84,18 +92,33 @@ test("arrow bindings with defaults, callback types, return types and annotations
     ["javascript", ["const f = (a = g()) => {", "  h();", "};"], ["binding f 1-3 scope= [const f = (a = g()) =>]"], ["g@1<-f", "h@2<-f"]],
     ["typescript", ["const f = (cb: () => void) => {", "  g();", "};"], ["binding f 1-3 scope= [const f = (cb: () => void) =>]"], ["g@2<-f"]],
     // "async (" is read as a call of async, as before 0.3.4.
-    ["typescript", ["const f = async (a): Promise<void> => {", "  g();", "};"], ["binding f 1-3 scope= [const f = async (a): Promise<void> =>]"], ["async@1<-f", "g@2<-f"]],
+    [
+      "typescript",
+      ["const f = async (a): Promise<void> => {", "  g();", "};"],
+      ["binding f 1-3 scope= [const f = async (a): Promise<void> =>]"],
+      ["async@1<-f", "g@2<-f"],
+    ],
     ["typescript", ["const f: Handler = (a) => {", "  g();", "};"], ["binding f 1-3 scope= [const f: Handler = (a) =>]"], ["g@2<-f"]],
     ["typescript", ["const f = <T,>(a: T) => a", "g();"], ["binding f 1-1 scope= [const f = <T,>(a: T) => a]"], ["g@2<-"]],
     // An immediately invoked function keeps today's reading.
-    ["javascript", ["const m = (() => { function inner() {} })()"], ["function m.inner 1-1 scope=m [function inner()]", "binding m 1-1 scope= [const m = (() =>]"], []],
+    [
+      "javascript",
+      ["const m = (() => { function inner() {} })()"],
+      ["function m.inner 1-1 scope=m [function inner()]", "binding m 1-1 scope= [const m = (() =>]"],
+      [],
+    ],
   ];
   for (const [language, lines, symbols, calls] of cases) assert.deepEqual(read(lines, language), { symbols, calls }, lines[0]);
 });
 
 test("a ternary whose first branch is a call is neither a method nor a lost call (review F1)", () => {
   const cases = [
-    ["javascript", ["const api = {", "  mode: flag ? pick(a) : fallback,", "  run() { work(); },", "};"], ["function api.run 3-3 scope=api [run()]"], ["pick@2<-", "work@3<-api.run"]],
+    [
+      "javascript",
+      ["const api = {", "  mode: flag ? pick(a) : fallback,", "  run() { work(); },", "};"],
+      ["function api.run 3-3 scope=api [run()]"],
+      ["pick@2<-", "work@3<-api.run"],
+    ],
     [
       "javascript",
       ["class A {", "  value = flag ? pick(a) : other", "  run() {", "    work();", "  }", "}"],
@@ -133,7 +156,12 @@ test("a ternary whose first branch is a call is neither a method nor a lost call
       ["function named 2-2 scope= [function named()]"],
       ["pick@2<-", "work@2<-named", "pick@3<-", "work@3<-"],
     ],
-    ["javascript", ["function outer(c) {", "  const K = c ? pick(a) : class { m() {} };", "}"], ["function outer 1-3 scope= [function outer(c)]"], ["pick@2<-outer"]],
+    [
+      "javascript",
+      ["function outer(c) {", "  const K = c ? pick(a) : class { m() {} };", "}"],
+      ["function outer 1-3 scope= [function outer(c)]"],
+      ["pick@2<-outer"],
+    ],
   ];
   for (const [language, lines, symbols, calls] of cases) assert.deepEqual(read(lines, language), { symbols, calls }, lines[1]);
 });
@@ -160,8 +188,16 @@ test("return types: conditional types, unions and predicates over several lines 
       ["work@2<-pick"],
     ],
     [["function f(): A |", "  B {", "  return work();", "}"], ["function f 1-4 scope= [function f(): A | B]"], ["work@3<-f"]],
-    [["function f():", "  | { a: string }", "  | null {", "  return work();", "}"], ["function f 1-5 scope= [function f(): | { a: string } | null]"], ["work@4<-f"]],
-    [["function f(x: unknown): asserts x is", "  Foo {", "  work();", "}"], ["function f 1-4 scope= [function f(x: unknown): asserts x is Foo]"], ["work@3<-f"]],
+    [
+      ["function f():", "  | { a: string }", "  | null {", "  return work();", "}"],
+      ["function f 1-5 scope= [function f(): | { a: string } | null]"],
+      ["work@4<-f"],
+    ],
+    [
+      ["function f(x: unknown): asserts x is", "  Foo {", "  work();", "}"],
+      ["function f 1-4 scope= [function f(x: unknown): asserts x is Foo]"],
+      ["work@3<-f"],
+    ],
   ];
   for (const [lines, symbols, calls] of cases) assert.deepEqual(read(lines, "typescript"), { symbols, calls }, lines[0]);
 });
@@ -192,7 +228,16 @@ test("an import type is a type in function, method and arrow return types (revie
       'binding arrow 12-14 scope= [const arrow = (a): import("./types").Loaded =>]',
     ],
     // "import(" is read as a call, as before 0.3.4.
-    calls: ["import@1<-load", "read@2<-load", "import@4<-direct", "load@5<-direct", "import@8<-Store.get", "fetchIt@9<-Store.get", "import@12<-arrow", "pull@13<-arrow"],
+    calls: [
+      "import@1<-load",
+      "read@2<-load",
+      "import@4<-direct",
+      "load@5<-direct",
+      "import@8<-Store.get",
+      "fetchIt@9<-Store.get",
+      "import@12<-arrow",
+      "pull@13<-arrow",
+    ],
   });
   // A template's blanked text between ")" and "{" is still no method definition.
   assert.deepEqual(read(["const s = `${f()} ${ {a} }`;"]), { symbols: [], calls: ["f@1<-"] });
@@ -224,7 +269,18 @@ test("declarations starting on one line nest by offsets, not by lines (Go parity
         "binding both 7-7 scope= [const both = function left()]",
         "function both.left 7-7 scope=both [function left()]",
       ],
-      calls: ["first@1<-oneLine.innerOne", "innerOne@1<-oneLine", "first@2<-wrapped", "first@3<-twoA", "first@3<-twoB", "first@4<-holder.run", "first@5<-OneLine.go", "first@6<-arrowInArrow", "first@7<-both.left", "first@7<-"],
+      calls: [
+        "first@1<-oneLine.innerOne",
+        "innerOne@1<-oneLine",
+        "first@2<-wrapped",
+        "first@3<-twoA",
+        "first@3<-twoB",
+        "first@4<-holder.run",
+        "first@5<-OneLine.go",
+        "first@6<-arrowInArrow",
+        "first@7<-both.left",
+        "first@7<-",
+      ],
     },
   );
   assert.deepEqual(
@@ -282,7 +338,10 @@ function canonical(value) {
 }
 
 function reidentifyScan(payload) {
-  const scanHash = crypto.createHash("sha256").update(JSON.stringify(canonical(payload))).digest("hex");
+  const scanHash = crypto
+    .createHash("sha256")
+    .update(JSON.stringify(canonical(payload)))
+    .digest("hex");
   return { ...payload, scanId: `repository-scan-${scanHash.slice(0, 24)}`, scanHash };
 }
 

@@ -9,8 +9,7 @@ import { exportProjectBundle, inspectProjectBundle } from "../scripts/lib/storag
 import { attachProjectNativeTransfer } from "../scripts/lib/session/project-native-transfer.mjs";
 
 test("request revocation after observation or partial copy stops dependent capture/attachment without hiding its primary cause", async (t) => {
-  if (process.platform !== "win32" || process.arch !== "x64")
-    return t.skip("other-os: Measured native filesystem profile is Windows x64.");
+  if (process.platform !== "win32" || process.arch !== "x64") return t.skip("other-os: Measured native filesystem profile is Windows x64.");
   const { f, home, executable, destination } = await syntheticNativeCapture(t);
   for (const mode of ["after-observation", "before-publication", "after-raw", "signal"]) {
     let denied = false,
@@ -43,27 +42,16 @@ test("request revocation after observation or partial copy stops dependent captu
             });
         },
         onBoundary(boundary) {
-          if (
-            (mode === "before-publication" && boundary === "captured") ||
-            (mode === "after-raw" && boundary === "raw-copied")
-          )
-            denied = true;
+          if ((mode === "before-publication" && boundary === "captured") || (mode === "after-raw" && boundary === "raw-copied")) denied = true;
         },
       }),
       {
-        code:
-          mode === "signal"
-            ? "NATIVE_CODEX_CAPTURE_CANCELLED"
-            : "SYNTHETIC_CURRENT_REQUEST_REVOKED",
+        code: mode === "signal" ? "NATIVE_CODEX_CAPTURE_CANCELLED" : "SYNTHETIC_CURRENT_REQUEST_REVOKED",
       },
     );
     assert(!fs.existsSync(path.join(target, "manifest.json")));
     if (mode !== "after-raw") assert(!fs.existsSync(target));
-    else
-      assert(
-        fs.existsSync(path.join(target, "capture-intent.json")),
-        "completed partial raw work remains identifiable, not replayed or erased",
-      );
+    else assert(fs.existsSync(path.join(target, "capture-intent.json")), "completed partial raw work remains identifiable, not replayed or erased");
   }
   f.save({ summary: "Preserve the selected synthetic context" });
   const bundleRoot = path.join(f.base, "attachment-authority");

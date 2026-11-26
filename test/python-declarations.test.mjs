@@ -26,7 +26,7 @@ function project(t, source) {
   return { root, storage };
 }
 const need = (kind, symbol = "", selection) => ({ kind, path: "module.py", symbol, ...(selection ? { selection } : {}) });
-const query = async (root, needs, options = {}) => (await prepareSourceContext({ root, task: "Inspect exact source", needs, onProcess, ...options }));
+const query = async (root, needs, options = {}) => await prepareSourceContext({ root, task: "Inspect exact source", needs, onProcess, ...options });
 const details = (result) => JSON.parse(result.context.capsule.observationEvidence[0].payload.details);
 
 test("known decorated async method preserves literal spaces, CRLF, tabs, Unicode and long header exactly", async (t) => {
@@ -52,12 +52,16 @@ test("known decorated async method preserves literal spaces, CRLF, tabs, Unicode
 });
 
 test("optional outline exposes static occurrences; ambiguous names require exact current selection", async (t) => {
-  const source = 'if enabled:\n    def f(): return "first"\nelse:\n    def f(): return "second"\nclass C:\n    def method(self):\n        def nested(): pass\n        return nested\n';
+  const source =
+    'if enabled:\n    def f(): return "first"\nelse:\n    def f(): return "second"\nclass C:\n    def method(self):\n        def nested(): pass\n        return nested\n';
   const { root, storage } = project(t, source);
   const outline = await query(root, [need("declarations")]);
   assert.equal(outline.status, "observed", JSON.stringify(outline.results));
   const list = details(outline).declarations;
-  assert.deepEqual(list.map((d) => d.qualifiedName), ["f", "f", "C", "C.method", "C.method.nested"]);
+  assert.deepEqual(
+    list.map((d) => d.qualifiedName),
+    ["f", "f", "C", "C.method", "C.method.nested"],
+  );
   assert.equal(list[0].conditional, true);
   const ambiguous = await query(root, [need("selected-source", "f")]);
   assert.equal(ambiguous.results[0].status, "ambiguous");
@@ -91,13 +95,19 @@ test("retained declaration evidence revalidates at Context consumption and detec
   const { root, storage } = project(t, "def f(): return 1\n");
   const result = await query(root, [need("selected-source", "f")], { retain: true });
   const record = result.results[0];
-  const args = { root, task: "Inspect", includeRepositoryWorld: false, evidenceNeeds: [{ id: "body", kind: "observation", observationIds: [record.observationId] }] };
-  (await compileContext(args));
+  const args = {
+    root,
+    task: "Inspect",
+    includeRepositoryWorld: false,
+    evidenceNeeds: [{ id: "body", kind: "observation", observationIds: [record.observationId] }],
+  };
+  await compileContext(args);
   fs.appendFileSync(path.join(root, "module.py"), "# changed\n");
-  (await assert.rejects(async () => (await compileContext(args)), { code: "SOURCE_DRIFT" }));
+  await assert.rejects(async () => await compileContext(args), { code: "SOURCE_DRIFT" });
   assert.equal(inspectSourceObservation({ root, bundleKey: record.bundleKey }).sourceState, "stale");
   const file = path.join(root, storage.directory, "observations/source-bundles", `${record.bundleKey}.json`);
-  const bundle = JSON.parse(fs.readFileSync(file)); bundle.evidence.query[0].symbol = "other";
+  const bundle = JSON.parse(fs.readFileSync(file));
+  bundle.evidence.query[0].symbol = "other";
   fs.writeFileSync(file, JSON.stringify(bundle));
   assert.throws(() => inspectSourceObservation({ root, bundleKey: record.bundleKey }), { code: "SOURCE_OBSERVATION_INVALID" });
 });
@@ -105,10 +115,12 @@ test("retained declaration evidence revalidates at Context consumption and detec
 test("collection drift fails only affected need; parser unavailable leaves source usable", async (t) => {
   const { root, storage } = project(t, "def f(): pass\n");
   let count = 0;
-  const result = await query(root, [need("selected-source", "f")], { onProcess(event) {
-    onProcess(event);
-    if (event.event === "closed" && ++count === 2) fs.appendFileSync(path.join(root, "module.py"), "# drift\n");
-  } });
+  const result = await query(root, [need("selected-source", "f")], {
+    onProcess(event) {
+      onProcess(event);
+      if (event.event === "closed" && ++count === 2) fs.appendFileSync(path.join(root, "module.py"), "# drift\n");
+    },
+  });
   assert.equal(result.results[0].code, "SOURCE_DRIFT");
   const previous = process.env.HEAD_PYTHON;
   process.env.HEAD_PYTHON = path.join(root, "missing-python");
@@ -116,21 +128,35 @@ test("collection drift fails only affected need; parser unavailable leaves sourc
     const absent = await query(root, [need("declarations"), need("source")]);
     assert.equal(absent.results[0].code, "PYTHON_NOT_CONFIGURED");
     assert.equal(absent.results[1].includedInContext, true);
-  } finally { if (previous === undefined) delete process.env.HEAD_PYTHON; else process.env.HEAD_PYTHON = previous; }
+  } finally {
+    if (previous === undefined) delete process.env.HEAD_PYTHON;
+    else process.env.HEAD_PYTHON = previous;
+  }
 });
 
 test("CLI explicit kind and typed MCP match without changing legacy --symbol", async (t) => {
   const { root, storage } = project(t, "def f(): pass\ndef g(): f()\n");
-  const result = await runCommand(["source-context", root, "--task", "Inspect", "--source", "module.py", "--kind", "selected-source", "--symbol", "f"], { onProcess });
+  const result = await runCommand(["source-context", root, "--task", "Inspect", "--source", "module.py", "--kind", "selected-source", "--symbol", "f"], {
+    onProcess,
+  });
   assert.equal(details(result).source, "def f(): pass");
-  const mcp = await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "head_source_context", arguments: { project_root: root, task: "Inspect", needs: [need("selected-source", "f")] } } }, { onProcess });
+  const mcp = await dispatch(
+    {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name: "head_source_context", arguments: { project_root: root, task: "Inspect", needs: [need("selected-source", "f")] } },
+    },
+    { onProcess },
+  );
   assert.equal(details(mcp.result.structuredContent).source, "def f(): pass");
   const legacy = await runCommand(["source-context", root, "--task", "Inspect", "--source", "module.py", "--symbol", "g"], { onProcess });
   assert.equal(legacy.results[0].need.kind, "outgoing-calls");
 });
 
 test("parenthesized decorators, overloads, tab header and reordered selection keys remain usable", async (t) => {
-  const source = '@(\n    decorate\n)\n@other("a  b")\ndef\tf(value: str = "😀", /, *, flag=True): return value\n@overload\ndef dup(x: str): ...\n@overload\ndef dup(x: int): ...\n';
+  const source =
+    '@(\n    decorate\n)\n@other("a  b")\ndef\tf(value: str = "😀", /, *, flag=True): return value\n@overload\ndef dup(x: str): ...\n@overload\ndef dup(x: int): ...\n';
   const { root, storage } = project(t, source);
   const outlineResult = await query(root, [need("declarations")]);
   assert.equal(outlineResult.status, "observed", JSON.stringify(outlineResult.results));
@@ -145,7 +171,7 @@ test("parenthesized decorators, overloads, tab header and reordered selection ke
 });
 
 test("ephemeral declaration success and failures expose compact parser provenance without raw evidence", async (t) => {
-  const { root, storage } = project(t, '# DO_NOT_PUBLISH_FULL_FILE\ndef f(): pass\n');
+  const { root, storage } = project(t, "# DO_NOT_PUBLISH_FULL_FILE\ndef f(): pass\n");
   const assertProfile = (profile) => {
     assert.equal(profile.producer, "python-stdlib-ast");
     assert.equal(profile.declarationProtocol, "python-static-declarations-1");
@@ -163,20 +189,38 @@ test("ephemeral declaration success and failures expose compact parser provenanc
     assert.equal(result.results[0].retained, false);
     assert.doesNotMatch(JSON.stringify(result), /DO_NOT_PUBLISH_FULL_FILE|"base64"|"response"|"executableDigest"/u);
   }
-  fs.writeFileSync(path.join(root, "module.py"), 'def broken(\n# PRIVATE_PARSE_INPUT\n');
-  const failed = await dispatch({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "head_source_context", arguments: {
-    project_root: root, task: "Inspect", needs: [need("declarations")],
-  } } }, { onProcess });
+  fs.writeFileSync(path.join(root, "module.py"), "def broken(\n# PRIVATE_PARSE_INPUT\n");
+  const failed = await dispatch(
+    {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "head_source_context",
+        arguments: {
+          project_root: root,
+          task: "Inspect",
+          needs: [need("declarations")],
+        },
+      },
+    },
+    { onProcess },
+  );
   const failure = failed.result.structuredContent;
   assert.equal(failure.results[0].status, "parse-unsupported");
   assertProfile(failure.results[0].collectionProfile);
   assert.equal(failure.results[0].retained, false);
   assert.doesNotMatch(JSON.stringify(failed), /PRIVATE_PARSE_INPUT|"base64"|"executableDigest"/u);
   fs.writeFileSync(path.join(root, "module.py"), "def f(): pass\n");
-  const controller = new AbortController(); let closes = 0;
-  const cancelled = await query(root, [need("declarations")], { signal: controller.signal, onProcess(event) {
-    onProcess(event); if (event.event === "closed" && ++closes === 1) controller.abort();
-  } });
+  const controller = new AbortController();
+  let closes = 0;
+  const cancelled = await query(root, [need("declarations")], {
+    signal: controller.signal,
+    onProcess(event) {
+      onProcess(event);
+      if (event.event === "closed" && ++closes === 1) controller.abort();
+    },
+  });
   assert.equal(cancelled.results[0].code, "SOURCE_CANCELLED");
   assertProfile(cancelled.results[0].collectionProfile);
   assert.equal(fs.existsSync(path.join(root, storage.directory, "observations/source-bundles")), false);
@@ -184,11 +228,11 @@ test("ephemeral declaration success and failures expose compact parser provenanc
 
 test("return lambdas and explicit async line joins preserve the complete exact header", async (t) => {
   for (const header of [
-    'def target() -> lambda x: x:',
-    'def target() -> lambda x: lambda y: (x, y):',
-    'def target(value=lambda x: x):',
-    'async \\\ndef target():',
-    'async \\\r\ndef target():',
+    "def target() -> lambda x: x:",
+    "def target() -> lambda x: lambda y: (x, y):",
+    "def target(value=lambda x: x):",
+    "async \\\ndef target():",
+    "async \\\r\ndef target():",
   ]) {
     const source = `${header}\n    return 1\n`;
     const { root, storage } = project(t, source);

@@ -60,7 +60,12 @@ function outside(root) {
 }
 
 const editSave = (f) =>
-  fs.writeFileSync(f.window, fs.readFileSync(f.window, "utf8").replace("    def _save(self):\n        self.model.refresh()", "    def _save(self):\n        self.model.refresh()\n        self.model.refresh()"));
+  fs.writeFileSync(
+    f.window,
+    fs
+      .readFileSync(f.window, "utf8")
+      .replace("    def _save(self):\n        self.model.refresh()", "    def _save(self):\n        self.model.refresh()\n        self.model.refresh()"),
+  );
 const ids = (list) => list.map((item) => item.id || `${item.document}|${item.type}|${item.from}|${item.to}`);
 
 test("acceptance 1, 2, 6: never checked survives a baseline move; a check holds until the code moves; only a new check clears it", (t) => {
@@ -133,7 +138,9 @@ test("acceptance 3: approval records the user's code basis for the document's ro
   assert.equal(built.confirmations.counts.current, 6);
   editSave(f);
   built = buildProductGraph({ root: f.root });
-  const byWho = Object.fromEntries(built.confirmations.changedSinceCheck.map((item) => [item.kind === "meaning" ? item.id : `${item.type}|${item.from}`, item.by]));
+  const byWho = Object.fromEntries(
+    built.confirmations.changedSinceCheck.map((item) => [item.kind === "meaning" ? item.id : `${item.type}|${item.from}`, item.by]),
+  );
   assert.equal(byWho[SAVE], "agent-checked");
   assert.equal(byWho[`화면요소→기능|MAIN-01#1`], "user-approved");
   assert.match(built.text, /에이전트 확인/);
@@ -158,7 +165,14 @@ test("acceptance 4, 5: a tampered or foreign record is an issue and excuses noth
   const record = JSON.parse(original);
   // Another reader: a valid record of this Project read another way.
   const reader = { ...record.reader, graphVersion: "older-reader" };
-  const other = productGraphCheckRecord({ projectId: record.projectId, by: "agent-checked", checkedAt: "2099-01-01T00:00:00.000Z", rationale: null, reader, items: record.items });
+  const other = productGraphCheckRecord({
+    projectId: record.projectId,
+    by: "agent-checked",
+    checkedAt: "2099-01-01T00:00:00.000Z",
+    rationale: null,
+    reader,
+    items: record.items,
+  });
   fs.writeFileSync(path.join(f.checks, `${other.checkId}.json`), JSON.stringify(other, null, 2) + "\n");
   built = buildProductGraph({ root: f.root });
   assert.deepEqual(ids(built.confirmations.otherReader), [SAVE]);
@@ -280,7 +294,9 @@ test("acceptance 7: export, import, folder-copy adoption and GC carry or keep th
 });
 
 test("B1: authored text becomes headings, lists, code and paragraphs; inline Markdown stays literal", () => {
-  const blocks = explorerReading.blocks("# Why\r\nWe kept **two** paths.\nStill one paragraph.\n\n- first\n  more of first\n- second\n1. one\n\n```\nconst a = `<b>`;\n```\n### Tail ###");
+  const blocks = explorerReading.blocks(
+    "# Why\r\nWe kept **two** paths.\nStill one paragraph.\n\n- first\n  more of first\n- second\n1. one\n\n```\nconst a = `<b>`;\n```\n### Tail ###",
+  );
   assert.deepEqual(blocks, [
     { kind: "heading", level: 1, text: "Why" },
     { kind: "paragraph", text: "We kept **two** paths.\nStill one paragraph." },
@@ -332,7 +348,12 @@ test("records never stop a build or fail an approval: count and size bounds, a f
   const digest = (relative) => built.documents.list.find((item) => item.path === relative).approvalDigest;
   // Two approvals in a row: the second still records its code basis.
   const first = approveProductGraphDocument({ root: f.root, document: MAIN, expectedSha256: digest(MAIN), rationale: "ok" });
-  const second = approveProductGraphDocument({ root: f.root, document: "화면설계서/DLG-01.md", expectedSha256: digest("화면설계서/DLG-01.md"), rationale: "ok" });
+  const second = approveProductGraphDocument({
+    root: f.root,
+    document: "화면설계서/DLG-01.md",
+    expectedSha256: digest("화면설계서/DLG-01.md"),
+    rationale: "ok",
+  });
   assert.equal(first.codeBasis.status, "recorded");
   assert.equal(second.codeBasis.status, "recorded");
   // A record write that fails after the approval is written leaves the approval standing.
@@ -412,7 +433,8 @@ test("C1: a source file stored with a decomposed name: confirm works and approve
   const ui = path.join(f.root, "station", "ui");
   fs.renameSync(path.join(ui, "main_window.py"), path.join(ui, `${decomposed}.py`));
   const rename = (file) => fs.writeFileSync(file, fs.readFileSync(file, "utf8").replaceAll("main_window", decomposed));
-  for (const name of ["화면설계서/MAIN-01.md", "화면설계서/DLG-01.md", "기능 뜻.md", "정책.md", "유저플로우 기획서/UA-MAIN-01.md"]) rename(path.join(f.family, name));
+  for (const name of ["화면설계서/MAIN-01.md", "화면설계서/DLG-01.md", "기능 뜻.md", "정책.md", "유저플로우 기획서/UA-MAIN-01.md"])
+    rename(path.join(f.family, name));
   for (const name of ["station/app.py", "station/ui/__init__.py", "station/tools/calibrate_tk.py"]) rename(path.join(f.root, name));
   const built = buildProductGraph({ root: f.root });
   const save = JSON.parse(fs.readFileSync(path.join(f.family, "build", "graph.json"), "utf8")).nodes.find(
@@ -425,7 +447,10 @@ test("C1: a source file stored with a decomposed name: confirm works and approve
   const confirmed = confirmProductGraph({ root: f.root, features: [save], documents: [MAIN] });
   assert.equal(confirmed.status, "recorded");
   const stored = JSON.parse(fs.readFileSync(path.join(f.checks, `${confirmed.records[0]}.json`), "utf8"));
-  assert(stored.items.some((item) => item.kind === "meaning" && item.id === save), "stored exactly as the graph has it");
+  assert(
+    stored.items.some((item) => item.kind === "meaning" && item.id === save),
+    "stored exactly as the graph has it",
+  );
   const digest = built.documents.list.find((item) => item.path === "화면설계서/DLG-01.md").approvalDigest;
   const approved = approveProductGraphDocument({ root: f.root, document: "화면설계서/DLG-01.md", expectedSha256: digest, rationale: "User read it." });
   assert.equal(approved.status, "recorded");
@@ -485,7 +510,9 @@ test("C2: an oversized, unreadable or surplus record never stops a build, a chec
 test("C3: a document of more than 500 rows is confirmed and approved with its code basis in several records", (t) => {
   const f = project(t);
   const main = path.join(f.family, MAIN);
-  const rows = Array.from({ length: 501 }, (_, index) => `| MAIN-01#${index + 10} | 버튼 ${index} | \`station/ui/main_window.py:18\` | \`${SAVE}\` | |`).join("\n");
+  const rows = Array.from({ length: 501 }, (_, index) => `| MAIN-01#${index + 10} | 버튼 ${index} | \`station/ui/main_window.py:18\` | \`${SAVE}\` | |`).join(
+    "\n",
+  );
   fs.writeFileSync(main, fs.readFileSync(main, "utf8").replace("| MAIN-01#5 |", `${rows}\n| MAIN-01#5 |`));
   const built = buildProductGraph({ root: f.root });
   const confirmed = confirmProductGraph({ root: f.root, documents: [MAIN] });
@@ -574,7 +601,11 @@ test("C6: authored text keeps a heading's own #, the numbers written, line break
   ]);
   assert.deepEqual(explorerReading.blocks("## Tail ##")[0].text, "Tail");
   assert.deepEqual(explorerReading.blocks("#hashtag")[0], { kind: "paragraph", text: "#hashtag" });
-  assert.deepEqual(explorerReading.blocks("결정 경위\n2026. 11. 17. 사용자가 정했다")[1], { kind: "list", ordered: true, items: ["2026. 11. 17. 사용자가 정했다"] });
+  assert.deepEqual(explorerReading.blocks("결정 경위\n2026. 11. 17. 사용자가 정했다")[1], {
+    kind: "list",
+    ordered: true,
+    items: ["2026. 11. 17. 사용자가 정했다"],
+  });
   assert.deepEqual(explorerReading.blocks("3. third\n4) fourth")[0].items, ["3. third", "4) fourth"]);
   assert.deepEqual(explorerReading.blocks("one\r\ntwo\n\n- a\r\n  b")[0], { kind: "paragraph", text: "one\ntwo" });
   assert.deepEqual(explorerReading.blocks("one\r\ntwo\n\n- a\r\n  b")[1].items, ["a\nb"]);
@@ -634,10 +665,15 @@ test("C9: the 뜻 mark appears only when a check no longer holds; with no record
   // confirmation lists they are in (R2); everything else is the same.
   const raw = () => questions.map((question) => queryProductGraph({ root: f.root, ...question }));
   const answers = () =>
-    raw().map(({ buildSha256: _build, confirmationComparison: _comparison, ...answer }) => JSON.stringify({ ...answer, rows: answer.rows?.map(({ confirmation: _list, ...row }) => row) }));
+    raw().map(({ buildSha256: _build, confirmationComparison: _comparison, ...answer }) =>
+      JSON.stringify({ ...answer, rows: answer.rows?.map(({ confirmation: _list, ...row }) => row) }),
+    );
   assert.deepEqual(raw()[0].rows[0].confirmation, ["neverChecked"]);
   const withRecordsBlock = answers();
-  assert(withRecordsBlock.every((answer) => !answer.includes("{뜻:")), "never checked: no mark");
+  assert(
+    withRecordsBlock.every((answer) => !answer.includes("{뜻:")),
+    "never checked: no mark",
+  );
   // The same answers from a check.json without the confirmation block.
   const checkFile = path.join(f.family, "build", "check.json");
   const check = JSON.parse(fs.readFileSync(checkFile, "utf8"));
@@ -756,7 +792,9 @@ test("C8: the new page parts wrap within a narrow screen (CSS rules; no browser 
 
 const bigDocument = (f, count = 1001) => {
   const main = path.join(f.family, MAIN);
-  const rows = Array.from({ length: count }, (_, index) => `| MAIN-01#${index + 10} | 버튼 ${index} | \`station/ui/main_window.py:18\` | \`${SAVE}\` | |`).join("\n");
+  const rows = Array.from({ length: count }, (_, index) => `| MAIN-01#${index + 10} | 버튼 ${index} | \`station/ui/main_window.py:18\` | \`${SAVE}\` | |`).join(
+    "\n",
+  );
   fs.writeFileSync(main, fs.readFileSync(main, "utf8").replace("| MAIN-01#5 |", `${rows}\n| MAIN-01#5 |`));
 };
 const staleCopy = (record, checkedAt) =>
@@ -866,12 +904,15 @@ test("D4: surplus records past the count are named up to 100, then counted", (t)
   const built = buildProductGraph({ root: f.root });
   const surplus = built.confirmations.issues.filter((issue) => issue.code === "PRODUCT_GRAPH_CHECK_LIMIT");
   assert.equal(surplus.length, 101);
-  assert.deepEqual(surplus.find((issue) => issue.path === "확인/"), {
-    path: "확인/",
-    code: "PRODUCT_GRAPH_CHECK_LIMIT",
-    reason: "그 밖에 확인 기록 250개를 더 읽지 않았다(이름은 앞의 100개만 적는다)",
-    count: 250,
-  });
+  assert.deepEqual(
+    surplus.find((issue) => issue.path === "확인/"),
+    {
+      path: "확인/",
+      code: "PRODUCT_GRAPH_CHECK_LIMIT",
+      reason: "그 밖에 확인 기록 250개를 더 읽지 않았다(이름은 앞의 100개만 적는다)",
+      count: 250,
+    },
+  );
   assert.equal(built.confirmations.recordLimit.present, PRODUCT_GRAPH_CHECK_MAX_RECORDS + 350);
 });
 
@@ -931,7 +972,10 @@ test("D6: a 기능 id longer than 2048 characters can be confirmed and approved 
   assert.equal(confirmProductGraph({ root: f.root, features: [id] }).status, "recorded");
   assert.equal(confirmProductGraph({ root: f.root, documents: [MAIN] }).status, "recorded");
   const digest = built.documents.list.find((item) => item.path === "화면설계서/DLG-01.md").approvalDigest;
-  assert.equal(approveProductGraphDocument({ root: f.root, document: "화면설계서/DLG-01.md", expectedSha256: digest, rationale: "ok" }).codeBasis.status, "recorded");
+  assert.equal(
+    approveProductGraphDocument({ root: f.root, document: "화면설계서/DLG-01.md", expectedSha256: digest, rationale: "ok" }).codeBasis.status,
+    "recorded",
+  );
   const after = buildProductGraph({ root: f.root });
   assert.deepEqual(after.confirmations.issues, []);
   assert(!ids(after.confirmations.neverChecked).includes(id));

@@ -80,7 +80,11 @@ test("a moved Project: conversation entry names resume at every depth, never Cor
 test("reads before resume on a moved Project name the Project and resume, not a .head path", async (t) => {
   const f = await project(t);
   const root = moved(f);
-  for (const argv of [["session-list", root], ["project-direction-read", root], ["session-create", root, "--purpose", "synthetic"]]) {
+  for (const argv of [
+    ["session-list", root],
+    ["project-direction-read", root],
+    ["session-create", root, "--purpose", "synthetic"],
+  ]) {
     const error = await refusal(() => runCommand(argv));
     assert.equal(error.code, "PROJECT_RELOCATION_AVAILABLE", argv[0]);
     assert.match(error.message, /has not been resumed at this folder/);
@@ -97,7 +101,11 @@ test("a folder that was never initialized, or does not exist, gets a sentence in
   const base = folder(t);
   const empty = path.join(base, "EMPTY");
   fs.mkdirSync(empty);
-  for (const argv of [["session-list", empty], ["project-direction-read", empty], ["session-create", empty, "--purpose", "x"]]) {
+  for (const argv of [
+    ["session-list", empty],
+    ["project-direction-read", empty],
+    ["session-create", empty, "--purpose", "x"],
+  ]) {
     const error = await refusal(() => runCommand(argv));
     assert.equal(error.code, "NOT_INITIALIZED", argv[0]);
     assert.ok(error.message.includes(empty));
@@ -105,7 +113,11 @@ test("a folder that was never initialized, or does not exist, gets a sentence in
     assert.doesNotMatch(error.message, /ENOENT|\.head/);
   }
   const missing = path.join(base, "MISSING");
-  for (const argv of [["status", missing], ["session-list", missing], ["init", missing]]) {
+  for (const argv of [
+    ["status", missing],
+    ["session-list", missing],
+    ["init", missing],
+  ]) {
     const error = await refusal(() => runCommand(argv));
     assert.equal(error.code, "PROJECT_NOT_FOUND", argv[0]);
     assert.match(error.message, /does not exist/);
@@ -151,7 +163,8 @@ test("PROJECT_RUNTIME_MISMATCH has one wording: recorded set, requested set and 
   const f = await project(t);
   const error = await refusal(() => runCommand(["init", f.root, "--runtime", "codex"]));
   assert.equal(error.code, "PROJECT_RUNTIME_MISMATCH");
-  for (const fact of ["runtimes claude", "named codex", "--runtime claude", "no step that changes the runtime set"]) assert.ok(error.message.includes(fact), fact);
+  for (const fact of ["runtimes claude", "named codex", "--runtime claude", "no step that changes the runtime set"])
+    assert.ok(error.message.includes(fact), fact);
   // The copied-Project check gives the same sentence.
   const copy = copied(f);
   const copyError = await refusal(() => inspectProjectCopyInput({ root: copy, pluginRoot, runtimes: ["codex"] }));
@@ -334,7 +347,8 @@ test("checkpoint sync and work record refusals say what the caller must supply",
   const sync = writeJson(f.base, "sync.json", { purpose: "p", approvedDecisions: [], currentPosition: "c", nextExpectedResult: "n" });
   const syncError = await refusal(() => runCommand(["checkpoint-sync", f.root, "--input", sync]));
   assert.equal(syncError.code, "INVALID_COMPACTION_INPUT");
-  for (const fact of ["lode_checkpoint_basis", "expected_recovery_basis_id", "last created sync", "Host-verified caller"]) assert.ok(syncError.message.includes(fact), fact);
+  for (const fact of ["lode_checkpoint_basis", "expected_recovery_basis_id", "last created sync", "Host-verified caller"])
+    assert.ok(syncError.message.includes(fact), fact);
   const noEvidence = await mcp("lode_session", { action: "work_record", project_root: f.root });
   assert.match(noEvidence.error.message, /needs the argument evidence/);
   assert.match(noEvidence.error.message, /work_evidence/);
@@ -355,7 +369,10 @@ test("codes that got text: the shared table, and refusals reached here carry the
       (error) => error.code === code && error.message === text,
     );
   }
-  assert.throws(() => decodeProductGraphText(Buffer.from([0xff, 0xfe])), (error) => error.code === "PRODUCT_GRAPH_FILE_NOT_UTF8" && /UTF-8/.test(error.message));
+  assert.throws(
+    () => decodeProductGraphText(Buffer.from([0xff, 0xfe])),
+    (error) => error.code === "PRODUCT_GRAPH_FILE_NOT_UTF8" && /UTF-8/.test(error.message),
+  );
   assert.throws(
     () => verifyProductGraphCanonFile("synthetic/unknown.bin", Buffer.from("x")),
     (error) => error.code === "PRODUCT_GRAPH_PATH_UNSUPPORTED" && error.message.includes("synthetic/unknown.bin"),

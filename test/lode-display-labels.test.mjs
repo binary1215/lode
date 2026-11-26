@@ -4,49 +4,71 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { initializeProject, inspectProject, convergeProjectInstallation, inspectRuntimeAdapters, createCheckpoint, coreContract } from "../scripts/lib/session/lode-core.mjs";
+import {
+  initializeProject,
+  inspectProject,
+  convergeProjectInstallation,
+  inspectRuntimeAdapters,
+  createCheckpoint,
+  coreContract,
+} from "../scripts/lib/session/lode-core.mjs";
 import { prepareContextWorkflow, previewContextWorkflow } from "../scripts/lib/session/context-workflow.mjs";
 import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-format.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
-const read = relative => fs.readFileSync(path.join(pluginRoot, relative), "utf8");
-const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
+const read = (relative) => fs.readFileSync(path.join(pluginRoot, relative), "utf8");
+const digest = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 function fixture(t) {
   const parent = fs.realpathSync(process.env.LODE_AGENT_TEST_TMP || process.env.HEAD_AGENT_TEST_TMP || os.tmpdir());
   const root = fs.realpathSync(fs.mkdtempSync(path.join(parent, "lode-display-labels-")));
   t.after(() => {
-    assert.equal(path.dirname(root), parent); assert(path.basename(root).startsWith("lode-display-labels-"));
+    assert.equal(path.dirname(root), parent);
+    assert(path.basename(root).startsWith("lode-display-labels-"));
     fs.rmSync(root, { recursive: true, force: true, maxRetries: process.platform === "win32" ? 20 : 0, retryDelay: 100 });
   });
   return root;
 }
 function inventory(root) {
-  return fs.readdirSync(root, { recursive: true, withFileTypes: true }).filter(entry => entry.isFile()).map(entry => {
-    const file = path.join(entry.parentPath, entry.name);
-    return [path.relative(root, file).replaceAll("\\", "/"), digest(fs.readFileSync(file))];
-  }).sort(([a], [b]) => a.localeCompare(b));
+  return fs
+    .readdirSync(root, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => {
+      const file = path.join(entry.parentPath, entry.name);
+      return [path.relative(root, file).replaceAll("\\", "/"), digest(fs.readFileSync(file))];
+    })
+    .sort(([a], [b]) => a.localeCompare(b));
 }
 
 test("EN/KO CLI example docs never show a bare head or lode command, which is not an installed launcher", () => {
-  const exampleDocs = ["bounded-worker-wave", "compaction-recovery", "conformance-reconciliation", "delivery-observation",
-    "document-change-review", "product-operating-loop", "release-observation", "session-recovery"];
+  const exampleDocs = [
+    "bounded-worker-wave",
+    "compaction-recovery",
+    "conformance-reconciliation",
+    "delivery-observation",
+    "document-change-review",
+    "product-operating-loop",
+    "release-observation",
+    "session-recovery",
+  ];
   // Wording pinned: the installed launcher is `${identity}-agent` (scripts/lib/distribution/distribution-lifecycle.mjs);
   // no bare head or lode command is installed, so a doc example using one cannot run.
-  for (const name of exampleDocs) for (const prefix of ["docs/", "docs/ko/"])
-    assert.equal((read(`${prefix}${name}.md`).match(/^head |^lode /gm) || []).length, 0, `${prefix}${name}.md`);
+  for (const name of exampleDocs)
+    for (const prefix of ["docs/", "docs/ko/"]) assert.equal((read(`${prefix}${name}.md`).match(/^head |^lode /gm) || []).length, 0, `${prefix}${name}.md`);
 });
 
 test("the installed launcher is named lode-agent and the head-core import shim is retained", () => {
-  assert(read("scripts/lib/distribution/distribution-lifecycle.mjs").includes('const command = `${identity}-agent`;'));
+  assert(read("scripts/lib/distribution/distribution-lifecycle.mjs").includes("const command = `${identity}-agent`;"));
   assert(fs.existsSync(path.join(pluginRoot, "scripts/lib/head-core.mjs")), "Import shim is retained");
 });
 
 test("canonical light and complete help use the real launcher without changing surface or execution semantics", async () => {
-  const light = (await runCommand(["help"])), complete = (await runCommand(["help-all"]));
-  assert.equal(light.surface, "light-default"); assert.equal(complete.surface, "ordinary-complete");
-  assert(light.commands.every(line => line.startsWith("lode-agent ")));
-  assert(complete.commands.every(line => line.startsWith("lode-agent ")));
+  const light = await runCommand(["help"]),
+    complete = await runCommand(["help-all"]);
+  assert.equal(light.surface, "light-default");
+  assert.equal(complete.surface, "ordinary-complete");
+  assert(light.commands.every((line) => line.startsWith("lode-agent ")));
+  assert(complete.commands.every((line) => line.startsWith("lode-agent ")));
   assert.match(complete.commandNotes["project-native-history"], /capture requires --provider/);
   assert.match(complete.commandNotes["project-native-history"], /default CLI bootstrap remains unavailable/);
   assert.equal(light.advancedCommand, "lode-agent help-all");
@@ -58,25 +80,31 @@ test("canonical light and complete help use the real launcher without changing s
   assert.equal(complete.commands.includes("lode-agent product-signal-record <project> --input <signal.json>"), true);
 });
 
-test("diagnostics use Lode while retaining exact existing error codes and roles", async t => {
-  const root = fixture(t), empty = fixture(t);
+test("diagnostics use Lode while retaining exact existing error codes and roles", async (t) => {
+  const root = fixture(t),
+    empty = fixture(t);
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   const before = inventory(root);
-  assert.throws(() => initializeProject({ root, pluginRoot, runtimes: ["codex"] }),
-    { code: "ALREADY_INITIALIZED", message: "Lode Agent Core is already initialized for this project." });
-  assert.throws(() => convergeProjectInstallation({ root: empty, pluginRoot }),
-    { code: "NOT_INITIALIZED", message: "Lode Agent Core is not initialized." });
-  await assert.rejects(inspectRuntimeAdapters(empty),
-    { code: "NOT_INITIALIZED", message: "Lode Agent Core is not initialized." });
-  assert.throws(() => createCheckpoint({ root, summary: "Do not save" }), error => {
-    assert.equal(error.code, "LEGACY_CHECKPOINT_API_RETIRED");
-    assert(error.message.includes("`lode-agent checkpoint`")); return true;
+  assert.throws(() => initializeProject({ root, pluginRoot, runtimes: ["codex"] }), {
+    code: "ALREADY_INITIALIZED",
+    message: "Lode Agent Core is already initialized for this project.",
   });
+  assert.throws(() => convergeProjectInstallation({ root: empty, pluginRoot }), { code: "NOT_INITIALIZED", message: "Lode Agent Core is not initialized." });
+  await assert.rejects(inspectRuntimeAdapters(empty), { code: "NOT_INITIALIZED", message: "Lode Agent Core is not initialized." });
+  assert.throws(
+    () => createCheckpoint({ root, summary: "Do not save" }),
+    (error) => {
+      assert.equal(error.code, "LEGACY_CHECKPOINT_API_RETIRED");
+      assert(error.message.includes("`lode-agent checkpoint`"));
+      return true;
+    },
+  );
   assert.deepEqual(coreContract().roles, ["head", "developer", "coder", "reviewer"]);
-  assert.deepEqual(inventory(root), before); assert.deepEqual(fs.readdirSync(empty), []);
+  assert.deepEqual(inventory(root), before);
+  assert.deepEqual(fs.readdirSync(empty), []);
 });
 
-test("an existing HEAD-labelled instruction and managed manifest are not rewritten on convergence", t => {
+test("an existing HEAD-labelled instruction and managed manifest are not rewritten on convergence", (t) => {
   const root = fixture(t);
   initializeProject({ root, pluginRoot, runtimes: ["codex"] });
   // Synthetic existing-document fixture, not a claim to be an old-producer release.
@@ -85,21 +113,27 @@ test("an existing HEAD-labelled instruction and managed manifest are not rewritt
   fs.writeFileSync(file, original);
   const manifestFile = path.join(root, ".lode/generated/manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
-  assert.equal(manifest.managed.some(entry => entry.path === ".lode/instructions/project.md"), false,
-    "User-owned Project context is mutable Canon, not a generated-file checksum entry");
+  assert.equal(
+    manifest.managed.some((entry) => entry.path === ".lode/instructions/project.md"),
+    false,
+    "User-owned Project context is mutable Canon, not a generated-file checksum entry",
+  );
   assert.equal(inspectProject(root).status, "ready");
-  const before = inventory(root), selected = inspectProject(root).state.sessionId;
+  const before = inventory(root),
+    selected = inspectProject(root).state.sessionId;
   assert.equal(convergeProjectInstallation({ root, pluginRoot }).status, "current");
   assert.equal(inspectProject(root).state.sessionId, selected);
   assert.equal(fs.readFileSync(file, "utf8"), original);
   assert.deepEqual(inventory(root), before);
 });
 
-test("context display note changes no serialized status, authority, Capsule identity or Project bytes", async t => {
-  const root = fixture(t); initializeProject({ root, pluginRoot, runtimes: ["codex"] });
-  const before = inventory(root), task = "Inspect current local evidence";
-  const preview = (await previewContextWorkflow({ root, task }));
-  const prepared = (await prepareContextWorkflow({ root, task }));
+test("context display note changes no serialized status, authority, Capsule identity or Project bytes", async (t) => {
+  const root = fixture(t);
+  initializeProject({ root, pluginRoot, runtimes: ["codex"] });
+  const before = inventory(root),
+    task = "Inspect current local evidence";
+  const preview = await previewContextWorkflow({ root, task });
+  const prepared = await prepareContextWorkflow({ root, task });
   assert(preview.workflow.nextAction.note.startsWith("Lode decides which evidence is needed"));
   assert.equal(preview.workflow.status, "ready_for_lode_semantic_assessment");
   assert.equal(preview.workflow.evidenceNeeds.semanticAcceptance, "not-assessed-Lode-owned");

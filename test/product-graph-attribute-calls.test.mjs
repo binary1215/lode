@@ -21,7 +21,12 @@ function build(t, files) {
   fs.mkdirSync(path.join(base, "documents"));
   const rulesFile = path.join(base, "rules.json");
   fs.writeFileSync(rulesFile, JSON.stringify({ ...RULES_HEAD, rules: [] }));
-  buildProductGraph({ sourceRoot: path.join(base, "source"), documentsDirectory: path.join(base, "documents"), rulesFile, outputDirectory: path.join(base, "out") });
+  buildProductGraph({
+    sourceRoot: path.join(base, "source"),
+    documentsDirectory: path.join(base, "documents"),
+    rulesFile,
+    outputDirectory: path.join(base, "out"),
+  });
   return JSON.parse(fs.readFileSync(path.join(base, "out", "graph.json"), "utf8"));
 }
 const calls = (graph, from) =>
@@ -29,7 +34,8 @@ const calls = (graph, from) =>
     .filter((edge) => edge.type === "call" && edge.from === from)
     .map((edge) => edge.to)
     .sort();
-const reasonOf = (graph, callee) => graph.referenceSummary.unresolvedByReason.filter((item) => item.callees.some((entry) => entry.callee === callee)).map((item) => item.reason);
+const reasonOf = (graph, callee) =>
+  graph.referenceSummary.unresolvedByReason.filter((item) => item.callees.some((entry) => entry.callee === callee)).map((item) => item.reason);
 
 test("Python: construction, declared type, typed parameter, a module binding; none, two classes, unannotated, union stay unresolved", (t) => {
   const graph = build(t, {
@@ -377,7 +383,11 @@ test("a CRLF file gives the same attribute edges as its LF copy", (t) => {
     "        return self.io.start()",
   );
   const edges = (text) => {
-    const graph = build(t, { "app/__init__.py": "", "app/io.py": PY_IO.replaceAll("\n", text === "crlf" ? "\r\n" : "\n"), "app/user.py": text === "crlf" ? user.replaceAll("\n", "\r\n") : user });
+    const graph = build(t, {
+      "app/__init__.py": "",
+      "app/io.py": PY_IO.replaceAll("\n", text === "crlf" ? "\r\n" : "\n"),
+      "app/user.py": text === "crlf" ? user.replaceAll("\n", "\r\n") : user,
+    });
     return ["Field", "Built"].map((owner) => calls(graph, `app/user.py#${owner}.run`));
   };
   const expected = [["app/io.py#RealIO.start"], ["app/io.py#RealIO.start"]];
@@ -390,7 +400,14 @@ test("an unassigned attribute's method that the product never defines stays memb
   const graph = build(t, {
     "app/__init__.py": "",
     "app/io.py": PY_IO,
-    "app/win.py": lines("from app.io import RealIO", "", "class Win(RealIO):", "    def show(self):", "        self.button.setText(1)", "        return self.button.start()"),
+    "app/win.py": lines(
+      "from app.io import RealIO",
+      "",
+      "class Win(RealIO):",
+      "    def show(self):",
+      "        self.button.setText(1)",
+      "        return self.button.start()",
+    ),
   });
   assert.deepEqual(reasonOf(graph, "button.setText"), ["member-nowhere"]);
   assert.deepEqual(reasonOf(graph, "button.start"), ["inherited"]);
@@ -402,7 +419,20 @@ test("a typed parameter of a constructor with a signature over 500 characters is
   const graph = build(t, {
     "app/__init__.py": "",
     "app/io.py": PY_IO,
-    "app/big.py": lines("from app.io import RealIO", "", "class Big:", "    def __init__(", "        self,", ...many, "        io: RealIO = None,", "    ):", "        self.io = io", "", "    def run(self):", "        return self.io.start()"),
+    "app/big.py": lines(
+      "from app.io import RealIO",
+      "",
+      "class Big:",
+      "    def __init__(",
+      "        self,",
+      ...many,
+      "        io: RealIO = None,",
+      "    ):",
+      "        self.io = io",
+      "",
+      "    def run(self):",
+      "        return self.io.start()",
+    ),
   });
   assert.deepEqual(calls(graph, "app/big.py#Big.run"), ["app/io.py#RealIO.start"]);
 });

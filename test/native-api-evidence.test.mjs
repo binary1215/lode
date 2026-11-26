@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  verifyCodexNativeApiHistory,
-  readCodexNativeApiHistory,
-} from "../scripts/lib/distribution/codex-native-api-evidence.mjs";
+import { verifyCodexNativeApiHistory, readCodexNativeApiHistory } from "../scripts/lib/distribution/codex-native-api-evidence.mjs";
 
 function fixture() {
   const item = {
