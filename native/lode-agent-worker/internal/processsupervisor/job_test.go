@@ -20,7 +20,16 @@ func TestJobOwnerHelper(t *testing.T) {
 	}
 	request := os.Getenv("HEAD_JOB_TEST_REQUEST")
 	if delay, err := time.ParseDuration(os.Getenv("HEAD_JOB_TEST_SLOW_FLUSH")); err == nil {
+		flushLog := os.Getenv("HEAD_JOB_TEST_FLUSH_LOG")
 		flushSpool = func(file *os.File) error {
+			// Log which spool is flushed and whether a terminal record already
+			// vouches for it, so the test can pin the order.
+			_, terminalErr := os.Lstat(filepath.Join(filepath.Dir(file.Name()), "terminal.json"))
+			line := fmt.Sprintf("%s terminal=%t\n", filepath.Base(file.Name()), terminalErr == nil)
+			if log, err := os.OpenFile(flushLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600); err == nil {
+				_, _ = log.WriteString(line)
+				_ = log.Close()
+			}
 			time.Sleep(delay)
 			return file.Sync()
 		}
@@ -302,16 +311,15 @@ func TestJobDurableResultAndNoRelaunch(t *testing.T) {
 // The owner's output grace (100 ms in the fixture) bounds how long output may
 // stay open after the provider exits. A slow flush of the owner's own spool is
 // not open output: a provider that exited with all of its output must still end
-// as exited with complete output.
+// as exited with complete output. Both spools are still flushed, once each,
+// before the terminal record vouches for them.
 func TestJobSlowSpoolFlushStillCompletes(t *testing.T) {
-	const flushDelay = 300 * time.Millisecond
 	directory, file := jobFixture(t, "success", 5000, 1024)
-	started := time.Now()
-	command := startJobFixture(t, directory, file, "HEAD_JOB_TEST_SLOW_FLUSH="+flushDelay.String())
+	flushLog := filepath.Join(t.TempDir(), "flush.log")
+	command := startJobFixture(t, directory, file, "HEAD_JOB_TEST_SLOW_FLUSH=300ms", "HEAD_JOB_TEST_FLUSH_LOG="+flushLog)
 	if err := command.Wait(); err != nil {
 		t.Fatalf("slow spool flush failed the job: %v; %s", err, jobEvidence(directory, command))
 	}
-	elapsed := time.Since(started)
 	terminal := readJobTerminal(t, directory)
 	if terminal.ExitCode != 0 || terminal.Reason != "exited" || !terminal.CompleteOutput {
 		t.Fatalf("slow spool flush changed the terminal: %+v; %s", terminal, jobEvidence(directory, command))
@@ -319,9 +327,12 @@ func TestJobSlowSpoolFlushStillCompletes(t *testing.T) {
 	if output, err := os.ReadFile(filepath.Join(directory, "stdout.bin")); err != nil || string(output) != "synthetic-result\n" {
 		t.Fatalf("incomplete output %q (%v); %s", output, err, jobEvidence(directory, command))
 	}
-	// Both spools went through the slow flush; otherwise this case proved nothing.
-	if elapsed < 2*flushDelay {
-		t.Fatalf("slow flush was not exercised: the owner took %s", elapsed)
+	flushes, err := os.ReadFile(flushLog)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if expected := "stdout.bin terminal=false\nstderr.bin terminal=false\n"; string(flushes) != expected {
+		t.Fatalf("spool flushes %q, expected %q; %s", flushes, expected, jobEvidence(directory, command))
 	}
 }
 
