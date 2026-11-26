@@ -555,6 +555,8 @@ async function runRoutedCommand(
       workerPreparationBackend,
       observationRegistry,
       compactionLifecycleHost,
+      // The CLI has no calling Host; see hostRuntimeOf in scripts/mcp-server.mjs.
+      hostRuntime: null,
     });
   throw new Error(`Unknown command: ${command}`);
 }

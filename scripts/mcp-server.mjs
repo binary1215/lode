@@ -306,6 +306,16 @@ async function unresolvedSessionResponse(id, name, root, reasonCode) {
   }
 }
 
+// The calling Host's runtime for registered operations (context.hostRuntime):
+// "codex" or "claude" as the native session bridge derived it (its own runtime
+// option, or the MCP client's initialize clientInfo), otherwise null. It comes
+// from this server's bridge only, never from tool input, and is never guessed.
+const HOST_RUNTIMES = new Set(["codex", "claude"]);
+export function hostRuntimeOf(nativeSessionBridge) {
+  const runtime = nativeSessionBridge?.describe?.()?.runtime;
+  return HOST_RUNTIMES.has(runtime) ? runtime : null;
+}
+
 export async function dispatch(request, options = {}) {
   if (options.nativeSessionBridge && !options.sessionContext && !options.resolveSessionContext) {
     // Only the bridge grants a held recovery basis, and only to a verified caller.
@@ -780,6 +790,7 @@ async function dispatchRouted(
     servingModuleUrl = null,
     installationCaller = null,
     recoveryBasisMemory = null,
+    nativeSessionBridge = null,
   } = {},
 ) {
   requireSurface(surface);
@@ -875,6 +886,7 @@ async function dispatchRouted(
         projectLocationProjection,
         caller,
         hostEnvironment,
+        hostRuntime: hostRuntimeOf(nativeSessionBridge),
         pluginLaunch,
         servingModuleUrl,
         installationCaller,
