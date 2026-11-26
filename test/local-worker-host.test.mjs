@@ -144,6 +144,7 @@ function workerJobEvidence(f, member, state) {
   return [
     `task ${member.taskKey}, authorization ${member.authorizationId}`,
     `state ${JSON.stringify(Object.fromEntries(fields.filter((name) => name in state).map((name) => [name, state[name]])))}`,
+    `whole state ${JSON.stringify(state).slice(0, 2000)}`,
     `terminal.json ${tail(path.join(directory, "terminal.json"))}`,
     `launch-failure.json ${tail(path.join(directory, "launch-failure.json"))}`,
     `owner stdout ${tail(path.join(directory, "stdout.bin"))}`,
@@ -151,6 +152,12 @@ function workerJobEvidence(f, member, state) {
     `provider stderr ${tail(path.join(f.operational, "runtime-output", projectId, member.authorizationId, "stderr.bin"))}`,
     `receipt ${receipt}`,
   ].join("\n");
+}
+// The same expectation as `state.status === "completed"`, with the job's evidence
+// in the message when it does not hold.
+function assertJobCompleted(f, member, state) {
+  if (state.status !== "completed") assert.equal(state.status, "completed", workerJobEvidence(f, member, state));
+  return state;
 }
 async function fixture(t, { nativeFixtureRoot = nativeRoot } = {}) {
   const parent = fs.realpathSync(process.env.HEAD_AGENT_TEST_TMP || os.tmpdir());
@@ -477,10 +484,10 @@ test("public native-prefix preparation and start bind a controlled two-turn prop
   }
   assert.equal(state.ownerExitObserved, true);
   state = f.jobs.reconcileBoundedWorkerJob(input, { onProcess });
-  assert.equal(state.status, "completed", JSON.stringify(state));
+  assertJobCompleted(f, first, state);
   assert.equal(state.result.actualProviderInvoked, false);
   assert.equal(state.workspacePatch.origin, "provider-patch-proposal");
-  assert.equal((await f.cli.runCommand(["worker-start", f.root, "--task-key", first.taskKey])).status, "completed");
+  assertJobCompleted(f, first, await f.cli.runCommand(["worker-start", f.root, "--task-key", first.taskKey]));
   assert.equal(fs.readFileSync(path.join(f.root, "selected.txt"), "utf8"), "selected original\n");
 });
 
@@ -524,7 +531,7 @@ test("reviewer source-change regression: same member safely reprepares and concu
     state = f.jobs.readBoundedWorkerJob(input, { onProcess });
   }
   assert.equal(state.ownerExitObserved, true);
-  assert.equal(f.jobs.reconcileBoundedWorkerJob(input, { onProcess }).status, "completed");
+  assertJobCompleted(f, next, f.jobs.reconcileBoundedWorkerJob(input, { onProcess }));
   assert.equal(fs.readFileSync(path.join(f.root, "selected.txt"), "utf8"), "legitimate updated source\n");
 });
 
@@ -582,7 +589,7 @@ test("reviewer reselection regression: newly present target can join explicit re
     state = f.jobs.readBoundedWorkerJob(input, { onProcess });
   }
   assert.equal(state.ownerExitObserved, true);
-  assert.equal(f.jobs.reconcileBoundedWorkerJob(input, { onProcess }).status, "completed");
+  assertJobCompleted(f, next, f.jobs.reconcileBoundedWorkerJob(input, { onProcess }));
   assert.equal(fs.readFileSync(path.join(f.root, "target.txt"), "utf8"), "user-created current preimage\n");
   assert.deepEqual(fs.readFileSync(path.join(f.root, f.layout.directory, "sessions/current.json")), before);
 });
@@ -870,7 +877,7 @@ test("default shipped CLI and stdio MCP start prepared workers without injected 
     }
     assert.equal(state.ownerExitObserved, true);
     state = f.jobs.reconcileBoundedWorkerJob(input, { onProcess });
-    assert.equal(state.status, "completed");
+    assertJobCompleted(f, member, state);
     assert.equal(state.result.actualProviderInvoked, false);
     assert.equal(state.workspacePatch.origin, "provider-patch-proposal");
     // An already launched job does not need the prepare-only cache to be read.
@@ -882,7 +889,7 @@ test("default shipped CLI and stdio MCP start prepared workers without injected 
       if (JSON.parse(fs.readFileSync(file)).request.taskKey === member.taskKey) fs.unlinkSync(file);
     }
     const repeated = await f.cli.runCommand(["worker-start", f.root, "--task-key", member.taskKey]);
-    assert.equal(repeated.status, "completed");
+    assertJobCompleted(f, member, repeated);
   }
   assert.equal(fs.readFileSync(path.join(f.root, "selected.txt"), "utf8"), "selected original\n");
 });
@@ -969,13 +976,7 @@ async function twoRunMembers(t, secondKey = "second-member", fixtureOptions = {}
     assert.equal(state.ownerExitObserved, true, "Exact native owner exits before reconciliation");
     return f.jobs.reconcileBoundedWorkerJob(input, { onProcess });
   };
-  // The same expectation as `(await f.closed(member)).status === "completed"`,
-  // with the job's evidence in the message when it does not hold.
-  f.completed = async (member) => {
-    const state = await f.closed(member);
-    if (state.status !== "completed") assert.equal(state.status, "completed", workerJobEvidence(f, member, state));
-    return state;
-  };
+  f.completed = async (member) => assertJobCompleted(f, member, await f.closed(member));
   return f;
 }
 
@@ -1060,7 +1061,7 @@ test("public fresh proposal turns really overlap with distinct identities and re
     assert.equal(peak, 2);
     assert.equal(active, 0);
     const frozen = spools.map((file) => fs.readFileSync(file));
-    for (const member of f.prepared) assert.equal((await f.publicMcp("head_bounded_worker_start", { task_key: member.taskKey })).status, "completed");
+    for (const member of f.prepared) assertJobCompleted(f, member, await f.publicMcp("head_bounded_worker_start", { task_key: member.taskKey }));
     assert.deepEqual(
       spools.map((file) => fs.readFileSync(file)),
       frozen,
@@ -1149,7 +1150,7 @@ test("fresh public frontends restore HEAD direction and rediscover completed and
   for (const restored of [await f.publicCli(["session-restore"]), await f.publicMcp("head_session_restore")]) {
     assert.equal(restored.projection.consumerInstruction.historicalCheckpointContext.nextExpectedResult, direction);
   }
-  assert.equal((await f.publicMcp("head_bounded_worker_job_status", { authorization_id: f.prepared[0].authorizationId })).status, "completed");
+  assertJobCompleted(f, f.prepared[0], await f.publicMcp("head_bounded_worker_job_status", { authorization_id: f.prepared[0].authorizationId }));
   const rediscovered = await f.publicMcp("head_bounded_worker_reconcile", { task_key: held.taskKey });
   assert.equal(rediscovered.authorization.authorizationId, authorization_id);
   await f.publicCli(["worker-cancel", "--authorization", authorization_id]);
@@ -1273,7 +1274,7 @@ test(
     assert.deepEqual(fs.readFileSync(spoolFile), stderrBefore);
     assert.deepEqual(fs.readFileSync(path.join(f.root, f.layout.directory, "runtime/execution-leases", authorization_id, "consumption.json")), consumption);
     assert.equal(lease().singleUseConsumed, true);
-    assert.equal((await f.publicMcp("head_bounded_worker_job_status", { authorization_id: f.prepared[0].authorizationId })).status, "completed");
+    assertJobCompleted(f, f.prepared[0], await f.publicMcp("head_bounded_worker_job_status", { authorization_id: f.prepared[0].authorizationId }));
     assert.ok((await f.publicMcp("head_bounded_worker_job_patch", { authorization_id: f.prepared[0].authorizationId })).candidate);
     assert.deepEqual(f.pointers(), before);
   },
@@ -1359,18 +1360,18 @@ test(
       for (let attempt = 0; attempt < 2; attempt++) {
         for (const name of ["head_bounded_worker_job_status", "head_bounded_worker_job_reconcile", "head_bounded_worker_start"]) {
           const state = await f.publicMcp(name, name === "head_bounded_worker_start" ? { task_key: held.taskKey } : { authorization_id });
-          assert.equal(state.status, "completed");
+          assertJobCompleted(f, held, state);
           assert.equal(state.ownerExitObserved, true);
           assert.equal(state.replayAllowed, false);
         }
-        assert.equal((await f.publicCli(["worker-start", "--task-key", held.taskKey])).status, "completed");
+        assertJobCompleted(f, held, await f.publicCli(["worker-start", "--task-key", held.taskKey]));
         assert.ok((await f.publicMcp("head_bounded_worker_job_patch", { authorization_id })).candidate);
       }
       assert.deepEqual(
         frozenFiles.map((file) => fs.readFileSync(file)),
         frozen,
       );
-      assert.equal((await f.publicMcp("head_bounded_worker_job_status", { authorization_id: f.prepared[0].authorizationId })).status, "completed");
+      assertJobCompleted(f, f.prepared[0], await f.publicMcp("head_bounded_worker_job_status", { authorization_id: f.prepared[0].authorizationId }));
       assert.deepEqual(f.pointers(), before);
       onProcess({ type: "terminal-owner-crash-exited", pid: claim.pid, ownerToken: claim.ownerToken, cwd: f.root, ports: [], cleanupVerified: true });
     } finally {
@@ -1485,7 +1486,7 @@ test("public frontend loss after native terminal commit preserves exact result a
     const authorization_id = member.authorizationId;
     for (const name of ["head_bounded_worker_job_status", "head_bounded_worker_job_reconcile", "head_bounded_worker_start"]) {
       const state = await f.publicMcp(name, name === "head_bounded_worker_start" ? { task_key: member.taskKey } : { authorization_id });
-      assert.equal(state.status, "completed");
+      assertJobCompleted(f, member, state);
       assert.equal(state.ownerExitObserved, true);
       assert.equal(state.replayAllowed, false);
     }
