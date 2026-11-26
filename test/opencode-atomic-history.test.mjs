@@ -17,6 +17,7 @@ import { captureProviderNativeHistory } from "../scripts/lib/session/provider-na
 import { attachProjectNativeTransfer } from "../scripts/lib/session/project-native-transfer.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
+import { nativeFixtureSkip, skipReason, supervisorFixtureRoot } from "./helpers/native-fixtures.mjs";
 
 const profile = JSON.parse(fs.readFileSync(new URL("../scripts/lib/session/opencode-atomic-history-profile.json", import.meta.url)));
 const slash = value => path.resolve(value).replaceAll("\\", "/");
@@ -227,7 +228,7 @@ test("independent-review regressions: existing ancestry, physical ordering, nest
 });
 
 test("qualified offline CLI/MCP routes restore once, reconcile a lost receipt and keep register read-only", {
-  skip: !process.env.LODE_OPENCODE_1_19_5_BINARY,
+  skip: !process.env.LODE_OPENCODE_1_19_5_BINARY && skipReason.optInExternalProgram("LODE_OPENCODE_1_19_5_BINARY", "the qualified OpenCode 1.19.5 binary"),
 }, async t => {
   const f = fixture(t), core = projectFixture(t), source = path.join(core.base, "atomic-source"), payload = path.join(core.base, "atomic-payload"), bundle = path.join(core.base, "atomic-bundle");
   fs.mkdirSync(source); const raw = Buffer.from(JSON.stringify(history())); fs.writeFileSync(path.join(source, "selected.json"), raw);
@@ -263,13 +264,13 @@ test("an arbitrary version string or executable cannot qualify an atomic Host", 
   assert.deepEqual(rows(f.databaseFile, "session"), []);
 });
 
-test("termination of an owned synthetic child rolls back before commit and preserves a committed batch after commit", { skip: !process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT }, async t => {
+test("termination of an owned synthetic child rolls back before commit and preserves a committed batch after commit", { skip: nativeFixtureSkip("owned synthetic child termination") }, async t => {
   for (const boundary of ["before-commit", "after-commit"]) await t.test(boundary, async t => {
     const f = fixture(t), docs = [selected(history())], input = path.join(f.base, "input.json"), ready = path.join(f.base, "ready");
     fs.writeFileSync(input, JSON.stringify({ ...options(f, docs.map(row => ({ ...row, raw: row.raw.toString("base64") }))), ready, boundary }));
     const module = new URL("../scripts/lib/session/opencode-atomic-history-store.mjs", import.meta.url).href;
     const script = `import fs from 'node:fs';import{publishOpenCodeAtomicBatch}from ${JSON.stringify(module)};const x=JSON.parse(fs.readFileSync(process.argv[1]));x.documents=x.documents.map(r=>({...r,raw:Buffer.from(r.raw,'base64')}));await publishOpenCodeAtomicBatch({...x,onPhase:async({phase})=>{if(phase===x.boundary){fs.writeFileSync(x.ready,'ready',{flag:'wx'});await new Promise(()=>setInterval(()=>{},1000));}}});`;
-    const selection = resolveVerifiedProcessSupervisor({ pluginRoot: process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT });
+    const selection = resolveVerifiedProcessSupervisor({ pluginRoot: supervisorFixtureRoot() });
     const handle = spawnSupervisedProcess({ selection, executablePath: process.execPath, args: ["--input-type=module", "-e", script, input], cwd: f.root,
       providerEnvironment: Object.fromEntries(["SystemRoot", "WINDIR", "PATH", "TEMP", "TMP"].filter(key => process.env[key]).map(key => [key, process.env[key]])),
       input: Buffer.alloc(0), controlFile: path.join(f.base, "control.jsonl"), terminationGraceMs: 500 });

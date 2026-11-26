@@ -151,6 +151,7 @@ import {
   readDocumentChangeReviewDecision,
   reviewDocumentChanges,
 } from "../scripts/lib/world/document-change-review.mjs";
+import { NATIVE_FIXTURE_SETTINGS, goWorkerFixtureRoot, skipReason } from "./helpers/native-fixtures.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const pluginVersion = JSON.parse(fs.readFileSync(path.join(pluginRoot, "package.json"), "utf8")).version;
@@ -1732,7 +1733,7 @@ test("separates Host operational refs from product Git freshness while preservin
 
 test("Git CLI history excludes Host-only commits and decorations while retaining product refs", async (t) => {
   const available = spawnSync("git", ["--version"], { encoding: "utf8", windowsHide: true });
-  if (available.status !== 0) return t.skip("Git CLI is unavailable on this host.");
+  if (available.status !== 0) return t.skip("opt-in: the Git CLI is unavailable on this host");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "head-git-history-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const git = (...args) => {
@@ -4242,14 +4243,20 @@ test("routes deterministic repository scan v1 through a replaceable compute adap
 });
 
 test("verifies Go worker distribution identity and discloses safe JavaScript fallback", async (t) => {
-  const fixtureRoot = process.env.HEAD_AGENT_GO_WORKER_FIXTURE_ROOT;
+  const fixtureRoot = goWorkerFixtureRoot();
   if (!fixtureRoot) {
-    t.skip("HEAD_AGENT_GO_WORKER_FIXTURE_ROOT is required only for the dedicated native distribution verification lane");
+    t.skip(skipReason.ciStep("Verify native stdio and JavaScript conformance", NATIVE_FIXTURE_SETTINGS.goWorkerRoot, "Go worker distribution identity"));
     return;
   }
   const resolved = resolveVerifiedGoWorker({ pluginRoot: fixtureRoot });
   assert.match(resolved.manifest.manifestId, /^go-worker-manifest-[a-f0-9]{24}$/);
-  assert.equal(resolved.workerRelativePath, "dist/windows-x64/lode-agent-worker.exe");
+  // The fixture is built for the operating system that runs the test (the
+  // Windows job and the Linux job both run this lane).
+  assert.equal(resolved.manifest.target.platform, process.platform);
+  // The expected folder is the distribution's naming, not read from the
+  // manifest under test: windows-x64, linux-x64, darwin-arm64, ...
+  const expectedDirectory = `${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`;
+  assert.equal(resolved.workerRelativePath, `dist/${expectedDirectory}/lode-agent-worker${process.platform === "win32" ? ".exe" : ""}`);
 
   const absentRoot = temporaryProject();
   t.after(() => fs.rmSync(absentRoot, { recursive: true, force: true }));

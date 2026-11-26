@@ -16,9 +16,10 @@ import {
   prepareWorkerFileEffectInvocation,
   invokePreparedWorkerFileEffect,
 } from "../scripts/lib/runtime/runtime-worker-file-effect.mjs";
+import { fileEffectFixtureRoot, windowsNativeSkip } from "./helpers/native-fixtures.mjs";
 
-const nativeRoot = process.env.HEAD_AGENT_FILE_EFFECT_FIXTURE_ROOT;
-const skip = process.platform !== "win32" || !nativeRoot ? "Windows native image-effect fixture not supplied; no provider test" : false;
+const skip = windowsNativeSkip("the Windows native image-effect bridge (no provider test)", { supervisor: false, fileEffect: true });
+const nativeRoot = skip ? null : fileEffectFixtureRoot();
 console.log(
   JSON.stringify({
     event: "owned-worker-integration-native-test",
@@ -31,7 +32,7 @@ console.log(
     actualProviderInvoked: false,
   }),
 );
-const input = (f) => ({ root: f.root, integrationId: f.integrationId });
+const input = (f) => ({ root: f.root, integrationId: f.integrationId, storage: f.storage });
 const pointers = (f) => [fs.readFileSync(f.sessionFile), fs.readFileSync(f.runFile)];
 function nativeHost(t) {
   const spawned = new Set();

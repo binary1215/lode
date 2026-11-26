@@ -441,3 +441,65 @@ test("imported history cannot replace current cancellation or reach a provider c
   });
   assert.equal(observed.singleUseConsumed, false);
 });
+
+test("lease release loses shared-parent cleanup races without failing and keeps other failures strict", async (t) => {
+  // Another worker of the same Project can release at the same moment. Between
+  // this owner's cleanup steps it may remove the shared project folder or create
+  // its own member there. Each case forces one such interleaving.
+  const cases = [
+    { name: "folder removed before lstat", method: "lstatSync", race: "remove" },
+    { name: "folder removed before realpath", method: "realpathSync", race: "remove" },
+    { name: "folder removed before readdir", method: "readdirSync", race: "remove" },
+    { name: "folder removed before rmdir", method: "rmdirSync", race: "remove" },
+    { name: "member created before rmdir", method: "rmdirSync", race: "member" },
+    // Windows reports a folder in delete-pending state as EPERM or EBUSY, at
+    // whichever step the other owner's removal overtakes.
+    ...(process.platform === "win32"
+      ? [
+          { name: "delete-pending EPERM at lstat for a removed folder", method: "lstatSync", race: "remove", error: "EPERM" },
+          { name: "delete-pending EPERM at realpath for a removed folder", method: "realpathSync", race: "remove", error: "EPERM" },
+          { name: "delete-pending EPERM at readdir for a removed folder", method: "readdirSync", race: "remove", error: "EPERM" },
+          { name: "delete-pending EPERM at rmdir for a removed folder", method: "rmdirSync", race: "remove", error: "EPERM" },
+          { name: "delete-pending EBUSY at rmdir for a removed folder", method: "rmdirSync", race: "remove", error: "EBUSY" },
+        ]
+      : []),
+    { name: "EPERM for a folder that is still there", method: "rmdirSync", race: "none", error: "EPERM", rejects: "EPERM" },
+    { name: "EPERM at lstat for a folder that is still there", method: "lstatSync", race: "none", error: "EPERM", rejects: "EPERM" },
+    { name: "EBUSY for a folder that is still there", method: "rmdirSync", race: "none", error: "EBUSY", rejects: "EBUSY" },
+    { name: "EIO before realpath", method: "lstatSync", race: "none", error: "EIO", rejects: "EIO" },
+  ];
+  for (const scenario of cases) {
+    await t.test(scenario.name, async (t) => {
+      const f = await fixture(t);
+      const memberDirectory = path.dirname(f.lock);
+      const projectDirectory = path.dirname(memberDirectory);
+      const sibling = path.join(projectDirectory, "execution-authorization-sibling");
+      const original = fs[scenario.method];
+      const rmdir = fs.rmdirSync;
+      let triggered = false;
+      fs[scenario.method] = function (file, ...args) {
+        // Only release cleanup reaches the project folder after this member's own
+        // folder is gone.
+        if (!triggered && file === projectDirectory && !fs.existsSync(memberDirectory)) {
+          triggered = true;
+          if (scenario.race === "remove") rmdir.call(fs, projectDirectory);
+          if (scenario.race === "member") fs.mkdirSync(sibling);
+          if (scenario.error) throw Object.assign(new Error(`Synthetic ${scenario.error}`), { code: scenario.error, path: file });
+        }
+        return original.call(this, file, ...args);
+      };
+      try {
+        const released = withRuntimeExecutionLease(f.leaseInput, async () => {});
+        if (scenario.rejects) await assert.rejects(released, { code: scenario.rejects });
+        else await released;
+      } finally {
+        fs[scenario.method] = original;
+      }
+      assert.equal(triggered, true);
+      if (scenario.rejects) return;
+      inspectReadOnly(f, { status: "consumed-released", ownerStatus: "none", replayAllowed: false, singleUseConsumed: true });
+      assert.equal(fs.existsSync(projectDirectory), scenario.race === "member");
+      if (scenario.race === "member") assert.deepEqual(fs.readdirSync(projectDirectory), [path.basename(sibling)]);
+    });
+  }
+});

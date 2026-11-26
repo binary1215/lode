@@ -24,11 +24,14 @@ import { inspectRuntimeExecutionLease } from "../scripts/lib/runtime/runtime-exe
 import { readRuntimeInvocationRecord } from "../scripts/lib/runtime/runtime-invocation-record.mjs";
 import { startBoundedWorkerJob, readBoundedWorkerJob, cancelBoundedWorkerJob, reconcileBoundedWorkerJob } from "../scripts/lib/worker/bounded-worker-job.mjs";
 import runWorker from "../scripts/lib/runtime/runtime-codex-worker-runner.mjs";
+import { nativeFixtureSkip, supervisorFixtureRoot, windowsNativeSkip } from "./helpers/native-fixtures.mjs";
+const nativeSkip = nativeFixtureSkip("the owned native Codex worker host");
+const windowsNative = windowsNativeSkip("the owned native Codex worker host");
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const moduleFile = path.join(pluginRoot, "scripts/lib/runtime/runtime-codex-worker-host.mjs");
 const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
-const nativeRoot = process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT;
+const nativeRoot = supervisorFixtureRoot();
 const log = (event) => console.log(JSON.stringify({ ...event, observedAt: new Date().toISOString(), actualProviderInvoked: false }));
 log({
   event: "native-host-composition-tests",
@@ -214,7 +217,7 @@ async function fixture(t, { scenario = "native-composition", evidenceMode = "pro
   };
 }
 
-test("product runner composes owned native transport, exact lease and result without P2 or provider authority", { skip: !nativeRoot }, async (t) => {
+test("product runner composes owned native transport, exact lease and result without P2 or provider authority", { skip: nativeSkip }, async (t) => {
   const f = await fixture(t);
   const before = fs.readFileSync(f.sessionFile);
   const result = await runWorker(f.options);
@@ -236,43 +239,36 @@ test("product runner composes owned native transport, exact lease and result wit
   assert.equal(JSON.stringify({ receipt: result.receipt, draft: result.draft }).includes("synthetic-selected-profile"), false);
 });
 
-test(
-  "product native composition reconnects in detached owner without serializing a policy capability",
-  { skip: !nativeRoot || process.platform !== "win32" },
-  async (t) => {
-    const f = await fixture(t);
-    const before = fs.readFileSync(f.sessionFile);
-    const host = await createCodexNativeForkJobHost(f.options);
-    assert.deepEqual(Object.keys(host), []);
-    f.detached();
-    await startBoundedWorkerJob(
-      { root: f.root, authorizationId: f.authorization.authorizationId, role: "coder" },
-      { host, supervisorSelection: f.selection, onProcess: log },
-    );
-    let state;
-    const deadline = Date.now() + 20000;
-    do {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      state = readBoundedWorkerJob({ root: f.root, authorizationId: f.authorization.authorizationId });
-    } while (!state.ownerExitObserved && Date.now() < deadline);
-    assert.equal(state.ownerExitObserved, true);
-    const settled = reconcileBoundedWorkerJob({ root: f.root, authorizationId: f.authorization.authorizationId });
-    assert.equal(settled.status, "completed");
-    assert.equal(
-      readRuntimeInvocationRecord({ root: f.root, storage: f.storage, authorizationId: f.authorization.authorizationId }).receipt.status,
-      "completed",
-    );
-    const bytes = JSON.stringify(f.journal());
-    await startBoundedWorkerJob(
-      { root: f.root, authorizationId: f.authorization.authorizationId, role: "coder" },
-      { host, supervisorSelection: f.selection, onProcess: log },
-    );
-    assert.equal(JSON.stringify(f.journal()), bytes);
-    assert.deepEqual(fs.readFileSync(f.sessionFile), before);
-  },
-);
+test("product native composition reconnects in detached owner without serializing a policy capability", { skip: windowsNative }, async (t) => {
+  const f = await fixture(t);
+  const before = fs.readFileSync(f.sessionFile);
+  const host = await createCodexNativeForkJobHost(f.options);
+  assert.deepEqual(Object.keys(host), []);
+  f.detached();
+  await startBoundedWorkerJob(
+    { root: f.root, authorizationId: f.authorization.authorizationId, role: "coder" },
+    { host, supervisorSelection: f.selection, onProcess: log },
+  );
+  let state;
+  const deadline = Date.now() + 20000;
+  do {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    state = readBoundedWorkerJob({ root: f.root, authorizationId: f.authorization.authorizationId });
+  } while (!state.ownerExitObserved && Date.now() < deadline);
+  assert.equal(state.ownerExitObserved, true);
+  const settled = reconcileBoundedWorkerJob({ root: f.root, authorizationId: f.authorization.authorizationId });
+  assert.equal(settled.status, "completed");
+  assert.equal(readRuntimeInvocationRecord({ root: f.root, storage: f.storage, authorizationId: f.authorization.authorizationId }).receipt.status, "completed");
+  const bytes = JSON.stringify(f.journal());
+  await startBoundedWorkerJob(
+    { root: f.root, authorizationId: f.authorization.authorizationId, role: "coder" },
+    { host, supervisorSelection: f.selection, onProcess: log },
+  );
+  assert.equal(JSON.stringify(f.journal()), bytes);
+  assert.deepEqual(fs.readFileSync(f.sessionFile), before);
+});
 
-test("installed native policy stays unsupported before consumption, artifact or process creation", { skip: !nativeRoot }, async (t) => {
+test("installed native policy stays unsupported before consumption, artifact or process creation", { skip: nativeSkip }, async (t) => {
   const f = await fixture(t, { evidenceMode: "actual-provider" });
   await assert.rejects(createCodexNativeForkJobHost(f.options), (error) => {
     assert.equal(error.code, "CODEX_NATIVE_FORK_INSTALLED_ENFORCEMENT_UNPROVEN");
@@ -287,7 +283,7 @@ test("installed native policy stays unsupported before consumption, artifact or 
   assert.equal(fs.existsSync(path.join(f.operational, "worker-jobs")), false);
 });
 
-test("fixture ownership cannot be upgraded to actual provider evidence", { skip: !nativeRoot }, async (t) => {
+test("fixture ownership cannot be upgraded to actual provider evidence", { skip: nativeSkip }, async (t) => {
   const f = await fixture(t);
   const c = f.options.hostConnection;
   const noOperation = async () => {
@@ -315,7 +311,7 @@ test("fixture ownership cannot be upgraded to actual provider evidence", { skip:
   assert.equal(f.lease().status, "available");
 });
 
-test("inert reconnect and repeated close create no journal, lease or process", { skip: !nativeRoot }, async (t) => {
+test("inert reconnect and repeated close create no journal, lease or process", { skip: nativeSkip }, async (t) => {
   const f = await fixture(t);
   const connection = await connectCodexWorkerHost(f.options);
   assert.equal(connection.inspect().started, false);
@@ -328,7 +324,7 @@ test("inert reconnect and repeated close create no journal, lease or process", {
 });
 
 for (const field of ["authorizationHash", "source", "policyDigest"])
-  test(`reconnect ${field} tamper fails before consumption`, { skip: !nativeRoot }, async (t) => {
+  test(`reconnect ${field} tamper fails before consumption`, { skip: nativeSkip }, async (t) => {
     const f = await fixture(t);
     const options = structuredClone({ ...f.options, onProcess: undefined });
     options.hostConnection[field] = field === "source" ? { ...options.hostConnection.source, threadId: "other" } : "0".repeat(64);
@@ -337,7 +333,7 @@ for (const field of ["authorizationHash", "source", "policyDigest"])
   });
 
 for (const scenario of ["native-composition-stale", "native-composition-policy-drift", "native-composition-lost-fork"])
-  test(`product composition ${scenario} cannot start a worker turn or replay`, { skip: !nativeRoot }, async (t) => {
+  test(`product composition ${scenario} cannot start a worker turn or replay`, { skip: nativeSkip }, async (t) => {
     const f = await fixture(t, { scenario });
     const before = fs.readFileSync(f.sessionFile);
     const result = await runWorker(f.options);

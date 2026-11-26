@@ -43,6 +43,10 @@ type jobTerminal struct {
 	ControlDigest     string `json:"controlDigest"`
 }
 
+// flushSpool makes a spool durable before the terminal record names it. Tests
+// replace it to make the flush slow.
+var flushSpool = (*os.File).Sync
+
 type boundedSpool struct {
 	file     *os.File
 	limit    int64
@@ -73,9 +77,11 @@ func (w *boundedSpool) Write(data []byte) (int, error) {
 		}
 		return n, err
 	}
-	if err := w.file.Sync(); err != nil {
-		return n, err
-	}
+	// No flush here. The copy from the provider's pipe runs inside the
+	// provider's output grace (Cmd.WaitDelay), so a slow flush of a chunk would
+	// read as output that stayed open after exit. runPreparedJob flushes both
+	// spools once, before the terminal record vouches for them.
+	//
 	// Drain beyond the bound until the owner terminates the exact tree. Never
 	// allocate or retain the discarded tail in the frontend.
 	return length, nil
@@ -246,10 +252,10 @@ func runPreparedJob(job JobRequest, input, data []byte, directory string) (int, 
 	if stdout.overflow || stderr.overflow {
 		reason = "output-limit"
 	}
-	if err := out.Sync(); err != nil {
+	if err := flushSpool(out); err != nil {
 		return 2, err
 	}
-	if err := errout.Sync(); err != nil {
+	if err := flushSpool(errout); err != nil {
 		return 2, err
 	}
 	var control []byte

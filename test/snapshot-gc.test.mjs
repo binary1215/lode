@@ -31,6 +31,7 @@ import { buildSnapshotDeletionClosure, snapshotFileIdentity } from "../scripts/l
 import { classifySnapshotFileSystem, filesystemNameFromMountTable } from "../scripts/lib/world/snapshot-filesystem.mjs";
 import { decodeSnapshotBytes } from "../scripts/lib/world/snapshot-storage-codec.mjs";
 import { emptyProductModelDocument } from "../scripts/lib/world/product-model.mjs";
+import { skipReason, supervisorFixtureRoot } from "./helpers/native-fixtures.mjs";
 
 // Only effects requiring the statically unsupported macOS collection lease are
 // inapplicable there. Read-only closure/calculation and public refusal stay tested.
@@ -41,8 +42,9 @@ function collectionTest(name, options, fn) {
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 // Exercise the real verified CI fixture at the internal capability-selection
 // boundary. No copy, source/dist mutation or public Core option is needed.
-if(process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT){
- const root=process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT;
+const supervisorRoot=supervisorFixtureRoot();
+if(supervisorRoot){
+ const root=supervisorRoot;
  resolveVerifiedProcessSupervisor({pluginRoot:root});
  const previous=SnapshotBackendReclamation.prototype.selectSupervisor;
  const select=()=>resolveVerifiedProcessSupervisor({pluginRoot:root});
@@ -510,7 +512,7 @@ test("decoded-byte accounting measures UTF8 bytes and applies the bound before J
   assert.equal(measured, 0);
 });
 
-test("cancelled Windows filesystem probe closes its owned child and preserves every original", { skip: process.platform !== "win32" }, async t => {
+test("cancelled Windows filesystem probe closes its owned child and preserves every original", { skip: process.platform !== "win32" && skipReason.otherOperatingSystem("Windows", "the Windows filesystem probe") }, async t => {
   const f = await fixture(t); await orphan(f); const before = tree(f.root), controller = new AbortController(), events = [];
   const result = await applySnapshotGarbageCollection({ root: f.root, signal: controller.signal, onProcess: event => {
     events.push(event); if (event.event === "started") controller.abort();
@@ -675,7 +677,7 @@ collectionTest("rooted read reacquires the same chosen OID across a real pack re
  const read=await f.store.read(f.built.snapshot.worldModelId);assert(replaced);assert.equal(read.snapshotStorage.treeObjectId,f.entry.snapshotStorage.treeObjectId);assert.equal(read.snapshotStorage.rawSha256,f.entry.snapshotStorage.rawSha256);assert(f.result.deleted.some(row=>row.path.endsWith(".pack")));
 });
 
-collectionTest("Windows open pack handle produces honest partial retirement while rooted bytes stay readable",{skip:process.platform!=="win32"},async t=>{
+collectionTest("Windows open pack handle produces honest partial retirement while rooted bytes stay readable",{skip:process.platform!=="win32"&&skipReason.otherOperatingSystem("Windows", "Windows open-handle retirement")},async t=>{
  const f=await objectFixture(t,true),oldPack=[...f.mixed.files.values()].find(row=>row.file.endsWith(".pack"));
  const executablePath=path.join(process.env.SystemRoot,"System32/WindowsPowerShell/v1.0/powershell.exe");
  const script="$f=[IO.File]::Open('"+oldPack.file.replaceAll("'","''")+"',[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite);try{[Console]::WriteLine('held');[Console]::ReadLine()|Out-Null}finally{$f.Dispose()}";
@@ -804,7 +806,7 @@ collectionTest("unindexed inventory preserves foreign metadata and preflights sp
 });
 
 
-collectionTest("unindexed recovery stays within the existing producer path depth on Windows",{skip:process.platform!=="win32"},async t=>{
+collectionTest("unindexed recovery stays within the existing producer path depth on Windows",{skip:process.platform!=="win32"&&skipReason.otherOperatingSystem("Windows", "the Windows path-depth recovery")},async t=>{
  const base=fs.mkdtempSync(path.join(os.tmpdir(),"lode-gc-path-")),target=path.join(base,"p".repeat(Math.max(1,130-base.length-1)));
  const f=await objectFixture(t,true,target);t.after(()=>fs.rmSync(base,{recursive:true,force:true}));assert(f.root.length>=130);
  const rename=fs.renameSync;
@@ -883,7 +885,7 @@ test("malformed coalesced orphan group or domain types preserve every candidate"
 });
 
 
-test("macOS public GC reclaims unreachable snapshots and keeps the current world", { skip: process.platform !== "darwin" }, async t => {
+test("macOS public GC reclaims unreachable snapshots and keeps the current world", { skip: process.platform !== "darwin" && skipReason.otherOperatingSystem("macOS", "public GC on macOS") }, async t => {
   const f = await fixture(t); const extra = await orphan(f);
   const beforeBytes = extra.files.reduce((sum, file) => sum + fs.statSync(file).size, 0);
   const closure = await buildSnapshotDeletionClosure({ root: f.root });

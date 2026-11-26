@@ -92,6 +92,14 @@ function complete(frame) {
 lines.on("close", () => {
   if (overlapTimer) clearInterval(overlapTimer);
   if (scenario === "trailing-partial" && completed) process.stdout.write('{"id":');
+  // Fixed synthetic-only switch in this fixture's disposable home: mark that
+  // input ended, then stay alive the given time before exiting by itself with 0.
+  // The production policy/transport gets no such option.
+  const after = path.join(process.env.CODEX_HOME || "", "fixture-after-input.json");
+  if (process.env.CODEX_HOME && fs.existsSync(after)) {
+    fs.writeFileSync(path.join(process.env.CODEX_HOME, "fixture-input-ended"), `${process.pid}\n`);
+    setTimeout(() => {}, JSON.parse(fs.readFileSync(after, "utf8")).stayMs);
+  }
 });
 lines.on("line", line => {
   const frame = JSON.parse(line);

@@ -18,11 +18,75 @@ func TestJobOwnerHelper(t *testing.T) {
 	if os.Getenv("HEAD_JOB_TEST_HELPER") != "owner" {
 		return
 	}
-	code, err := RunJob(os.Getenv("HEAD_JOB_TEST_REQUEST"))
+	request := os.Getenv("HEAD_JOB_TEST_REQUEST")
+	if delay, err := time.ParseDuration(os.Getenv("HEAD_JOB_TEST_SLOW_FLUSH")); err == nil {
+		flushLog := os.Getenv("HEAD_JOB_TEST_FLUSH_LOG")
+		flushSpool = func(file *os.File) error {
+			// Log which spool is flushed and whether a terminal record already
+			// vouches for it, so the test can pin the order.
+			_, terminalErr := os.Lstat(filepath.Join(filepath.Dir(file.Name()), "terminal.json"))
+			line := fmt.Sprintf("%s terminal=%t\n", filepath.Base(file.Name()), terminalErr == nil)
+			if log, err := os.OpenFile(flushLog, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600); err == nil {
+				_, _ = log.WriteString(line)
+				_ = log.Close()
+			}
+			time.Sleep(delay)
+			return file.Sync()
+		}
+	}
+	code, err := RunJob(request)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		// A detached owner's stderr is not kept. Test-only: leave its error next
+		// to the request so a failing assertion can name it.
+		_ = os.WriteFile(filepath.Join(filepath.Dir(request), ownerErrorTestFile), []byte(err.Error()), 0600)
 	}
 	os.Exit(code)
+}
+
+const ownerErrorTestFile = "owner-error.test.txt"
+
+// ownerErrorForTest returns the detached owner's error, when it reported one.
+func ownerErrorForTest(directory string) string {
+	data, err := os.ReadFile(filepath.Join(directory, ownerErrorTestFile))
+	if err != nil {
+		return "<no owner error recorded>"
+	}
+	return string(data)
+}
+
+// jobEvidence names what a job left behind, for failure messages: the owner's
+// error and output, its exit state, and the job's records and spools. owner is
+// nil for a detached owner, whose output is not kept.
+func jobEvidence(directory string, owner *exec.Cmd) string {
+	parts := []string{"owner error: " + ownerErrorForTest(directory)}
+	if owner != nil {
+		if output, ok := owner.Stderr.(*os.File); ok {
+			parts = append(parts, "owner output: "+evidenceTail(output.Name()))
+		}
+		if owner.ProcessState != nil {
+			parts = append(parts, "owner state: "+owner.ProcessState.String())
+		}
+	}
+	for _, name := range []string{"terminal.json", "launch-failure.json", "control.jsonl", "stdout.bin", "stderr.bin"} {
+		parts = append(parts, name+": "+evidenceTail(filepath.Join(directory, name)))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func evidenceTail(file string) string {
+	data, err := os.ReadFile(file)
+	if os.IsNotExist(err) {
+		return "<absent>"
+	}
+	if err != nil {
+		return "<unreadable: " + err.Error() + ">"
+	}
+	const limit = 2000
+	if len(data) > limit {
+		return fmt.Sprintf("...%q", data[len(data)-limit:])
+	}
+	return fmt.Sprintf("%q", data)
 }
 
 func TestJobProviderHelper(t *testing.T) {
@@ -65,6 +129,10 @@ func TestJobLauncherHelper(t *testing.T) {
 		return
 	}
 	file := os.Getenv("HEAD_JOB_TEST_REQUEST")
+	if err := enterFrontendJob(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(3)
+	}
 	if err := launchJob(file, os.Args[0], []string{"-test.run=^TestJobOwnerHelper$"}, []string{"HEAD_JOB_TEST_HELPER=owner"}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
@@ -112,7 +180,7 @@ func TestJobSurvivesFrontendExitAndDoesNotRelaunch(t *testing.T) {
 		}
 	})
 	if _, err := os.Stat(filepath.Join(directory, "terminal.json")); err == nil {
-		t.Fatal("fixture did not establish live overlap after launcher exit")
+		t.Fatalf("fixture did not establish live overlap after launcher exit; %s", jobEvidence(directory, nil))
 	}
 	deadline := time.Now().Add(7 * time.Second)
 	for {
@@ -120,13 +188,13 @@ func TestJobSurvivesFrontendExitAndDoesNotRelaunch(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("detached job lost after frontend exit")
+			t.Fatalf("detached job lost after frontend exit; %s", jobEvidence(directory, nil))
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	terminal := readJobTerminal(t, directory)
 	if terminal.ExitCode != 0 || terminal.Reason != "exited" || !terminal.CompleteOutput {
-		t.Fatalf("bad detached terminal: %+v", terminal)
+		t.Fatalf("bad detached terminal: %+v; %s", terminal, jobEvidence(directory, nil))
 	}
 	// Launch retry must not create a second owner, even after terminal success.
 	if err := launchJob(file, os.Args[0], nil, nil); err == nil {
@@ -171,13 +239,22 @@ func jobFixture(t *testing.T, mode string, timeout int, outputLimit int64) (stri
 	return directory, file
 }
 
-func startJobFixture(t *testing.T, directory, file string) *exec.Cmd {
+func startJobFixture(t *testing.T, directory, file string, environment ...string) *exec.Cmd {
 	t.Helper()
 	command := exec.Command(os.Args[0], "-test.run=^TestJobOwnerHelper$")
 	command.Dir = directory
-	command.Env = append(os.Environ(), "HEAD_JOB_TEST_HELPER=owner", "HEAD_JOB_TEST_REQUEST="+file)
+	command.Env = append(append(os.Environ(), "HEAD_JOB_TEST_HELPER=owner", "HEAD_JOB_TEST_REQUEST="+file), environment...)
+	// The owner's output goes to a file outside the job directory, so that
+	// jobEvidence can show it and Wait never waits on a copy of the pipe.
+	output, err := os.CreateTemp(t.TempDir(), "owner-output-*.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.Stdout, command.Stderr = output, output
 	t.Logf("planned parent=%d command=%q cwd=%q ports=[]", os.Getpid(), command.Args, directory)
-	if err := command.Start(); err != nil {
+	err = command.Start()
+	_ = output.Close()
+	if err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("started pid=%d parent=%d", command.Process.Pid, os.Getpid())
@@ -194,11 +271,11 @@ func readJobTerminal(t *testing.T, directory string) jobTerminal {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(directory, "terminal.json"))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v; %s", err, jobEvidence(directory, nil))
 	}
 	var terminal jobTerminal
 	if err := json.Unmarshal(data, &terminal); err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v; %s", err, jobEvidence(directory, nil))
 	}
 	return terminal
 }
@@ -207,27 +284,55 @@ func TestJobDurableResultAndNoRelaunch(t *testing.T) {
 	directory, file := jobFixture(t, "success", 5000, 1024)
 	command := startJobFixture(t, directory, file)
 	if err := command.Wait(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v; %s", err, jobEvidence(directory, command))
 	}
 	t.Logf("exited pid=%d", command.Process.Pid)
 	terminal := readJobTerminal(t, directory)
 	if terminal.ExitCode != 0 || terminal.Reason != "exited" || !terminal.CompleteOutput || !terminal.OwnerExitRequired {
-		t.Fatalf("bad terminal: %+v", terminal)
+		t.Fatalf("bad terminal: %+v; %s", terminal, jobEvidence(directory, command))
 	}
 	before, err := os.ReadFile(filepath.Join(directory, "stdout.bin"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(before) != "synthetic-result\n" {
-		t.Fatalf("unexpected output %q", before)
+		t.Fatalf("unexpected output %q; %s", before, jobEvidence(directory, command))
 	}
 	replay := startJobFixture(t, directory, file)
 	if replay.Wait() == nil {
-		t.Fatal("claimed job relaunched")
+		t.Fatalf("claimed job relaunched; %s", jobEvidence(directory, replay))
 	}
 	after, _ := os.ReadFile(filepath.Join(directory, "stdout.bin"))
 	if string(after) != string(before) {
 		t.Fatal("replay changed stored output")
+	}
+}
+
+// The owner's output grace (100 ms in the fixture) bounds how long output may
+// stay open after the provider exits. A slow flush of the owner's own spool is
+// not open output: a provider that exited with all of its output must still end
+// as exited with complete output. Both spools are still flushed, once each,
+// before the terminal record vouches for them.
+func TestJobSlowSpoolFlushStillCompletes(t *testing.T) {
+	directory, file := jobFixture(t, "success", 5000, 1024)
+	flushLog := filepath.Join(t.TempDir(), "flush.log")
+	command := startJobFixture(t, directory, file, "HEAD_JOB_TEST_SLOW_FLUSH=300ms", "HEAD_JOB_TEST_FLUSH_LOG="+flushLog)
+	if err := command.Wait(); err != nil {
+		t.Fatalf("slow spool flush failed the job: %v; %s", err, jobEvidence(directory, command))
+	}
+	terminal := readJobTerminal(t, directory)
+	if terminal.ExitCode != 0 || terminal.Reason != "exited" || !terminal.CompleteOutput {
+		t.Fatalf("slow spool flush changed the terminal: %+v; %s", terminal, jobEvidence(directory, command))
+	}
+	if output, err := os.ReadFile(filepath.Join(directory, "stdout.bin")); err != nil || string(output) != "synthetic-result\n" {
+		t.Fatalf("incomplete output %q (%v); %s", output, err, jobEvidence(directory, command))
+	}
+	flushes, err := os.ReadFile(flushLog)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if expected := "stdout.bin terminal=false\nstderr.bin terminal=false\n"; string(flushes) != expected {
+		t.Fatalf("spool flushes %q, expected %q; %s", flushes, expected, jobEvidence(directory, command))
 	}
 }
 
@@ -246,11 +351,11 @@ func TestJobOwnerEnforcesDeadlineAndCancel(t *testing.T) {
 			}
 			command := startJobFixture(t, directory, file)
 			if command.Wait() == nil {
-				t.Fatal("stopped job reported success")
+				t.Fatalf("stopped job reported success; %s", jobEvidence(directory, command))
 			}
 			terminal := readJobTerminal(t, directory)
 			if terminal.ExitCode == 0 || terminal.Reason != reason {
-				t.Fatalf("bad stop evidence: %+v", terminal)
+				t.Fatalf("bad stop evidence: %+v; %s", terminal, jobEvidence(directory, command))
 			}
 		})
 	}
@@ -262,11 +367,11 @@ func TestJobOutputBound(t *testing.T) {
 	_ = command.Wait()
 	terminal := readJobTerminal(t, directory)
 	if terminal.CompleteOutput || terminal.Reason != "output-limit" || terminal.StdoutBytes != 4 {
-		t.Fatalf("overflow misclassified: %+v", terminal)
+		t.Fatalf("overflow misclassified: %+v; %s", terminal, jobEvidence(directory, command))
 	}
 	data, _ := os.ReadFile(filepath.Join(directory, "stdout.bin"))
 	if !strings.EqualFold(string(data), "synt") {
-		t.Fatalf("wrong bounded output: %q", data)
+		t.Fatalf("wrong bounded output: %q; %s", data, jobEvidence(directory, command))
 	}
 }
 
@@ -296,7 +401,7 @@ func TestJobOwnerCrashAndDeadlineCleanGrandchildPort(t *testing.T) {
 				}
 			}
 			if grandchild.PID == 0 {
-				t.Fatal("nested fixture did not publish owned port")
+				t.Fatalf("nested fixture did not publish owned port; %s", jobEvidence(directory, owner))
 			}
 			t.Logf("owned-grandchild pid=%d parent=%d address=%s", grandchild.PID, grandchild.ParentPID, grandchild.Address)
 			if mode == "crash" {
@@ -323,7 +428,7 @@ func TestJobOwnerCrashAndDeadlineCleanGrandchildPort(t *testing.T) {
 					t.Fatal("crashed owner invented terminal completion")
 				}
 			} else if readJobTerminal(t, directory).Reason != "timeout" {
-				t.Fatal("deadline was not preserved")
+				t.Fatalf("deadline was not preserved; %s", jobEvidence(directory, owner))
 			}
 			t.Logf("owned-tree-exited owner=%d child=%d grandchild=%d portReleased=true", owner.Process.Pid, grandchild.ParentPID, grandchild.PID)
 		})
