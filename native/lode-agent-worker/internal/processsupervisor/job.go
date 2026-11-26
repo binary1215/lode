@@ -79,8 +79,8 @@ func (w *boundedSpool) Write(data []byte) (int, error) {
 	}
 	// No flush here. The copy from the provider's pipe runs inside the
 	// provider's output grace (Cmd.WaitDelay), so a slow flush of a chunk would
-	// read as output that stayed open after exit. RunJob flushes both spools
-	// once, before the terminal record vouches for them.
+	// read as output that stayed open after exit. runPreparedJob flushes both
+	// spools once, before the terminal record vouches for them.
 	//
 	// Drain beyond the bound until the owner terminates the exact tree. Never
 	// allocate or retain the discarded tail in the frontend.
