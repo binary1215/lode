@@ -12,10 +12,13 @@
 //       (except a Windows test fixture the runner announced it could not supply without Go);
 //   R4  in a full run, the skipped tests of each pinned class equal the ledger's list for
 //       this operating system, and every skip of a bounded class is on its list (a listed
-//       test that runs is fine); a difference fails and prints the tests that moved;
-//   T   a todo test fails the run: node reports it as passing whatever it does.
+//       test that runs is fine); both compare as multisets, so a test that skips twice
+//       must be listed twice; a difference fails and prints the tests that moved;
+//   T   a todo test fails the run: node reports it as passing whatever it does;
+//   H   in CI (runsInCi below), a "host-limit" skip fails the run: a CI runner must give
+//       every test what it needs. On a developer machine host-limit skips are only counted.
 //
-// A run of selected files checks R1-R3 and T.
+// A run of selected files checks R1-R3, T and H.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,6 +65,13 @@ export default async function* skipLedgerReporter(source) {
   }
 }
 
+// The one place that decides "in CI": CI=true. GitHub Actions sets it on every runner,
+// as most CI services do, and a developer can set it to reproduce the CI result locally.
+// GITHUB_ACTIONS would tie the rule to one service and could not be reproduced as plainly.
+export function runsInCi(env = process.env) {
+  return env.CI === "true";
+}
+
 export function readLedger(file = LEDGER_FILE) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
 }
@@ -98,7 +108,7 @@ function multisetDifference(left, right) {
 // Returns { problems: string[], summary: string[], observed } for one finished run.
 // `unsupplied` names fixture variables the runner announced it could not supply;
 // a native-fixture skip whose reason names one of them is reported, not failed.
-export function checkSkips({ records, ledger, platform = process.platform, fullRun, unsupplied = [] }) {
+export function checkSkips({ records, ledger, platform = process.platform, fullRun, unsupplied = [], ci = false }) {
   const problems = [];
   const observed = {};
   const counted = {};
@@ -118,6 +128,9 @@ export function checkSkips({ records, ledger, platform = process.platform, fullR
       continue;
     }
     counted[skipClass] = (counted[skipClass] ?? 0) + 1;
+    if (skipClass === "host-limit" && ci) {
+      problems.push(`H: ${where}: host-limit skip in CI; the CI runner must give this test what it needs: ${record.reason}`);
+    }
     if (skipClass === "native-fixture" && platform === "win32") {
       problems.push(`R3: ${where}: native-fixture skip on Windows; scripts/run-tests.mjs supplies that fixture, so its wiring broke: ${record.reason}`);
     }
@@ -130,8 +143,7 @@ export function checkSkips({ records, ledger, platform = process.platform, fullR
       problems.push(`R4: test/fixtures/skip-ledger.json has no entry for ${platform}.`);
     } else {
       for (const skipClass of Object.keys(ledger.classes).filter((name) => ledger.classes[name].bounded === true)) {
-        const allowed = new Set(pinned[skipClass] ?? []);
-        const unlisted = (observed[skipClass] ?? []).filter((name) => !allowed.has(name));
+        const unlisted = multisetDifference(observed[skipClass] ?? [], pinned[skipClass] ?? []);
         if (!unlisted.length) continue;
         problems.push(
           [

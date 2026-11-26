@@ -281,7 +281,7 @@ jobs:
 
       - name: Run tests
         working-directory: native/lode-agent-worker
-        run: go test ./...
+        run: go test -v ./...
 
       - name: Run static analysis
         working-directory: native/lode-agent-worker

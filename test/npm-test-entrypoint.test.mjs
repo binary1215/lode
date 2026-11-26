@@ -5,7 +5,7 @@ import test from "node:test";
 import os from "node:os";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { checkSkips, classify, readLedger } from "../scripts/test-skip-ledger.mjs";
+import { checkSkips, classify, readLedger, runsInCi } from "../scripts/test-skip-ledger.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const goos = process.platform === "win32" ? "windows" : process.platform;
@@ -83,6 +83,7 @@ test("every workflow job has a time limit and the host jobs run the Go tests bef
     assert.deepEqual(exported[1].trim().split(/\s+/).sort(), [...FIXTURE_NAMES].sort(), `${job} exports every fixture name`);
   }
   const goJob = jobs.get("test");
+  assert.match(goJob, /run: go test -v \.\/\.\.\./, "the Linux Go job names every Go test that ran and every one that skipped");
   assert.match(goJob, /verifies Go worker distribution identity and discloses safe JavaScript fallback/);
   assert.match(goJob, /LODE_AGENT_GO_WORKER_FIXTURE_ROOT=/);
   assert.match(goJob, /HEAD_AGENT_GO_WORKER_FIXTURE_ROOT=/);
@@ -120,6 +121,7 @@ test("the checked-in skip ledger declares its classes and keeps sorted lists per
     assert.ok(declared.meaning.length > 20, name);
   }
   assert.equal(ledger.classes["opt-in"].bounded, true, "opt-in skips are bounded by a list");
+  assert.match(ledger.classes["host-limit"].meaning, /In CI \(CI=true\) every host-limit skip fails the run/);
   assert.deepEqual(Object.keys(ledger.skips).sort(), ["darwin", "linux", "win32"]);
   for (const [platform, classes] of Object.entries(ledger.skips)) {
     for (const [name, tests] of Object.entries(classes)) {
@@ -138,12 +140,13 @@ test("the checked-in skip ledger declares its classes and keeps sorted lists per
   assert.deepEqual(ledger.skips.win32["native-fixture"] ?? [], [], "no native-fixture skip is pinned on Windows");
 });
 
-test("skip checks: R1 reason, R2 declared class, R3 Windows native fixture, R4 pinned lists in a full run only", () => {
+test("skip checks: R1 reason, R2 declared class, R3 Windows native fixture, R4 pinned lists in a full run only, H host-limit in CI", () => {
   const ledger = {
     classes: {
       "other-os": { pinned: true, meaning: "x" },
       "native-fixture": { pinned: true, meaning: "x" },
       "opt-in": { pinned: false, meaning: "x" },
+      "host-limit": { pinned: false, meaning: "x" },
     },
     skips: { linux: { "other-os": ["test/a.test.mjs > kept", "test/a.test.mjs > slept"] } },
   };
@@ -192,9 +195,28 @@ test("skip checks: R1 reason, R2 declared class, R3 Windows native fixture, R4 p
   assert.deepEqual(asleep.problems, ['R4: linux "opt-in" skips not on the ledger\'s list (an upper bound): 1.\n  now skipped: test/a.test.mjs > woken']);
   assert.deepEqual(asleep.observed["opt-in"], ["test/a.test.mjs > listed", "test/a.test.mjs > woken"]);
   assert.deepEqual(checkSkips({ records: [skip("woken", "opt-in: set NEVER_SET")], ledger: bounded, platform: "linux", fullRun: false }).problems, []);
+  // A multiset, like the pinned classes: a test listed once that skips twice (a loop, a repeated name) is one too many.
+  const twice = checkSkips({ records: [...optIn, skip("listed", "opt-in: set X")], ledger: bounded, platform: "linux", fullRun: true });
+  assert.deepEqual(twice.problems, ['R4: linux "opt-in" skips not on the ledger\'s list (an upper bound): 1.\n  now skipped: test/a.test.mjs > listed']);
 
   const todo = checkSkips({ records: [{ kind: "todo", file: "test/a.test.mjs", test: "later", passed: true }], ledger, platform: "linux", fullRun: false });
   assert.match(todo.problems.join("\n"), /^T: test\/a\.test\.mjs > later: todo test/);
+
+  const limited = [skip("linked", "host-limit: cannot create a directory link here"), skip("kept", "other-os: Windows only")];
+  for (const fullRun of [false, true]) {
+    const local = checkSkips({ records: limited, ledger, platform: "linux", fullRun, ci: false });
+    assert.deepEqual(local.problems.filter((problem) => problem.startsWith("H:")), [], "outside CI a host-limit skip is only counted");
+    assert.ok(local.summary.includes("host-limit 1"));
+    const inCi = checkSkips({ records: limited, ledger, platform: "linux", fullRun, ci: true });
+    assert.deepEqual(
+      inCi.problems.filter((problem) => problem.startsWith("H:")),
+      ["H: test/a.test.mjs > linked: host-limit skip in CI; the CI runner must give this test what it needs: host-limit: cannot create a directory link here"],
+      `in CI a host-limit skip fails (${fullRun ? "full run" : "selected files"})`,
+    );
+    assert.ok(inCi.summary.includes("host-limit 1"), "it is still counted");
+  }
+  assert.equal(runsInCi({ CI: "true" }), true);
+  for (const env of [{}, { CI: "false" }, { CI: "" }, { GITHUB_ACTIONS: "true" }]) assert.equal(runsInCi(env), false, JSON.stringify(env));
 });
 
 function runnerSandbox(t) {
@@ -215,6 +237,8 @@ function runnerSandbox(t) {
   fs.mkdirSync(temp);
   const environment = { ...process.env, LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT: fixture, TMP: temp, TEMP: temp, TMPDIR: temp };
   for (const name of TEST_FIXTURE_NAMES) delete environment[name];
+  // The same result on a developer machine and in CI: a test that wants CI sets it itself.
+  for (const name of Object.keys(environment).filter((key) => key.toUpperCase() === "CI")) delete environment[name];
   if (process.platform === "win32") {
     // Ready stand-ins, so the runner does not build the Windows test fixtures from sources the sandbox lacks.
     const ownerCrash = path.join(sandbox, "owned-worker-crash.exe");
@@ -331,6 +355,24 @@ test("parent", async (t) => { await t.test("child", sleep); });
   const todo = box.run(["test/todo.test.mjs"]);
   assert.equal(todo.status, 1, "node passes a failing todo test; the runner does not");
   assert.match(todo.stderr, /T: test\/todo\.test\.mjs > later: todo test/);
+});
+
+test("in CI the runner fails a run on a host-limit skip and names it; outside CI it only counts it", (t) => {
+  const box = runnerSandbox(t);
+  box.write("limited.test.mjs", 'import test from "node:test";\ntest("linked", { skip: "host-limit: cannot create a directory link here" }, () => {});\n');
+  const local = box.run(["test/limited.test.mjs"]);
+  assert.equal(local.status, 0, local.stderr + local.stdout);
+  assert.match(local.stdout, /# skipped by class: host-limit 1/);
+  assert.doesNotMatch(local.stderr, /H: /);
+
+  const ci = box.run(["test/limited.test.mjs"], { CI: "true" });
+  assert.equal(ci.status, 1, ci.stderr + ci.stdout);
+  assert.match(ci.stdout, /# skipped by class: host-limit 1/);
+  assert.match(ci.stderr, /Skip ledger check failed \(selected files, R1-R3, T and H, in CI\):/);
+  assert.match(
+    ci.stderr,
+    /H: test\/limited\.test\.mjs > linked: host-limit skip in CI; the CI runner must give this test what it needs: host-limit: cannot create a directory link here/,
+  );
 });
 
 test("without Go on Windows the runner names the test fixtures it cannot supply and excuses only skips that name them", (t) => {
