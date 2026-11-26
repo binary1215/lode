@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "HeadRuntimeStateExport",
+  "observedAt": "2026-08-18T12:00:00Z",
+  "observations": [
+    {
+      "runtime": "codex",
+      "kind": "session",
+      "state": "active",
+      "externalId": "replace-with-host-session-id",
+      "providerVersion": "replace-with-provider-version",
+      "capabilities": [
+        "inspect"
+      ]
+    }
+  ]
+}
