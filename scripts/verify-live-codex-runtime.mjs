@@ -159,7 +159,9 @@ async function main() {
     );
     assert(!fs.existsSync(root), `Live ${providerName} fixture root already exists.`);
   }
-  const supervisorFixtureRoot = path.resolve(process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot);
+  const supervisorFixtureRoot = path.resolve(
+    process.env.LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT || pluginRoot,
+  );
   const supervisorSelection = resolveVerifiedProcessSupervisor({ pluginRoot: supervisorFixtureRoot });
   const previousOperationalRoot = process.env[RUNTIME_OPERATIONAL_STATE_ENV];
   process.env[RUNTIME_OPERATIONAL_STATE_ENV] = operationalRoot;

@@ -20,7 +20,7 @@ const pluginRoot = path.resolve(import.meta.dirname, "..");
 const probe = fs.mkdtempSync(path.join(os.tmpdir(), "lode-case-probe-"));
 const caseInsensitive = fs.existsSync(probe.toUpperCase()) && fs.existsSync(probe.toLowerCase());
 fs.rmSync(probe, { recursive: true, force: true });
-const onCaseInsensitive = { skip: caseInsensitive ? false : "the filesystem is case-sensitive" };
+const onCaseInsensitive = { skip: caseInsensitive ? false : "filesystem: the filesystem is case-sensitive" };
 const swapName = (root) => path.join(path.dirname(root), path.basename(root).toLowerCase());
 
 function fixture(t, runtimes = ["claude", "codex"]) {
@@ -147,7 +147,7 @@ test("a moved Project is still reported as relocated", onCaseInsensitive, async 
 
 test(
   "Windows: a lower-case drive letter together with another directory-name case",
-  { skip: process.platform === "win32" ? false : "drive letters exist only on Windows" },
+  { skip: process.platform === "win32" ? false : "other-os: drive letters exist only on Windows" },
   async (t) => {
     const { root, other } = fixture(t);
     const both = other[0].toLowerCase() + other.slice(1);

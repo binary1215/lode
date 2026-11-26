@@ -53,13 +53,13 @@ func TestWindowsJobPathPreservesHostSpellingAndDigest(t *testing.T) {
 	}
 	command := startJobFixture(t, directory, alias)
 	if err := command.Wait(); err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v; %s", err, jobEvidence(directory, command))
 	}
 	t.Logf("exited pid=%d", command.Process.Pid)
 	terminal := readJobTerminal(t, directory)
 	digest := sha256.Sum256(data)
 	if terminal.ExitCode != 0 || terminal.Reason != "exited" || !terminal.CompleteOutput || terminal.RequestDigest != hex.EncodeToString(digest[:]) {
-		t.Fatalf("job did not preserve exact request: %+v", terminal)
+		t.Fatalf("job did not preserve exact request: %+v; %s", terminal, jobEvidence(directory, command))
 	}
 	if err := InspectJobOwner(alias); err != nil {
 		t.Fatal(err)

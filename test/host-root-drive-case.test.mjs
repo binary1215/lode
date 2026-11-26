@@ -19,7 +19,7 @@ import { deliverQueuedOpenCode, registerOpenCodePresence, writeOpenCodeCallerTic
 // drive-letter case differs (Windows only). Nothing stored is rewritten.
 
 const windows = process.platform === "win32";
-const onWindows = { skip: windows ? false : "drive letters exist only on Windows" };
+const onWindows = { skip: windows ? false : "other-os: drive letters exist only on Windows" };
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const lower = (root) => root[0].toLowerCase() + root.slice(1);
 

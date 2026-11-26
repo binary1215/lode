@@ -14,6 +14,8 @@ import {
 import test from "node:test";
 import { observeClaudeProcess, probeClaudeProcesses, probeNativeProcesses, WINDOWS_QUERY_END } from "../scripts/lib/session/native-session-process.mjs";
 
+const windowsOnly = { skip: process.platform !== "win32" && "other-os: Windows-only behaviour" };
+
 const envToken = "a".repeat(64),
   nativeSessionId = "claude-synthetic-only";
 function fixture(t) {
@@ -135,7 +137,7 @@ test("incomparable birth formats and invalid PID inputs stay unknown, never gues
 
 test("actual local OS probe uses owned synthetic registry only, returns birth; helper closes and leaves no owned port", async (t) => {
   if (!["win32", "linux"].includes(process.platform)) {
-    t.skip("Exact OS birth adapter unsupported on this platform.");
+    t.skip("other-os: Exact OS birth adapter unsupported on this platform.");
     return;
   }
   const f = fixture(t),
@@ -203,7 +205,7 @@ test("actual local OS probe uses owned synthetic registry only, returns birth; h
 
 test(
   "Windows: the process lookup finishes while this thread is blocked past its timer, and keeps its result",
-  { skip: process.platform !== "win32" },
+  { skip: process.platform !== "win32" && "other-os: Windows-only behaviour" },
   async (t) => {
     const f = fixture(t);
     fs.writeFileSync(path.join(f.sessions, process.pid + ".json"), JSON.stringify({ pid: process.pid, sessionId: nativeSessionId }));
@@ -235,7 +237,7 @@ test(
 
 test("actual owned child birth then normal exit verifies old-instance disappearance, not work completion", async (t) => {
   if (!["win32", "linux"].includes(process.platform)) {
-    t.skip("Exact OS birth adapter unsupported on this platform.");
+    t.skip("other-os: Exact OS birth adapter unsupported on this platform.");
     return;
   }
   const f = fixture(t),
@@ -283,7 +285,7 @@ test("actual owned child birth then normal exit verifies old-instance disappeara
   }
 });
 
-test("Windows exact parent query rejects denied, malformed and mismatched native results", { skip: process.platform !== "win32" }, async (t) => {
+test("Windows exact parent query rejects denied, malformed and mismatched native results", windowsOnly, async (t) => {
   for (const fault of ["status", "length", "unique", "parent"])
     await t.test(fault, async (sub) => {
       const originalSpawn = childProcess.spawn;
@@ -400,7 +402,7 @@ test("private name inventory wire cannot become a PID witness or authorize unkno
   assert.throws(() => decodeWindowsProcessQueryWire(frame([]), { pids: [], maxRows: 16 }));
 });
 
-test("actual private wire emitter roundtrips Unicode, empty arrays and exact primitive columns", { skip: process.platform !== "win32" }, async (t) => {
+test("actual private wire emitter roundtrips Unicode, empty arrays and exact primitive columns", windowsOnly, async (t) => {
   const machine = 'machine\n한글"\\',
     host = "host-☃",
     birth = "2026-11-03T01:02:03.1234567Z";

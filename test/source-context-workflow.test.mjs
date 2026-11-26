@@ -49,8 +49,16 @@ test("actual isolated Python collection reaches helper and Context, reuses bytes
   assert.equal(historical.sourceState, "stale");
   assert.equal(historical.currentContextEligible, false);
   assert.equal(historical.evidence.sources[0].digest, first.results[0].sourceDigest);
-  (await assert.rejects(async () => (await compileContext({ root, task: "Inspect", includeRepositoryWorld: false,
-    evidenceNeeds: [{ id: "old", kind: "observation", observationIds: [first.results[0].observationId] }] })), { code: "SOURCE_DRIFT" }));
+  await assert.rejects(
+    async () =>
+      await compileContext({
+        root,
+        task: "Inspect",
+        includeRepositoryWorld: false,
+        evidenceNeeds: [{ id: "old", kind: "observation", observationIds: [first.results[0].observationId] }],
+      }),
+    { code: "SOURCE_DRIFT" },
+  );
   const third = await prepareSourceContext(args);
   assert.equal(third.results[0].reused, false);
   assert.notEqual(third.results[0].observationId, first.results[0].observationId);
@@ -65,7 +73,7 @@ test("CRLF, UTF8 bytes and non-BMP before a call preserve exact UTF16 occurrence
 });
 
 test("dynamic and shadowed names stay unresolved, independent source need continues", async (t) => {
-  const { root, storage } = project(t, 'def target():\n    pass\ndef caller(target):\n    target()\n    self.target()\n');
+  const { root, storage } = project(t, "def target():\n    pass\ndef caller(target):\n    target()\n    self.target()\n");
   const result = await prepareSourceContext({ root, task: "Inspect", needs: [need, { kind: "source", path: "module.py" }], onProcess });
   assert.equal(result.status, "partial");
   assert.equal(result.results[0].status, "unavailable");
@@ -79,7 +87,10 @@ test("CLI and typed MCP need no JSON/hash input and task-only keeps selection wi
   const { root, storage } = project(t);
   const result = await runCommand(["source-context", root, "--task", "Inspect", "--source", "module.py", "--symbol", "caller"], { onProcess });
   assert.equal(result.status, "observed");
-  const mcp = await dispatch({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "head_source_context", arguments: { project_root: root, task: "Inspect", needs: [need] } } }, { onProcess });
+  const mcp = await dispatch(
+    { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "head_source_context", arguments: { project_root: root, task: "Inspect", needs: [need] } } },
+    { onProcess },
+  );
   assert.equal(mcp.result.structuredContent.status, "observed", JSON.stringify(mcp));
   const selection = await prepareSourceContext({ root, task: "Inspect" });
   assert.equal(selection.userActionRequired, false);
@@ -94,24 +105,28 @@ test("isolated interpreter ignores project ast/sitecustomize and honors cancella
   try {
     const identity = await runPythonSourceWorker({ operation: "identity" }, { onProcess });
     assert.equal(identity.result.profile.isolated, true);
-    const controller = new AbortController(); controller.abort();
+    const controller = new AbortController();
+    controller.abort();
     await assert.rejects(runPythonSourceWorker({ operation: "identity" }, { signal: controller.signal, onProcess }), { code: "SOURCE_CANCELLED" });
     await assert.rejects(runPythonSourceWorker({ operation: "identity" }, { timeoutMs: 1, onProcess }), { code: "SOURCE_TIMEOUT" });
-  } finally { if (oldPath === undefined) delete process.env.PYTHONPATH; else process.env.PYTHONPATH = oldPath; }
+  } finally {
+    if (oldPath === undefined) delete process.env.PYTHONPATH;
+    else process.env.PYTHONPATH = oldPath;
+  }
 });
 
 test("conditional, decorated, nested, alias and duplicate bindings never become arbitrary targets", async (t) => {
   const variants = [
-    'if False:\n    def target(): pass\ndef caller(): target()\n',
-    'def target(): pass\ntarget = other\ndef caller(): target()\n',
-    '@decorate\ndef target(): pass\ndef caller(): target()\n',
-    'def target(): pass\ndef target(): pass\ndef caller(): target()\n',
-    'def target(): pass\nclass A:\n    def caller(self): target()\n',
-    'def caller():\n    target()\n    def target(): pass\n',
+    "if False:\n    def target(): pass\ndef caller(): target()\n",
+    "def target(): pass\ntarget = other\ndef caller(): target()\n",
+    "@decorate\ndef target(): pass\ndef caller(): target()\n",
+    "def target(): pass\ndef target(): pass\ndef caller(): target()\n",
+    "def target(): pass\nclass A:\n    def caller(self): target()\n",
+    "def caller():\n    target()\n    def target(): pass\n",
   ];
   for (const source of variants) {
     const { root, storage } = project(t, source);
-    const selection = { ...need, symbol: source.includes('class A:') ? 'A.caller' : 'caller' };
+    const selection = { ...need, symbol: source.includes("class A:") ? "A.caller" : "caller" };
     const result = await prepareSourceContext({ root, task: "Inspect", needs: [selection], onProcess });
     assert.equal(result.results[0].status, "unavailable", JSON.stringify(result.results));
     assert.equal(result.context, null);
@@ -122,8 +137,15 @@ test("source drift during actual collection excludes that need, not independent 
   const { root, storage } = project(t);
   fs.writeFileSync(path.join(root, "independent.txt"), "Independent evidence\n");
   let closed = 0;
-  const result = await prepareSourceContext({ root, task: "Inspect", needs: [need, { kind: "source", path: "independent.txt" }],
-    onProcess(event) { onProcess(event); if (event.event === "closed" && ++closed === 2) fs.appendFileSync(path.join(root, "module.py"), "# drift\n"); } });
+  const result = await prepareSourceContext({
+    root,
+    task: "Inspect",
+    needs: [need, { kind: "source", path: "independent.txt" }],
+    onProcess(event) {
+      onProcess(event);
+      if (event.event === "closed" && ++closed === 2) fs.appendFileSync(path.join(root, "module.py"), "# drift\n");
+    },
+  });
   assert.equal(result.results[0].code, "SOURCE_DRIFT");
   assert.equal(result.results[1].includedInContext, true);
   assert.equal(result.context.capsule.observationEvidence.length, 1);
@@ -135,8 +157,16 @@ test("BOM, malformed UTF8, unsupported language and byte limit are scoped unavai
   fs.writeFileSync(path.join(root, "invalid.py"), Buffer.from([255, 254, 0]));
   fs.writeFileSync(path.join(root, "large.py"), Buffer.alloc(1_048_577, 32));
   fs.writeFileSync(path.join(root, "other.ts"), "export function caller() {}\n");
-  const result = await prepareSourceContext({ root, task: "Inspect", needs: ["bom.py", "invalid.py", "large.py", "other.ts"].map(file => ({ ...need, path: file })), onProcess });
-  assert.deepEqual(result.results.map(item => item.code), ["SOURCE_ENCODING_UNSUPPORTED", "SOURCE_ENCODING_UNSUPPORTED", "SOURCE_BYTE_LIMIT", "SOURCE_LANGUAGE_UNSUPPORTED"]);
+  const result = await prepareSourceContext({
+    root,
+    task: "Inspect",
+    needs: ["bom.py", "invalid.py", "large.py", "other.ts"].map((file) => ({ ...need, path: file })),
+    onProcess,
+  });
+  assert.deepEqual(
+    result.results.map((item) => item.code),
+    ["SOURCE_ENCODING_UNSUPPORTED", "SOURCE_ENCODING_UNSUPPORTED", "SOURCE_BYTE_LIMIT", "SOURCE_LANGUAGE_UNSUPPORTED"],
+  );
 });
 
 test("retained failure preserves raw bytes and coalesces identical retry without authority writes", async (t) => {
@@ -161,7 +191,16 @@ test("retained source tamper and ephemeral record substitution fail closed at Co
   const bundle = JSON.parse(fs.readFileSync(file, "utf8"));
   bundle.observation.payload.details = "forged relationship";
   assert.throws(() => verifySourceObservation(root, bundle.evidence.projectId, bundle));
-  (await assert.rejects(async () => (await compileContext({ root, task: "Inspect", evidenceNeeds: [{ id: "exact", kind: "observation", observationIds: [bundle.observation.observationId] }], sourceObservations: [bundle], includeRepositoryWorld: false }))));
+  await assert.rejects(
+    async () =>
+      await compileContext({
+        root,
+        task: "Inspect",
+        evidenceNeeds: [{ id: "exact", kind: "observation", observationIds: [bundle.observation.observationId] }],
+        sourceObservations: [bundle],
+        includeRepositoryWorld: false,
+      }),
+  );
   fs.writeFileSync(file, JSON.stringify(bundle));
   assert.throws(() => inspectSourceObservation({ root, bundleKey: result.results[0].bundleKey }));
   assert.equal(sourceObservationDescriptor.recoveryAuthority, false);
@@ -170,10 +209,22 @@ test("retained source tamper and ephemeral record substitution fail closed at Co
 test("active cancellation settles only after owned worker close", async () => {
   const controller = new AbortController();
   const events = [];
-  await assert.rejects(runPythonSourceWorker({ operation: "identity" }, { signal: controller.signal,
-    onProcess(event) { onProcess(event); events.push(event); if (event.event === "started") controller.abort(); } }), { code: "SOURCE_CANCELLED" });
+  await assert.rejects(
+    runPythonSourceWorker(
+      { operation: "identity" },
+      {
+        signal: controller.signal,
+        onProcess(event) {
+          onProcess(event);
+          events.push(event);
+          if (event.event === "started") controller.abort();
+        },
+      },
+    ),
+    { code: "SOURCE_CANCELLED" },
+  );
   assert.equal(events.at(-1).event, "closed");
-  assert.ok(events.find(event => event.event === "started").pid);
+  assert.ok(events.find((event) => event.event === "started").pid);
 });
 
 test("unconfigured Python does not block ordinary exact-source Context", async (t) => {
@@ -185,7 +236,10 @@ test("unconfigured Python does not block ordinary exact-source Context", async (
     assert.equal(result.results[0].code, "PYTHON_NOT_CONFIGURED");
     assert.equal(result.results[1].includedInContext, true);
     assert.equal(result.userActionRequired, false);
-  } finally { if (prior === undefined) delete process.env.HEAD_PYTHON; else process.env.HEAD_PYTHON = prior; }
+  } finally {
+    if (prior === undefined) delete process.env.HEAD_PYTHON;
+    else process.env.HEAD_PYTHON = prior;
+  }
 });
 
 async function stdioSource(root, mode, options = {}) {
@@ -193,30 +247,49 @@ async function stdioSource(root, mode, options = {}) {
   onProcess({ event: "planned", command, parentPid: process.pid, cwd: pluginRoot, ports: [] });
   const child = spawn(command[0], command.slice(1), { cwd: pluginRoot, windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
   onProcess({ event: "started", pid: child.pid, command, parentPid: process.pid, cwd: pluginRoot, ports: [] });
-  let stdout = "", stderr = "", triggered = false, timer, forceTimer;
+  let stdout = "",
+    stderr = "",
+    triggered = false,
+    timer,
+    forceTimer;
   const completion = new Promise((resolve, reject) => {
     child.on("error", reject);
-    child.stdout.on("data", data => { stdout += data; if (stdout.includes('\n')) child.stdin.end(); });
-    child.stderr.on("data", data => {
-      stderr += data; process.stderr.write(data);
+    child.stdout.on("data", (data) => {
+      stdout += data;
+      if (stdout.includes("\n")) child.stdin.end();
+    });
+    child.stderr.on("data", (data) => {
+      stderr += data;
+      process.stderr.write(data);
       if (!triggered && stderr.includes('"event":"started"')) {
         triggered = true;
-        if (mode === "cancel") child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 1 } }) + '\n');
+        if (mode === "cancel") child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 1 } }) + "\n");
         if (mode === "disconnect") child.stdin.end();
       }
     });
-    child.once("close", code => {
-      clearTimeout(timer); clearTimeout(forceTimer);
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      clearTimeout(forceTimer);
       onProcess({ event: "closed", pid: child.pid, exitCode: code, ports: [] });
-      try { assert.equal(code, 0, stderr); resolve(JSON.parse(stdout.trim())); } catch (error) { reject(error); }
+      try {
+        assert.equal(code, 0, stderr);
+        resolve(JSON.parse(stdout.trim()));
+      } catch (error) {
+        reject(error);
+      }
     });
-    timer = setTimeout(() => { child.kill("SIGTERM"); forceTimer = setTimeout(() => child.kill("SIGKILL"), 1000); }, 10_000);
+    timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      forceTimer = setTimeout(() => child.kill("SIGKILL"), 1000);
+    }, 10_000);
   });
   child.stdin.on("error", () => {});
   const sourceArgs = { project_root: root, task: "Inspect", needs: [need], ...options };
-  const params = mode === "normal" ? { name: "head_source_context", arguments: sourceArgs }
-    : { name: "head_tools_call", arguments: { name: "head_source_context", arguments: sourceArgs } };
-  child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params }) + '\n');
+  const params =
+    mode === "normal"
+      ? { name: "head_source_context", arguments: sourceArgs }
+      : { name: "head_tools_call", arguments: { name: "head_source_context", arguments: sourceArgs } };
+  child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params }) + "\n");
   return completion;
 }
 
@@ -237,16 +310,17 @@ test("damaged, missing and malformed retained candidates preserve originals and 
     const first = await prepareSourceContext({ root, task: "Inspect", needs: [need], retain: true, onProcess });
     const file = path.join(root, relativeProjectArtifact(storage, "observations", "source-bundles"), `${first.results[0].bundleKey}.json`);
     if (corruption === "missing") fs.unlinkSync(file);
-    else fs.writeFileSync(file, corruption === "truncated" ? '{"truncated":' : JSON.stringify({ evidence: { sources: false }, descriptor: {}, observation: {} }));
+    else
+      fs.writeFileSync(file, corruption === "truncated" ? '{"truncated":' : JSON.stringify({ evidence: { sources: false }, descriptor: {}, observation: {} }));
     const damaged = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
     // A separate source request changes no semantics and must remain observable.
     const response = await stdioSource(root, "normal", { needs: [need, { kind: "source", path: "independent.txt" }], retain: true });
     const recovered = response.result.structuredContent;
     assert.equal(recovered.status, "observed", JSON.stringify(recovered));
-    assert.ok(recovered.results.every(result => result.includedInContext));
+    assert.ok(recovered.results.every((result) => result.includedInContext));
     if (damaged !== null) {
       assert.equal(fs.readFileSync(file, "utf8"), damaged);
-      assert.ok(recovered.results[0].storageIssues.some(issue => issue.status === "invalid"));
+      assert.ok(recovered.results[0].storageIssues.some((issue) => issue.status === "invalid"));
       assert.notEqual(recovered.results[0].bundleKey, first.results[0].bundleKey);
     }
   }
@@ -266,7 +340,10 @@ test("Unicode separators and form feed in a literal retain physical Python line 
 test("modern Python mapping-rest binding cannot resolve to a same-name module function", async (t) => {
   const identity = await runPythonSourceWorker({ operation: "identity" }, { onProcess });
   const [major, minor] = identity.result.profile.python.split(/[. ]/).map(Number);
-  if (major < 3 || major === 3 && minor < 10) { t.skip("Requires a real Python 3.10+ parser; separately execute with HEAD_PYTHON on a modern runtime."); return; }
+  if (major < 3 || (major === 3 && minor < 10)) {
+    t.skip("opt-in: Requires a real Python 3.10+ parser (HEAD_PYTHON); separately execute with HEAD_PYTHON on a modern runtime.");
+    return;
+  }
   const { root, storage } = project(t, "def target(): pass\ndef caller(value):\n    match value:\n        case {**target}:\n            target()\n");
   const result = await prepareSourceContext({ root, task: "Inspect", needs: [need], onProcess });
   assert.equal(result.results[0].status, "unavailable");
@@ -280,7 +357,9 @@ test("new artifact planes preserve P2 Capsule type and legacy boundary without a
   assert.equal(artifactAuthorityBoundary("SourceContextResult").planeId, "P4");
   const legacy = { ...artifactAuthorityBoundary("ContextCapsule"), contractVersion: "0.6.0" };
   assert.equal(verifyArtifactAuthorityBoundary("ContextCapsule", legacy).planeId, "P2");
-  assert.throws(() => assertNoAuthorityAmplification({ sourceKind: "SourceContextResult", targetKind: "SessionRunCheckpoint" }), { code: "RECOVERY_AUTHORITY_AMPLIFICATION_REJECTED" });
+  assert.throws(() => assertNoAuthorityAmplification({ sourceKind: "SourceContextResult", targetKind: "SessionRunCheckpoint" }), {
+    code: "RECOVERY_AUTHORITY_AMPLIFICATION_REJECTED",
+  });
 });
 
 test("packaged Python is subject to existing development-context exclusion", (t) => {
@@ -294,7 +373,9 @@ test("packaged Python is subject to existing development-context exclusion", (t)
   fs.writeFileSync(path.join(candidate, "scripts/lode.mjs"), "export const example = true;\n");
   fs.writeFileSync(path.join(candidate, "scripts/head.mjs"), 'export * from "./lode.mjs";\n');
   fs.writeFileSync(path.join(candidate, "scripts/worker.py"), `# ${["ultimate", "goal"].join("_")}\n`);
-  assert.throws(() => stageDistributionRelease({ sourceRoot: candidate, destinationRoot: path.join(parent, "release") }), { code: "DISTRIBUTION_DEVELOPMENT_CONTEXT_LEAK" });
+  assert.throws(() => stageDistributionRelease({ sourceRoot: candidate, destinationRoot: path.join(parent, "release") }), {
+    code: "DISTRIBUTION_DEVELOPMENT_CONTEXT_LEAK",
+  });
 });
 
 test("common by-source-key null, shape and reference corruption cannot gate independent fresh source needs", async (t) => {
@@ -303,14 +384,28 @@ test("common by-source-key null, shape and reference corruption cannot gate inde
     for (const file of ["seed.txt", "independent.txt", "other.txt"]) fs.writeFileSync(path.join(root, file), "Current source evidence\n");
     await prepareSourceContext({ root, task: "Seed", needs: [{ kind: "source", path: "seed.txt" }], retain: true });
     const directory = path.join(root, relativeProjectArtifact(storage, "observations", "records", "by-source-key"));
-    const file = path.join(directory, fs.readdirSync(directory).find(name => name.endsWith(".json")));
+    const file = path.join(
+      directory,
+      fs.readdirSync(directory).find((name) => name.endsWith(".json")),
+    );
     fs.writeFileSync(file, damaged);
     const inspected = inspectProject(root);
-    assert.throws(() => loadObservationArtifacts({ projectRoot: root, projectId: inspected.project.projectId, storage }), error => ["INVALID_OBSERVATION_ARTIFACT", "UNKNOWN_OBSERVATION_DESCRIPTOR"].includes(error.code));
-    const result = await prepareSourceContext({ root, task: "Inspect independent sources", needs: [{ kind: "source", path: "independent.txt" }, { kind: "source", path: "other.txt" }], retain: true });
+    assert.throws(
+      () => loadObservationArtifacts({ projectRoot: root, projectId: inspected.project.projectId, storage }),
+      (error) => ["INVALID_OBSERVATION_ARTIFACT", "UNKNOWN_OBSERVATION_DESCRIPTOR"].includes(error.code),
+    );
+    const result = await prepareSourceContext({
+      root,
+      task: "Inspect independent sources",
+      needs: [
+        { kind: "source", path: "independent.txt" },
+        { kind: "source", path: "other.txt" },
+      ],
+      retain: true,
+    });
     assert.equal(result.status, "observed", JSON.stringify(result));
-    assert.ok(result.results.every(item => item.includedInContext));
-    assert.ok(result.results.every(item => item.storageIssues.some(issue => issue.reference === "observation-index" && issue.status === "invalid")));
+    assert.ok(result.results.every((item) => item.includedInContext));
+    assert.ok(result.results.every((item) => item.storageIssues.some((issue) => issue.reference === "observation-index" && issue.status === "invalid")));
     assert.equal(fs.readFileSync(file, "utf8"), damaged);
   }
 });

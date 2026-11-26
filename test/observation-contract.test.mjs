@@ -983,7 +983,7 @@ test("keeps divergent Observation replay process-safe across independent Node wr
     second = launch(secondInput);
   } catch (error) {
     if (error?.code === "EPERM") {
-      t.skip("The local sandbox forbids nested process creation; the atomic collision test still runs.");
+      t.skip("host-limit: The local sandbox forbids nested process creation; the atomic collision test still runs.");
       return;
     }
     throw error;

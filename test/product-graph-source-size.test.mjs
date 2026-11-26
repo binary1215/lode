@@ -28,7 +28,9 @@ function tree(t, { code, dataFiles = 55, dataCode = 5, source = undefined }) {
   fs.writeFileSync(rulesFile, JSON.stringify({ ...RULES_HEAD, rules: [], ...(source ? { source } : {}) }, null, 2));
   const out = path.join(base, "out");
   const build = () =>
-    withSourceLimits(SMALL, () => buildProductGraph({ sourceRoot: path.join(base, "source"), documentsDirectory: path.join(base, "documents"), rulesFile, outputDirectory: out }));
+    withSourceLimits(SMALL, () =>
+      buildProductGraph({ sourceRoot: path.join(base, "source"), documentsDirectory: path.join(base, "documents"), rulesFile, outputDirectory: out }),
+    );
   const graph = () => JSON.parse(fs.readFileSync(path.join(out, "graph.json"), "utf8"));
   return { build, graph, out };
 }
@@ -65,7 +67,11 @@ for (const [label, code] of [
     assert.ok(queryProductGraph({ buildDirectory: p.out, question: "overview" }).text.includes(LINE));
     const gaps = queryProductGraph({ buildDirectory: p.out, question: "gaps" }).text;
     assert.ok(gaps.includes(LINE), gaps);
-    assert.ok(result.text.includes("데이터 폴더 안은 확장자로만(파일을 열지 않고) 종류를 센다: 문서 .md .txt .html .htm .pdf .rst, 데이터 .json .jsonl .csv .tsv .yaml .yml .xml .log, 이미지 .png .jpg .jpeg .bmp .tif .tiff .gif .webp .svg"));
+    assert.ok(
+      result.text.includes(
+        "데이터 폴더 안은 확장자로만(파일을 열지 않고) 종류를 센다: 문서 .md .txt .html .htm .pdf .rst, 데이터 .json .jsonl .csv .tsv .yaml .yml .xml .log, 이미지 .png .jpg .jpeg .bmp .tif .tiff .gif .webp .svg",
+      ),
+    );
   });
 
 test("with nothing data-like everything is read and nothing is reported", (t) => {
@@ -93,7 +99,10 @@ test("a stray configuration file does not keep a data folder; a tests folder is 
     [["data", 7, 5, 2]],
   );
   assert.ok(result.text.includes("그 안의 코드 파일 5개, 설정 파일 2개도 읽지 않음"));
-  assert.ok(result.text.includes("data/ (파일 87, 읽었을 파일 7: 읽었을 코드 파일 5, 설정 파일 2, 8%; 종류(확장자로): 데이터 2, 코드 5 (테스트 포함), 그 밖 80)"), result.text);
+  assert.ok(
+    result.text.includes("data/ (파일 87, 읽었을 파일 7: 읽었을 코드 파일 5, 설정 파일 2, 8%; 종류(확장자로): 데이터 2, 코드 5 (테스트 포함), 그 밖 80)"),
+    result.text,
+  );
   assert.ok(!result.limits.sourceSize.leftOut.some((row) => row.path === "tests"));
 });
 
@@ -101,7 +110,10 @@ test("source.포함 brings the folder back, and the build then fails with the nu
   const p = tree(t, { code: 38, source: { 포함: ["data"] } });
   assert.throws(p.build, (error) => {
     assert.equal(error.code, "PRODUCT_GRAPH_SOURCE_TOO_LARGE");
-    assert.match(error.message, /^읽을 파일이 43개로 한도 40개\(판단\)를 넘는다\. 맨 위 폴더\(파일 \/ 읽을 파일\): src\/ 38 \/ 38, data\/ 60 \/ 5\. 읽지 않을 폴더는 호출 방식 표의 source\.제외에 적으면 빠진다\.$/);
+    assert.match(
+      error.message,
+      /^읽을 파일이 43개로 한도 40개\(판단\)를 넘는다\. 맨 위 폴더\(파일 \/ 읽을 파일\): src\/ 38 \/ 38, data\/ 60 \/ 5\. 읽지 않을 폴더는 호출 방식 표의 source\.제외에 적으면 빠진다\.$/,
+    );
     return true;
   });
   // 제외 wins over 포함 for the same path.
@@ -115,7 +127,10 @@ test("too many files to read and no data-like folder: the failure says so (4.6)"
   const p = tree(t, { code: 45, dataFiles: 0, dataCode: 0 });
   assert.throws(p.build, (error) => {
     assert.equal(error.code, "PRODUCT_GRAPH_SOURCE_TOO_LARGE");
-    assert.equal(error.message, "읽을 파일이 45개로 한도 40개(판단)를 넘는다. 맨 위 폴더(파일 / 읽을 파일): src/ 45 / 45. 읽지 않을 폴더는 호출 방식 표의 source.제외에 적으면 빠진다.");
+    assert.equal(
+      error.message,
+      "읽을 파일이 45개로 한도 40개(판단)를 넘는다. 맨 위 폴더(파일 / 읽을 파일): src/ 45 / 45. 읽지 않을 폴더는 호출 방식 표의 source.제외에 적으면 빠진다.",
+    );
     return true;
   });
 });
@@ -124,7 +139,10 @@ test("the walk's safety stop ends a runaway tree with its own wording", (t) => {
   const p = tree(t, { code: 10, dataFiles: 3000, dataCode: 0 });
   assert.throws(p.build, (error) => {
     assert.equal(error.code, "PRODUCT_GRAPH_SOURCE_TOO_LARGE");
-    assert.match(error.message, /^소스 루트 아래 항목이 너무 많아 2000개를 지나고 멈췄다\(안전 한도, 판단\)\. 멈출 때까지 지난 맨 위 폴더\(파일 수\): data\/ \d+\. /);
+    assert.match(
+      error.message,
+      /^소스 루트 아래 항목이 너무 많아 2000개를 지나고 멈췄다\(안전 한도, 판단\)\. 멈출 때까지 지난 맨 위 폴더\(파일 수\): data\/ \d+\. /,
+    );
     return true;
   });
 });
@@ -148,7 +166,10 @@ test("3,000 large UI-candidate files build within 1.5 GB of peak RSS", { timeout
   fs.writeFileSync(path.join(base, "source", "src", "app.js"), "export function go() {\n  return 1;\n}\n");
   const filler = `<div class="row">${"Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(20)}</div>\n`.repeat(90);
   for (let index = 0; index < 3000; index += 1)
-    fs.writeFileSync(path.join(base, "source", "ui", `p${index}.html`), `<html><body>\n<button id="b${index}" onclick="go()">Go</button>\n${filler}</body></html>\n`);
+    fs.writeFileSync(
+      path.join(base, "source", "ui", `p${index}.html`),
+      `<html><body>\n<button id="b${index}" onclick="go()">Go</button>\n${filler}</body></html>\n`,
+    );
   assert.ok(fs.statSync(path.join(base, "source", "ui", "p0.html")).size >= 100_000);
   fs.writeFileSync(path.join(base, "rules.json"), JSON.stringify({ ...RULES_HEAD, rules: [] }));
   const moduleUrl = pathToFileURL(path.resolve("scripts/lib/world/product-graph.mjs")).href;
@@ -185,7 +206,10 @@ test("the comparison names a folder the reading range left out or took back", (t
   assert.equal(narrower.changes.readRange.removed.length, 10);
   assert.ok(narrower.changes.readRange.removed.every((id) => id.startsWith("data/tools/")));
   assert.equal(narrower.changes.counts.removed, 0);
-  assert.match(narrower.text, /\n- 읽는 범위가 달라짐: data\/ 이번에 읽지 않음 — 그래서 사라진 노드 10개, 생긴 노드 0개, 닿는 범위가 달라진 기능 0개 \(신규·사라짐·닿는 코드가 바뀜에 넣지 않는다\)\n/);
+  assert.match(
+    narrower.text,
+    /\n- 읽는 범위가 달라짐: data\/ 이번에 읽지 않음 — 그래서 사라진 노드 10개, 생긴 노드 0개, 닿는 범위가 달라진 기능 0개 \(신규·사라짐·닿는 코드가 바뀜에 넣지 않는다\)\n/,
+  );
   // Set the baseline here, then bring the folder back with 포함.
   fs.rmSync(path.join(base, "out", "baseline.json"));
   p.build();

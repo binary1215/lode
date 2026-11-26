@@ -273,7 +273,9 @@ const installedExecutable = process.env.LODE_AGENT_CODEX_INSTALLED_POLICY_EXECUT
 test(
   "optional developer preflight recognizes retained installed bytes but still issues no proof",
   {
-    skip: !installedDirectory || !installedExecutable,
+    skip:
+      (!installedDirectory || !installedExecutable) &&
+      "opt-in: set LODE_AGENT_CODEX_INSTALLED_POLICY_SCHEMA_DIRECTORY and LODE_AGENT_CODEX_INSTALLED_POLICY_EXECUTABLE to check an installed Codex",
   },
   () => {
     const diagnostic = inspectCodexInstalledPolicySnapshot({

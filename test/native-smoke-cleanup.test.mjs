@@ -265,7 +265,7 @@ if (mode === "--fixture-leaf") {
   for (const scenario of ["timeout", "interrupt", "parent-exits"]) {
     test(
       `native smoke ${scenario} cleans a TERM-ignoring descendant after parent exit`,
-      { skip: process.platform === "win32" ? "POSIX-only process-group contract (Linux/macOS CI)" : false, timeout: 20_000 },
+      { skip: process.platform === "win32" ? "other-os: POSIX-only process-group contract (Linux/macOS CI)" : false, timeout: 20_000 },
       async () => {
         log({ event: "test-owner", pid: process.pid, parent: process.ppid, command: process.argv });
         // A same-executable process outside the owned group must remain untouched.

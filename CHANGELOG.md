@@ -11,6 +11,70 @@ are made only for separately designated releases; missing intermediate tags are
 not backfilled. Marketplace publication does not prove local installation or
 Host/MCP reload.
 
+## 0.3.0-beta.139 — publication tracked separately
+
+- Fixed: releasing a worker's execution lease no longer fails when another
+  worker of the same Project removes the shared, already empty parent folders
+  at the same moment. Before, that worker's result was lost and the job read
+  `incomplete`. The folder-safety check is unchanged. `ENOENT`, `ENOTEMPTY` and
+  `EEXIST` count as a lost race on every operating system; `EPERM` and `EBUSY`
+  only on Windows, and only when the folder is gone afterwards.
+- Fixed: a Codex app-server run that finished is no longer failed because
+  Lode's stop request reached a provider process that had already ended by
+  itself. Before, when Lode had not seen the process end within a third of the
+  termination grace after closing its input (333 ms by default, for example on
+  a busy machine), it sent a stop and treated the close as unclean; for a worker
+  proposal the finished proposal was discarded and the job read `failed`. The
+  stop counts as "without effect" only when both hold: the observed close has
+  exit code 0 and no signal, and the supervisor's own record says the provider
+  exited with code 0. This applies to every use of that close: worker proposal
+  runs (fresh and native prefix), the worker host connection, the host
+  inventory check and the read-only probe. The `process-closed` journal event
+  still shows that a stop was sent and when, and a new field says it had no
+  effect. A provider that is still running at that moment is stopped and the
+  run fails as before; no wait became longer, and every cleanup-uncertain
+  condition is unchanged.
+- Changed: the job owner no longer forces every chunk of provider output to
+  disk as it arrives. Both output files are still forced to disk before the
+  terminal record. This removes the known cause of a finished job reported as
+  failed with "provider output remained open after exit; output is incomplete"
+  when disk flushes were slow. The only difference: after a power loss or an
+  operating-system crash while a job is still running, the output files may
+  lack the most recent chunks. Such a job has no terminal record, and Lode never
+  read its output in that state.
+- Changed: tests that were skipped on every CI operating system now run. The
+  worker tests behind a native fixture waited for a location under a name that
+  neither `npm test` nor CI set; one test helper now reads every fixture
+  location under both the `LODE_AGENT_` and the `HEAD_AGENT_` name, and the
+  runner supplies the supervisor, file-effect, owner-crash and terminal-hold
+  fixtures (the last two on Windows). The tests that had rotted while they
+  never ran were repaired.
+- Changed: CI runs `go mod verify`, `go vet ./...` and `go test ./...` on
+  Windows and macOS as well, before the JavaScript suite. The Windows-only Go
+  tests had never run, and no Go test had run on macOS. The Linux Go job prints
+  every test.
+- Changed: a skipped test must say why. Every skip carries a reason of a
+  declared class (`other-os`, `filesystem`, `native-fixture`, `ci-step`,
+  `no-source`, `opt-in`, `host-limit`), and a run fails on a skip without one,
+  on a `todo` test, and on a `native-fixture` skip on Windows. A full `npm test`
+  compares the skipped tests with `test/fixtures/skip-ledger.json` per operating
+  system and prints the tests that moved; in CI a `host-limit` skip fails too.
+- Changed: `npm test` runs the suite in a temporary profile (`HOME`,
+  `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, the `XDG_*` folders,
+  `CLAUDE_CONFIG_DIR`, `CODEX_HOME`) and does not pass on an inherited
+  operational state root or a Claude session's messaging endpoint, so the
+  result no longer depends on the caller's shell, and the suite is no longer
+  handed the caller's running Claude session. Each test has a time limit (10
+  minutes, `LODE_AGENT_TEST_TIMEOUT_MS` sets it) and a timed-out test fails
+  with its name; every CI job has a time limit.
+- Changed: `.gitignore` no longer ignores `test/` with a list of exceptions, so
+  a new test file is tracked without `git add -f`. The 76 test files that
+  formatting had never checked were formatted in one commit, listed in
+  `.git-blame-ignore-revs`.
+- Documented: `LODE_AGENT_OPERATIONAL_STATE_ROOT` does not move conversation
+  tickets; they follow the home folder and use the operational root only when
+  no home folder is set (`docs/runtime-adapters.md`).
+
 ## 0.3.0-beta.138 — publication tracked separately
 
 - Fixed: capturing edits of published Markdown a second time broke every later

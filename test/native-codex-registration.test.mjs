@@ -21,15 +21,9 @@ test("opt-in exact installed SDK registers a fresh synthetic target without a mo
   const executable = process.env.LODE_NATIVE_CODEX_TEST_EXECUTABLE,
     supervisorRoot = process.env.LODE_NATIVE_CODEX_TEST_SUPERVISOR_ROOT,
     captureFile = process.env.LODE_NATIVE_CODEX_TEST_SOURCE_CAPTURE;
-  if (
-    process.platform !== "win32" ||
-    process.arch !== "x64" ||
-    !executable ||
-    !supervisorRoot ||
-    !captureFile
-  )
+  if (process.platform !== "win32" || process.arch !== "x64" || !executable || !supervisorRoot || !captureFile)
     return t.skip(
-      "Opt-in synthetic exact-engine metadata integration; no personal home or model calls.",
+      "opt-in: set LODE_NATIVE_CODEX_TEST_EXECUTABLE, LODE_NATIVE_CODEX_TEST_SUPERVISOR_ROOT and LODE_NATIVE_CODEX_TEST_SOURCE_CAPTURE on Windows x64. Synthetic exact-engine metadata integration; no personal home or model calls.",
     );
   const f = fixture(t),
     original = JSON.parse(fs.readFileSync(captureFile));
@@ -60,9 +54,7 @@ test("opt-in exact installed SDK registers a fresh synthetic target without a mo
   fs.writeFileSync(sourceRaw, rawSource);
   const sourceState = new DatabaseSync(nativeSqlitePath(path.join(sourceHome, "state_5.sqlite")));
   try {
-    sourceState
-      .prepare("UPDATE threads SET rollout_path=? WHERE id=?")
-      .run(sourceRaw, original.threadId);
+    sourceState.prepare("UPDATE threads SET rollout_path=? WHERE id=?").run(sourceRaw, original.threadId);
   } finally {
     sourceState.close();
   }
@@ -81,16 +73,8 @@ test("opt-in exact installed SDK registers a fresh synthetic target without a mo
     runtimeRoot = path.join(f.base, "sdk-target/workspace");
   fs.mkdirSync(targetHome, { recursive: true });
   fs.mkdirSync(runtimeRoot);
-  const state = syntheticNativeDatabase(
-      t,
-      "state_5.sqlite",
-      path.join(targetHome, "state_5.sqlite"),
-    ),
-    history = syntheticNativeDatabase(
-      t,
-      "thread_history_1.sqlite",
-      path.join(targetHome, "thread_history_1.sqlite"),
-    );
+  const state = syntheticNativeDatabase(t, "state_5.sqlite", path.join(targetHome, "state_5.sqlite")),
+    history = syntheticNativeDatabase(t, "thread_history_1.sqlite", path.join(targetHome, "thread_history_1.sqlite"));
   const unrelatedId = "01900000-0000-7000-8000-000000000009";
   state.row("threads", {
     id: unrelatedId,
@@ -127,9 +111,7 @@ test("opt-in exact installed SDK registers a fresh synthetic target without a mo
       currentProvider +
       ']\nname = "Offline metadata fixture"\nbase_url = "http://127.0.0.1:9"\nwire_api = "responses"\nrequires_openai_auth = false\n[analytics]\nenabled = false\n[feedback]\nenabled = false\n',
   );
-  const complexWorkspace =
-    currentSandbox === "workspace-write" &&
-    process.env.LODE_NATIVE_CODEX_TEST_WORKSPACE_OPTIONS !== "minimal";
+  const complexWorkspace = currentSandbox === "workspace-write" && process.env.LODE_NATIVE_CODEX_TEST_WORKSPACE_OPTIONS !== "minimal";
   if (complexWorkspace) {
     const extra = path.join(f.base, "extra-current-writable-root");
     fs.mkdirSync(extra);
@@ -165,9 +147,7 @@ test("opt-in exact installed SDK registers a fresh synthetic target without a mo
       XDG_DATA_HOME: path.join(home, "data"),
       XDG_STATE_HOME: path.join(home, "state"),
     };
-  for (const value of Object.values(environment))
-    if (typeof value === "string" && value.startsWith(home))
-      fs.mkdirSync(value, { recursive: true });
+  for (const value of Object.values(environment)) if (typeof value === "string" && value.startsWith(home)) fs.mkdirSync(value, { recursive: true });
   const events = [],
     selection = resolveVerifiedProcessSupervisor({ pluginRoot: supervisorRoot });
   const registered = await registerCodexNativeHistory({
@@ -181,10 +161,7 @@ test("opt-in exact installed SDK registers a fresh synthetic target without a mo
   });
   if (currentSandbox === "workspace-write") {
     assert.equal(registered.status, "native-registration-incomplete", JSON.stringify(registered));
-    assert.equal(
-      registered.results[0].primaryFailure.code,
-      "NATIVE_CODEX_WORKSPACE_POLICY_PROFILE_UNVERIFIED",
-    );
+    assert.equal(registered.results[0].primaryFailure.code, "NATIVE_CODEX_WORKSPACE_POLICY_PROFILE_UNVERIFIED");
     assert.equal(registered.sdkLifecycleRequestedThisCall, true);
     assert.equal(registered.sdkMayHaveChangedMetadataThisCall, true);
     assert.equal(registered.explicitResumeRequestedThisCall, false);
@@ -192,10 +169,7 @@ test("opt-in exact installed SDK registers a fresh synthetic target without a mo
     assert.equal(registered.ordinaryCoreBlocked, false);
     assert(!events.some((event) => event.method === "turn/start"));
     assert(events.some((event) => event.event === "closed"));
-    assert.deepEqual(
-      fs.readFileSync(path.join(targetHome, relative)).subarray(0, rawSource.length),
-      rawSource,
-    );
+    assert.deepEqual(fs.readFileSync(path.join(targetHome, relative)).subarray(0, rawSource.length), rawSource);
     console.log(
       JSON.stringify({
         event: "exact-native-policy-counterexample",
@@ -292,26 +266,14 @@ test("opt-in exact installed SDK registers a fresh synthetic target without a mo
     assert.equal(items.length, 2);
     assert.equal(pages, 2);
     assert.equal(original.sourceOracle, "source-policy-api-oracle-v1.json");
-    const sourceOracle = JSON.parse(
-      fs.readFileSync(path.join(path.dirname(captureFile), "source-policy-api-oracle-v1.json")),
-    );
+    const sourceOracle = JSON.parse(fs.readFileSync(path.join(path.dirname(captureFile), "source-policy-api-oracle-v1.json")));
     assert.deepEqual(turns.data, sourceOracle.result.turns.data);
     assert.deepEqual(
       items,
       sourceOracle.result.pages.flatMap((page) => page.data),
     );
-    assert.deepEqual(
-      fs.readFileSync(path.join(targetHome, relative)).subarray(0, rawSource.length),
-      rawSource,
-    );
-    assert(
-      !events.some(
-        (event) =>
-          event.method === "turn/start" ||
-          event.method === "account/read" ||
-          event.method === "model/list",
-      ),
-    );
+    assert.deepEqual(fs.readFileSync(path.join(targetHome, relative)).subarray(0, rawSource.length), rawSource);
+    assert(!events.some((event) => event.method === "turn/start" || event.method === "account/read" || event.method === "model/list"));
     await rpc.request("thread/unsubscribe", { threadId: original.threadId });
   } finally {
     cleanup = await rpc.close();
@@ -323,20 +285,14 @@ test("opt-in exact installed SDK registers a fresh synthetic target without a mo
     readOnly: true,
   });
   try {
-    const selectedState = stateAfter
-      .prepare(
-        "SELECT model,model_provider,reasoning_effort,approval_mode,cwd FROM threads WHERE id=?",
-      )
-      .get(original.threadId);
+    const selectedState = stateAfter.prepare("SELECT model,model_provider,reasoning_effort,approval_mode,cwd FROM threads WHERE id=?").get(original.threadId);
     assert.equal(selectedState.model, currentModel);
     assert.equal(selectedState.model_provider, currentProvider);
     assert.equal(selectedState.reasoning_effort, "low");
     assert.equal(selectedState.approval_mode, "never");
     assert.equal(nativeSqlitePath(selectedState.cwd), nativeSqlitePath(runtimeRoot));
     assert.equal(registered.localBeforeBackups.length, 1);
-    assert(
-      registered.localBeforeBackups[0].path.startsWith(".lode-native-portability/before-state/"),
-    );
+    assert(registered.localBeforeBackups[0].path.startsWith(".lode-native-portability/before-state/"));
     assert.deepEqual(
       readTypedSqliteRows(stateAfter, "threads", stateColumns, {
         where: 'WHERE "id" = ?',
@@ -353,16 +309,8 @@ test("opt-in exact installed SDK registers a fresh synthetic target without a mo
     uncertainRoot = path.join(f.base, "sdk-uncertain/workspace");
   fs.mkdirSync(uncertainHome, { recursive: true });
   fs.mkdirSync(uncertainRoot);
-  const uncertainState = syntheticNativeDatabase(
-      t,
-      "state_5.sqlite",
-      path.join(uncertainHome, "state_5.sqlite"),
-    ),
-    uncertainHistory = syntheticNativeDatabase(
-      t,
-      "thread_history_1.sqlite",
-      path.join(uncertainHome, "thread_history_1.sqlite"),
-    );
+  const uncertainState = syntheticNativeDatabase(t, "state_5.sqlite", path.join(uncertainHome, "state_5.sqlite")),
+    uncertainHistory = syntheticNativeDatabase(t, "thread_history_1.sqlite", path.join(uncertainHome, "thread_history_1.sqlite"));
   uncertainState.close();
   uncertainHistory.close();
   fs.copyFileSync(path.join(targetHome, "config.toml"), path.join(uncertainHome, "config.toml"));
@@ -379,14 +327,11 @@ test("opt-in exact installed SDK registers a fresh synthetic target without a mo
     uncertainEnvironment = Object.fromEntries(
       Object.entries(environment).map(([key, value]) => [
         key,
-        typeof value === "string" && value.startsWith(home)
-          ? uncertainBase + value.slice(home.length)
-          : value,
+        typeof value === "string" && value.startsWith(home) ? uncertainBase + value.slice(home.length) : value,
       ]),
     );
   for (const value of Object.values(uncertainEnvironment))
-    if (typeof value === "string" && value.startsWith(uncertainBase))
-      fs.mkdirSync(value, { recursive: true });
+    if (typeof value === "string" && value.startsWith(uncertainBase)) fs.mkdirSync(value, { recursive: true });
   let stopAfterConfig = false;
   const uncertainEvents = [];
   const uncertain = await registerCodexNativeHistory({

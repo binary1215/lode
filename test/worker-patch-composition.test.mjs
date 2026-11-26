@@ -4,6 +4,8 @@ import test from "node:test";
 import { buildWorkerPatchCandidate } from "../scripts/lib/worker/worker-patch-basis.mjs";
 import { composeWorkerPatchCandidates } from "../scripts/lib/worker/worker-patch-composition.mjs";
 
+const windowsOnly = { skip: process.platform !== "win32" && "other-os: Windows-only behaviour" };
+
 console.log(
   JSON.stringify({
     event: "owned-worker-composition-test",
@@ -107,7 +109,7 @@ test("malformed candidates and exceeded pre/post byte budget do not produce a pa
   assert.throws(() => compose([tampered]), { code: "WORKER_PATCH_CONFLICT" });
 });
 
-test("cross-member Windows aliases cannot silently become a shared path", { skip: process.platform !== "win32" }, () => {
+test("cross-member Windows aliases cannot silently become a shared path", windowsOnly, () => {
   const result = compose([candidate("a", "old", "new"), candidate("A", "old", "new")]);
   assert.equal(result.status, "conflict");
   assert.equal(result.conflicts[0].reason, "path-alias");

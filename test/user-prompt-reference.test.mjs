@@ -22,6 +22,8 @@ import {
 import { runSessionHostHook, writeSessionHostOutput } from "../scripts/session-host-hook.mjs";
 import plugin from "../scripts/opencode-plugin.mjs";
 
+const windowsOnly = { skip: process.platform !== "win32" && "other-os: Windows-only behaviour" };
+
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 // The permission helper's stdin: one request line, then the script. Anything
 // else (other children, a synthetic fixture) has no request batch.
@@ -489,7 +491,7 @@ $acl=$item.GetAccessControl();$rules=@($acl.GetAccessRules($true,$true,[Security
 
 test(
   "Windows ACL privacy: broad inheritance and existing prompt paths are narrowed before plaintext, including stage and final",
-  { skip: process.platform !== "win32" },
+  { skip: process.platform !== "win32" && "other-os: Windows-only behaviour" },
   (t) => {
     const { root, environment } = fixture(t),
       operational = environment.HEAD_AGENT_OPERATIONAL_STATE_ROOT;
@@ -567,7 +569,7 @@ test(
   },
 );
 
-test("Windows ACL privacy: failed verification never claims capture or leaves an owned empty stage", { skip: process.platform !== "win32" }, (t) => {
+test("Windows ACL privacy: failed verification never claims capture or leaves an owned empty stage", windowsOnly, (t) => {
   const { root, environment } = fixture(t),
     caller = { root, runtime: "codex", nativeSessionId: "windows-failure", environment };
   const spawn = childProcess.spawnSync;
@@ -593,7 +595,7 @@ test("Windows ACL privacy: failed verification never claims capture or leaves an
 
 test(
   "Windows ACL privacy: one public-operation deadline bounds remaining helpers and a failed batch cannot become capture success",
-  { skip: process.platform !== "win32" },
+  { skip: process.platform !== "win32" && "other-os: Windows-only behaviour" },
   (t) => {
     const { root, environment } = fixture(t),
       caller = { root, runtime: "codex", nativeSessionId: "deadline", environment };
@@ -765,7 +767,7 @@ test("privacy regression: oversized legacy files are not injected and caller/age
   assert.equal(takeUserPromptReference({ ...caller, force: true }), "");
 });
 
-test("Windows private creation supplies security at creation and never adopts an existing stage", { skip: process.platform !== "win32" }, (t) => {
+test("Windows private creation supplies security at creation and never adopts an existing stage", windowsOnly, (t) => {
   const { root, environment } = fixture(t),
     caller = { root, runtime: "codex", nativeSessionId: "secure-create-collision", environment };
   const originalSpawn = childProcess.spawnSync,
@@ -792,7 +794,7 @@ test("Windows private creation supplies security at creation and never adopts an
   assert.equal(fs.readdirSync(promptDirectory(environment)).filter((name) => name.endsWith(".json")).length, 0);
 });
 
-test("Windows token-default owner never grants authority over an existing foreign-owner prompt directory", { skip: process.platform !== "win32" }, (t) => {
+test("Windows token-default owner never grants authority over an existing foreign-owner prompt directory", windowsOnly, (t) => {
   const { root, environment } = fixture(t),
     caller = { root, runtime: "codex", nativeSessionId: "foreign-owner", environment };
   fs.mkdirSync(promptDirectory(environment), { recursive: true });
@@ -810,7 +812,7 @@ test("Windows token-default owner never grants authority over an existing foreig
   }
 });
 
-test("Windows creation failures and receipts never delete an unproven stage replacement", { skip: process.platform !== "win32" }, async (t) => {
+test("Windows creation failures and receipts never delete an unproven stage replacement", windowsOnly, async (t) => {
   for (const fault of [
     "before-receipt",
     "after-receipt",
@@ -936,7 +938,7 @@ const stages = (environment) => fs.readdirSync(promptDirectory(environment)).fil
 
 test(
   "Windows: with the store present, a capture, an assistant-text capture and a freeze each start the ACL helper once",
-  { skip: process.platform !== "win32" },
+  { skip: process.platform !== "win32" && "other-os: Windows-only behaviour" },
   (t) => {
     const { root, environment } = fixture(t);
     for (const runtime of ["claude", "codex"]) {
@@ -958,7 +960,7 @@ test(
   },
 );
 
-test("Windows: a stage created for a write that does not happen is removed", { skip: process.platform !== "win32" }, (t) => {
+test("Windows: a stage created for a write that does not happen is removed", windowsOnly, (t) => {
   const { root, environment } = fixture(t),
     caller = { root, runtime: "codex", nativeSessionId: "unused-stage", environment };
   assert.equal(captureUserPrompt({ ...caller, text: "before compaction", messageId: "t1" }).captured, true);
@@ -992,7 +994,7 @@ test("Windows: a stage created for a write that does not happen is removed", { s
   assert.deepEqual(fs.readFileSync(target), saved);
 });
 
-test("Windows: a failed ACL call after the stage was created leaves no stage and no capture", { skip: process.platform !== "win32" }, (t) => {
+test("Windows: a failed ACL call after the stage was created leaves no stage and no capture", windowsOnly, (t) => {
   const { root, environment } = fixture(t),
     caller = { root, runtime: "claude", nativeSessionId: "failed-call-stage", environment };
   assert.equal(captureUserPrompt({ ...caller, text: "first" }).captured, true);
@@ -1012,7 +1014,7 @@ test("Windows: a failed ACL call after the stage was created leaves no stage and
 
 test(
   "Windows: a state root under a non-ASCII folder keeps the private reference working, one helper call per operation",
-  { skip: process.platform !== "win32" },
+  { skip: process.platform !== "win32" && "other-os: Windows-only behaviour" },
   (t) => {
     const { base, root } = fixture(t);
     const environment = { HEAD_AGENT_OPERATIONAL_STATE_ROOT: path.join(base, "한글-café-x", "operational") };
@@ -1052,7 +1054,7 @@ test("the Windows permission script and its fixed command line are printable ASC
 
 test(
   "Windows: every helper call has the same short command line; the request line and the script arrive on stdin",
-  { skip: process.platform !== "win32" },
+  { skip: process.platform !== "win32" && "other-os: Windows-only behaviour" },
   (t) => {
     const { root, environment } = fixture(t),
       caller = { root, runtime: "codex", nativeSessionId: "fixed-command", environment };
@@ -1077,7 +1079,7 @@ test(
   },
 );
 
-test("Windows: a cut-off permission script is refused before any of it runs", { skip: process.platform !== "win32" }, async (t) => {
+test("Windows: a cut-off permission script is refused before any of it runs", windowsOnly, async (t) => {
   const { base, root, environment } = fixture(t);
   const executable = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
   // Every offset of the first and last 40 characters, directly after each line

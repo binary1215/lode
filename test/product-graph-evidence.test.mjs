@@ -61,7 +61,12 @@ const TOOLS = {
     '  { name: "load", run: load },',
     "];",
   ),
-  "src/tools.js": lines("export function save() { return write(); }", "export function load() { return read(); }", "function write() { return 1; }", "function read() { return 2; }"),
+  "src/tools.js": lines(
+    "export function save() { return write(); }",
+    "export function load() { return read(); }",
+    "function write() { return 1; }",
+    "function read() { return 2; }",
+  ),
   "src/server.js": lines(
     'import { save, load } from "./tools.js";',
     "export function route(name) {",
@@ -212,7 +217,7 @@ const RUNNER = {
     "export function start(spawn, root) {",
     '  spawn(process.execPath, [path.join(root, "worker.js")]);',
     "  spawn(process.execPath, [`${root}/src/jobs/nightly.mjs`]);",
-    "  // spawn(process.execPath, [\"quiet.js\"]) is only a comment",
+    '  // spawn(process.execPath, ["quiet.js"]) is only a comment',
     '  spawn(process.execPath, ["util.js"]);',
     '  const text = readFileSync(path.join(root, "quiet.js"), "utf8");',
     '  const names = ["src/helper.js", "worker.js"];',
@@ -258,7 +263,10 @@ test("2.2: a literal ending with one code file's path and a bare import give fra
       ["src/main.js", 6, "src/main.js#start", "src/jobs/nightly.mjs", "path"],
     ],
   );
-  assert.match(result.text, /\n경로로 실행으로 읽은 곳: 3곳 \([^\n]*\) — 경로가 여러 파일에 맞음 1곳은 잇지 않았다\n {2}- src\/main\.js:3 src\/main\.js → src\/side\.js — "\.\/side\.js"\n/);
+  assert.match(
+    result.text,
+    /\n경로로 실행으로 읽은 곳: 3곳 \([^\n]*\) — 경로가 여러 파일에 맞음 1곳은 잇지 않았다\n {2}- src\/main\.js:3 src\/main\.js → src\/side\.js — "\.\/side\.js"\n/,
+  );
   assert(result.limits.referenceKinds.emitted.includes("framework-invoked"));
   assert(!result.limits.referenceKinds.notToldApart.includes("framework-invoked"));
   assert.match(result.text, /- framework-invoked는 두 모양만 읽는다: [^\n]*주입, 데코레이터, 파일 이름으로 정하는 경로는 보지 못한다/);
@@ -301,7 +309,13 @@ const VALUES = {
     "}",
     "export function unused() { return format; }",
   ),
-  "src/lib.js": lines("export function onSave() { return 3; }", "export class Store {", "  static make() { return new Store(); }", "  fill() { return 4; }", "}"),
+  "src/lib.js": lines(
+    "export function onSave() { return 3; }",
+    "export class Store {",
+    "  static make() { return new Store(); }",
+    "  fill() { return 4; }",
+    "}",
+  ),
   "src/tools.js": lines("export function go() { return 5; }"),
 };
 
@@ -357,7 +371,7 @@ const HANDS = {
     "  return handlers[name](name);",
     "}",
     "export function delegate(name) {",
-    '  return spawnSync(process.execPath, [WORKER, name]);',
+    "  return spawnSync(process.execPath, [WORKER, name]);",
     "}",
     'const WORKER = "worker";',
   ),
@@ -365,12 +379,24 @@ const HANDS = {
   "src/worker.js": lines("export function work() { return heavy(); }", "function heavy() { return 3; }"),
 };
 const handRules = (extra = []) => ({
-  rules: [
-    { 종류: "cli", 판단: true, 파일: ["src/server.js"], 패턴: "export function (call|delegate)", "처리 코드": "줄을 감싼 코드" },
-  ],
+  rules: [{ 종류: "cli", 판단: true, 파일: ["src/server.js"], 패턴: "export function (call|delegate)", "처리 코드": "줄을 감싼 코드" }],
   "손으로 적는 연결": [
-    { 판단: true, 종류: "framework-invoked", 파일: "src/server.js", 글: "handlers[name](", 대상: ["src/tools.js#save", "src/tools.js#load"], 설명: "the server calls a tool by its name" },
-    { 판단: true, 종류: "경계", 파일: "src/server.js", 글: "spawnSync(process.execPath, [WORKER", 대상: ["src/worker.js#work"], 설명: "another process; not followed" },
+    {
+      판단: true,
+      종류: "framework-invoked",
+      파일: "src/server.js",
+      글: "handlers[name](",
+      대상: ["src/tools.js#save", "src/tools.js#load"],
+      설명: "the server calls a tool by its name",
+    },
+    {
+      판단: true,
+      종류: "경계",
+      파일: "src/server.js",
+      글: "spawnSync(process.execPath, [WORKER",
+      대상: ["src/worker.js#work"],
+      설명: "another process; not followed",
+    },
     ...extra,
   ],
 });
@@ -406,7 +432,9 @@ test("2.4: a hand-written framework-invoked is a judged reference reach follows;
   // reach <code> behind the boundary: which 기능 a crossed boundary would add.
   const behind = p.ask({ question: "reach", id: "src/worker.js#heavy" });
   assert.deepEqual(behind.reach.ids, []);
-  assert.deepEqual(behind.reach.acrossBoundary, [{ from: "src/server.js#delegate", to: "src/worker.js#work", 설명: "another process; not followed", functions: ["cli:delegate"] }]);
+  assert.deepEqual(behind.reach.acrossBoundary, [
+    { from: "src/server.js#delegate", to: "src/worker.js#work", 설명: "another process; not followed", functions: ["cli:delegate"] },
+  ]);
   assert(behind.text.includes("경계를 넘으면 닿는 기능 1개 (src/server.js#delegate의 경계 → src/worker.js#work: another process; not followed): cli:delegate"));
 });
 
@@ -463,7 +491,10 @@ test("2.5: the sample is seeded, spread over the edge types present, prints both
   const judged = many.edges.find((edge) => edge.type === "경계");
   assert.deepEqual(judged.from, { id: "src/server.js#delegate", type: "코드", file: "src/server.js", lines: [5, 7] });
   assert.equal(judged.evidence.judgement, true);
-  assert.match(many.text, /경계: src\/server\.js#delegate \(src\/server\.js:5-7\) → src\/worker\.js#work \(src\/worker\.js:1\) — 읽은 곳 src\/server\.js:6; 근거: 경계, 판단, "another process; not followed"/);
+  assert.match(
+    many.text,
+    /경계: src\/server\.js#delegate \(src\/server\.js:5-7\) → src\/worker\.js#work \(src\/worker\.js:1\) — 읽은 곳 src\/server\.js:6; 근거: 경계, 판단, "another process; not followed"/,
+  );
   const only = sampleProductGraph({ buildDirectory: out, seed: 7, count: 30, types: ["call"] });
   assert(only.edges.every((edge) => edge.type === "call"));
   // A given seed gives the same sample again, whatever the build's own seed is.
@@ -473,7 +504,21 @@ test("2.5: the sample is seeded, spread over the edge types present, prints both
 });
 
 test("2.5: tree gives one indented tree per role; a node is expanded once, another 기능's 처리 코드 is named not expanded, a boundary prints", (t) => {
-  const p = product(t, { ...TOOLS, ...{ "src/tools.js": lines("export function save() { return write() + write(); }", "export function load() { return read(); }", "function write() { return read(); }", "function read() { return 2; }") } }, { rules: [toolRule({ 입구: ["src/server.js#route"] })] });
+  const p = product(
+    t,
+    {
+      ...TOOLS,
+      ...{
+        "src/tools.js": lines(
+          "export function save() { return write() + write(); }",
+          "export function load() { return read(); }",
+          "function write() { return read(); }",
+          "function read() { return 2; }",
+        ),
+      },
+    },
+    { rules: [toolRule({ 입구: ["src/server.js#route"] })] },
+  );
   p.build();
   p.ask({ question: "overview" });
   const answer = p.ask({ question: "tree", id: "tool:save" });
@@ -527,7 +572,10 @@ test("2.5: user gives the steps in order with each 화면요소, the 기능 it c
   });
   const answer = queryProductGraph({ buildDirectory: out, question: "user", id: "UA-MAIN-01" });
   const steps = answer.rows.filter((row) => row.kind === "group").map((row) => row.text);
-  assert.deepEqual(steps.map((text) => text.replace(/ \(.*\)$/, "")), ["차례 1", "차례 2", "차례 3"]);
+  assert.deepEqual(
+    steps.map((text) => text.replace(/ \(.*\)$/, "")),
+    ["차례 1", "차례 2", "차례 3"],
+  );
   const elements = answer.rows.filter((row) => row.depth === 2).map((row) => row.id);
   assert.deepEqual(elements, ["MAIN-01#4", "MAIN-01#1", "MAIN-01#5"]);
   const shows = answer.rows.find((row) => row.relation === "shows");
@@ -643,7 +691,9 @@ test("2.6: run records add the code hashes; a current run's output, code literal
   assert.match(first.text, /- 아무것도 실행하지 않았다\. 문서와 코드를 비교할 뿐이고, 어느 발견도 실행 근거에 기대지 않는다\./);
   // A refusal writes nothing: a 기능 not in the graph, an output over 16 KiB.
   assert.throws(() => addProductGraphRuns({ root: p.root, runs: [{ 기능: "tool:gone", 실행: "x", 출력: "y" }] }), { code: "PRODUCT_GRAPH_RUN_TARGET_MISSING" });
-  assert.throws(() => addProductGraphRuns({ root: p.root, runs: [{ 기능: "tool:save", 실행: "x", 출력: "가".repeat(6000) }] }), { code: "PRODUCT_GRAPH_RUN_LIMIT" });
+  assert.throws(() => addProductGraphRuns({ root: p.root, runs: [{ 기능: "tool:save", 실행: "x", 출력: "가".repeat(6000) }] }), {
+    code: "PRODUCT_GRAPH_RUN_LIMIT",
+  });
   assert.equal(fs.existsSync(path.join(p.family, "실행 기록")), false);
   const added = addProductGraphRuns({
     root: p.root,
@@ -662,7 +712,10 @@ test("2.6: run records add the code hashes; a current run's output, code literal
   // The build after: run evidence; code evidence is not sought for an element a run matched.
   const second = p.build();
   assert(p.shown(p.graph()).includes(`tool:save → MAIN-01#1 [실행 ${label}] machine`));
-  assert.match(second.text, new RegExp(`- 아무것도 실행하지 않았다\\. 프로젝트가 넘긴 실행 기록 1개\\(기능 1개\\)를 읽었고, 그중 기능 1개의 실행이 지금 코드에 그대로다\\.`));
+  assert.match(
+    second.text,
+    new RegExp(`- 아무것도 실행하지 않았다\\. 프로젝트가 넘긴 실행 기록 1개\\(기능 1개\\)를 읽었고, 그중 기능 1개의 실행이 지금 코드에 그대로다\\.`),
+  );
   assert.equal(second.lists.runs.current[0].id, label);
   // The code changes: the run is stale, gives no edge, and is listed and marked.
   fs.writeFileSync(path.join(p.root, "src/app.js"), EVIDENCE_SOURCE["src/app.js"].replace("return report(`파일을", "report(name);\n  return report(`파일을"));
@@ -672,7 +725,10 @@ test("2.6: run records add the code hashes; a current run's output, code literal
     [[label, "기능이 닿는 코드가 바뀜"]],
   );
   assert(p.shown(p.graph()).every((line) => !line.includes("실행 ")));
-  assert.match(third.text, new RegExp(`\\n실행 뒤 코드가 바뀜: 1개 [^\\n]*\\n {2}- ${label} tool:save "save a.txt" \\[저장함\\] 종료 0 — 기능이 닿는 코드가 바뀜\\n`));
+  assert.match(
+    third.text,
+    new RegExp(`\\n실행 뒤 코드가 바뀜: 1개 [^\\n]*\\n {2}- ${label} tool:save "save a.txt" \\[저장함\\] 종료 0 — 기능이 닿는 코드가 바뀜\\n`),
+  );
   const stale = queryProductGraph({ root: p.root, question: "changes", list: "runsStale" });
   assert.equal(stale.rows[0].id, "tool:save");
   assert.match(queryProductGraph({ root: p.root, question: "node", id: "tool:save" }).rows[0].text, /\{실행: 실행 뒤 코드가 바뀜\}$/);
@@ -693,7 +749,10 @@ test("2.6: a machine edge never changes a document, an approval or a 확인 reco
   const confirmed = confirmProductGraph({ root: p.root, documents: ["화면설계서/MAIN-01.md"] });
   for (const id of confirmed.records) {
     const record = JSON.parse(fs.readFileSync(path.join(p.family, "확인", `${id}.json`), "utf8"));
-    assert(record.items.every((item) => item.kind === "documentRow" && item.from === "tool:load" && item.to === "MAIN-01#6"), JSON.stringify(record.items));
+    assert(
+      record.items.every((item) => item.kind === "documentRow" && item.from === "tool:load" && item.to === "MAIN-01#6"),
+      JSON.stringify(record.items),
+    );
   }
   // A judged rule removes a wrong machine edge; one that matches none is stale.
   p.setRules(
@@ -776,15 +835,19 @@ test("2.6 acceptance 4: a seeded sample of machine edges on a product with share
   const { sampleProductGraph } = await import("../scripts/lib/world/product-graph-sample.mjs");
   const shared = {
     "src/app.js": lines(
-      "export function save() { return report(\"저장했습니다\"); }",
-      "export function exportFile() { return report(\"저장했습니다\"); }",
-      "export function load() { return report(\"불러왔습니다\"); }",
+      'export function save() { return report("저장했습니다"); }',
+      'export function exportFile() { return report("저장했습니다"); }',
+      'export function load() { return report("불러왔습니다"); }',
       "function report(text) { return text; }",
     ),
   };
   const rules = evidenceRules();
   rules.rules[0].패턴 = "export function (save|exportFile|load)";
-  const p = evidenceProject(t, { source: shared, rows: ["| MAIN-01#1 | 저장 알림 `저장했습니다` | | | |", "| MAIN-01#2 | 불러온 알림 `불러왔습니다` | | | |"], rules });
+  const p = evidenceProject(t, {
+    source: shared,
+    rows: ["| MAIN-01#1 | 저장 알림 `저장했습니다` | | | |", "| MAIN-01#2 | 불러온 알림 `불러왔습니다` | | | |"],
+    rules,
+  });
   p.build();
   const sample = sampleProductGraph({ root: p.root, seed: 42, types: ["기능→화면요소"] });
   assert.equal(sample.seed, 42);
@@ -798,7 +861,9 @@ test("2.6 acceptance 4: a seeded sample of machine edges on a product with share
   p.setRules({ ...rules, "빼는 연결": [{ 판단: true, 기능: "tool:exportFile", 화면요소: "MAIN-01#1", 이유: "export shows its own notice" }] });
   p.build();
   assert.deepEqual(
-    sampleProductGraph({ root: p.root, seed: 42, types: ["기능→화면요소"] }).edges.map((edge) => `${edge.from.id} → ${edge.to.id}`).sort(),
+    sampleProductGraph({ root: p.root, seed: 42, types: ["기능→화면요소"] })
+      .edges.map((edge) => `${edge.from.id} → ${edge.to.id}`)
+      .sort(),
     ["tool:load → MAIN-01#2", "tool:save → MAIN-01#1"],
   );
 });
@@ -927,7 +992,10 @@ test("2.8: environment reads, named outside calls and tables become 데이터, �
     ["fs.watch"],
   );
   assert.equal(result.counts["데이터"], 6);
-  assert.match(result.text, /\n {2}- 데이터 6 \(환경 변수 이름과 바깥 규칙이 이름 붙인 데이터\)\n {2}- 외부 연결 1 \(바깥 규칙이 이름 붙인 외부 연결\)\n {2}- DB 6 \(/);
+  assert.match(
+    result.text,
+    /\n {2}- 데이터 6 \(환경 변수 이름과 바깥 규칙이 이름 붙인 데이터\)\n {2}- 외부 연결 1 \(바깥 규칙이 이름 붙인 외부 연결\)\n {2}- DB 6 \(/,
+  );
   assert.match(result.text, /\n이름 없는 바깥 호출: 1곳 [^\n]*\n {2}- fs src\/other\.js — 1곳 \(readFileSync\)\n/);
   assert.match(result.text, /- 데이터·외부 연결·DB: 환경 변수 읽기 5곳\(이름 5개\), 바깥 모듈 호출 \d+곳 중 이름 없는 것 1곳, 표 2개\. /);
   assert.match(result.text, /- 뽑지 않은 것: 계측 이벤트 노드, navigate 연결, C4 묶음\./);
@@ -941,7 +1009,11 @@ test("2.8: two rules claiming one call are a rule issue unless one narrows; no o
   const p = product(t, OUTSIDE, outsideRules([{ 판단: true, 이름: "any files", 종류: "데이터", "닿는 곳": [{ 모듈: "fs", 파일: ["src/store.js"] }] }]));
   const { result } = p.build();
   assert(result.lists.ruleIssues.some((item) => /^규칙이 겹침 — fs\.readFileSync를 바깥 규칙 둘 이상이 이름 붙였다/.test(item.reason)));
-  const q = product(t, OUTSIDE, outsideRules([{ 판단: true, 이름: "the config", 종류: "데이터", "닿는 곳": [{ 모듈: "fs", 파일: ["src/store.js"], 줄: [6, 6] }] }]));
+  const q = product(
+    t,
+    OUTSIDE,
+    outsideRules([{ 판단: true, 이름: "the config", 종류: "데이터", "닿는 곳": [{ 모듈: "fs", 파일: ["src/store.js"], 줄: [6, 6] }] }]),
+  );
   const narrowed = q.build();
   assert(!narrowed.result.lists.ruleIssues.some((item) => item.reason.startsWith("규칙이 겹침")));
   assert(narrowed.graph.edges.some((edge) => edge.type === "read" && edge.to === "data:the config"));
@@ -1059,7 +1131,13 @@ test("section 3: against a version-1 baseline, reader-caused reach differences a
   const out = path.join(base, "out");
   fs.mkdirSync(out);
   fs.copyFileSync(path.join(fixture, "baseline.json"), path.join(out, "baseline.json"));
-  const build = () => buildProductGraph({ sourceRoot: path.join(base, "source"), documentsDirectory: path.join(base, "documents"), rulesFile: path.join(fixture, "rules.json"), outputDirectory: out });
+  const build = () =>
+    buildProductGraph({
+      sourceRoot: path.join(base, "source"),
+      documentsDirectory: path.join(base, "documents"),
+      rulesFile: path.join(fixture, "rules.json"),
+      outputDirectory: out,
+    });
   const first = build();
   const changes = first.changes;
   assert.equal(changes.moved.reader, true);
@@ -1069,7 +1147,10 @@ test("section 3: against a version-1 baseline, reader-caused reach differences a
   assert.equal(changes.counts.added, 0);
   assert.deepEqual(changes.reviewAgain.meaningLines, []);
   assert.equal(changes.counts.reviewAgain, 0);
-  assert.match(first.text, /\n- 읽는 방식이 달라져 닿는 범위가 달라진 기능 1개 \(그 코드의 파일이 기준과 같다\. 닿는 코드가 바뀜과 다시 볼 것에 넣지 않는다\)\n- 읽는 방식이 달라져 새로 생긴 노드 1개 \(데이터\. 신규로 세지 않는다\)\n/);
+  assert.match(
+    first.text,
+    /\n- 읽는 방식이 달라져 닿는 범위가 달라진 기능 1개 \(그 코드의 파일이 기준과 같다\. 닿는 코드가 바뀜과 다시 볼 것에 넣지 않는다\)\n- 읽는 방식이 달라져 새로 생긴 노드 1개 \(데이터\. 신규로 세지 않는다\)\n/,
+  );
   // The structured answer agrees: no node says reachChanged.
   const answer = queryProductGraph({ buildDirectory: out, question: "node", id: "cli:start" });
   assert.equal(answer.rows[0].changedSinceBaseline, "unchanged");
@@ -1146,7 +1227,10 @@ test("2.1 stop (a): a dispatcher that calls every handler directly: each 기능 
 test("2.1 stop (b): a handler the dispatcher calls as a shared step is a counted, named stop in reach, node and tree answers and in the limits block", (t) => {
   const p = product(t, DISPATCH, { rules: [toolRule({ 입구: ["src/server.js#route"] })] });
   const { result } = p.build();
-  assert.match(result.text, /\n- 닿는 범위는 처리 코드와 입구 둘 다에서 시작하고, 입구에서 걷는 길은 다른 기능의 처리 코드인 노드 앞에서 멈춘다[^\n]*공통 단계로 정말 부르면 그 길은 보이지 않는다\.\n/);
+  assert.match(
+    result.text,
+    /\n- 닿는 범위는 처리 코드와 입구 둘 다에서 시작하고, 입구에서 걷는 길은 다른 기능의 처리 코드인 노드 앞에서 멈춘다[^\n]*공통 단계로 정말 부르면 그 길은 보이지 않는다\.\n/,
+  );
   p.ask({ question: "overview" });
   const reach = p.ask({ question: "reach", id: "tool:save" });
   const row = reach.rows.find((item) => item.entryStops);
@@ -1202,7 +1286,10 @@ test("baseline: 입구, 줄 ranges and reference lines are stored, so the before
   const rulesFile = path.join(base, "rules.json");
   fs.writeFileSync(
     rulesFile,
-    JSON.stringify({ ...RULES_HEAD, rules: [toolRule({ 입구: ["src/server.js#route"] }), { 종류: "cli", 판단: true, 파일: ["src/cli.js"], 패턴: 'name === "(\\w+)"', 분기: true }] }),
+    JSON.stringify({
+      ...RULES_HEAD,
+      rules: [toolRule({ 입구: ["src/server.js#route"] }), { 종류: "cli", 판단: true, 파일: ["src/cli.js"], 패턴: 'name === "(\\w+)"', 분기: true }],
+    }),
   );
   const out = path.join(base, "out");
   const build = () => buildProductGraph({ sourceRoot: source, documentsDirectory: path.join(base, "documents"), rulesFile, outputDirectory: out });
@@ -1222,13 +1309,19 @@ test("baseline: 입구, 줄 ranges and reference lines are stored, so the before
   assert.equal(extra("call", "src/tools.js#log", "src/tools.js#note"), undefined);
   // tool:save now also calls note: the only difference is note, newly reached.
   // (Read without roles, the baseline would have tool:save reach load and log too.)
-  fs.writeFileSync(path.join(source, "src/tools.js"), DISPATCH["src/tools.js"].replace("export function save() { return 1; }", "export function save() { return note(); }"));
+  fs.writeFileSync(
+    path.join(source, "src/tools.js"),
+    DISPATCH["src/tools.js"].replace("export function save() { return 1; }", "export function save() { return note(); }"),
+  );
   const changed = build();
   const save = changed.changes.reachChanged.find((item) => item.id === "tool:save");
-  assert.deepEqual(save.nodes, [
-    { id: "src/tools.js#save", change: "changed" },
-    { id: "src/tools.js#note", change: "reached" },
-  ].sort((a, b) => (a.change < b.change ? -1 : 1)));
+  assert.deepEqual(
+    save.nodes,
+    [
+      { id: "src/tools.js#save", change: "changed" },
+      { id: "src/tools.js#note", change: "reached" },
+    ].sort((a, b) => (a.change < b.change ? -1 : 1)),
+  );
   // Same input, same bytes.
   const again = path.join(base, "again");
   buildProductGraph({ sourceRoot: source, documentsDirectory: path.join(base, "documents"), rulesFile, outputDirectory: again });
@@ -1241,7 +1334,9 @@ test("baseline: 입구, 줄 ranges and reference lines are stored, so the before
 // ---------- cases the mutation run asked for ----------
 
 test("2.3: a parameter named like a function is not a value use of it", (t) => {
-  const p = product(t, { "src/a.js": lines("export function wrap(stop) { return stop; }", "function stop() { return 1; }", "export function keep() { return stop; }") });
+  const p = product(t, {
+    "src/a.js": lines("export function wrap(stop) { return stop; }", "function stop() { return 1; }", "export function keep() { return stop; }"),
+  });
   const { graph } = p.build();
   const values = graph.edges.filter((edge) => edge.type === "callback").map((edge) => `${edge.from} -> ${edge.to}`);
   assert.deepEqual(values, ["src/a.js#keep -> src/a.js#stop"]);
@@ -1355,7 +1450,10 @@ test("B2: SQL reads and writes need the table in the verb's own position, per ta
     ],
   );
   // The English sentences are not sites; the unknown table gives no edge.
-  assert.match(result.text, /\nSQL로 읽은 곳: 4곳 [^\n]*\n {2}- src\/db\.js:7 src\/db\.js#talk — 표를 모름 GraphTopology\(읽기\) — "SELECT topologyJson FROM GraphTopology"\n/);
+  assert.match(
+    result.text,
+    /\nSQL로 읽은 곳: 4곳 [^\n]*\n {2}- src\/db\.js:7 src\/db\.js#talk — 표를 모름 GraphTopology\(읽기\) — "SELECT topologyJson FROM GraphTopology"\n/,
+  );
   assert.match(result.text, /\n {2}- src\/db\.js:11 src\/db\.js#move — 읽기 db:users · 쓰기 db:archive — /);
   assert.doesNotMatch(result.text, /Select the users|Update: users|delete from the list/);
 });
@@ -1363,7 +1461,12 @@ test("B2: SQL reads and writes need the table in the verb's own position, per ta
 test("B3: each code file's mask is computed once per build, and the run evidence reads each file once", async (t) => {
   const { extractProductGraphCode } = await import("../scripts/lib/world/product-graph-extraction.mjs");
   const p = product(t, { ...OUTSIDE, ...BRANCHES, ...RUNNER });
-  const rules = { ...RULES_HEAD, ...outsideRules(), rules: [...outsideRules().rules, ...branchRules().rules], "손으로 적는 연결": [{ 판단: true, 종류: "경계", 파일: "src/peer.js", 글: "net.connect(4000)", 대상: ["src/store.js#load"] }] };
+  const rules = {
+    ...RULES_HEAD,
+    ...outsideRules(),
+    rules: [...outsideRules().rules, ...branchRules().rules],
+    "손으로 적는 연결": [{ 판단: true, 종류: "경계", 파일: "src/peer.js", 글: "net.connect(4000)", 대상: ["src/store.js#load"] }],
+  };
   const extraction = extractProductGraphCode({ sourceRoot: p.source, projectRules: rules });
   assert(extraction.codeMasks.codeFiles > 5);
   assert.equal(extraction.codeMasks.computed, extraction.codeMasks.codeFiles);
@@ -1412,7 +1515,7 @@ test("S2: an assignment to or a delete of an environment variable writes it; a d
       '  process.env.MODE = "x";',
       "  delete process.env.OLD;",
       "  const { HOME, PORT: port = 1, ...rest } = process.env;",
-      "  return HOME + port + rest + (process.env.MODE === \"x\");",
+      '  return HOME + port + rest + (process.env.MODE === "x");',
       "}",
     ),
   });

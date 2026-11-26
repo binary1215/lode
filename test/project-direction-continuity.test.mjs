@@ -19,8 +19,8 @@ const load = (name) => {
   return import(pathToFileURL(fs.existsSync(layered) ? layered : path.join(pluginRoot, "scripts/lib", name)));
 };
 const { initializeProject, inspectProject } = await load("head-core.mjs");
-const { readProjectDirection, readProjectDirectionRevision, updateProjectDirection,
-  assertProjectActionsCurrent, assertAuthorizationProjectDirection } = await load("project-direction.mjs");
+const { readProjectDirection, readProjectDirectionRevision, updateProjectDirection, assertProjectActionsCurrent, assertAuthorizationProjectDirection } =
+  await load("project-direction.mjs");
 const { buildRuntimeVersionEvidence } = await load("runtime-machine-execution.mjs");
 const { buildRuntimeProtocolEvidence, buildRuntimeProjectBinding } = await load("runtime-protocol-evidence.mjs");
 const { buildRuntimeInvocationAuthorization, prepareRuntimeInvocationExecution } = await load("runtime-invocation-lifecycle.mjs");
@@ -46,7 +46,11 @@ function snapshot(root) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const file = path.join(directory, entry.name);
       if (entry.isDirectory()) walk(file);
-      else result[path.relative(root, file)] = { sha256: crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex"), mtimeMs: fs.statSync(file).mtimeMs };
+      else
+        result[path.relative(root, file)] = {
+          sha256: crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex"),
+          mtimeMs: fs.statSync(file).mtimeMs,
+        };
     }
   }
   walk(root);
@@ -54,8 +58,11 @@ function snapshot(root) {
 }
 function readOnly(root, operation) {
   const before = snapshot(root);
-  try { return operation(); }
-  finally { assert.deepEqual(snapshot(root), before); }
+  try {
+    return operation();
+  } finally {
+    assert.deepEqual(snapshot(root), before);
+  }
 }
 const unavailable = { code: "PROJECT_DIRECTION_UNAVAILABLE" };
 
@@ -84,8 +91,11 @@ for (const count of [1, 2]) {
   test(`missing direction pointer with ${count} retained original(s) never guesses or rewrites current`, (t) => {
     const { root, layout } = project(t);
     const first = updateProjectDirection({ root, input: { goal: "Explain only", cancelledActions: ["deploy"] } }).direction;
-    const last = count === 1 ? first : updateProjectDirection({ root, expectedDirectionId: first.directionId,
-      input: { goal: "Explain only", cancelledActions: ["deploy", "publish"] } }).direction;
+    const last =
+      count === 1
+        ? first
+        : updateProjectDirection({ root, expectedDirectionId: first.directionId, input: { goal: "Explain only", cancelledActions: ["deploy", "publish"] } })
+            .direction;
     fs.unlinkSync(pointer(root, layout));
     readOnly(root, () => {
       assert.throws(() => readProjectDirection({ root }), unavailable);
@@ -104,9 +114,12 @@ for (const trace of ["pointer-stage", "revision-stage", "damaged-original-name"]
     const { root, layout } = project(t);
     fs.mkdirSync(revisions(root, layout), { recursive: true });
     const nonce = "00000000-0000-4000-8000-000000000000";
-    const file = trace === "pointer-stage" ? path.join(store(root, layout), `.current.json.${nonce}.tmp`)
-      : trace === "revision-stage" ? path.join(revisions(root, layout), `.direction-${"a".repeat(24)}.json.${nonce}.tmp`)
-        : path.join(revisions(root, layout), "direction-damaged.json");
+    const file =
+      trace === "pointer-stage"
+        ? path.join(store(root, layout), `.current.json.${nonce}.tmp`)
+        : trace === "revision-stage"
+          ? path.join(revisions(root, layout), `.direction-${"a".repeat(24)}.json.${nonce}.tmp`)
+          : path.join(revisions(root, layout), "direction-damaged.json");
     fs.writeFileSync(file, "{");
     readOnly(root, () => assert.throws(() => readProjectDirection({ root }), unavailable));
     assert.equal(fs.existsSync(pointer(root, layout)), false);
@@ -120,8 +133,11 @@ test("interrupted first pointer publication retains its exact orphan original an
     if (destination === pointer(root, layout)) throw Object.assign(new Error("Synthetic interrupted pointer publication"), { code: "SYNTHETIC_POINTER_WRITE" });
     return rename(source, destination);
   };
-  try { assert.throws(() => updateProjectDirection({ root, input: { goal: "Local only", cancelledActions: ["deploy"] } }), { code: "SYNTHETIC_POINTER_WRITE" }); }
-  finally { fs.renameSync = rename; }
+  try {
+    assert.throws(() => updateProjectDirection({ root, input: { goal: "Local only", cancelledActions: ["deploy"] } }), { code: "SYNTHETIC_POINTER_WRITE" });
+  } finally {
+    fs.renameSync = rename;
+  }
   assert.equal(fs.readdirSync(revisions(root, layout)).length, 1);
   assert.equal(fs.existsSync(pointer(root, layout)), false);
   readOnly(root, () => {
@@ -136,11 +152,12 @@ test("normal cancellation and direction drift remain strict without altering ret
   const session = JSON.parse(fs.readFileSync(sessionFile, "utf8"));
   fs.writeFileSync(sessionFile, JSON.stringify({ ...session, externalEffect: { status: "unknown", replayAllowed: false } }));
   const first = updateProjectDirection({ root, input: { goal: "Build" } }).direction;
-  const current = updateProjectDirection({ root, expectedDirectionId: first.directionId,
-    input: { goal: "Build", cancelledActions: ["deploy"] } }).direction;
+  const current = updateProjectDirection({ root, expectedDirectionId: first.directionId, input: { goal: "Build", cancelledActions: ["deploy"] } }).direction;
   readOnly(root, () => {
     assert.throws(() => assertProjectActionsCurrent({ root, actions: ["deploy"] }), { code: "PROJECT_ACTION_CANCELLED" });
-    assert.throws(() => assertAuthorizationProjectDirection(root, { currentProjectDirectionId: first.directionId }), { code: "RUNTIME_PROJECT_DIRECTION_DRIFT" });
+    assert.throws(() => assertAuthorizationProjectDirection(root, { currentProjectDirectionId: first.directionId }), {
+      code: "RUNTIME_PROJECT_DIRECTION_DRIFT",
+    });
     assert.equal(assertAuthorizationProjectDirection(root, { currentProjectDirectionId: current.directionId }).directionId, current.directionId);
     assert.deepEqual(JSON.parse(fs.readFileSync(sessionFile, "utf8")).externalEffect, { status: "unknown", replayAllowed: false });
   });
@@ -167,36 +184,61 @@ test("recognized direction symlink trace retains path confinement instead of bec
   fs.writeFileSync(trace, "{}");
   // A synchronous filesystem seam avoids requiring Windows symlink privileges.
   const lstat = fs.lstatSync;
-  fs.lstatSync = (file, ...args) => file === trace ? { isSymbolicLink: () => true } : lstat(file, ...args);
-  try { assert.throws(() => readProjectDirection({ root }), { code: "SESSION_PATH_ESCAPE" }); }
-  finally { fs.lstatSync = lstat; }
+  fs.lstatSync = (file, ...args) => (file === trace ? { isSymbolicLink: () => true } : lstat(file, ...args));
+  try {
+    assert.throws(() => readProjectDirection({ root }), { code: "SESSION_PATH_ESCAPE" });
+  } finally {
+    fs.lstatSync = lstat;
+  }
   assert.equal(fs.readFileSync(trace, "utf8"), "{}");
 });
 
 // Protocol responses are synthetic in-memory events, not OS/provider calls.
 function capabilityFixture(_command, args) {
   const key = args.join(" ");
-  const output = key === "--version" ? "codex 1.2.3\n" : key === "--help" ? "exec\nmcp-server\napp-server\n"
-    : key === "exec --help" ? "Run Codex non-interactively\n--json\n--output-schema\n--color\n--sandbox\n--skip-git-repo-check\n--cd\n--ephemeral\nresume\n" : "stdio://\ngenerate-json-schema\n--listen\n";
+  const output =
+    key === "--version"
+      ? "codex 1.2.3\n"
+      : key === "--help"
+        ? "exec\nmcp-server\napp-server\n"
+        : key === "exec --help"
+          ? "Run Codex non-interactively\n--json\n--output-schema\n--color\n--sandbox\n--skip-git-repo-check\n--cd\n--ephemeral\nresume\n"
+          : "stdio://\ngenerate-json-schema\n--listen\n";
   const child = new EventEmitter();
   Object.assign(child, { pid: 1, stdout: new EventEmitter(), stderr: new EventEmitter(), exitCode: null, signalCode: null });
-  child.kill = () => { throw new Error("No actual child exists"); };
-  queueMicrotask(() => { child.stdout.emit("data", Buffer.from(output)); child.exitCode = 0; child.emit("close", 0, null); });
+  child.kill = () => {
+    throw new Error("No actual child exists");
+  };
+  queueMicrotask(() => {
+    child.stdout.emit("data", Buffer.from(output));
+    child.exitCode = 0;
+    child.emit("close", 0, null);
+  });
   return child;
 }
 
 test("real authorization builder and prepared execution fail closed for new and preexisting null/non-null bases", async (t) => {
   const { root, layout } = project(t);
-  const bin = path.join(root, "fixture-bin"); fs.mkdirSync(bin);
+  const bin = path.join(root, "fixture-bin");
+  fs.mkdirSync(bin);
   const marker = path.join(bin, process.platform === "win32" ? "codex.exe" : "codex");
   fs.writeFileSync(marker, "Synthetic marker; never executed");
   if (process.platform !== "win32") fs.chmodSync(marker, 0o755);
-  const environment = { ...process.env, PATH: bin }; delete environment.Path; delete environment.path;
+  const environment = { ...process.env, PATH: bin };
+  delete environment.Path;
+  delete environment.path;
   const versionEvidence = await buildRuntimeVersionEvidence({ runtimes: ["codex"], environment, spawnImplementation: capabilityFixture });
   const protocolEvidence = await buildRuntimeProtocolEvidence({ runtimes: ["codex"], environment, versionEvidence, spawnImplementation: capabilityFixture });
   const inspected = inspectProject(root);
-  const projectBinding = buildRuntimeProjectBinding({ projectId: inspected.project.projectId, headSessionId: inspected.state.sessionId,
-    projectRoot: root, projectStatus: "ready", versionEvidence, protocolEvidence, storage: inspected.storage });
+  const projectBinding = buildRuntimeProjectBinding({
+    projectId: inspected.project.projectId,
+    headSessionId: inspected.state.sessionId,
+    projectRoot: root,
+    projectStatus: "ready",
+    versionEvidence,
+    protocolEvidence,
+    storage: inspected.storage,
+  });
   const options = { root, runtime: "codex", scope: { kind: "session", request: "Read synthetic source" }, protocolEvidence, projectBinding, persist: false };
   const nullBasis = buildRuntimeInvocationAuthorization(options).authorization;
   assert.equal(Object.hasOwn(nullBasis, "currentProjectDirectionId"), false);

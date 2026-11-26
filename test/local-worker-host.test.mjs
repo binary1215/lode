@@ -13,11 +13,30 @@ import { formatForVerifiedOwner } from "../scripts/lib/storage/project-storage-f
 import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
 import { createWholePlanSnapshot, createExecutionContract } from "../scripts/lib/runtime/execution-lineage.mjs";
 import { startRun } from "../scripts/lib/runtime/run-lineage.mjs";
+import { readRuntimeInvocationRecord } from "../scripts/lib/runtime/runtime-invocation-record.mjs";
 import { isManagedMutation } from "../scripts/lib/session/managed-maintenance-surface.mjs";
+import {
+  NATIVE_FIXTURE_SETTINGS,
+  codexHostDiscoverySelected,
+  codexTestBinary,
+  ownerCrashFixture,
+  missingSettingsSkip,
+  skipReason,
+  supervisorFixtureRoot,
+  terminalHoldFixtureRoot,
+  windowsNativeSkip,
+} from "./helpers/native-fixtures.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
-const nativeRoot = process.env.HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT;
-const skip = process.platform !== "win32" || !nativeRoot ? "Packaged Windows native test artifact not supplied" : false;
+const nativeRoot = supervisorFixtureRoot();
+const skip = windowsNativeSkip("the packaged Windows native worker host");
+// The runner builds both from source on Windows: the exact-owner crash helper
+// from test/helpers/owned-worker-crash-windows.go, and the terminal-hold
+// supervisor as a `go test -c` build of native/lode-agent-worker/cmd/lode-agent-supervisor.
+const ownerCrashSkip = skip || missingSettingsSkip("the exact-owner crash test", [NATIVE_FIXTURE_SETTINGS.ownerCrashFixture]);
+const terminalHoldSkip =
+  skip ||
+  missingSettingsSkip("the terminal-publication owner crash test", [NATIVE_FIXTURE_SETTINGS.ownerCrashFixture, NATIVE_FIXTURE_SETTINGS.terminalHoldRoot]);
 const onProcess = (event) => console.log(JSON.stringify({ ...event, at: new Date().toISOString() }));
 onProcess({ type: "test", pid: process.pid, parentPid: process.ppid, command: process.execPath, args: process.argv.slice(1), cwd: process.cwd(), ports: [] });
 const pause = () => new Promise((resolve) => setTimeout(resolve, 100));
@@ -91,6 +110,62 @@ async function frontDoor(file, args, root, request = null, environment = process
   if (failure) throw failure;
   assert.equal(code, 0, Buffer.concat(err).toString());
   return JSON.parse(Buffer.concat(out).toString());
+}
+// The supervisor binary the disposable package carries, named by its own
+// verified manifest (the shipped name changed from head-agent- to lode-agent-).
+function installedSupervisor(f) {
+  const directory = path.join(f.installed, "dist", "windows-x64");
+  return path.join(directory, JSON.parse(fs.readFileSync(path.join(directory, "SUPERVISOR-MANIFEST.json"), "utf8")).binary.relativePath);
+}
+// A CI log shows only process exit codes. When a job does not complete, the
+// assertion message carries the job's own evidence: its state, terminal record,
+// launch failure, owner output tails and the settled receipt, each bounded.
+function workerJobEvidence(f, member, state) {
+  const tail = (file, limit = 2000) => {
+    try {
+      const text = fs.readFileSync(file, "utf8");
+      return text.length > limit ? `…${text.slice(-limit)}` : text;
+    } catch (error) {
+      return `<${error.code || error.message}>`;
+    }
+  };
+  const projectId = JSON.parse(fs.readFileSync(path.join(f.root, f.layout.directory, "project.json"))).projectId;
+  const directory = path.join(f.operational, "worker-jobs", projectId, member.authorizationId);
+  let receipt;
+  try {
+    const record = readRuntimeInvocationRecord({ root: f.root, authorizationId: member.authorizationId, storage: f.storage }).receipt;
+    // Status and failure fields first, so truncation never hides them.
+    const outcome = Object.fromEntries(Object.entries(record).filter(([name]) => name === "status" || /error|failure|reason|outcome|code/i.test(name)));
+    // The failure code of a failed proposal is not recorded; the process and
+    // provider boundary still show how it ended (terminationRequested true on an
+    // exit-code-0 receipt means the owned close fell back to a stop).
+    const boundary = {
+      process: Object.fromEntries(Object.entries(record.processBoundary || {}).filter(([name]) => !/Digest$/u.test(name))),
+      diagnosticCodes: record.providerBoundary?.diagnosticCodes,
+      structuredResultObserved: record.providerBoundary?.structuredResultObserved,
+    };
+    receipt = `${JSON.stringify(outcome)} ${JSON.stringify(boundary)} ${JSON.stringify(record).slice(0, 1500)}`;
+  } catch (error) {
+    receipt = `<${error.code || error.message}>`;
+  }
+  const fields = ["status", "ownerExitObserved", "ownerExitCode", "workspacePatchStatus", "currentConflict", "replayAllowed"];
+  return [
+    `task ${member.taskKey}, authorization ${member.authorizationId}`,
+    `state ${JSON.stringify(Object.fromEntries(fields.filter((name) => name in state).map((name) => [name, state[name]])))}`,
+    `whole state ${JSON.stringify(state).slice(0, 2000)}`,
+    `terminal.json ${tail(path.join(directory, "terminal.json"))}`,
+    `launch-failure.json ${tail(path.join(directory, "launch-failure.json"))}`,
+    `owner stdout ${tail(path.join(directory, "stdout.bin"))}`,
+    `owner stderr ${tail(path.join(directory, "stderr.bin"))}`,
+    `provider stderr ${tail(path.join(f.operational, "runtime-output", projectId, member.authorizationId, "stderr.bin"))}`,
+    `receipt ${receipt}`,
+  ].join("\n");
+}
+// The same expectation as `state.status === "completed"`, with the job's evidence
+// in the message when it does not hold.
+function assertJobCompleted(f, member, state) {
+  if (state.status !== "completed") assert.equal(state.status, "completed", workerJobEvidence(f, member, state));
+  return state;
 }
 async function fixture(t, { nativeFixtureRoot = nativeRoot } = {}) {
   const parent = fs.realpathSync(process.env.HEAD_AGENT_TEST_TMP || os.tmpdir());
@@ -417,10 +492,10 @@ test("public native-prefix preparation and start bind a controlled two-turn prop
   }
   assert.equal(state.ownerExitObserved, true);
   state = f.jobs.reconcileBoundedWorkerJob(input, { onProcess });
-  assert.equal(state.status, "completed", JSON.stringify(state));
+  assertJobCompleted(f, first, state);
   assert.equal(state.result.actualProviderInvoked, false);
   assert.equal(state.workspacePatch.origin, "provider-patch-proposal");
-  assert.equal((await f.cli.runCommand(["worker-start", f.root, "--task-key", first.taskKey])).status, "completed");
+  assertJobCompleted(f, first, await f.cli.runCommand(["worker-start", f.root, "--task-key", first.taskKey]));
   assert.equal(fs.readFileSync(path.join(f.root, "selected.txt"), "utf8"), "selected original\n");
 });
 
@@ -434,7 +509,8 @@ test("reviewer source-change regression: same member safely reprepares and concu
     leases = await f.importLocal("lib/runtime/runtime-execution-lease.mjs");
   const prior = lifecycle.readRuntimeInvocationAuthorization({ root: f.root, authorizationId: first.authorizationId }).authorization;
   assert.equal(
-    leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: prior.projectId, authorizationId: prior.authorizationId }).singleUseConsumed,
+    leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: prior.projectId, authorizationId: prior.authorizationId, storage: f.storage })
+      .singleUseConsumed,
     false,
   );
   fs.writeFileSync(path.join(f.root, "selected.txt"), "legitimate updated source\n");
@@ -463,7 +539,7 @@ test("reviewer source-change regression: same member safely reprepares and concu
     state = f.jobs.readBoundedWorkerJob(input, { onProcess });
   }
   assert.equal(state.ownerExitObserved, true);
-  assert.equal(f.jobs.reconcileBoundedWorkerJob(input, { onProcess }).status, "completed");
+  assertJobCompleted(f, next, f.jobs.reconcileBoundedWorkerJob(input, { onProcess }));
   assert.equal(fs.readFileSync(path.join(f.root, "selected.txt"), "utf8"), "legitimate updated source\n");
 });
 
@@ -521,7 +597,7 @@ test("reviewer reselection regression: newly present target can join explicit re
     state = f.jobs.readBoundedWorkerJob(input, { onProcess });
   }
   assert.equal(state.ownerExitObserved, true);
-  assert.equal(f.jobs.reconcileBoundedWorkerJob(input, { onProcess }).status, "completed");
+  assertJobCompleted(f, next, f.jobs.reconcileBoundedWorkerJob(input, { onProcess }));
   assert.equal(fs.readFileSync(path.join(f.root, "target.txt"), "utf8"), "user-created current preimage\n");
   assert.deepEqual(fs.readFileSync(path.join(f.root, f.layout.directory, "sessions/current.json")), before);
 });
@@ -809,7 +885,7 @@ test("default shipped CLI and stdio MCP start prepared workers without injected 
     }
     assert.equal(state.ownerExitObserved, true);
     state = f.jobs.reconcileBoundedWorkerJob(input, { onProcess });
-    assert.equal(state.status, "completed");
+    assertJobCompleted(f, member, state);
     assert.equal(state.result.actualProviderInvoked, false);
     assert.equal(state.workspacePatch.origin, "provider-patch-proposal");
     // An already launched job does not need the prepare-only cache to be read.
@@ -821,7 +897,7 @@ test("default shipped CLI and stdio MCP start prepared workers without injected 
       if (JSON.parse(fs.readFileSync(file)).request.taskKey === member.taskKey) fs.unlinkSync(file);
     }
     const repeated = await f.cli.runCommand(["worker-start", f.root, "--task-key", member.taskKey]);
-    assert.equal(repeated.status, "completed");
+    assertJobCompleted(f, member, repeated);
   }
   assert.equal(fs.readFileSync(path.join(f.root, "selected.txt"), "utf8"), "selected original\n");
 });
@@ -908,6 +984,7 @@ async function twoRunMembers(t, secondKey = "second-member", fixtureOptions = {}
     assert.equal(state.ownerExitObserved, true, "Exact native owner exits before reconciliation");
     return f.jobs.reconcileBoundedWorkerJob(input, { onProcess });
   };
+  f.completed = async (member) => assertJobCompleted(f, member, await f.closed(member));
   return f;
 }
 
@@ -953,7 +1030,7 @@ test("public fresh proposal turns really overlap with distinct identities and re
       await Promise.all([f.publicCli(["worker-start", "--task-key", member.taskKey]), f.publicMcp("head_bounded_worker_start", { task_key: member.taskKey })]);
     for (const file of spools) assert.equal(events(file).length, 1);
     fs.writeFileSync(releaseFile, "both real turns observed\n", { flag: "wx" });
-    for (const member of f.prepared) assert.equal((await f.closed(member)).status, "completed");
+    for (const member of f.prepared) await f.completed(member);
     const intervals = spools.map((file, index) => {
       const observed = events(file);
       assert.equal(observed.length, 2);
@@ -992,7 +1069,7 @@ test("public fresh proposal turns really overlap with distinct identities and re
     assert.equal(peak, 2);
     assert.equal(active, 0);
     const frozen = spools.map((file) => fs.readFileSync(file));
-    for (const member of f.prepared) assert.equal((await f.publicMcp("head_bounded_worker_start", { task_key: member.taskKey })).status, "completed");
+    for (const member of f.prepared) assertJobCompleted(f, member, await f.publicMcp("head_bounded_worker_start", { task_key: member.taskKey }));
     assert.deepEqual(
       spools.map((file) => fs.readFileSync(file)),
       frozen,
@@ -1028,7 +1105,7 @@ test("public partial launch stays open and can be abandoned without success or P
   await f.publicCli(["worker-start", "--task-key", "first-member"]);
   fs.writeFileSync(path.join(f.root, "other.txt"), "source changed before second launch\n");
   await assert.rejects(f.cli.runCommand(["worker-start", f.root, "--task-key", "second-member"]));
-  assert.equal((await f.closed(f.prepared[0])).status, "completed");
+  await f.completed(f.prepared[0]);
   const status = await f.publicMcp("head_bounded_worker_wave_status", { wave_id });
   assert.equal(status.projection.state, "open");
   assert.equal(status.projection.counts.requested, 2);
@@ -1051,8 +1128,12 @@ test("public partial launch stays open and can be abandoned without success or P
     fs.readFileSync(path.join(f.root, f.layout.directory, "runtime/execution-authorizations", f.prepared[1].authorizationId + ".json")),
   );
   assert.equal(
-    leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization.authorizationId })
-      .singleUseConsumed,
+    leases.inspectRuntimeExecutionLease({
+      projectRoot: f.root,
+      projectId: authorization.projectId,
+      authorizationId: authorization.authorizationId,
+      storage: f.storage,
+    }).singleUseConsumed,
     false,
   );
   assert.deepEqual(f.pointers(), before);
@@ -1064,19 +1145,20 @@ test("fresh public frontends restore HEAD direction and rediscover completed and
   await f.publicCli(["checkpoint", "--summary", "Synthetic HEAD-owned recovery point", "--next", direction]);
   const before = f.pointers();
   await Promise.all(f.prepared.map((member) => f.publicCli(["worker-start", "--task-key", member.taskKey])));
-  assert.equal((await f.closed(f.prepared[0])).status, "completed");
+  await f.completed(f.prepared[0]);
   const held = f.prepared[1],
     authorization_id = held.authorizationId;
   const pending = await f.publicMcp("head_bounded_worker_job_status", { authorization_id });
   assert.equal(pending.ownerExitObserved, false);
   const leases = await f.importLocal("lib/runtime/runtime-execution-lease.mjs");
   const authorization = JSON.parse(fs.readFileSync(path.join(f.root, f.layout.directory, "runtime/execution-authorizations", authorization_id + ".json")));
-  const lease = () => leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization_id });
+  const lease = () =>
+    leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization_id, storage: f.storage });
   assert.equal(lease().singleUseConsumed, true);
   for (const restored of [await f.publicCli(["session-restore"]), await f.publicMcp("head_session_restore")]) {
     assert.equal(restored.projection.consumerInstruction.historicalCheckpointContext.nextExpectedResult, direction);
   }
-  assert.equal((await f.publicMcp("head_bounded_worker_job_status", { authorization_id: f.prepared[0].authorizationId })).status, "completed");
+  assertJobCompleted(f, f.prepared[0], await f.publicMcp("head_bounded_worker_job_status", { authorization_id: f.prepared[0].authorizationId }));
   const rediscovered = await f.publicMcp("head_bounded_worker_reconcile", { task_key: held.taskKey });
   assert.equal(rediscovered.authorization.authorizationId, authorization_id);
   await f.publicCli(["worker-cancel", "--authorization", authorization_id]);
@@ -1092,13 +1174,13 @@ test("fresh public frontends restore HEAD direction and rediscover completed and
 test(
   "public consumed owner crash stays unknown without relaunch and preserves a completed sibling",
   {
-    skip: skip || !process.env.HEAD_AGENT_TEST_OWNER_CRASH_FIXTURE ? "Explicit Windows exact-owner crash fixture not supplied" : false,
+    skip: ownerCrashSkip,
   },
   async (t) => {
     const f = await twoRunMembers(t, "fixture-hold-until-cancel"),
       before = f.pointers();
     await Promise.all(f.prepared.map((member) => f.publicCli(["worker-start", "--task-key", member.taskKey])));
-    assert.equal((await f.closed(f.prepared[0])).status, "completed");
+    await f.completed(f.prepared[0]);
     const held = f.prepared[1],
       authorization_id = held.authorizationId;
     const authorization = JSON.parse(fs.readFileSync(path.join(f.root, f.layout.directory, "runtime/execution-authorizations", authorization_id + ".json")));
@@ -1126,11 +1208,12 @@ test(
     }
     assert.equal(markers.length, 1, "Observed one real synthetic provider turn before crash");
     const leases = await f.importLocal("lib/runtime/runtime-execution-lease.mjs");
-    const lease = () => leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization_id });
+    const lease = () =>
+      leases.inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: authorization.projectId, authorizationId: authorization_id, storage: f.storage });
     assert.equal(lease().singleUseConsumed, true);
     assert.equal(fs.existsSync(path.join(directory, "terminal.json")), false);
     const consumption = fs.readFileSync(path.join(f.root, f.layout.directory, "runtime/execution-leases", authorization_id, "consumption.json"));
-    const helper = process.env.HEAD_AGENT_TEST_OWNER_CRASH_FIXTURE;
+    const helper = ownerCrashFixture();
     // A mismatched generation must not reach termination, even for this owned PID.
     const refused = await frontDoor("crash", [requestFile, "windows-filetime-0000000000000000"], f.root, null, process.env, helper);
     assert.equal(refused.status, "generation-mismatch");
@@ -1146,7 +1229,7 @@ test(
     const reused = await frontDoor("crash", [staleRequest, staleToken], f.root, null, process.env, helper);
     assert.equal(reused.status, "reused");
     assert.equal(reused.terminationAttempted, false);
-    const supervisor = path.join(f.installed, "dist/windows-x64/head-agent-supervisor.exe");
+    const supervisor = installedSupervisor(f);
     const inspectedReuse = await frontDoor("--job-state", [staleRequest], f.root, null, process.env, supervisor);
     assert.equal(inspectedReuse.ownerState, "reused");
     assert.equal((await frontDoor("inspect", [requestFile, claim.ownerToken], f.root, null, process.env, helper)).status, "present");
@@ -1162,7 +1245,7 @@ test(
       pid: claim.pid,
       ownerToken: claim.ownerToken,
       ownedPids,
-      command: path.join(f.installed, "dist/windows-x64/head-agent-supervisor.exe"),
+      command: installedSupervisor(f),
       cwd: f.root,
       ports: [],
       reason: "Deliberate post-consumption, pre-terminal fault; not ordinary cleanup",
@@ -1199,7 +1282,7 @@ test(
     assert.deepEqual(fs.readFileSync(spoolFile), stderrBefore);
     assert.deepEqual(fs.readFileSync(path.join(f.root, f.layout.directory, "runtime/execution-leases", authorization_id, "consumption.json")), consumption);
     assert.equal(lease().singleUseConsumed, true);
-    assert.equal((await f.publicMcp("head_bounded_worker_job_status", { authorization_id: f.prepared[0].authorizationId })).status, "completed");
+    assertJobCompleted(f, f.prepared[0], await f.publicMcp("head_bounded_worker_job_status", { authorization_id: f.prepared[0].authorizationId }));
     assert.ok((await f.publicMcp("head_bounded_worker_job_patch", { authorization_id: f.prepared[0].authorizationId })).candidate);
     assert.deepEqual(f.pointers(), before);
   },
@@ -1208,13 +1291,10 @@ test(
 test(
   "public native owner crash after terminal publication preserves exact completion without premature success or relaunch",
   {
-    skip:
-      skip || !process.env.HEAD_AGENT_TEST_OWNER_CRASH_FIXTURE || !process.env.HEAD_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT
-        ? "Explicit test-only terminal-hold native build and exact-owner crash helper not supplied"
-        : false,
+    skip: terminalHoldSkip,
   },
   async (t) => {
-    const f = await twoRunMembers(t, "second-member", { nativeFixtureRoot: process.env.HEAD_AGENT_TEST_TERMINAL_HOLD_FIXTURE_ROOT });
+    const f = await twoRunMembers(t, "second-member", { nativeFixtureRoot: terminalHoldFixtureRoot() });
     const before = f.pointers(),
       projectId = JSON.parse(fs.readFileSync(path.join(f.root, f.layout.directory, "project.json"))).projectId;
     const directories = f.prepared.map((member) => path.join(f.operational, "worker-jobs", projectId, member.authorizationId));
@@ -1232,7 +1312,7 @@ test(
       while (directories.some((directory) => !fs.existsSync(path.join(directory, "terminal-held.test.json"))) && Date.now() < deadline) await pause();
       for (const directory of directories) assert.equal(fs.existsSync(path.join(directory, "terminal-held.test.json")), true);
       release(directories[0]);
-      assert.equal((await f.closed(f.prepared[0])).status, "completed");
+      await f.completed(f.prepared[0]);
       const held = f.prepared[1],
         directory = directories[1],
         authorization_id = held.authorizationId;
@@ -1258,7 +1338,7 @@ test(
       ].map((name) => path.join(directory, name));
       frozenFiles.push(path.join(f.root, f.layout.directory, "runtime/execution-leases", authorization_id, "consumption.json"));
       const frozen = frozenFiles.map((file) => fs.readFileSync(file));
-      const helper = process.env.HEAD_AGENT_TEST_OWNER_CRASH_FIXTURE;
+      const helper = ownerCrashFixture();
       assert.equal((await frontDoor("inspect", [requestFile, claim.ownerToken], f.root, null, process.env, helper)).status, "present");
       for (const name of ["head_bounded_worker_job_status", "head_bounded_worker_job_reconcile", "head_bounded_worker_start"]) {
         const state = await f.publicMcp(name, name === "head_bounded_worker_start" ? { task_key: held.taskKey } : { authorization_id });
@@ -1274,7 +1354,7 @@ test(
         pid: claim.pid,
         parentPid: marker.parentPid,
         ownerToken: claim.ownerToken,
-        command: path.join(f.installed, "dist/windows-x64/head-agent-supervisor.exe"),
+        command: installedSupervisor(f),
         args: ["--job", requestFile],
         cwd: f.root,
         ports: [],
@@ -1288,18 +1368,18 @@ test(
       for (let attempt = 0; attempt < 2; attempt++) {
         for (const name of ["head_bounded_worker_job_status", "head_bounded_worker_job_reconcile", "head_bounded_worker_start"]) {
           const state = await f.publicMcp(name, name === "head_bounded_worker_start" ? { task_key: held.taskKey } : { authorization_id });
-          assert.equal(state.status, "completed");
+          assertJobCompleted(f, held, state);
           assert.equal(state.ownerExitObserved, true);
           assert.equal(state.replayAllowed, false);
         }
-        assert.equal((await f.publicCli(["worker-start", "--task-key", held.taskKey])).status, "completed");
+        assertJobCompleted(f, held, await f.publicCli(["worker-start", "--task-key", held.taskKey]));
         assert.ok((await f.publicMcp("head_bounded_worker_job_patch", { authorization_id })).candidate);
       }
       assert.deepEqual(
         frozenFiles.map((file) => fs.readFileSync(file)),
         frozen,
       );
-      assert.equal((await f.publicMcp("head_bounded_worker_job_status", { authorization_id: f.prepared[0].authorizationId })).status, "completed");
+      assertJobCompleted(f, f.prepared[0], await f.publicMcp("head_bounded_worker_job_status", { authorization_id: f.prepared[0].authorizationId }));
       assert.deepEqual(f.pointers(), before);
       onProcess({ type: "terminal-owner-crash-exited", pid: claim.pid, ownerToken: claim.ownerToken, cwd: f.root, ports: [], cleanupVerified: true });
     } finally {
@@ -1389,7 +1469,7 @@ test("public frontend loss after native terminal commit preserves exact result a
   const frontend = await keepFrontendOpen(t, f, call("head_bounded_worker_start", { project_root: f.root, task_key: "first-member" }));
   assert.ok(frontend.response.status);
   await f.publicCli(["worker-start", "--task-key", "second-member"]);
-  for (const member of f.prepared) assert.equal((await f.closed(member)).status, "completed");
+  for (const member of f.prepared) await f.completed(member);
   const projectId = JSON.parse(fs.readFileSync(path.join(f.root, f.layout.directory, "project.json"))).projectId;
   const files = f.prepared.flatMap((member) => [
     ...["claim.json", "terminal.json", "stdout.bin", "workspace-patch.json"].map((name) =>
@@ -1414,7 +1494,7 @@ test("public frontend loss after native terminal commit preserves exact result a
     const authorization_id = member.authorizationId;
     for (const name of ["head_bounded_worker_job_status", "head_bounded_worker_job_reconcile", "head_bounded_worker_start"]) {
       const state = await f.publicMcp(name, name === "head_bounded_worker_start" ? { task_key: member.taskKey } : { authorization_id });
-      assert.equal(state.status, "completed");
+      assertJobCompleted(f, member, state);
       assert.equal(state.ownerExitObserved, true);
       assert.equal(state.replayAllowed, false);
     }
@@ -1437,7 +1517,7 @@ test("public integration reconciles interrupted receipt publication and preserve
   const f = await twoRunMembers(t),
     before = f.pointers();
   await Promise.all(f.prepared.map((member) => f.publicCli(["worker-start", "--task-key", member.taskKey])));
-  for (const member of f.prepared) assert.equal((await f.closed(member)).status, "completed");
+  for (const member of f.prepared) await f.completed(member);
   const prepared = await f.publicMcp("head_worker_integration", {
     action: "prepare",
     authorization_ids: f.prepared.map((member) => member.authorizationId),
@@ -1490,7 +1570,10 @@ async function crashIntegration(f, request, boundary) {
   const inputFile = path.join(f.home, `${boundary}-input.json`),
     readyFile = path.join(f.home, `${boundary}-ready.json`);
   fs.writeFileSync(inputFile, JSON.stringify(request), { flag: "wx" });
-  const args = [path.join(pluginRoot, "test/helpers/integration-crash-driver.mjs"), f.installed, f.root, inputFile, boundary, readyFile];
+  // The driver takes the exact integration directory captured from the verified
+  // fixture layout; it never rediscovers storage after fault injection.
+  const integrationDirectory = path.join(fs.realpathSync(f.root), f.layout.directory, "runtime", "worker-integrations");
+  const args = [path.join(pluginRoot, "test/helpers/integration-crash-driver.mjs"), f.installed, f.root, inputFile, boundary, readyFile, integrationDirectory];
   onProcess({ type: "planned", parentPid: process.pid, command: process.execPath, args, cwd: f.root, ports: [] });
   const child = spawn(process.execPath, args, { cwd: f.root, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   onProcess({ type: "spawn", pid: child.pid, parentPid: process.pid, cwd: f.root, ports: [] });
@@ -1576,7 +1659,7 @@ async function crashIntegration(f, request, boundary) {
 async function completedIntegration(t) {
   const f = await twoRunMembers(t);
   await Promise.all(f.prepared.map((member) => f.publicCli(["worker-start", "--task-key", member.taskKey])));
-  for (const member of f.prepared) assert.equal((await f.closed(member)).status, "completed");
+  for (const member of f.prepared) await f.completed(member);
   const prepared = await f.publicMcp("head_worker_integration", {
     action: "prepare",
     authorization_ids: f.prepared.map((member) => member.authorizationId),
@@ -1748,11 +1831,18 @@ test("selected-only scope never silently inherits a nonempty Host instruction fi
 test(
   "default shipped CLI prepares fresh and native-prefix against stock Codex without a thread, account or model call",
   {
-    skip: skip || process.env.HEAD_AGENT_TEST_CODEX_HOST_DISCOVERY !== "1" ? "Explicit local stock discovery test not selected" : false,
+    skip:
+      skip ||
+      (codexHostDiscoverySelected()
+        ? false
+        : skipReason.optInExternalProgram(
+            NATIVE_FIXTURE_SETTINGS.codexHostDiscovery,
+            "a stock Codex install (set it to 1 and name the Codex directory in LODE_AGENT_TEST_CODEX_BIN)",
+          )),
   },
   async (t) => {
     const f = await fixture(t);
-    const codex = process.env.HEAD_AGENT_TEST_CODEX_BIN;
+    const codex = codexTestBinary();
     assert.ok(codex && path.isAbsolute(codex), "Explicit test-only installed executable directory");
     const environment = { ...process.env, CODEX_HOME: f.home, PATH: codex + path.delimiter + process.env.PATH };
     delete environment.Path;

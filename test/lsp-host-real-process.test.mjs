@@ -21,7 +21,10 @@ const goldenFile = path.join(root, "test", "fixtures", "lsp-real-golden.json");
 const goldenBytes = fs.readFileSync(goldenFile);
 const golden = JSON.parse(goldenBytes);
 const ready = Boolean(process.env.HEAD_LSP_REAL_PROFILE_MANIFEST && process.env.HEAD_LSP_QA_ROOT && process.env.HEAD_LSP_SUPERVISOR_ROOT);
-const realTest = ready ? test : test.skip;
+const realTest = ready
+  ? test
+  : (name, fn) =>
+      test(name, { skip: "opt-in: set HEAD_LSP_REAL_PROFILE_MANIFEST, HEAD_LSP_QA_ROOT and HEAD_LSP_SUPERVISOR_ROOT to run the real LSP process tests" }, fn);
 const qaRoot = ready ? path.resolve(process.env.HEAD_LSP_QA_ROOT) : null;
 const profileManifestFile = ready ? path.resolve(process.env.HEAD_LSP_REAL_PROFILE_MANIFEST) : null;
 const supervisorSelection = ready ? resolveVerifiedProcessSupervisor({ pluginRoot: process.env.HEAD_LSP_SUPERVISOR_ROOT }) : null;
@@ -41,9 +44,19 @@ function evaluate(observation, fixture, manifestDigest = sha256(goldenBytes)) {
   const absentViolated = [...actual].filter((relation) => absent.has(relation));
   const unlisted = [...actual].filter((relation) => !expected.has(relation) && !optional.has(relation));
   const rejectedInvalidCount = observation.rejectedInvalidCount || 0;
-  const callerMismatch = (observation.normalizedRelations || []).some((relation) => canonicalJson(relation.from) !== canonicalJson(fixture.prepare.expectedCaller));
-  const verdict = observation.status === "completed" && missing.length === 0 && absentViolated.length === 0
-    && unlisted.length === 0 && rejectedInvalidCount === 0 && !callerMismatch && observation.cleanup?.verified === true ? "passed" : "failed";
+  const callerMismatch = (observation.normalizedRelations || []).some(
+    (relation) => canonicalJson(relation.from) !== canonicalJson(fixture.prepare.expectedCaller),
+  );
+  const verdict =
+    observation.status === "completed" &&
+    missing.length === 0 &&
+    absentViolated.length === 0 &&
+    unlisted.length === 0 &&
+    rejectedInvalidCount === 0 &&
+    !callerMismatch &&
+    observation.cleanup?.verified === true
+      ? "passed"
+      : "failed";
   const reasonCodes = [
     ...(missing.length ? ["expected-relation-missing"] : []),
     ...(absentViolated.length ? ["expected-absent-violated"] : []),
@@ -65,16 +78,25 @@ function evaluate(observation, fixture, manifestDigest = sha256(goldenBytes)) {
     verdict,
     reasonCodes,
   };
-  return { ...evaluation, evaluationDigest: sha256(canonicalJson({
-    normalizedObservationDigest: observation.normalizedObservationDigest,
-    snapshotObservationDigest: observation.snapshotObservationDigest,
+  return {
     ...evaluation,
-  })) };
+    evaluationDigest: sha256(
+      canonicalJson({
+        normalizedObservationDigest: observation.normalizedObservationDigest,
+        snapshotObservationDigest: observation.snapshotObservationDigest,
+        ...evaluation,
+      }),
+    ),
+  };
 }
 
 function processExists(pid) {
-  try { process.kill(pid, 0); return true; }
-  catch (error) { return error.code === "EPERM"; }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
 }
 
 async function waitGone(pid) {
@@ -109,8 +131,10 @@ async function runFixture(fixture, options = {}, capture = null) {
   assert.equal(result.authority, "ephemeral-host-evidence-only");
   assert.equal(result.publishedCandidateCount, 0);
   assert.equal(events.filter((event) => event.type === "spawn").length, events.filter((event) => event.type === "exit").length);
-  for (const event of events.filter((item) => item.type === "spawn")) assert.equal(await waitGone(event.pid), true, `Owned process ${event.pid} remained alive.`);
-  if (result.executionProvenance?.pid) assert.equal(await waitGone(result.executionProvenance.pid), true, `Pinned TLS process ${result.executionProvenance.pid} remained alive.`);
+  for (const event of events.filter((item) => item.type === "spawn"))
+    assert.equal(await waitGone(event.pid), true, `Owned process ${event.pid} remained alive.`);
+  if (result.executionProvenance?.pid)
+    assert.equal(await waitGone(result.executionProvenance.pid), true, `Pinned TLS process ${result.executionProvenance.pid} remained alive.`);
   return { result, events };
 }
 
@@ -144,7 +168,9 @@ function createEvidenceRecorder(file) {
   let finalized = false;
   return {
     record(label, payload) {
-      const safe = String(label).replace(/[^A-Za-z0-9._-]/g, "-").slice(0, 80);
+      const safe = String(label)
+        .replace(/[^A-Za-z0-9._-]/g, "-")
+        .slice(0, 80);
       const part = path.join(partsRoot, `${String(++sequence).padStart(3, "0")}--${safe}.json`);
       fs.writeFileSync(part, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
     },
@@ -174,8 +200,17 @@ test("RQ V01-V04 replay validators fail closed without invoking a provider", () 
   assert.throws(() => pending.consume({ jsonrpc: "2.0", id: 991, result: [] }, binding), { code: "unknown-response-id" });
 
   const apply = __private.realServerRequestReply({ jsonrpc: "2.0", id: 1, method: "workspace/applyEdit", params: { edit: { changes: {} } } });
-  assert.deepEqual(apply, { response: { jsonrpc: "2.0", id: 1, result: { applied: false, failureReason: "Lode real LSP fixture is read-only" } }, unsupported: false, sideEffect: "denied" });
-  const formatting = __private.realServerRequestReply({ jsonrpc: "2.0", id: 3, method: "workspace/configuration", params: { items: [{ section: "formattingOptions" }, { section: "typescript" }] } });
+  assert.deepEqual(apply, {
+    response: { jsonrpc: "2.0", id: 1, result: { applied: false, failureReason: "Lode real LSP fixture is read-only" } },
+    unsupported: false,
+    sideEffect: "denied",
+  });
+  const formatting = __private.realServerRequestReply({
+    jsonrpc: "2.0",
+    id: 3,
+    method: "workspace/configuration",
+    params: { items: [{ section: "formattingOptions" }, { section: "typescript" }] },
+  });
   assert.deepEqual(formatting.response.result, [null, null]);
   assert.equal(formatting.sideEffect, "none");
   for (const method of ["window/showMessageRequest", "head/unknown"]) {
@@ -193,9 +228,13 @@ test("RQ V01-V04 replay validators fail closed without invoking a provider", () 
   }
 
   const fatal = Buffer.concat([Buffer.from('{"jsonrpc":"2.0","id":1,"result":"'), Buffer.from([0xff]), Buffer.from('"}')]);
-  assert.throws(() => new LspFrameParser(LSP_HOST_REAL_LIMITS).feed(Buffer.concat([Buffer.from(`Content-Length: ${fatal.length}\r\n\r\n`), fatal])), { code: "invalid-json" });
+  assert.throws(() => new LspFrameParser(LSP_HOST_REAL_LIMITS).feed(Buffer.concat([Buffer.from(`Content-Length: ${fatal.length}\r\n\r\n`), fatal])), {
+    code: "invalid-json",
+  });
   assert.throws(() => new LspFrameParser(LSP_HOST_REAL_LIMITS).feed(Buffer.from("junk\r\n\r\n{}")), { code: "invalid-framing" });
-  assert.throws(() => encodeLspMessage({ jsonrpc: "2.0", id: 1, result: "x".repeat(LSP_HOST_REAL_LIMITS.maxFrameBytes) }, LSP_HOST_REAL_LIMITS), { code: "frame-oversize" });
+  assert.throws(() => encodeLspMessage({ jsonrpc: "2.0", id: 1, result: "x".repeat(LSP_HOST_REAL_LIMITS.maxFrameBytes) }, LSP_HOST_REAL_LIMITS), {
+    code: "frame-oversize",
+  });
 });
 
 test("RQ real normalizer dedupes only exact ranges within one relation after validation", () => {
@@ -207,9 +246,27 @@ test("RQ real normalizer dedupes only exact ranges within one relation after val
     { relativePath: "caller.ts", languageId: "typescript", text: callerText, allowedUris: [callerUri, "file:///C:/qa/caller.ts"] },
     { relativePath: "target.ts", languageId: "typescript", text: targetText, allowedUris: [targetUri, "file:///C:/qa/target.ts"] },
   ];
-  const prepared = { name: "caller", kind: 12, uri: callerUri, range: { start: { line: 0, character: 0 }, end: { line: 0, character: 53 } }, selectionRange: { start: { line: 0, character: 16 }, end: { line: 0, character: 22 } } };
-  const target = { name: "target", kind: 12, uri: targetUri, range: { start: { line: 0, character: 0 }, end: { line: 0, character: 27 } }, selectionRange: { start: { line: 0, character: 16 }, end: { line: 0, character: 22 } } };
-  const helper = { ...target, name: "helper", uri: callerUri, range: prepared.range, selectionRange: { start: { line: 0, character: 43 }, end: { line: 0, character: 49 } } };
+  const prepared = {
+    name: "caller",
+    kind: 12,
+    uri: callerUri,
+    range: { start: { line: 0, character: 0 }, end: { line: 0, character: 53 } },
+    selectionRange: { start: { line: 0, character: 16 }, end: { line: 0, character: 22 } },
+  };
+  const target = {
+    name: "target",
+    kind: 12,
+    uri: targetUri,
+    range: { start: { line: 0, character: 0 }, end: { line: 0, character: 27 } },
+    selectionRange: { start: { line: 0, character: 16 }, end: { line: 0, character: 22 } },
+  };
+  const helper = {
+    ...target,
+    name: "helper",
+    uri: callerUri,
+    range: prepared.range,
+    selectionRange: { start: { line: 0, character: 43 }, end: { line: 0, character: 49 } },
+  };
   const a = { start: { line: 0, character: 27 }, end: { line: 0, character: 40 } };
   const b = { start: { line: 0, character: 43 }, end: { line: 0, character: 49 } };
   const overlap = { start: { line: 0, character: 30 }, end: { line: 0, character: 40 } };
@@ -225,11 +282,28 @@ test("RQ real normalizer dedupes only exact ranges within one relation after val
     assert.deepEqual(result.rangeCounts, expected);
     assert.equal(canonicalJson(raw), before);
   }
-  const separated = __private.normalizeRealOutgoing(prepared, [{ to: target, fromRanges: [a, a] }, { to: helper, fromRanges: [a, a] }], documents);
+  const separated = __private.normalizeRealOutgoing(
+    prepared,
+    [
+      { to: target, fromRanges: [a, a] },
+      { to: helper, fromRanges: [a, a] },
+    ],
+    documents,
+  );
   assert.equal(separated.normalizedRelations.length, 2);
   assert.deepEqual(separated.rangeCounts, { rawFromRangeCount: 4, uniqueFromRangeCount: 2, duplicateFromRangeCount: 2 });
-  assert.throws(() => __private.normalizeRealOutgoing(prepared, [{ to: target, fromRanges: [{ start: { line: 0, character: 999 }, end: { line: 0, character: 1000 } }] }], documents), { code: "invalid-range" });
-  assert.throws(() => __private.normalizeRealOutgoing(prepared, [{ to: target, fromRanges: Array(257).fill(a) }], documents), { code: "invalid-hierarchy-result" });
+  assert.throws(
+    () =>
+      __private.normalizeRealOutgoing(
+        prepared,
+        [{ to: target, fromRanges: [{ start: { line: 0, character: 999 }, end: { line: 0, character: 1000 } }] }],
+        documents,
+      ),
+    { code: "invalid-range" },
+  );
+  assert.throws(() => __private.normalizeRealOutgoing(prepared, [{ to: target, fromRanges: Array(257).fill(a) }], documents), {
+    code: "invalid-hierarchy-result",
+  });
   assert.throws(() => __private.normalizeRealOutgoing(prepared, [{ to: target, fromRanges: [null] }], documents), { code: "invalid-range" });
 });
 
@@ -311,7 +385,11 @@ realTest("RQ fixed publisher trust and admission handles fail closed before laun
   } finally {
     fs.openSync = actualOpen;
     fs.closeSync = actualClose;
-    for (const fd of opened.keys()) { try { actualClose.call(fs, fd); } catch {} }
+    for (const fd of opened.keys()) {
+      try {
+        actualClose.call(fs, fd);
+      } catch {}
+    }
     fs.rmSync(unsupportedRoot, { recursive: true, force: true });
   }
 });
@@ -325,7 +403,13 @@ realTest("RQ create-only evidence retains actual A/B raw data across a B wrapper
     const rows = [];
     let firstRow = null;
     await runFixture(fixture, {}, ({ result, events }) => {
-      firstRow = { id: `${fixture.fixtureId}-A`, kind: "actual-real-collection-before-wrapper-validation", status: "collected-unverified", observation: result, events };
+      firstRow = {
+        id: `${fixture.fixtureId}-A`,
+        kind: "actual-real-collection-before-wrapper-validation",
+        status: "collected-unverified",
+        observation: result,
+        events,
+      };
       rows.push(firstRow);
       recorder.record(`${fixture.fixtureId}-A-collected`, firstRow);
     });
@@ -337,7 +421,13 @@ realTest("RQ create-only evidence retains actual A/B raw data across a B wrapper
     let observed = null;
     try {
       await runFixture(fixture, { wrapperAssertionFailure: true }, ({ result, events }) => {
-        secondRow = { id: `${fixture.fixtureId}-B`, kind: "actual-real-collection-before-wrapper-validation", status: "collected-unverified", observation: result, events };
+        secondRow = {
+          id: `${fixture.fixtureId}-B`,
+          kind: "actual-real-collection-before-wrapper-validation",
+          status: "collected-unverified",
+          observation: result,
+          events,
+        };
         rows.push(secondRow);
         recorder.record(`${fixture.fixtureId}-B-collected`, secondRow);
       });
@@ -414,11 +504,23 @@ realTest("RQ U01-U07 fresh A/B, E-GOLDEN, V05, and F01-F04 satisfy the closed re
     const capturedDigest = sha256(canonicalJson(capturedResponse));
 
     const v01Transforms = [];
-    for (const [transformId, transformedId, expectedCode] of [["null-id", null, "unknown-response-id"], ["empty-id", "", "unknown-response-id"], ["late-id", 999, "unknown-response-id"]]) {
+    for (const [transformId, transformedId, expectedCode] of [
+      ["null-id", null, "unknown-response-id"],
+      ["empty-id", "", "unknown-response-id"],
+      ["late-id", 999, "unknown-response-id"],
+    ]) {
       const pending = createPendingTable({ replay: "V01" });
       pending.issue("outgoing");
       const transformedResponse = { ...capturedResponse, id: transformedId };
-      const record = { transformId, originalBody: capturedResponse, originalDigest: capturedDigest, transformedBody: transformedResponse, transformedDigest: sha256(canonicalJson(transformedResponse)), expectedCode, completeness: "complete" };
+      const record = {
+        transformId,
+        originalBody: capturedResponse,
+        originalDigest: capturedDigest,
+        transformedBody: transformedResponse,
+        transformedDigest: sha256(canonicalJson(transformedResponse)),
+        expectedCode,
+        completeness: "complete",
+      };
       v01Transforms.push(record);
       recorder.record(`V01-${transformId}`, record);
       assert.throws(() => pending.consume(transformedResponse, { replay: "V01" }), { code: expectedCode });
@@ -427,41 +529,105 @@ realTest("RQ U01-U07 fresh A/B, E-GOLDEN, V05, and F01-F04 satisfy the closed re
       const pending = createPendingTable({ replay: "V01" });
       const id = pending.issue("outgoing");
       const transformedResponse = { ...capturedResponse, id };
-      const record = { transformId: "duplicate-id", originalBody: capturedResponse, originalDigest: capturedDigest, transformedBody: transformedResponse, transformedDigest: sha256(canonicalJson(transformedResponse)), expectedCode: "duplicate-response-id", completeness: "complete" };
+      const record = {
+        transformId: "duplicate-id",
+        originalBody: capturedResponse,
+        originalDigest: capturedDigest,
+        transformedBody: transformedResponse,
+        transformedDigest: sha256(canonicalJson(transformedResponse)),
+        expectedCode: "duplicate-response-id",
+        completeness: "complete",
+      };
       v01Transforms.push(record);
       recorder.record("V01-duplicate-id", record);
       pending.consume(transformedResponse, { replay: "V01" });
       assert.throws(() => pending.consume(transformedResponse, { replay: "V01" }), { code: "duplicate-response-id" });
     }
-    rows.push({ id: "V01", kind: "pure-validator-helper-replay", status: "passed", provenance: { actualTransport: false, helper: "createPendingTable" }, transformVersion: "lsp-real-rq-replay-v1", transforms: v01Transforms });
+    rows.push({
+      id: "V01",
+      kind: "pure-validator-helper-replay",
+      status: "passed",
+      provenance: { actualTransport: false, helper: "createPendingTable" },
+      transformVersion: "lsp-real-rq-replay-v1",
+      transforms: v01Transforms,
+    });
 
     const v02Transforms = [];
     for (const method of ["workspace/applyEdit", "window/showMessageRequest", "head/unknown"]) {
       const injected = { jsonrpc: "2.0", id: 91, method, params: method === "workspace/applyEdit" ? { edit: { changes: {} } } : {} };
       const reply = __private.realServerRequestReply(injected);
-      const record = { method, injectedBody: injected, injectedDigest: sha256(canonicalJson(injected)), replyBody: reply, replyDigest: sha256(canonicalJson(reply)), sideEffect: reply.sideEffect, completeness: "complete" };
+      const record = {
+        method,
+        injectedBody: injected,
+        injectedDigest: sha256(canonicalJson(injected)),
+        replyBody: reply,
+        replyDigest: sha256(canonicalJson(reply)),
+        sideEffect: reply.sideEffect,
+        completeness: "complete",
+      };
       v02Transforms.push(record);
       recorder.record(`V02-${method}`, record);
-      if (method === "workspace/applyEdit") { assert.equal(reply.sideEffect, "denied"); assert.equal(reply.response.result.applied, false); }
-      else { assert.equal(reply.unsupported, true); assert.equal(reply.response.error.code, -32601); }
+      if (method === "workspace/applyEdit") {
+        assert.equal(reply.sideEffect, "denied");
+        assert.equal(reply.response.result.applied, false);
+      } else {
+        assert.equal(reply.unsupported, true);
+        assert.equal(reply.response.error.code, -32601);
+      }
     }
-    rows.push({ id: "V02", kind: "pure-validator-helper-replay", status: "passed", provenance: { actualTransport: false, helper: "realServerRequestReply", fileSystemObserved: false, fileWriteClaim: null }, transformVersion: "lsp-real-rq-replay-v1", transforms: v02Transforms });
+    rows.push({
+      id: "V02",
+      kind: "pure-validator-helper-replay",
+      status: "passed",
+      provenance: { actualTransport: false, helper: "realServerRequestReply", fileSystemObserved: false, fileWriteClaim: null },
+      transformVersion: "lsp-real-rq-replay-v1",
+      transforms: v02Transforms,
+    });
 
     const preparedCaptured = sealed.rawEvidence.prepareResponse.body.result[0];
     const rawRelationCaptured = sealed.rawEvidence.outgoingOriginalResult.body[0];
     const pinnedCallerUri = preparedCaptured.uri;
     const pinnedTargetUri = rawRelationCaptured.to.uri;
     const nodeUri = (uri) => uri.replace("file:///c%3A/", "file:///C:/");
-    const replayDocuments = fixture.exactSources.map((source) => ({ relativePath: source.path, languageId: source.languageId, text: source.text, allowedUris: [source.path === "caller.ts" ? pinnedCallerUri : source.path === "target.ts" ? pinnedTargetUri : pinnedTargetUri.replace("target.ts", source.path), nodeUri(source.path === "caller.ts" ? pinnedCallerUri : source.path === "target.ts" ? pinnedTargetUri : pinnedTargetUri.replace("target.ts", source.path))] }));
+    const replayDocuments = fixture.exactSources.map((source) => ({
+      relativePath: source.path,
+      languageId: source.languageId,
+      text: source.text,
+      allowedUris: [
+        source.path === "caller.ts" ? pinnedCallerUri : source.path === "target.ts" ? pinnedTargetUri : pinnedTargetUri.replace("target.ts", source.path),
+        nodeUri(
+          source.path === "caller.ts" ? pinnedCallerUri : source.path === "target.ts" ? pinnedTargetUri : pinnedTargetUri.replace("target.ts", source.path),
+        ),
+      ],
+    }));
     const v03Transforms = [];
-    for (const uri of ["file:///d%3A/outside/target.ts", `${pinnedTargetUri}?query=1`, `${pinnedTargetUri}#fragment`, pinnedTargetUri.replace("/target.ts", "/../target.ts")]) {
+    for (const uri of [
+      "file:///d%3A/outside/target.ts",
+      `${pinnedTargetUri}?query=1`,
+      `${pinnedTargetUri}#fragment`,
+      pinnedTargetUri.replace("/target.ts", "/../target.ts"),
+    ]) {
       const transformedRelation = { ...rawRelationCaptured, to: { ...rawRelationCaptured.to, uri } };
-      const record = { originalBody: rawRelationCaptured, originalDigest: sha256(canonicalJson(rawRelationCaptured)), transformedBody: transformedRelation, transformedDigest: sha256(canonicalJson(transformedRelation)), expectedCode: "uri-outside-snapshot", completeness: "complete" };
+      const record = {
+        originalBody: rawRelationCaptured,
+        originalDigest: sha256(canonicalJson(rawRelationCaptured)),
+        transformedBody: transformedRelation,
+        transformedDigest: sha256(canonicalJson(transformedRelation)),
+        expectedCode: "uri-outside-snapshot",
+        completeness: "complete",
+      };
       v03Transforms.push(record);
       recorder.record("V03-uri-alias", record);
       assert.throws(() => __private.normalizeRealOutgoing(preparedCaptured, [transformedRelation], replayDocuments), { code: "uri-outside-snapshot" });
     }
-    rows.push({ id: "V03", kind: "pure-validator-helper-replay", status: "passed", provenance: { actualTransport: false, helper: "normalizeRealOutgoing" }, transformVersion: "lsp-real-rq-replay-v1", transforms: v03Transforms });
+    rows.push({
+      id: "V03",
+      kind: "pure-validator-helper-replay",
+      status: "passed",
+      provenance: { actualTransport: false, helper: "normalizeRealOutgoing" },
+      transformVersion: "lsp-real-rq-replay-v1",
+      transforms: v03Transforms,
+    });
 
     const originalFrame = encodeLspMessage(capturedResponse, LSP_HOST_REAL_LIMITS);
     const v04Transforms = [
@@ -469,12 +635,25 @@ realTest("RQ U01-U07 fresh A/B, E-GOLDEN, V05, and F01-F04 satisfy the closed re
       { id: "junk-header", bytes: Buffer.from("junk\r\n\r\n{}"), code: "invalid-framing" },
       { id: "oversize", bytes: Buffer.from(`Content-Length: ${LSP_HOST_REAL_LIMITS.maxFrameBytes + 1}\r\n\r\n`), code: "frame-oversize" },
     ];
-    const v04Records = v04Transforms.map(({ id, bytes, code }) => ({ id, originalWire: { encoding: "base64", bytes: originalFrame.length, sha256: sha256(originalFrame), body: originalFrame.toString("base64") }, transformedWire: { encoding: "base64", bytes: bytes.length, sha256: sha256(bytes), body: bytes.toString("base64") }, expectedCode: code, completeness: "complete" }));
+    const v04Records = v04Transforms.map(({ id, bytes, code }) => ({
+      id,
+      originalWire: { encoding: "base64", bytes: originalFrame.length, sha256: sha256(originalFrame), body: originalFrame.toString("base64") },
+      transformedWire: { encoding: "base64", bytes: bytes.length, sha256: sha256(bytes), body: bytes.toString("base64") },
+      expectedCode: code,
+      completeness: "complete",
+    }));
     for (let index = 0; index < v04Transforms.length; index++) {
       recorder.record(`V04-${v04Transforms[index].id}`, v04Records[index]);
       assert.throws(() => new LspFrameParser(LSP_HOST_REAL_LIMITS).feed(v04Transforms[index].bytes), { code: v04Transforms[index].code });
     }
-    rows.push({ id: "V04", kind: "pure-validator-helper-replay", status: "passed", provenance: { actualTransport: false, helper: "LspFrameParser" }, transformVersion: "lsp-real-rq-replay-v1", transforms: v04Records });
+    rows.push({
+      id: "V04",
+      kind: "pure-validator-helper-replay",
+      status: "passed",
+      provenance: { actualTransport: false, helper: "LspFrameParser" },
+      transformVersion: "lsp-real-rq-replay-v1",
+      transforms: v04Records,
+    });
 
     const changedGolden = structuredClone(golden);
     const changed = changedGolden.fixtures[0];
@@ -483,7 +662,16 @@ realTest("RQ U01-U07 fresh A/B, E-GOLDEN, V05, and F01-F04 satisfy the closed re
     const changedGoldenDigest = sha256(changedGoldenBytes);
     const originalEvaluation = evaluate(sealed, fixture, sha256(goldenBytes));
     const changedEvaluation = evaluate(sealed, changed, changedGoldenDigest);
-    const goldenRow = { id: "E-GOLDEN", kind: "evaluator-unit", status: "collected-unverified", originalGolden: { encoding: "base64", bytes: goldenBytes.length, sha256: sha256(goldenBytes), body: goldenBytes.toString("base64") }, changedGolden: { encoding: "base64", bytes: changedGoldenBytes.length, sha256: changedGoldenDigest, body: changedGoldenBytes.toString("base64") }, originalEvaluation, changedEvaluation, observationDigest: sealed.normalizedObservationDigest };
+    const goldenRow = {
+      id: "E-GOLDEN",
+      kind: "evaluator-unit",
+      status: "collected-unverified",
+      originalGolden: { encoding: "base64", bytes: goldenBytes.length, sha256: sha256(goldenBytes), body: goldenBytes.toString("base64") },
+      changedGolden: { encoding: "base64", bytes: changedGoldenBytes.length, sha256: changedGoldenDigest, body: changedGoldenBytes.toString("base64") },
+      originalEvaluation,
+      changedEvaluation,
+      observationDigest: sealed.normalizedObservationDigest,
+    };
     rows.push(goldenRow);
     recorder.record("E-GOLDEN-before-assertion", goldenRow);
     assert.notEqual(originalEvaluation.goldenManifestDigest, changedEvaluation.goldenManifestDigest);
@@ -532,8 +720,14 @@ realTest("RQ U01-U07 fresh A/B, E-GOLDEN, V05, and F01-F04 satisfy the closed re
       if (id === "F03") {
         const raw = observed.result.rawEvidence;
         const prepareId = raw.prepareResponse.body.id;
-        assert.equal(decodeWire(raw.serverOutboundWire).some((message) => message.id === prepareId && Object.hasOwn(message, "result")), true);
-        assert.equal(decodeWire(raw.inboundWire).some((message) => message.id === prepareId && Object.hasOwn(message, "result")), false);
+        assert.equal(
+          decodeWire(raw.serverOutboundWire).some((message) => message.id === prepareId && Object.hasOwn(message, "result")),
+          true,
+        );
+        assert.equal(
+          decodeWire(raw.inboundWire).some((message) => message.id === prepareId && Object.hasOwn(message, "result")),
+          false,
+        );
         assert.ok(raw.transportProxy.events.some((event) => event.type === "proxy-held" && event.requestId === prepareId));
         assert.ok(raw.transportProxy.events.some((event) => event.type === "proxy-dropped" && event.requestId === prepareId));
         assert.ok(decodeWire(raw.outboundWire).some((message) => message.method === "$/cancelRequest" && message.params.id === prepareId));
@@ -542,7 +736,11 @@ realTest("RQ U01-U07 fresh A/B, E-GOLDEN, V05, and F01-F04 satisfy the closed re
         assert.equal(observed.result.transport.externalCancellationHostEvidence.kind, "external-host-cancellation-signal");
         assert.ok(observed.result.rawEvidence.transportProxy.events.some((event) => event.type === "external-cancel-observed"));
         const cancelEvent = observed.result.rawEvidence.transportProxy.events.find((event) => event.type === "external-cancel-observed");
-        assert.ok(decodeWire(observed.result.rawEvidence.outboundWire).some((message) => message.method === "$/cancelRequest" && message.params.id === cancelEvent.requestId));
+        assert.ok(
+          decodeWire(observed.result.rawEvidence.outboundWire).some(
+            (message) => message.method === "$/cancelRequest" && message.params.id === cancelEvent.requestId,
+          ),
+        );
       }
       row.status = "passed";
     }
@@ -568,20 +766,22 @@ realTest("RQ U01-U07 fresh A/B, E-GOLDEN, V05, and F01-F04 satisfy the closed re
     unexpectedFailure = { name: error.name, code: error.code || null, message: error.message };
     throw error;
   } finally {
-    recorder.finalize(evidence || {
-      schemaVersion: 2,
-      kind: "lsp-e1arq-real-suite-evidence",
-      status: "unexpected-failure",
-      goldenManifestDigest: sha256(goldenBytes),
-      profileManifestDigest: profile?.manifestDigest || null,
-      semanticProfileDigest: profile?.semanticProfileDigest || null,
-      realSupport: false,
-      generalProjectSupport: false,
-      e1bEligible: false,
-      isolationLevel: "observational-synthetic-fixture-only",
-      authority: "ephemeral-host-evidence-only",
-      unexpectedFailure,
-      rows,
-    });
+    recorder.finalize(
+      evidence || {
+        schemaVersion: 2,
+        kind: "lsp-e1arq-real-suite-evidence",
+        status: "unexpected-failure",
+        goldenManifestDigest: sha256(goldenBytes),
+        profileManifestDigest: profile?.manifestDigest || null,
+        semanticProfileDigest: profile?.semanticProfileDigest || null,
+        realSupport: false,
+        generalProjectSupport: false,
+        e1bEligible: false,
+        isolationLevel: "observational-synthetic-fixture-only",
+        authority: "ephemeral-host-evidence-only",
+        unexpectedFailure,
+        rows,
+      },
+    );
   }
 });

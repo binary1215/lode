@@ -7,11 +7,7 @@ import { spawn } from "node:child_process";
 import { fixture, pluginRoot, snapshot } from "./helpers/session-work-linkage-fixture.mjs";
 import { createLodeSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
 import { recordSessionWorkEvidence } from "../scripts/lib/session/session-work-context.mjs";
-import {
-  exportProjectBundle,
-  inspectProjectBundle,
-  importProjectBundle,
-} from "../scripts/lib/storage/project-portability.mjs";
+import { exportProjectBundle, inspectProjectBundle, importProjectBundle } from "../scripts/lib/storage/project-portability.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { dispatch, operationCatalogTools as catalogTools } from "../scripts/mcp-server.mjs";
 const sha = (raw) => crypto.createHash("sha256").update(raw).digest("hex");
@@ -27,28 +23,12 @@ test("default legacy export includes required raw proof metadata, not other Sess
   );
   const projectFile = path.join(f.root, ".lode/project.json"),
     project = JSON.parse(fs.readFileSync(projectFile));
-  fs.writeFileSync(
-    projectFile,
-    JSON.stringify(
-      { ...project, projectRoot: "C:/unverified-origin/synthetic-project" },
-      null,
-      2,
-    ) + "\n",
-  );
+  fs.writeFileSync(projectFile, JSON.stringify({ ...project, projectRoot: "C:/unverified-origin/synthetic-project" }, null, 2) + "\n");
   const mf = path.join(f.root, ".lode/generated/manifest.json"),
     generated = JSON.parse(fs.readFileSync(mf));
-  generated.managed.find((entry) => entry.path === ".lode/project.json").sha256 = sha(
-    fs.readFileSync(projectFile),
-  );
+  generated.managed.find((entry) => entry.path === ".lode/project.json").sha256 = sha(fs.readFileSync(projectFile));
   fs.writeFileSync(mf, JSON.stringify(generated, null, 2) + "\n");
-  await runCommand([
-    "resume",
-    f.root,
-    "--copied-project",
-    "verified-copy",
-    "--session",
-    f.session.sessionId,
-  ]);
+  await runCommand(["resume", f.root, "--copied-project", "verified-copy", "--session", f.session.sessionId]);
   const before = snapshot(f.root),
     destination = path.join(f.base, "full-proof");
   let notices = 0;
@@ -73,30 +53,14 @@ test("default legacy export includes required raw proof metadata, not other Sess
   const inspected = inspectProjectBundle({ bundleRoot: destination });
   assert.equal(inspected.projectAdmissionReady, true);
   assert(!Object.hasOwn(inspected.manifest, "exportScope"));
-  const inventory = inspected.manifest.files.find((entry) =>
-    entry.path.includes("/copy-originals/"),
-  );
+  const inventory = inspected.manifest.files.find((entry) => entry.path.includes("/copy-originals/"));
   assert(inventory);
-  assert.deepEqual(
-    fs.readFileSync(path.join(destination, "objects", inventory.sha256 + ".bin")),
-    fs.readFileSync(path.join(f.root, inventory.path)),
-  );
-  const contents = inspected.manifest.files
-    .map((entry) =>
-      fs.readFileSync(path.join(destination, "objects", entry.sha256 + ".bin"), "utf8"),
-    )
-    .join("\n");
-  assert(
-    contents.includes(other.sessionId),
-    "Original shared inventory retains required other-Session IDs/paths/hashes",
-  );
+  assert.deepEqual(fs.readFileSync(path.join(destination, "objects", inventory.sha256 + ".bin")), fs.readFileSync(path.join(f.root, inventory.path)));
+  const contents = inspected.manifest.files.map((entry) => fs.readFileSync(path.join(destination, "objects", entry.sha256 + ".bin"), "utf8")).join("\n");
+  assert(contents.includes(other.sessionId), "Original shared inventory retains required other-Session IDs/paths/hashes");
   assert(!contents.includes("OTHER_SESSION_BODY_SENTINEL"));
   assert(!contents.includes("OTHER_SESSION_WORK_SENTINEL"));
-  assert(
-    !inspected.manifest.files.some((entry) =>
-      entry.path.includes("/by-id/" + other.sessionId + "/"),
-    ),
-  );
+  assert(!inspected.manifest.files.some((entry) => entry.path.includes("/by-id/" + other.sessionId + "/")));
   const explicit = f.route(() =>
     exportProjectBundle({
       root: f.root,
@@ -114,16 +78,10 @@ test("default legacy export includes required raw proof metadata, not other Sess
   );
   assert.equal(partial.status, "exported-partial-provenance");
   assert.equal(partial.projectAdmissionReady, false);
-  assert.equal(
-    inspectProjectBundle({ bundleRoot: partial.bundleRoot }).projectAdmissionReady,
-    false,
-  );
+  assert.equal(inspectProjectBundle({ bundleRoot: partial.bundleRoot }).projectAdmissionReady, false);
   const fresh = path.join(f.base, "imported");
   fs.mkdirSync(fresh);
-  assert.equal(
-    importProjectBundle({ root: fresh, bundleRoot: destination, pluginRoot }).status,
-    "imported",
-  );
+  assert.equal(importProjectBundle({ root: fresh, bundleRoot: destination, pluginRoot }).status, "imported");
   assert.deepEqual(snapshot(f.root), before);
 });
 test("Core, CLI and typed MCP publish scope before effects without any acknowledgement or extra tool", async (t) => {
@@ -156,10 +114,7 @@ test("Core, CLI and typed MCP publish scope before effects without any acknowled
         { onExportScope },
       );
       assert(!response.error, JSON.stringify(response));
-      assert.equal(
-        response.result.structuredContent.exportScope.provenanceScope,
-        "project-proof-metadata",
-      );
+      assert.equal(response.result.structuredContent.exportScope.provenanceScope, "project-proof-metadata");
     }
   }
   assert.equal(calls, 3);

@@ -5,10 +5,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { nativeSqlitePath } from "../scripts/lib/distribution/codex-native-backup.mjs";
-import {
-  CODEX_NATIVE_MAX_FRAME_BYTES,
-  inspectCodexRolloutOriginal,
-} from "../scripts/lib/distribution/codex-native-rollout.mjs";
+import { CODEX_NATIVE_MAX_FRAME_BYTES, inspectCodexRolloutOriginal } from "../scripts/lib/distribution/codex-native-rollout.mjs";
 import { captureCodexNativeHistory } from "../scripts/lib/distribution/codex-native-capture.mjs";
 import { prepareCodexNativeOffline } from "../scripts/lib/distribution/codex-native-offline.mjs";
 import { inspectCodexNativePayload } from "../scripts/lib/distribution/codex-native-payload.mjs";
@@ -16,8 +13,7 @@ import { publishCodexNativeHistory } from "../scripts/lib/distribution/codex-nat
 import { syntheticNativeCapture, nativeProfile } from "./helpers/native-portability-fixture.mjs";
 
 test("actual frame limit preserves exact raw bytes while hidden following frames and native qualification remain unverified", async (t) => {
-  if (process.platform !== "win32" || process.arch !== "x64")
-    return t.skip("Measured native filesystem profile is Windows x64.");
+  if (process.platform !== "win32" || process.arch !== "x64") return t.skip("other-os: Measured native filesystem profile is Windows x64.");
   const { f, home, executable, payload } = await syntheticNativeCapture(t);
   const entry = payload.files[0],
     source = path.join(home, entry.path),
@@ -27,7 +23,7 @@ test("actual frame limit preserves exact raw bytes while hidden following frames
     fd = fs.openSync(source, "w");
   let total = 0;
   const write = (chunk) => {
-    for (let offset = 0; offset < chunk.length; ) {
+    for (let offset = 0; offset < chunk.length;) {
       const written = fs.writeSync(fd, chunk, offset, chunk.length - offset);
       assert(written > 0);
       sha.update(chunk.subarray(offset, offset + written));
@@ -39,28 +35,25 @@ test("actual frame limit preserves exact raw bytes while hidden following frames
     write(header);
     write(Buffer.from('{"ordinal":1,"type":"response_item","payload":{"text":"'));
     const chunk = Buffer.alloc(1024 * 1024, 120);
-    for (let remaining = CODEX_NATIVE_MAX_FRAME_BYTES + 1; remaining > 0; ) {
+    for (let remaining = CODEX_NATIVE_MAX_FRAME_BYTES + 1; remaining > 0;) {
       const length = Math.min(remaining, chunk.length);
       write(chunk.subarray(0, length));
       remaining -= length;
     }
     // This invalid following ordinal must not be declared verified merely
     // because the earlier giant frame exhausted the current decoder.
-    write(
-      Buffer.from('"}}\n{"ordinal":99,"type":"response_item","payload":{"unverified":true}}\n'),
-    );
+    write(Buffer.from('"}}\n{"ordinal":99,"type":"response_item","payload":{"unverified":true}}\n'));
   } finally {
     fs.closeSync(fd);
   }
   const expectedHash = sha.digest("hex");
   const db = new DatabaseSync(nativeSqlitePath(path.join(home, "thread_history_1.sqlite")));
   try {
-    db.prepare(
-      "UPDATE thread_turns SET rollout_end_ordinal=2,rollout_end_byte_offset=? WHERE thread_id=?",
-    ).run(BigInt(total), entry.threadId);
-    db.prepare(
-      "UPDATE thread_history_projection_state SET next_rollout_byte_offset=?,next_rollout_ordinal=3 WHERE thread_id=?",
-    ).run(BigInt(total), entry.threadId);
+    db.prepare("UPDATE thread_turns SET rollout_end_ordinal=2,rollout_end_byte_offset=? WHERE thread_id=?").run(BigInt(total), entry.threadId);
+    db.prepare("UPDATE thread_history_projection_state SET next_rollout_byte_offset=?,next_rollout_ordinal=3 WHERE thread_id=?").run(
+      BigInt(total),
+      entry.threadId,
+    );
   } finally {
     db.close();
   }
@@ -82,10 +75,7 @@ test("actual frame limit preserves exact raw bytes while hidden following frames
   assert.equal(read.payload.files[0].sha256, expectedHash);
   assert.equal(read.payload.files[0].bytes, total);
   assert(read.coverage[0].unresolvedClosure.includes("following-frame-boundaries-unverified"));
-  assert.equal(
-    fs.statSync(path.join(captured.directory, "objects", expectedHash + ".bin")).size,
-    total,
-  );
+  assert.equal(fs.statSync(path.join(captured.directory, "objects", expectedHash + ".bin")).size, total);
   const publication = await publishCodexNativeHistory({
     witness: Object.freeze({}),
     directory: captured.directory,

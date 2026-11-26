@@ -1,28 +1,15 @@
 import { operateProjectNativeHistory } from "../scripts/lib/session/project-native-history.mjs";
 import { assertProjectNativeTransferCurrent } from "../scripts/lib/session/project-native-transfer.mjs";
 import { syntheticNativeCapture } from "./helpers/native-portability-fixture.mjs";
-import {
-  attachProjectNativeTransfer,
-  readProjectNativeTransfer,
-} from "../scripts/lib/session/project-native-transfer.mjs";
-import {
-  exportProjectBundle,
-  inspectProjectBundle,
-  importProjectBundle,
-} from "../scripts/lib/storage/project-portability.mjs";
+import { attachProjectNativeTransfer, readProjectNativeTransfer } from "../scripts/lib/session/project-native-transfer.mjs";
+import { exportProjectBundle, inspectProjectBundle, importProjectBundle } from "../scripts/lib/storage/project-portability.mjs";
 import { pluginRoot } from "./helpers/session-work-linkage-fixture.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { requestNativeRegistration } from "../scripts/lib/distribution/native-registration-journal.mjs";
 import { publishCodexNativeHistory } from "../scripts/lib/distribution/codex-native-publication.mjs";
-import {
-  inspectCodexNativePayload,
-  codexNativePayloadSummary,
-} from "../scripts/lib/distribution/codex-native-payload.mjs";
-import {
-  planCodexNativeRowMerge,
-  applyCodexNativeRowMerge,
-} from "../scripts/lib/distribution/codex-native-row-merge.mjs";
+import { inspectCodexNativePayload, codexNativePayloadSummary } from "../scripts/lib/distribution/codex-native-payload.mjs";
+import { planCodexNativeRowMerge, applyCodexNativeRowMerge } from "../scripts/lib/distribution/codex-native-row-merge.mjs";
 import { captureCodexNativeHistory } from "../scripts/lib/distribution/codex-native-capture.mjs";
 import {
   observeCodexNativeWriters,
@@ -37,26 +24,11 @@ import path from "node:path";
 import { fixture, snapshot } from "./helpers/session-work-linkage-fixture.mjs";
 import { inspectProject } from "../scripts/lib/session/lode-core.mjs";
 import crypto from "node:crypto";
-import {
-  createCodexRolloutVerifier,
-  verifyCodexRollout,
-} from "../scripts/lib/distribution/codex-native-rollout.mjs";
+import { createCodexRolloutVerifier, verifyCodexRollout } from "../scripts/lib/distribution/codex-native-rollout.mjs";
 import { DatabaseSync } from "node:sqlite";
-import {
-  inspectCodexNativeDatabase,
-  readSelectedCodexHistory,
-} from "../scripts/lib/distribution/codex-native-portability.mjs";
-import {
-  encodeSqliteCell,
-  decodeSqliteCell,
-  readTypedSqliteRows,
-} from "../scripts/lib/core/native-sqlite-values.mjs";
-import {
-  nativeProfile,
-  profileBasis,
-  syntheticNativeDatabase,
-  syntheticNativeHistory,
-} from "./helpers/native-portability-fixture.mjs";
+import { inspectCodexNativeDatabase, readSelectedCodexHistory } from "../scripts/lib/distribution/codex-native-portability.mjs";
+import { encodeSqliteCell, decodeSqliteCell, readTypedSqliteRows } from "../scripts/lib/core/native-sqlite-values.mjs";
+import { nativeProfile, profileBasis, syntheticNativeDatabase, syntheticNativeHistory } from "./helpers/native-portability-fixture.mjs";
 
 test("native SQLite cell export preserves actual int64/REAL/TEXT/BLOB/NULL types without source changes", (t) => {
   const source = new DatabaseSync(":memory:"),
@@ -65,32 +37,15 @@ test("native SQLite cell export preserves actual int64/REAL/TEXT/BLOB/NULL types
     source.close();
     target.close();
   });
-  source.exec(
-    "CREATE TABLE cells (v); CREATE TABLE retained (v TEXT); INSERT INTO retained VALUES ('unrelated');",
-  );
-  target.exec(
-    "CREATE TABLE cells (v); CREATE TABLE retained (v TEXT); INSERT INTO retained VALUES ('target-owned');",
-  );
-  const values = [
-    -9223372036854775808n,
-    9223372036854775807n,
-    Number.POSITIVE_INFINITY,
-    1.25,
-    "\uFEFF한글\0exact",
-    Buffer.from([0, 255, 128]),
-    null,
-  ];
+  source.exec("CREATE TABLE cells (v); CREATE TABLE retained (v TEXT); INSERT INTO retained VALUES ('unrelated');");
+  target.exec("CREATE TABLE cells (v); CREATE TABLE retained (v TEXT); INSERT INTO retained VALUES ('target-owned');");
+  const values = [-9223372036854775808n, 9223372036854775807n, Number.POSITIVE_INFINITY, 1.25, "\uFEFF한글\0exact", Buffer.from([0, 255, 128]), null];
   const insert = source.prepare("INSERT INTO cells VALUES (?)");
   for (const value of values) insert.run(value);
-  const before = source
-    .prepare("SELECT typeof(v) AS type, hex(CAST(v AS BLOB)) AS raw FROM cells")
-    .all();
+  const before = source.prepare("SELECT typeof(v) AS type, hex(CAST(v AS BLOB)) AS raw FROM cells").all();
   const rows = readTypedSqliteRows(source, "cells", ["v"]);
-  for (const row of JSON.parse(JSON.stringify(rows)))
-    target.prepare("INSERT INTO cells VALUES (?)").run(decodeSqliteCell(row[0]));
-  const output = target.prepare(
-    "SELECT v, typeof(v) AS type, hex(CAST(v AS BLOB)) AS raw FROM cells",
-  );
+  for (const row of JSON.parse(JSON.stringify(rows))) target.prepare("INSERT INTO cells VALUES (?)").run(decodeSqliteCell(row[0]));
+  const output = target.prepare("SELECT v, typeof(v) AS type, hex(CAST(v AS BLOB)) AS raw FROM cells");
   output.setReadBigInts(true);
   const actual = output.all();
   assert.deepEqual(
@@ -104,10 +59,7 @@ test("native SQLite cell export preserves actual int64/REAL/TEXT/BLOB/NULL types
   assert.deepEqual(Buffer.from(actual[5].v), values[5]);
   assert.equal(actual[6].v, null);
   assert.equal(target.prepare("SELECT v FROM retained").get().v, "target-owned");
-  assert.deepEqual(
-    source.prepare("SELECT typeof(v) AS type, hex(CAST(v AS BLOB)) AS raw FROM cells").all(),
-    before,
-  );
+  assert.deepEqual(source.prepare("SELECT typeof(v) AS type, hex(CAST(v AS BLOB)) AS raw FROM cells").all(), before);
   assert(Object.is(decodeSqliteCell(encodeSqliteCell("real", -0)), -0));
 });
 
@@ -133,10 +85,7 @@ test("malformed SQLite TEXT is preserved at source and rejected before any desti
     { type: "text", value: "other", utf8: "ZXhhY3Q=" },
   ])
     assert.throws(() => decodeSqliteCell(cell));
-  assert.throws(
-    () => readTypedSqliteRows(source, "cells", ["v"], { where: "WHERE 1=1; DROP TABLE cells" }),
-    { code: "NATIVE_SQLITE_SELECTION_INVALID" },
-  );
+  assert.throws(() => readTypedSqliteRows(source, "cells", ["v"], { where: "WHERE 1=1; DROP TABLE cells" }), { code: "NATIVE_SQLITE_SELECTION_INVALID" });
 });
 
 test("the exact native profile checks full DDL/migrations and preserves selected typed rows", (t) => {
@@ -171,9 +120,7 @@ test("the exact native profile checks full DDL/migrations and preserves selected
   assert.equal(selected.coherentRawCutoff, "not-verified");
   const encoded = JSON.stringify(selected);
   assert(encoded.includes("9223372036854775807"));
-  db.exec(
-    "CREATE TRIGGER unexpected_contract_change AFTER INSERT ON thread_items BEGIN SELECT 1; END;",
-  );
+  db.exec("CREATE TRIGGER unexpected_contract_change AFTER INSERT ON thread_items BEGIN SELECT 1; END;");
   assert.throws(() => readSelectedCodexHistory(db, { ...profileBasis, threadIds: [threadId] }), {
     code: "NATIVE_CODEX_SCHEMA_UNSUPPORTED",
   });
@@ -196,14 +143,10 @@ test("native no-FK history rejects cross-thread turn matches and unknown engine/
   assert.throws(() => readSelectedCodexHistory(db, { ...profileBasis, threadIds: [a, b] }), {
     code: "NATIVE_CODEX_HISTORY_TURN_UNRESOLVED",
   });
-  assert.throws(
-    () =>
-      readSelectedCodexHistory(db, { ...profileBasis, engineVersion: "unknown", threadIds: [a] }),
-    { code: "NATIVE_CODEX_PROFILE_UNSUPPORTED" },
-  );
-  db.exec(
-    "UPDATE _sqlx_migrations SET checksum=x'00' WHERE version=(SELECT min(version) FROM _sqlx_migrations)",
-  );
+  assert.throws(() => readSelectedCodexHistory(db, { ...profileBasis, engineVersion: "unknown", threadIds: [a] }), {
+    code: "NATIVE_CODEX_PROFILE_UNSUPPORTED",
+  });
+  db.exec("UPDATE _sqlx_migrations SET checksum=x'00' WHERE version=(SELECT min(version) FROM _sqlx_migrations)");
   assert.throws(() => readSelectedCodexHistory(db, { ...profileBasis, threadIds: [a] }), {
     code: "NATIVE_CODEX_MIGRATIONS_UNSUPPORTED",
   });
@@ -263,8 +206,7 @@ test("streamed native JSONL matches exact typed-row byte boundaries and preserve
   });
   const history = readSelectedCodexHistory(db, { ...profileBasis, threadIds: [threadId] });
   const stream = createCodexRolloutVerifier({ threadId, history });
-  for (let offset = 0; offset < raw.length; offset += 2)
-    stream.update(raw.subarray(offset, offset + 2));
+  for (let offset = 0; offset < raw.length; offset += 2) stream.update(raw.subarray(offset, offset + 2));
   assert.equal(stream.finish().formatAndAddressReady, true);
   assert.throws(() => stream.finish(), { code: "NATIVE_CODEX_ROLLOUT_STREAM_INVALID" });
   const verified = verifyCodexRollout({ root: f.base, relative, threadId, history });
@@ -276,10 +218,7 @@ test("streamed native JSONL matches exact typed-row byte boundaries and preserve
   const before = snapshot(f.base);
   const wrong = structuredClone(history),
     projection = wrong.tables.find((table) => table.name === "thread_history_projection_state");
-  projection.rows[0][projection.columns.indexOf("next_rollout_byte_offset")] = encodeSqliteCell(
-    "integer",
-    BigInt(raw.length - 1),
-  );
+  projection.rows[0][projection.columns.indexOf("next_rollout_byte_offset")] = encodeSqliteCell("integer", BigInt(raw.length - 1));
   assert.throws(() => verifyCodexRollout({ root: f.base, relative, threadId, history: wrong }), {
     code: "NATIVE_CODEX_CUTOFF_MISMATCH",
   });
@@ -296,18 +235,15 @@ test("streamed native JSONL matches exact typed-row byte boundaries and preserve
     code: "NATIVE_CODEX_ROLLOUT_FRAME_INVALID",
   });
   fs.writeFileSync(file, raw);
-  assert.throws(
-    () => verifyCodexRollout({ root: f.base, relative: relative + ".zst", threadId, history }),
-    { code: "NATIVE_CODEX_ROLLOUT_PROFILE_UNSUPPORTED" },
-  );
+  assert.throws(() => verifyCodexRollout({ root: f.base, relative: relative + ".zst", threadId, history }), {
+    code: "NATIVE_CODEX_ROLLOUT_PROFILE_UNSUPPORTED",
+  });
   // A fork hint is retained verbatim and exposes unresolved native closure.
   records[2].payload.history_base_path = "other-original-required";
   const extended = Buffer.from(records.map((value) => JSON.stringify(value)).join("\n") + "\n");
   fs.writeFileSync(file, extended);
   db.prepare("UPDATE thread_turns SET rollout_end_byte_offset=?").run(BigInt(extended.length));
-  db.prepare("UPDATE thread_history_projection_state SET next_rollout_byte_offset=?").run(
-    BigInt(extended.length),
-  );
+  db.prepare("UPDATE thread_history_projection_state SET next_rollout_byte_offset=?").run(BigInt(extended.length));
   const partial = verifyCodexRollout({
     root: f.base,
     relative,
@@ -365,10 +301,7 @@ test("native offline witness is current Host observation, never a saved marker o
   await assert.rejects(assertCodexNativeOffline(stopped.witness), {
     code: "NATIVE_CODEX_OFFLINE_BASIS_CHANGED",
   });
-  assert.deepEqual(
-    fs.readFileSync(path.join(home, "writers-stopped.json")),
-    Buffer.from(JSON.stringify({ stopped: true })),
-  );
+  assert.deepEqual(fs.readFileSync(path.join(home, "writers-stopped.json")), Buffer.from(JSON.stringify({ stopped: true })));
   assert.equal(inspectProject(f.root).status, "ready");
   assert.deepEqual(codexNativeOfflineProcessStatus(), []);
 });
@@ -389,9 +322,7 @@ test("actual native writer inventory is query-only and reaps its hidden helper",
 
 test("stopped native capture reads committed WAL and copies only selected raw/rows; generation drift never completes", async (t) => {
   if (process.platform !== "win32" || process.arch !== "x64")
-    return t.skip(
-      "Exact offline native capture profile is Windows x64 only; portable/pure verifiers remain tested.",
-    );
+    return t.skip("other-os: Exact offline native capture profile is Windows x64 only; portable/pure verifiers remain tested.");
   const f = fixture(t),
     home = path.join(f.base, "capture-home"),
     executable = path.join(f.base, "codex.exe");
@@ -400,11 +331,7 @@ test("stopped native capture reads committed WAL and copies only selected raw/ro
   const a = "01900000-0000-7000-8000-000000000004",
     b = "01900000-0000-7000-8000-000000000005";
   const state = syntheticNativeDatabase(t, "state_5.sqlite", path.join(home, "state_5.sqlite"));
-  const history = syntheticNativeDatabase(
-    t,
-    "thread_history_1.sqlite",
-    path.join(home, "thread_history_1.sqlite"),
-  );
+  const history = syntheticNativeDatabase(t, "thread_history_1.sqlite", path.join(home, "thread_history_1.sqlite"));
   try {
     const relative = "sessions/2026/11/02/rollout-2026-11-02T00-00-00-" + a + ".jsonl",
       rawFile = path.join(home, relative);
@@ -506,18 +433,12 @@ test("stopped native capture reads committed WAL and copies only selected raw/ro
         }),
       { code: "NATIVE_CODEX_PAYLOAD_IDENTITY_MISMATCH" },
     );
-    assert.equal(
-      payload.history.tables.find((table) => table.name === "thread_turns").rows.length,
-      1,
-    );
+    assert.equal(payload.history.tables.find((table) => table.name === "thread_turns").rows.length, 1);
 
     assert(!payloadBytes.toString().includes(b));
     assert(!payloadBytes.toString().includes("UNSELECTED_ACCOUNT_SENTINEL"));
     assert(!Object.hasOwn(payload, "sourceStateRows"));
-    assert.deepEqual(
-      fs.readFileSync(path.join(destination, "objects", payload.files[0].sha256 + ".bin")),
-      raw,
-    );
+    assert.deepEqual(fs.readFileSync(path.join(destination, "objects", payload.files[0].sha256 + ".bin")), raw);
     assert.deepEqual(fs.readFileSync(rawFile), raw);
     const repeat = await captureCodexNativeHistory({
       witness: offline.witness,
@@ -528,16 +449,8 @@ test("stopped native capture reads committed WAL and copies only selected raw/ro
     async function nativeTarget(name) {
       const targetHome = path.join(f.base, name);
       fs.mkdirSync(targetHome, { recursive: true });
-      const targetState = syntheticNativeDatabase(
-        t,
-        "state_5.sqlite",
-        path.join(targetHome, "state_5.sqlite"),
-      );
-      const targetHistory = syntheticNativeDatabase(
-        t,
-        "thread_history_1.sqlite",
-        path.join(targetHome, "thread_history_1.sqlite"),
-      );
+      const targetState = syntheticNativeDatabase(t, "state_5.sqlite", path.join(targetHome, "state_5.sqlite"));
+      const targetHistory = syntheticNativeDatabase(t, "thread_history_1.sqlite", path.join(targetHome, "thread_history_1.sqlite"));
       try {
         targetHistory.row("thread_turns", {
           thread_id: b,
@@ -545,9 +458,7 @@ test("stopped native capture reads committed WAL and copies only selected raw/ro
           status: "completed",
           duration_ms: 9223372036854775807n,
         });
-        targetHistory.db
-          .prepare("UPDATE thread_turns SET error_json=CAST(x'80ff' AS TEXT) WHERE thread_id=?")
-          .run(b);
+        targetHistory.db.prepare("UPDATE thread_turns SET error_json=CAST(x'80ff' AS TEXT) WHERE thread_id=?").run(b);
       } finally {
         targetState.close();
         targetHistory.close();
@@ -568,9 +479,7 @@ test("stopped native capture reads committed WAL and copies only selected raw/ro
       };
     }
     for (const stop of [null, "raw", "before-history-commit", "history-committed"]) {
-      const { targetHome, targetOffline } = await nativeTarget(
-        "native-target-" + (stop || "success"),
-      );
+      const { targetHome, targetOffline } = await nativeTarget("native-target-" + (stop || "success"));
       const stateBefore = fs.readFileSync(path.join(targetHome, "state_5.sqlite"));
       let interrupted = false;
       if (stop)
@@ -593,9 +502,7 @@ test("stopped native capture reads committed WAL and copies only selected raw/ro
         witness: targetOffline.witness,
         directory: destination,
       });
-      assert(
-        ["native-originals-published", "native-originals-already-present"].includes(result.status),
-      );
+      assert(["native-originals-published", "native-originals-already-present"].includes(result.status));
       assert.equal(result.nativeRegistration, "not-performed");
       assert.equal(result.stateRowsWritten, 0);
       assert.deepEqual(fs.readFileSync(path.join(targetHome, relative)), raw);
@@ -604,21 +511,11 @@ test("stopped native capture reads committed WAL and copies only selected raw/ro
         readOnly: true,
       });
       try {
-        assert.deepEqual(
-          readSelectedCodexHistory(actualDb, { ...profileBasis, threadIds: [a] }),
-          payload.history,
-        );
+        assert.deepEqual(readSelectedCodexHistory(actualDb, { ...profileBasis, threadIds: [a] }), payload.history);
         const retained = actualDb.prepare("SELECT duration_ms FROM thread_turns WHERE thread_id=?");
         retained.setReadBigInts(true);
         assert.equal(retained.get(b).duration_ms, 9223372036854775807n);
-        assert.equal(
-          actualDb
-            .prepare(
-              "SELECT hex(CAST(error_json AS BLOB)) AS raw FROM thread_turns WHERE thread_id=?",
-            )
-            .get(b).raw,
-          "80FF",
-        );
+        assert.equal(actualDb.prepare("SELECT hex(CAST(error_json AS BLOB)) AS raw FROM thread_turns WHERE thread_id=?").get(b).raw, "80FF");
       } finally {
         actualDb.close();
       }
@@ -630,16 +527,8 @@ test("stopped native capture reads committed WAL and copies only selected raw/ro
       assert.equal(again.status, "native-originals-already-present");
       assert.deepEqual(snapshot(targetHome), beforeRetry);
     }
-    for (const kind of [
-      "raw-diverged",
-      "history-diverged",
-      "authority-denied",
-      "disk-full",
-      "writer-restarted",
-    ]) {
-      const { targetHome, targetOffline, setObservation } = await nativeTarget(
-        "native-negative-" + kind,
-      );
+    for (const kind of ["raw-diverged", "history-diverged", "authority-denied", "disk-full", "writer-restarted"]) {
+      const { targetHome, targetOffline, setObservation } = await nativeTarget("native-negative-" + kind);
       const targetRaw = path.join(targetHome, relative),
         targetDbPath = path.join(targetHome, "thread_history_1.sqlite"),
         beforeState = fs.readFileSync(path.join(targetHome, "state_5.sqlite"));
@@ -654,11 +543,7 @@ test("stopped native capture reads committed WAL and copies only selected raw/ro
             values = table.rows[0].map(decodeSqliteCell);
           values[table.columns.indexOf("duration_ms")] = 123456n;
           db.prepare(
-            "INSERT INTO thread_turns (" +
-              table.columns.map((name) => '"' + name + '"').join(",") +
-              ") VALUES (" +
-              values.map(() => "?").join(",") +
-              ")",
+            "INSERT INTO thread_turns (" + table.columns.map((name) => '"' + name + '"').join(",") + ") VALUES (" + values.map(() => "?").join(",") + ")",
           ).run(...values);
         } finally {
           db.close();
@@ -668,8 +553,7 @@ test("stopped native capture reads committed WAL and copies only selected raw/ro
         link = fs.linkSync;
       if (kind === "disk-full")
         fs.linkSync = function (source, target) {
-          if (String(source).endsWith(".partial.sqlite"))
-            throw Object.assign(Error("Synthetic backup disk full"), { code: "ENOSPC" });
+          if (String(source).endsWith(".partial.sqlite")) throw Object.assign(Error("Synthetic backup disk full"), { code: "ENOSPC" });
           return link.call(this, source, target);
         };
       const expected = {
@@ -704,15 +588,11 @@ test("stopped native capture reads committed WAL and copies only selected raw/ro
         fs.linkSync = link;
       }
       assert.deepEqual(fs.readFileSync(path.join(targetHome, "state_5.sqlite")), beforeState);
-      if (["raw-diverged", "history-diverged", "authority-denied"].includes(kind))
-        assert.deepEqual(snapshot(targetHome), before);
+      if (["raw-diverged", "history-diverged", "authority-denied"].includes(kind)) assert.deepEqual(snapshot(targetHome), before);
       else {
         const db = new DatabaseSync(targetDbPath, { readOnly: true });
         try {
-          assert.equal(
-            db.prepare("SELECT count(*) AS n FROM thread_turns WHERE thread_id=?").get(a).n,
-            0,
-          );
+          assert.equal(db.prepare("SELECT count(*) AS n FROM thread_turns WHERE thread_id=?").get(a).n, 0);
         } finally {
           db.close();
         }
@@ -802,9 +682,7 @@ test("stopped native capture reads committed WAL and copies only selected raw/ro
       );
     }
     {
-      const { targetHome, targetOffline } = await nativeTarget(
-        path.join("long-native-" + "a".repeat(75), "b".repeat(75)),
-      );
+      const { targetHome, targetOffline } = await nativeTarget(path.join("long-native-" + "a".repeat(75), "b".repeat(75)));
       const result = await publishCodexNativeHistory({
         witness: targetOffline.witness,
         directory: destination,
@@ -823,8 +701,7 @@ test("stopped native capture reads committed WAL and copies only selected raw/ro
         threadIds: [a],
         destination: drift,
         onBoundary(stage) {
-          if (stage === "captured")
-            history.db.prepare("UPDATE thread_turns SET duration_ms=123 WHERE thread_id=?").run(a);
+          if (stage === "captured") history.db.prepare("UPDATE thread_turns SET duration_ms=123 WHERE thread_id=?").run(a);
         },
       }),
       { code: "NATIVE_CODEX_CAPTURE_GENERATION_CHANGED" },
@@ -833,8 +710,7 @@ test("stopped native capture reads committed WAL and copies only selected raw/ro
     assert(fs.existsSync(path.join(drift, "capture-intent.json")));
     let checks = 0;
     observeHook = () => {
-      if (++checks === 3)
-        history.db.prepare("UPDATE thread_turns SET duration_ms=888 WHERE thread_id=?").run(a);
+      if (++checks === 3) history.db.prepare("UPDATE thread_turns SET duration_ms=888 WHERE thread_id=?").run(a);
     };
     const lastAwait = path.join(f.base, "native-capture-last-observer");
     await assert.rejects(
@@ -852,10 +728,7 @@ test("stopped native capture reads committed WAL and copies only selected raw/ro
       const original = DatabaseSync.prototype[method];
       let observedHandle = null;
       DatabaseSync.prototype[method] = function (query, ...args) {
-        if (
-          observedHandle === null &&
-          query === (method === "prepare" ? "PRAGMA data_version" : "BEGIN")
-        ) {
+        if (observedHandle === null && query === (method === "prepare" ? "PRAGMA data_version" : "BEGIN")) {
           observedHandle = this;
           throw Object.assign(Error("Synthetic SQLite busy immediately after open"), {
             code: "SQLITE_BUSY",
@@ -920,40 +793,23 @@ test("native row merge preserves unrelated data and never replaces divergent sel
   assert.throws(() => applyCodexNativeRowMerge(preview.plan, target.db), {
     code: "NATIVE_CODEX_HISTORY_TRANSACTION_REQUIRED",
   });
-  assert.throws(
-    () => applyCodexNativeRowMerge(JSON.parse(JSON.stringify(preview.plan)), target.db),
-    { code: "NATIVE_CODEX_ROW_PLAN_REQUIRED" },
-  );
+  assert.throws(() => applyCodexNativeRowMerge(JSON.parse(JSON.stringify(preview.plan)), target.db), { code: "NATIVE_CODEX_ROW_PLAN_REQUIRED" });
   target.db.exec("BEGIN IMMEDIATE");
   const applied = applyCodexNativeRowMerge(preview.plan, target.db);
   assert.equal(applied.transactionCommitted, false);
   target.db.exec("COMMIT");
   assert.equal(applied.stateRowsWritten, 0);
-  assert.deepEqual(
-    readSelectedCodexHistory(target.db, { ...profileBasis, threadIds: [a] }),
-    history,
-  );
-  assert.deepEqual(
-    readSelectedCodexHistory(target.db, { ...profileBasis, threadIds: [b] }),
-    unrelated,
-  );
+  assert.deepEqual(readSelectedCodexHistory(target.db, { ...profileBasis, threadIds: [a] }), history);
+  assert.deepEqual(readSelectedCodexHistory(target.db, { ...profileBasis, threadIds: [b] }), unrelated);
   const repeat = planCodexNativeRowMerge(target.db, { ...profileBasis, history });
   assert.equal(repeat.status, "equal");
   assert.equal(repeat.missingRows, 0);
-  target.db
-    .prepare("UPDATE thread_items SET item_json=? WHERE thread_id=?")
-    .run('{"text":"Newer target content"}', a);
+  target.db.prepare("UPDATE thread_items SET item_json=? WHERE thread_id=?").run('{"text":"Newer target content"}', a);
   assert.throws(() => planCodexNativeRowMerge(target.db, { ...profileBasis, history }), {
     code: "NATIVE_CODEX_TARGET_HISTORY_DIVERGED",
   });
-  assert.equal(
-    target.db.prepare("SELECT item_json FROM thread_items WHERE thread_id=?").get(a).item_json,
-    '{"text":"Newer target content"}',
-  );
-  assert.deepEqual(
-    readSelectedCodexHistory(target.db, { ...profileBasis, threadIds: [b] }),
-    unrelated,
-  );
+  assert.equal(target.db.prepare("SELECT item_json FROM thread_items WHERE thread_id=?").get(a).item_json, '{"text":"Newer target content"}');
+  assert.deepEqual(readSelectedCodexHistory(target.db, { ...profileBasis, threadIds: [b] }), unrelated);
 });
 
 test("native registration reconciles observed completion and never replays uncertain or competing attempts", async (t) => {
@@ -980,8 +836,7 @@ test("native registration reconciles observed completion and never replays uncer
     });
     const register = async () => {
       calls++;
-      if (mode === "lost-before-effect")
-        throw Object.assign(Error("Synthetic no durable response"), { code: "SYNTHETIC_LOSS" });
+      if (mode === "lost-before-effect") throw Object.assign(Error("Synthetic no durable response"), { code: "SYNTHETIC_LOSS" });
       state = "matches";
       if (mode === "lost-after-effect")
         throw Object.assign(Error("Synthetic response lost after effect"), {
@@ -989,26 +844,16 @@ test("native registration reconciles observed completion and never replays uncer
         });
     };
     const invoke = () => requestNativeRegistration({ operationRoot, input, readStatus, register });
-    const first =
-      mode === "concurrent" ? (await Promise.all([invoke(), invoke()]))[0] : await invoke();
+    const first = mode === "concurrent" ? (await Promise.all([invoke(), invoke()]))[0] : await invoke();
     assert.equal(calls, 1);
     assert.equal(first.automaticReplayAllowed, false);
     if (mode.startsWith("lost")) assert.equal(first.status, "native-registration-uncertain");
     const again = await invoke();
     assert.equal(calls, 1);
-    assert.equal(
-      again.status,
-      mode === "lost-before-effect"
-        ? "native-registration-uncertain"
-        : "native-registration-verified",
-    );
+    assert.equal(again.status, mode === "lost-before-effect" ? "native-registration-uncertain" : "native-registration-verified");
     const before = snapshot(operationRoot);
     await invoke();
-    assert.deepEqual(
-      snapshot(operationRoot),
-      before,
-      "unchanged status reuses at most one attempt/result pair",
-    );
+    assert.deepEqual(snapshot(operationRoot), before, "unchanged status reuses at most one attempt/result pair");
     if (mode === "normal") {
       const resultFile = path.join(
           operationRoot,
@@ -1064,8 +909,7 @@ test("native registration reconciles observed completion and never replays uncer
 });
 
 test("native companion binds selected transfer data without becoming a Core import gate", async (t) => {
-  if (process.platform !== "win32" || process.arch !== "x64")
-    return t.skip("Measured native filesystem profile is Windows x64.");
+  if (process.platform !== "win32" || process.arch !== "x64") return t.skip("other-os: Measured native filesystem profile is Windows x64.");
   const { f, destination, payload } = await syntheticNativeCapture(t);
 
   f.save({ summary: "Selected synthetic portable context" });
@@ -1086,10 +930,7 @@ test("native companion binds selected transfer data without becoming a Core impo
       }),
     { code: "PROJECT_NATIVE_TRANSFER_CANCELLED" },
   );
-  assert.equal(
-    readProjectNativeTransfer({ bundleRoot }).status,
-    "native-transfer-incomplete-without-link",
-  );
+  assert.equal(readProjectNativeTransfer({ bundleRoot }).status, "native-transfer-incomplete-without-link");
   const attached = attachProjectNativeTransfer({ bundleRoot, directory: destination });
   assert.equal(attached.status, "verified-native-transfer");
   assert.equal(attached.transfersNativeBinding, false);
@@ -1162,24 +1003,14 @@ test("native companion binds selected transfer data without becoming a Core impo
   });
   assert(!readBoth.error, JSON.stringify(readBoth));
   assert.equal(readBoth.result.structuredContent.nativeHistory.isError, true);
-  assert.equal(
-    readBoth.result.structuredContent.nativeHistory.primaryFailure.code,
-    "PROJECT_NATIVE_TRANSFER_LINK_MISMATCH",
-  );
+  assert.equal(readBoth.result.structuredContent.nativeHistory.primaryFailure.code, "PROJECT_NATIVE_TRANSFER_LINK_MISMATCH");
   assert.equal(inspectProjectBundle({ bundleRoot }).projectAdmissionReady, true);
   const target = path.join(f.base, "core-import-native-damaged");
   fs.mkdirSync(target);
   assert.equal(importProjectBundle({ bundleRoot, root: target, pluginRoot }).status, "imported");
-  assert(
-    !fs.existsSync(path.join(target, "native-history.json")),
-    "native companion is never an execution binding in Core import",
-  );
+  assert(!fs.existsSync(path.join(target, "native-history.json")), "native companion is never an execution binding in Core import");
   fs.writeFileSync(linkFile, originalLink);
-  const rawObject = path.join(
-      bundleRoot,
-      "native/codex/history/objects",
-      payload.files[0].sha256 + ".bin",
-    ),
+  const rawObject = path.join(bundleRoot, "native/codex/history/objects", payload.files[0].sha256 + ".bin"),
     originalObject = fs.readFileSync(rawObject);
   fs.writeFileSync(rawObject, Buffer.from("Divergent target native bytes"));
   assert.throws(() => readProjectNativeTransfer({ bundleRoot }));

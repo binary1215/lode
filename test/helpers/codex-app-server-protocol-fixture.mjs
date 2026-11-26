@@ -1,4 +1,6 @@
 // Model-free local NDJSON subprocess; only installed protocol fields go on wire.
+import fs from "node:fs";
+import path from "node:path";
 import readline from "node:readline";
 const scenario = process.argv[2] || "normal";
 if (scenario === "hold-after-eof-ignore-term") process.on("SIGTERM", () => {});
@@ -151,4 +153,10 @@ lines.on("close", () => {
     setInterval(() => {}, 1000);
   }
   if (scenario === "ignore-eof") setInterval(() => {}, 1000);
+  // Mark in the working directory that input ended, then exit by itself with 0
+  // after a short while (test/helpers/late-close.mjs drives the late close).
+  if (scenario === "exit-after-eof-delayed") {
+    fs.writeFileSync(path.join(process.cwd(), "fixture-input-ended"), String(process.pid));
+    setTimeout(() => {}, 400);
+  }
 });

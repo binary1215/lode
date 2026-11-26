@@ -8,11 +8,7 @@ import { initializeProject, inspectProject } from "../scripts/lib/session/lode-c
 import { compileContext } from "../scripts/lib/session/context-compiler.mjs";
 import { createExecutionContract, createWholePlanSnapshot } from "../scripts/lib/runtime/execution-lineage.mjs";
 import { finishRun, getPendingReviewContext, reviewRun, startRun } from "../scripts/lib/runtime/run-lineage.mjs";
-import {
-  inspectRecoveryCheckpointBasis,
-  prepareCompaction,
-  syncRecoveryCheckpoint,
-} from "../scripts/lib/session/compaction-recovery.mjs";
+import { inspectRecoveryCheckpointBasis, prepareCompaction, syncRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
 import { integrateReviewedRunCheckpoint, restoreSessionFromArtifacts } from "../scripts/lib/session/session-recovery.mjs";
 import { dispatch, catalogTools as mcpTools } from "../scripts/mcp-server.mjs";
 import { runCommand } from "../scripts/lode.mjs";
@@ -21,7 +17,17 @@ import { runCommand } from "../scripts/lode.mjs";
 // generated catalog and Hook assertions use the canonical Lode vocabulary.
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const cliFile = path.join(pluginRoot, "scripts", "head.mjs");
-console.log(JSON.stringify({ event: "owned-test-process", pid: process.pid, parentPid: process.ppid, command: process.execPath, args: process.argv.slice(1), cwd: process.cwd(), ports: [] }));
+console.log(
+  JSON.stringify({
+    event: "owned-test-process",
+    pid: process.pid,
+    parentPid: process.ppid,
+    command: process.execPath,
+    args: process.argv.slice(1),
+    cwd: process.cwd(),
+    ports: [],
+  }),
+);
 
 function temporaryProject(prefix = "head-checkpoint-sync-") {
   const parent = process.env.LODE_AGENT_TEST_TMP || process.env.HEAD_AGENT_TEST_TMP || os.tmpdir();
@@ -140,8 +146,11 @@ function injectRenameFailure(root, storage, boundary, operation) {
     }
     return original(source, target);
   };
-  try { assert.throws(operation, { code: "EIO" }); }
-  finally { fs.renameSync = original; }
+  try {
+    assert.throws(operation, { code: "EIO" });
+  } finally {
+    fs.renameSync = original;
+  }
   assert.equal(injected, true);
 }
 
@@ -155,13 +164,27 @@ function runCliSync(root, inputFile) {
   return new Promise((resolve, reject) => {
     const args = [cliFile, "checkpoint-sync", root, "--input", inputFile, "--json"];
     const child = spawn(process.execPath, args, { cwd: pluginRoot, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
-    console.log(JSON.stringify({ event: "owned-checkpoint-sync-child", pid: child.pid, parentPid: process.pid, command: process.execPath, args, cwd: pluginRoot, ports: [] }));
+    console.log(
+      JSON.stringify({
+        event: "owned-checkpoint-sync-child",
+        pid: child.pid,
+        parentPid: process.pid,
+        command: process.execPath,
+        args,
+        cwd: pluginRoot,
+        ports: [],
+      }),
+    );
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
     child.on("error", reject);
     child.on("close", (code, signal) => {
       console.log(JSON.stringify({ event: "owned-checkpoint-sync-child-exit", pid: child.pid, parentPid: process.pid, code, signal, ports: [] }));
@@ -169,7 +192,9 @@ function runCliSync(root, inputFile) {
         assert.equal(code, 0, stderr || stdout);
         assert.throws(() => process.kill(child.pid, 0), { code: "ESRCH" });
         resolve(JSON.parse(stdout));
-      } catch (error) { reject(error); }
+      } catch (error) {
+        reject(error);
+      }
     });
   });
 }
@@ -196,7 +221,7 @@ test("one sync creates once and one hundred identical retries write no artifact 
 test("the same direction text cannot hide changed Run, plan, contract, or Capsule references", async (t) => {
   const { root, storage } = fixture(t);
   const stale = syncInput(root);
-  const lineage = (await startFixtureRun(root, "changed lineage references"));
+  const lineage = await startFixtureRun(root, "changed lineage references");
   const before = fileSnapshot(root, storage);
   const rejected = syncRecoveryCheckpoint(stale);
   assert.equal(rejected.outcome, "conflict");
@@ -216,9 +241,11 @@ test("concurrent identical syncs converge and concurrent divergent direction can
     const basis = inspectRecoveryCheckpointBasis({ root }).basis;
     const common = { expectedRecoveryBasisId: basis.basisId, ...direction() };
     const firstFile = writeCliInput(root, `.sync-${divergent}-a.json`, common);
-    const secondFile = writeCliInput(root, `.sync-${divergent}-b.json`, divergent
-      ? { ...common, nextExpectedResult: "A different concurrent direction must not overwrite the winner" }
-      : common);
+    const secondFile = writeCliInput(
+      root,
+      `.sync-${divergent}-b.json`,
+      divergent ? { ...common, nextExpectedResult: "A different concurrent direction must not overwrite the winner" } : common,
+    );
     const [first, second] = await Promise.all([runCliSync(root, firstFile), runCliSync(root, secondFile)]);
     const outcomes = [first.outcome, second.outcome].sort();
     assert.deepEqual(outcomes, divergent ? ["conflict", "created"] : ["created", "reused"]);
@@ -231,7 +258,7 @@ test("concurrent identical syncs converge and concurrent divergent direction can
 
 test("incomplete Run publication defers sync while stable pending review remains eligible", async (t) => {
   const { root, storage } = fixture(t);
-  (await startFixtureRun(root, "interrupted Run transition"));
+  await startFixtureRun(root, "interrupted Run transition");
   const finish = finishInput(root);
   injectRenameFailure(root, storage, "before-pointer", () => finishRun(finish));
   const deferredBasis = inspectRecoveryCheckpointBasis({ root });
@@ -276,7 +303,7 @@ test("open compaction preserves its checkpoint and defers only a changed general
 
 test("accepted Run integration is reused exactly but never copied into changed general direction", async (t) => {
   const { root, storage } = fixture(t);
-  const lineage = (await startFixtureRun(root, "accepted integration reuse"));
+  const lineage = await startFixtureRun(root, "accepted integration reuse");
   const finished = finishRun(finishInput(root));
   const reviewed = reviewAccepted(root);
   const integrationDirection = direction({
@@ -307,12 +334,16 @@ test("accepted Run integration is reused exactly but never copied into changed g
   assert.equal(changed.outcome, "created");
   assert.equal(changed.checkpoint.reviewedRunIntegration, null);
   const beforeForbidden = fileSnapshot(root, storage);
-  assert.throws(() => syncRecoveryCheckpoint({
-    root,
-    expectedRecoveryBasisId: changed.resultingBasis.basisId,
-    ...integrationDirection,
-    reviewedRunIntegration: integrated.checkpoint.reviewedRunIntegration,
-  }), { code: "INVALID_RECOVERY_CHECKPOINT_SYNC_INPUT" });
+  assert.throws(
+    () =>
+      syncRecoveryCheckpoint({
+        root,
+        expectedRecoveryBasisId: changed.resultingBasis.basisId,
+        ...integrationDirection,
+        reviewedRunIntegration: integrated.checkpoint.reviewedRunIntegration,
+      }),
+    { code: "INVALID_RECOVERY_CHECKPOINT_SYNC_INPUT" },
+  );
   assert.deepEqual(fileSnapshot(root, storage), beforeForbidden);
 });
 
@@ -358,7 +389,7 @@ test("an orphaned request cannot revert a different direction published before i
 
 test("an interrupted review Session publish defers sync and the exact review retry recovers", async (t) => {
   const { root, storage } = fixture(t);
-  (await startFixtureRun(root, "interrupted review transition"));
+  await startFixtureRun(root, "interrupted review transition");
   finishRun(finishInput(root));
   const review = acceptedReviewInput(root);
   injectRenameFailure(root, storage, "before-pointer", () => reviewRun(review));
@@ -376,7 +407,7 @@ test("an interrupted review Session publish defers sync and the exact review ret
 
 test("missing pending ResultPacket remains non-authoritative evidence loss and preserves exact reuse", async (t) => {
   const { root, storage } = fixture(t);
-  (await startFixtureRun(root, "missing pending ResultPacket evidence"));
+  await startFixtureRun(root, "missing pending ResultPacket evidence");
   const finished = finishRun(finishInput(root));
   const input = syncInput(root);
   const created = syncRecoveryCheckpoint(input);
@@ -396,12 +427,23 @@ test("missing pending ResultPacket remains non-authoritative evidence loss and p
 test("CLI and typed MCP share Core semantics while entry and missing Host hooks remain read-only", async (t) => {
   const { root, storage } = fixture(t);
   const initial = fileSnapshot(root, storage);
-  const cliBasis = (await runCommand(["checkpoint-basis", root]));
-  const mcpBasis = await dispatch({ jsonrpc: "2.0", id: 801, method: "tools/call", params: { name: "head_checkpoint_basis", arguments: { project_root: root } } });
+  const cliBasis = await runCommand(["checkpoint-basis", root]);
+  const mcpBasis = await dispatch({
+    jsonrpc: "2.0",
+    id: 801,
+    method: "tools/call",
+    params: { name: "head_checkpoint_basis", arguments: { project_root: root } },
+  });
   assert.equal(mcpBasis.result.structuredContent.basis.basisId, cliBasis.basis.basisId);
   assert.deepEqual(fileSnapshot(root, storage), initial);
-  assert.equal((await runCommand(["help"])).commands.some((command) => command.includes("checkpoint-sync")), false);
-  assert.equal((await runCommand(["help-all"])).commands.some((command) => command.includes("checkpoint-sync")), true);
+  assert.equal(
+    (await runCommand(["help"])).commands.some((command) => command.includes("checkpoint-sync")),
+    false,
+  );
+  assert.equal(
+    (await runCommand(["help-all"])).commands.some((command) => command.includes("checkpoint-sync")),
+    true,
+  );
   assert.equal(mcpTools.find((tool) => tool.name === "lode_checkpoint_basis").annotations.readOnlyHint, true);
   assert.equal(mcpTools.find((tool) => tool.name === "lode_checkpoint_sync").annotations.idempotentHint, true);
 
@@ -425,19 +467,31 @@ test("CLI and typed MCP share Core semantics while entry and missing Host hooks 
   });
   assert.equal(synced.result.structuredContent.outcome, "created");
   const checkpointed = fileSnapshot(root, storage);
-  const entry = await dispatch({ jsonrpc: "2.0", id: 803, method: "tools/call", params: { name: "head_conversation_enter", arguments: { project_root: root } } });
+  const entry = await dispatch({
+    jsonrpc: "2.0",
+    id: 803,
+    method: "tools/call",
+    params: { name: "head_conversation_enter", arguments: { project_root: root } },
+  });
   assert.equal(entry.result.structuredContent.persisted, false);
   assert.deepEqual(fileSnapshot(root, storage), checkpointed);
 
   const { root: emptyRoot, storage: emptyStorage } = fixture(t);
   const emptyBefore = fileSnapshot(emptyRoot, emptyStorage);
-  const emptyEntry = await dispatch({ jsonrpc: "2.0", id: 804, method: "tools/call", params: { name: "head_conversation_enter", arguments: { project_root: emptyRoot } } });
+  const emptyEntry = await dispatch({
+    jsonrpc: "2.0",
+    id: 804,
+    method: "tools/call",
+    params: { name: "head_conversation_enter", arguments: { project_root: emptyRoot } },
+  });
   assert.equal(emptyEntry.result.structuredContent.recoveryState, "no-current-checkpoint");
   assert.equal(inspectProject(emptyRoot).state.latestCheckpoint, null);
   assert.deepEqual(fileSnapshot(emptyRoot, emptyStorage), emptyBefore, "short Observe entry creates no first checkpoint");
   const contract = await dispatch({ jsonrpc: "2.0", id: 805, method: "tools/call", params: { name: "head_core_contract", arguments: {} } });
   assert.deepEqual(contract.result.structuredContent.runtime.compactionLifecycle.packagedProviderEventAdapters, {
-    claude: "not-bound", codex: "not-bound", opencode: "not-bound",
+    claude: "not-bound",
+    codex: "not-bound",
+    opencode: "not-bound",
   });
 });
 

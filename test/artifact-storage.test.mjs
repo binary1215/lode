@@ -5,6 +5,8 @@ import path from "node:path";
 import test from "node:test";
 import { atomicWriteArtifact, atomicCreateArtifact } from "../scripts/lib/storage/artifact-storage.mjs";
 
+const windowsOnly = { skip: process.platform !== "win32" && "other-os: Windows-only behaviour" };
+
 function fixture(t, prefix = "head-C-atomic-") {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   t.after(() => {
@@ -29,7 +31,7 @@ test("atomic publication preserves the existing winner on exclusive retry and cl
   assert.deepEqual(fs.readdirSync(root).sort(), ["directory", "record.json"]);
 });
 
-test("Windows rename retry is finite and never overwrites a changed target", { skip: process.platform !== "win32" }, (t) => {
+test("Windows rename retry is finite and never overwrites a changed target", windowsOnly, (t) => {
   const root = fixture(t, "head-storage-retry-");
   const file = path.join(root, "record.json"),
     rename = fs.renameSync,

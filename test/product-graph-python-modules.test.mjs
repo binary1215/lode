@@ -21,7 +21,12 @@ function build(t, files, rules = []) {
   const rulesFile = path.join(base, "rules.json");
   fs.writeFileSync(rulesFile, JSON.stringify({ ...RULES_HEAD, rules }, null, 2));
   const out = path.join(base, "out");
-  const result = buildProductGraph({ sourceRoot: path.join(base, "source"), documentsDirectory: path.join(base, "documents"), rulesFile, outputDirectory: out });
+  const result = buildProductGraph({
+    sourceRoot: path.join(base, "source"),
+    documentsDirectory: path.join(base, "documents"),
+    rulesFile,
+    outputDirectory: out,
+  });
   const graph = JSON.parse(fs.readFileSync(path.join(out, "graph.json"), "utf8"));
   return { result, graph, out };
 }
@@ -29,7 +34,17 @@ function build(t, files, rules = []) {
 const PACKAGE = {
   "app/__init__.py": "",
   "app/pkg/__init__.py": lines("from .impl import helper", "", "def clash():", "    return 0"),
-  "app/pkg/mod.py": lines("def f():", "    return 1", "", "class Store:", "    def __init__(self):", "        self.items = []", "", "    def add(self, item):", "        self.items.append(item)"),
+  "app/pkg/mod.py": lines(
+    "def f():",
+    "    return 1",
+    "",
+    "class Store:",
+    "    def __init__(self):",
+    "        self.items = []",
+    "",
+    "    def add(self, item):",
+    "        self.items.append(item)",
+  ),
   "app/pkg/impl.py": lines("def helper():", "    return 2"),
   "app/pkg/helper.py": lines("def run():", "    return 3"),
   "app/pkg/clash.py": lines("def f():", "    return 4"),
@@ -44,7 +59,10 @@ function edgesFrom(graph, from, type = "call") {
     .sort();
 }
 function unresolved(graph, reason) {
-  return graph.referenceSummary.unresolvedByReason.find((item) => item.reason === reason).callees.map((item) => item.callee).sort();
+  return graph.referenceSummary.unresolvedByReason
+    .find((item) => item.reason === reason)
+    .callees.map((item) => item.callee)
+    .sort();
 }
 
 test("calls through a module imported by name resolve like a namespace import", (t) => {
@@ -81,7 +99,16 @@ test("calls through a module imported by name resolve like a namespace import", 
       "def run_later(callback):",
       "    return callback()",
     ),
-    "app/pkg/user2.py": lines("from . import mod", "from .sub import deep", "from .. import pkg as p", "", "def relative():", "    mod.f()", "    deep.h()", "    p.mod.f()"),
+    "app/pkg/user2.py": lines(
+      "from . import mod",
+      "from .sub import deep",
+      "from .. import pkg as p",
+      "",
+      "def relative():",
+      "    mod.f()",
+      "    deep.h()",
+      "    p.mod.f()",
+    ),
   });
   assert.deepEqual(edgesFrom(graph, "app/user.py#absolute"), ["app/pkg/mod.py#f"]);
   assert.deepEqual(edgesFrom(graph, "app/user.py#alias"), ["app/pkg/mod.py#f"]);
@@ -96,7 +123,16 @@ test("calls through a module imported by name resolve like a namespace import", 
 test("a declaration or re-export in the package wins over a module of the same name", (t) => {
   const { graph } = build(t, {
     ...PACKAGE,
-    "app/user.py": lines("from app.pkg import helper, clash", "", "def reexported():", "    return helper()", "", "def not_the_module():", "    helper.run()", "    clash.f()"),
+    "app/user.py": lines(
+      "from app.pkg import helper, clash",
+      "",
+      "def reexported():",
+      "    return helper()",
+      "",
+      "def not_the_module():",
+      "    helper.run()",
+      "    clash.f()",
+    ),
   });
   assert.deepEqual(edgesFrom(graph, "app/user.py#reexported"), ["app/pkg/impl.py#helper"]);
   assert.deepEqual(edgesFrom(graph, "app/user.py#not_the_module"), []);
@@ -158,7 +194,8 @@ test("a module name after an expression, or inside a longer name, is not the imp
       "    return pm.f()",
     ),
   });
-  for (const id of ["app/user.py#continued", "app/user.py#attribute", "app/user.py#Holder.run", "app/user.py#called"]) assert.deepEqual(edgesFrom(graph, id), [], id);
+  for (const id of ["app/user.py#continued", "app/user.py#attribute", "app/user.py#Holder.run", "app/user.py#called"])
+    assert.deepEqual(edgesFrom(graph, id), [], id);
   assert.deepEqual(edgesFrom(graph, "app/user.py#plain"), ["app/pkg/mod.py#f"]);
 });
 
@@ -275,8 +312,27 @@ test("a declaration with no resolved caller names the unresolved calls that may 
     {
       ...LOST,
       // (b) two classes declare refresh; it is called only on receivers of unknown type.
-      "src/views.js": lines("export class Panel {", "  refresh() {", "    return 1;", "  }", "}", "export class Chart {", "  refresh() {", "    return 2;", "  }", "}"),
-      "src/caller.js": lines("export function update(view) {", "  view.refresh();", "}", "export function again(other) {", "  other.refresh();", "  helperA();", "}"),
+      "src/views.js": lines(
+        "export class Panel {",
+        "  refresh() {",
+        "    return 1;",
+        "  }",
+        "}",
+        "export class Chart {",
+        "  refresh() {",
+        "    return 2;",
+        "  }",
+        "}",
+      ),
+      "src/caller.js": lines(
+        "export function update(view) {",
+        "  view.refresh();",
+        "}",
+        "export function again(other) {",
+        "  other.refresh();",
+        "  helperA();",
+        "}",
+      ),
       // (c) a declaration named like a built-in global, called bare elsewhere.
       "app/util.py": lines("def len(items):", "    return 0"),
       "app/main.py": lines("def count(items):", "    return len(items)"),
@@ -292,12 +348,18 @@ test("a declaration with no resolved caller names the unresolved calls that may 
   // (a) a bare call of its name.
   const up = ask("up", "src/other.js#orphan");
   assert.match(up.text, /이 선언일 수 있는 못 푼 호출 1곳 \(이름만 부른 호출\. 이 선언을 부른다는 뜻은 아니다\): src\/tools\.js:7\n/);
-  assert.deepEqual(up.rows.find((row) => row.mayBeThis).mayBeThis, { count: 1, bare: { count: 1, places: [{ callee: "orphan", path: "src/tools.js", line: 7 }] } });
+  assert.deepEqual(up.rows.find((row) => row.mayBeThis).mayBeThis, {
+    count: 1,
+    bare: { count: 1, places: [{ callee: "orphan", path: "src/tools.js", line: 7 }] },
+  });
   assert.match(ask("reach", "src/other.js#orphan").text, /이 선언일 수 있는 못 푼 호출 1곳/);
   assert.match(ask("node", "src/other.js#orphan").text, /이 선언일 수 있는 못 푼 호출 1곳/);
   // (b) a method called only on receivers of unknown type, its name declared twice.
   for (const id of ["src/views.js#Panel.refresh", "src/views.js#Chart.refresh"]) {
-    assert.match(ask("up", id).text, /이 선언일 수 있는 못 푼 호출 2곳 \(받는 쪽 타입을 모름, 같은 이름의 선언 2개\. 이 선언을 부른다는 뜻은 아니다\): src\/caller\.js:2, src\/caller\.js:5\n/);
+    assert.match(
+      ask("up", id).text,
+      /이 선언일 수 있는 못 푼 호출 2곳 \(받는 쪽 타입을 모름, 같은 이름의 선언 2개\. 이 선언을 부른다는 뜻은 아니다\): src\/caller\.js:2, src\/caller\.js:5\n/,
+    );
     assert.deepEqual(possible(id).member, {
       count: 2,
       places: [
@@ -317,8 +379,13 @@ test("a declaration with no resolved caller names the unresolved calls that may 
   assert.equal(possible("src/tools.js#helperA").count, 1);
   assert.doesNotMatch(ask("up", "src/tools.js#helperA").text, /이 선언일 수 있는/);
   // (e) a method named like a built-in type's: the line with its count, and the limits block says why.
-  assert.match(ask("up", "src/tools.js#Box.append").text, /이 선언일 수 있는 못 푼 호출 1곳 \(받는 쪽 타입을 모름\. 이 선언을 부른다는 뜻은 아니다\): src\/tools\.js:21\n/);
-  assert.ok(result.text.includes("내장 타입도 가진 메서드 이름(get, append 같은 것)은 제품의 것과 가를 수 없어, 그런 선언에는 가능한 호출이 많이 붙을 수 있다."));
+  assert.match(
+    ask("up", "src/tools.js#Box.append").text,
+    /이 선언일 수 있는 못 푼 호출 1곳 \(받는 쪽 타입을 모름\. 이 선언을 부른다는 뜻은 아니다\): src\/tools\.js:21\n/,
+  );
+  assert.ok(
+    result.text.includes("내장 타입도 가진 메서드 이름(get, append 같은 것)은 제품의 것과 가를 수 없어, 그런 선언에는 가능한 호출이 많이 붙을 수 있다."),
+  );
 });
 
 // M3: method names on an unknown receiver show rarest first in the whole build.
@@ -406,7 +473,17 @@ test("a confirmation record made under graph version 2 reads as made under anoth
     checkedAt: "2026-11-20T00:00:00.000Z",
     reader: { ...now, graphVersion: 2 },
     supersedes: [],
-    items: [{ kind: "documentRow", document: DOC, type: "화면→코드", from: "screen:main", to: "src/view.js#draw", documentTextSha256: "d", basis: [{ id: "src/view.js#draw", contentSha256: "c" }] }],
+    items: [
+      {
+        kind: "documentRow",
+        document: DOC,
+        type: "화면→코드",
+        from: "screen:main",
+        to: "src/view.js#draw",
+        documentTextSha256: "d",
+        basis: [{ id: "src/view.js#draw", contentSha256: "c" }],
+      },
+    ],
   };
   const result = confirmationStatus({ graph, meaningDocument: null, documents: [{ path: DOC, approvable: true, approvalDigest: "d" }], records: [record] });
   assert.equal(result.counts.current, 0);

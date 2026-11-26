@@ -52,6 +52,7 @@ jobs:
   prepare:
     name: Prepare build metadata
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       enabled: ${{ steps.detect.outputs.enabled }}
       release_tag: ${{ steps.metadata.outputs.release_tag }}
@@ -119,6 +120,8 @@ jobs:
   javascript:
     name: Full JavaScript regression suite
     runs-on: ubuntu-latest
+    # About twice the slowest measured run (17.7 min, run 45652364138).
+    timeout-minutes: 40
     steps:
       - name: Checkout source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -151,7 +154,11 @@ jobs:
         shell: bash
         run: |
           LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT="${RUNNER_TEMP}/head-agent-test-native"
-          echo "LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT=${LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT}" >> "${GITHUB_ENV}"
+          # The supervisor binary also serves the file-effect bridge, so one root
+          # is the fixture under both public names and both historical names.
+          for name in LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT LODE_AGENT_FILE_EFFECT_FIXTURE_ROOT HEAD_AGENT_FILE_EFFECT_FIXTURE_ROOT; do
+            echo "${name}=${LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT}" >> "${GITHUB_ENV}"
+          done
           version="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
           binary_root="${LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT}/dist/linux-x64"
           mkdir -p "${binary_root}"
@@ -169,7 +176,8 @@ jobs:
     needs: prepare
     if: ${{ needs.prepare.outputs.enabled == 'true' }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # About twice the slowest measured job: Windows, 47.9 min (its npm test step 45.8 min) in run 45660010513.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -193,6 +201,20 @@ jobs:
           cache-dependency-path: native/lode-agent-worker/go.mod
           check-latest: false
 
+      # Go tests first, so a native failure shows in minutes. These are the only
+      # runs of the Windows-only and macOS-only Go sources.
+      - name: Verify Go modules
+        working-directory: native/lode-agent-worker
+        run: go mod verify
+
+      - name: Run Go static analysis
+        working-directory: native/lode-agent-worker
+        run: go vet ./...
+
+      - name: Run Go tests
+        working-directory: native/lode-agent-worker
+        run: go test -v ./...
+
       - name: Prepare current-source supervisor fixture
         shell: bash
         run: |
@@ -201,7 +223,11 @@ jobs:
           arch="$(node -p "process.arch")"
           goos="$(go env GOOS)"
           LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT="${RUNNER_TEMP}/head-agent-test-native"
-          echo "LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT=${LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT}" >> "${GITHUB_ENV}"
+          # The supervisor binary also serves the file-effect bridge, so one root
+          # is the fixture under both public names and both historical names.
+          for name in LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT HEAD_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT LODE_AGENT_FILE_EFFECT_FIXTURE_ROOT HEAD_AGENT_FILE_EFFECT_FIXTURE_ROOT; do
+            echo "${name}=${LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT}" >> "${GITHUB_ENV}"
+          done
           binary_root="${LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT}/dist/${goos}-${arch}"
           executable="lode-agent-supervisor"
           if [[ "${goos}" == "windows" ]]; then executable="${executable}.exe"; fi
@@ -229,6 +255,7 @@ jobs:
     needs: prepare
     if: ${{ needs.prepare.outputs.enabled == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -254,7 +281,7 @@ jobs:
 
       - name: Run tests
         working-directory: native/lode-agent-worker
-        run: go test ./...
+        run: go test -v ./...
 
       - name: Run static analysis
         working-directory: native/lode-agent-worker
@@ -352,6 +379,22 @@ jobs:
           LODE_AGENT_PROCESS_SUPERVISOR_FIXTURE_ROOT="${NATIVE_TEST_ROOT}" \
             node ../../scripts/verify-provider-replacement-recovery.mjs
 
+      # The full suite skips this test (class ci-step); here it runs against the
+      # worker built above, and the step fails unless it actually ran and passed.
+      - name: Verify Go worker distribution identity against the built worker
+        shell: bash
+        env:
+          NATIVE_TEST_ROOT: ${{ runner.temp }}/lode-agent-native-test
+        run: |
+          name="verifies Go worker distribution identity and discloses safe JavaScript fallback"
+          status=0
+          LODE_AGENT_GO_WORKER_FIXTURE_ROOT="${NATIVE_TEST_ROOT}" HEAD_AGENT_GO_WORKER_FIXTURE_ROOT="${NATIVE_TEST_ROOT}" \
+            node --test --test-reporter=tap --test-isolation=none --test-concurrency=1 --test-timeout=600000 \
+            --test-name-pattern="^${name}$" test/head-core.test.mjs > "${RUNNER_TEMP}/a5.tap" || status=$?
+          cat "${RUNNER_TEMP}/a5.tap"
+          if [[ "${status}" != "0" ]]; then exit "${status}"; fi
+          grep -Eq "^ok [0-9]+ - ${name}$" "${RUNNER_TEMP}/a5.tap"
+
   build:
     name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
     needs:
@@ -360,6 +403,7 @@ jobs:
       - javascript
     if: ${{ needs.prepare.outputs.enabled == 'true' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -525,6 +569,7 @@ jobs:
       - host_smoke
     if: ${{ needs.prepare.outputs.enabled == 'true' && needs.prepare.outputs.release_tag != '' && needs.build.result == 'success' && needs.javascript.result == 'success' && needs.host_smoke.result == 'success' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
@@ -597,6 +642,7 @@ jobs:
       - host_smoke
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.prepare.outputs.enabled == 'true' && needs.test.result == 'success' && needs.build.result == 'success' && needs.javascript.result == 'success' && needs.host_smoke.result == 'success' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -746,6 +792,7 @@ jobs:
       - host_smoke
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.prepare.outputs.enabled == 'true' && needs.test.result == 'success' && needs.build.result == 'success' && needs.javascript.result == 'success' && needs.host_smoke.result == 'success' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:

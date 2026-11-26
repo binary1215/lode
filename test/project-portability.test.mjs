@@ -4,28 +4,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { fixture, snapshot } from "./helpers/session-work-linkage-fixture.mjs";
 import { updateProjectDirection, readProjectDirection } from "../scripts/lib/session/project-direction.mjs";
-import {
-  createRecoveryCheckpoint,
-  readRecoveryCheckpoint,
-} from "../scripts/lib/session/compaction-recovery.mjs";
+import { createRecoveryCheckpoint, readRecoveryCheckpoint } from "../scripts/lib/session/compaction-recovery.mjs";
 import { inspectProject, convergeProjectInstallation } from "../scripts/lib/session/lode-core.mjs";
 import { pluginRoot } from "./helpers/session-work-linkage-fixture.mjs";
 import { runCommand } from "../scripts/lode.mjs";
 import { dispatch } from "../scripts/mcp-server.mjs";
 import { effectiveToolCall } from "../scripts/lib/core/operation-groups.mjs";
-import {
-  createSessionCallContext,
-  createLodeSession,
-  withSessionRoute,
-} from "../scripts/lib/session/session-routing.mjs";
+import { createSessionCallContext, createLodeSession, withSessionRoute } from "../scripts/lib/session/session-routing.mjs";
 import { recordSessionWorkEvidence } from "../scripts/lib/session/session-work-context.mjs";
 import crypto from "node:crypto";
-import {
-  exportProjectBundle,
-  inspectProjectBundle,
-  importProjectBundle,
-  readImportedSourceOriginal,
-} from "../scripts/lib/storage/project-portability.mjs";
+import { exportProjectBundle, inspectProjectBundle, importProjectBundle, readImportedSourceOriginal } from "../scripts/lib/storage/project-portability.mjs";
 
 test("portable export preserves only selected originals while excluding unselected runtime owners/evidence", (t) => {
   const f = fixture(t),
@@ -38,15 +26,9 @@ test("portable export preserves only selected originals while excluding unselect
     summary: "Retain exact synthetic rationale",
     unknowns: ["External outcome unverified"],
   });
-  write(
-    ".lode/runtime/execution-leases/synthetic/consumption.json",
-    "historical anti-replay evidence",
-  );
+  write(".lode/runtime/execution-leases/synthetic/consumption.json", "historical anti-replay evidence");
   write(".lode/runtime/execution-leases/synthetic/release.json", "historical released state");
-  write(
-    ".lode/runtime/execution-leases/synthetic/owner.lock/token",
-    "not an imported live capability",
-  );
+  write(".lode/runtime/execution-leases/synthetic/owner.lock/token", "not an imported live capability");
   const before = snapshot(f.root),
     destination = path.join(f.base, "portable-bundle");
   const exported = f.route(() => exportProjectBundle({ root: f.root, destination }));
@@ -57,10 +39,7 @@ test("portable export preserves only selected originals while excluding unselect
   assert.equal(inspected.manifest.selectedSessionId, f.session.sessionId);
   assert(!inspected.manifest.files.some((file) => file.path.endsWith("consumption.json")));
   assert(!inspected.manifest.files.some((file) => file.path.includes("owner.lock")));
-  assert.equal(
-    inspected.manifest.coverage.historicalExecution,
-    "not-included-no-execution-permission-transferred",
-  );
+  assert.equal(inspected.manifest.coverage.historicalExecution, "not-included-no-execution-permission-transferred");
   assert.deepEqual(snapshot(f.root), before);
   const again = f.route(() => exportProjectBundle({ root: f.root, destination }));
   assert.equal(again.bundleId, exported.bundleId);
@@ -147,9 +126,7 @@ test("selected export never reads other Session bodies/cache or user MCP configu
   };
   let exported;
   try {
-    exported = f.route(() =>
-      exportProjectBundle({ root: f.root, destination: path.join(f.base, "scoped-bundle") }),
-    );
+    exported = f.route(() => exportProjectBundle({ root: f.root, destination: path.join(f.base, "scoped-bundle") }));
   } finally {
     fs.readFileSync = read;
   }
@@ -161,14 +138,7 @@ test("selected export never reads other Session bodies/cache or user MCP configu
   assert(contents.includes("SELECTED_CONTEXT_SENTINEL"));
   assert(!contents.includes("OTHER_SESSION_PRIVATE_SENTINEL"));
   assert(!contents.includes("MCP_NOT_EXPORTED_SENTINEL"));
-  assert(
-    !result.manifest.files.some(
-      (entry) =>
-        entry.path.includes(other.sessionId) ||
-        entry.path === ".mcp.json" ||
-        entry.path.includes("graph-discovery"),
-    ),
-  );
+  assert(!result.manifest.files.some((entry) => entry.path.includes(other.sessionId) || entry.path === ".mcp.json" || entry.path.includes("graph-discovery")));
   assert.deepEqual(snapshot(f.root), before);
 });
 
@@ -208,8 +178,7 @@ test("ENOSPC opening an export stage closes the already opened source descriptor
     open = fs.openSync,
     handles = [];
   fs.openSync = function (file, ...args) {
-    if (String(file).endsWith(".part"))
-      throw Object.assign(Error("synthetic disk full"), { code: "ENOSPC" });
+    if (String(file).endsWith(".part")) throw Object.assign(Error("synthetic disk full"), { code: "ENOSPC" });
     const fd = open.call(this, file, ...args);
     if (String(file).startsWith(f.root)) handles.push(fd);
     return fd;
@@ -244,9 +213,7 @@ test("selected import preserves exact P2/Canon and current user settings without
     }),
   ).checkpoint;
   f.save({ summary: "Selected rationale for cross-folder continuation" });
-  const bundle = f.route(() =>
-    exportProjectBundle({ root: f.root, destination: path.join(f.base, "import-bundle") }),
-  );
+  const bundle = f.route(() => exportProjectBundle({ root: f.root, destination: path.join(f.base, "import-bundle") }));
   const root = path.join(f.base, "destination");
   fs.mkdirSync(root);
   const userFiles = new Map(
@@ -278,9 +245,7 @@ test("selected import preserves exact P2/Canon and current user settings without
       root,
       pluginRoot,
     });
-    withSessionRoute(root, f.session.sessionId, () =>
-      assert.equal(convergeProjectInstallation({ root, pluginRoot }).status, "current"),
-    );
+    withSessionRoute(root, f.session.sessionId, () => assert.equal(convergeProjectInstallation({ root, pluginRoot }).status, "current"));
   } finally {
     fs.readFileSync = read;
   }
@@ -290,13 +255,8 @@ test("selected import preserves exact P2/Canon and current user settings without
   assert.equal(result.nativeBindingTransferred, false);
   assert(!fs.existsSync(path.join(root, ".lode/sessions/current.json")));
   for (const [file, bytes] of userFiles) assert.deepEqual(fs.readFileSync(file), bytes);
-  assert.deepEqual(
-    fs.readFileSync(path.join(root, ".lode/context/knowledge.json")),
-    fs.readFileSync(path.join(f.root, ".lode/context/knowledge.json")),
-  );
-  const restored = withSessionRoute(root, f.session.sessionId, () =>
-    readRecoveryCheckpoint({ root, checkpointId: checkpoint.checkpointId }),
-  );
+  assert.deepEqual(fs.readFileSync(path.join(root, ".lode/context/knowledge.json")), fs.readFileSync(path.join(f.root, ".lode/context/knowledge.json")));
+  const restored = withSessionRoute(root, f.session.sessionId, () => readRecoveryCheckpoint({ root, checkpointId: checkpoint.checkpointId }));
   assert.equal(restored.checkpoint.checkpointDigest, checkpoint.checkpointDigest);
   const before = snapshot(root),
     again = importProjectBundle({ bundleRoot: bundle.bundleRoot, root, pluginRoot });
@@ -313,20 +273,13 @@ test("selected import preserves exact P2/Canon and current user settings without
   const newerDirection = fs.readFileSync(path.join(root, ".lode/project-direction/current.json"));
   const historical = importProjectBundle({ bundleRoot: bundle.bundleRoot, root, pluginRoot });
   assert.equal(historical.currentTargetCommon, "preserved-not-replaced");
-  assert.deepEqual(
-    fs.readFileSync(path.join(root, ".lode/project-direction/current.json")),
-    newerDirection,
-  );
-  assert.deepEqual(readProjectDirection({ root }).input.cancelledActions, [
-    "Target deployment remains cancelled",
-  ]);
+  assert.deepEqual(fs.readFileSync(path.join(root, ".lode/project-direction/current.json")), newerDirection);
+  assert.deepEqual(readProjectDirection({ root }).input.cancelledActions, ["Target deployment remains cancelled"]);
 });
 
 test("import cancel/response loss reuses exact before/after while divergent target bytes remain untouched", (t) => {
   const f = fixture(t),
-    bundle = f.route(() =>
-      exportProjectBundle({ root: f.root, destination: path.join(f.base, "retry-import-bundle") }),
-    );
+    bundle = f.route(() => exportProjectBundle({ root: f.root, destination: path.join(f.base, "retry-import-bundle") }));
   for (const boundary of ["record", "project"]) {
     const root = path.join(f.base, "retry-" + boundary);
     fs.mkdirSync(root);
@@ -343,14 +296,8 @@ test("import cancel/response loss reuses exact before/after while divergent targ
       /synthetic lost response/,
     );
     assert(fs.existsSync(path.join(root, ".lode/project-location/pending.json")));
-    assert.equal(
-      importProjectBundle({ bundleRoot: bundle.bundleRoot, root, pluginRoot }).status,
-      "imported",
-    );
-    assert.equal(
-      withSessionRoute(root, f.session.sessionId, () => inspectProject(root)).status,
-      "ready",
-    );
+    assert.equal(importProjectBundle({ bundleRoot: bundle.bundleRoot, root, pluginRoot }).status, "imported");
+    assert.equal(withSessionRoute(root, f.session.sessionId, () => inspectProject(root)).status, "ready");
   }
   const root = path.join(f.base, "divergent-import");
   fs.mkdirSync(root);
@@ -363,12 +310,7 @@ test("import cancel/response loss reuses exact before/after while divergent targ
         pluginRoot,
         onPublication(stage) {
           if (stage === "project") {
-            const file = path.join(
-              root,
-              ".lode/sessions/by-id",
-              f.session.sessionId,
-              "current.json",
-            );
+            const file = path.join(root, ".lode/sessions/by-id", f.session.sessionId, "current.json");
             fs.appendFileSync(file, " ");
             edited = fs.readFileSync(file);
           }
@@ -381,23 +323,13 @@ test("import cancel/response loss reuses exact before/after while divergent targ
     code: "PROJECT_COPY_SOURCE_CHANGED",
   });
   assert.deepEqual(snapshot(root), before);
-  assert.deepEqual(
-    fs.readFileSync(path.join(root, ".lode/sessions/by-id", f.session.sessionId, "current.json")),
-    edited,
-  );
+  assert.deepEqual(fs.readFileSync(path.join(root, ".lode/sessions/by-id", f.session.sessionId, "current.json")), edited);
 });
 
 test("public CLI and typed MCP use the same bundle identity and imported exact Session resume", async (t) => {
   const f = fixture(t);
   f.save({ summary: "Selected public continuation evidence" });
-  const cliBundle = await runCommand([
-    "project-export",
-    f.root,
-    "--session",
-    f.session.sessionId,
-    "--destination",
-    path.join(f.base, "public-bundle"),
-  ]);
+  const cliBundle = await runCommand(["project-export", f.root, "--session", f.session.sessionId, "--destination", path.join(f.base, "public-bundle")]);
   const read = await dispatch({
     jsonrpc: "2.0",
     id: "bundle-read",
@@ -473,9 +405,7 @@ test("public CLI and typed MCP use the same bundle identity and imported exact S
 
 test("public status/resume reports an interrupted import without initializing a replacement or replaying it", async (t) => {
   const f = fixture(t),
-    bundle = f.route(() =>
-      exportProjectBundle({ root: f.root, destination: path.join(f.base, "pending-bundle") }),
-    );
+    bundle = f.route(() => exportProjectBundle({ root: f.root, destination: path.join(f.base, "pending-bundle") }));
   const root = path.join(f.base, "pending-target");
   fs.mkdirSync(root);
   assert.throws(
@@ -515,9 +445,7 @@ test("same Project adds only absent selected Session while retaining newer commo
   const f = fixture(t);
   updateProjectDirection({ root: f.root, input: { goal: "Source task", cancelledActions: [] } });
   f.save({ summary: "Incoming selected result" });
-  const bundle = f.route(() =>
-    exportProjectBundle({ root: f.root, destination: path.join(f.base, "existing-bundle") }),
-  );
+  const bundle = f.route(() => exportProjectBundle({ root: f.root, destination: path.join(f.base, "existing-bundle") }));
   const root = path.join(f.base, "existing-target");
   fs.cpSync(f.root, root, { recursive: true });
   const selectedDirectory = path.join(root, ".lode/sessions/by-id", f.session.sessionId);
@@ -542,10 +470,7 @@ test("same Project adds only absent selected Session while retaining newer commo
   const result = importProjectBundle({ bundleRoot: bundle.bundleRoot, root, pluginRoot });
   assert.equal(result.status, "selected-session-imported");
   assert.deepEqual(fs.readFileSync(path.join(root, ".lode/sessions/current.json")), defaultBefore);
-  assert.deepEqual(
-    fs.readFileSync(path.join(root, ".lode/project-direction/current.json")),
-    commonBefore,
-  );
+  assert.deepEqual(fs.readFileSync(path.join(root, ".lode/project-direction/current.json")), commonBefore);
   assert.deepEqual(fs.readFileSync(knowledge), knowledgeBefore);
   const entry = await runCommand(["conversation-enter", root, "--session", f.session.sessionId]);
   assert(JSON.stringify(entry).includes("deploy-synthetic"));
@@ -562,11 +487,7 @@ test("same Project adds only absent selected Session while retaining newer commo
   });
   assert.equal(old.currentTargetCanon, false);
   assert(!Buffer.from(old.contentBase64, "base64").toString().includes("target-only-unknown"));
-  assert(
-    JSON.parse(fs.readFileSync(knowledge)).unknowns.some(
-      (item) => item.id === "target-only-unknown",
-    ),
-  );
+  assert(JSON.parse(fs.readFileSync(knowledge)).unknowns.some((item) => item.id === "target-only-unknown"));
   const repeat = importProjectBundle({ bundleRoot: bundle.bundleRoot, root, pluginRoot });
   assert.equal(repeat.status, "existing-project-originals-identical");
   const stateFile = path.join(selectedDirectory, "current.json");
@@ -602,10 +523,7 @@ test("an exact default-format original maps to named without rewriting it; later
   fs.cpSync(f.root, root, { recursive: true });
   // Authored synthetic target baseline, not a plugin operation switching default.
   const namedB = path.join(root, ".lode/sessions/by-id", f.session.sessionId);
-  fs.copyFileSync(
-    path.join(namedB, "current.json"),
-    path.join(root, ".lode/sessions/current.json"),
-  );
+  fs.copyFileSync(path.join(namedB, "current.json"), path.join(root, ".lode/sessions/current.json"));
   for (const directory of [namedB, path.join(root, ".lode/sessions/work-evidence")])
     if (fs.existsSync(directory)) {
       assert(path.resolve(directory).startsWith(path.resolve(root) + path.sep));
@@ -621,36 +539,19 @@ test("an exact default-format original maps to named without rewriting it; later
   const entered = await runCommand(["conversation-enter", root, "--session", sourceId]);
   assert(JSON.stringify(entered).includes("Default source work remains attributable"));
   assert.equal(
-    withSessionRoute(root, sourceId, () =>
-      readRecoveryCheckpoint({ root, checkpointId: checkpoint.checkpointId }),
-    ).checkpoint.checkpointDigest,
+    withSessionRoute(root, sourceId, () => readRecoveryCheckpoint({ root, checkpointId: checkpoint.checkpointId })).checkpoint.checkpointDigest,
     checkpoint.checkpointDigest,
   );
   // Re-export before a P2 write adds normal named ownership metadata.
-  const chainBundle = withSessionRoute(root, sourceId, () =>
-    exportProjectBundle({ root, destination: path.join(f.base, "unchanged-owner-chain") }),
-  );
+  const chainBundle = withSessionRoute(root, sourceId, () => exportProjectBundle({ root, destination: path.join(f.base, "unchanged-owner-chain") }));
   assert.equal(chainBundle.projectAdmissionReady, true);
-  assert.equal(
-    inspectProjectBundle({ bundleRoot: chainBundle.bundleRoot }).projectAdmissionReady,
-    true,
-  );
+  assert.equal(inspectProjectBundle({ bundleRoot: chainBundle.bundleRoot }).projectAdmissionReady, true);
   const fresh = path.join(f.base, "unchanged-owner-fresh");
   fs.mkdirSync(fresh);
-  assert.equal(
-    importProjectBundle({ bundleRoot: chainBundle.bundleRoot, root: fresh, pluginRoot }).status,
-    "imported",
-  );
-  assert.deepEqual(
-    fs.readFileSync(path.join(fresh, ".lode/sessions/by-id", sourceId, "current.json")),
-    sourceState,
-  );
+  assert.equal(importProjectBundle({ bundleRoot: chainBundle.bundleRoot, root: fresh, pluginRoot }).status, "imported");
+  assert.deepEqual(fs.readFileSync(path.join(fresh, ".lode/sessions/by-id", sourceId, "current.json")), sourceState);
   assert(!fs.existsSync(path.join(fresh, ".lode/project-location/pending.json")));
-  assert(
-    JSON.stringify(await runCommand(["conversation-enter", fresh, "--session", sourceId])).includes(
-      "Default source work remains attributable",
-    ),
-  );
+  assert(JSON.stringify(await runCommand(["conversation-enter", fresh, "--session", sourceId])).includes("Default source work remains attributable"));
   const existing = path.join(f.base, "unchanged-owner-existing");
   fs.cpSync(root, existing, { recursive: true });
   const remove = path.join(existing, ".lode/sessions/by-id", sourceId);
@@ -658,23 +559,10 @@ test("an exact default-format original maps to named without rewriting it; later
   fs.rmSync(remove, { recursive: true });
   await runCommand(["resume", existing]);
   const existingDefault = fs.readFileSync(path.join(existing, ".lode/sessions/current.json"));
-  assert.equal(
-    importProjectBundle({ bundleRoot: chainBundle.bundleRoot, root: existing, pluginRoot }).status,
-    "selected-session-imported",
-  );
-  assert.deepEqual(
-    fs.readFileSync(path.join(existing, ".lode/sessions/by-id", sourceId, "current.json")),
-    sourceState,
-  );
-  assert.deepEqual(
-    fs.readFileSync(path.join(existing, ".lode/sessions/current.json")),
-    existingDefault,
-  );
-  assert(
-    JSON.stringify(
-      await runCommand(["conversation-enter", existing, "--session", sourceId]),
-    ).includes("Default source work remains attributable"),
-  );
+  assert.equal(importProjectBundle({ bundleRoot: chainBundle.bundleRoot, root: existing, pluginRoot }).status, "selected-session-imported");
+  assert.deepEqual(fs.readFileSync(path.join(existing, ".lode/sessions/by-id", sourceId, "current.json")), sourceState);
+  assert.deepEqual(fs.readFileSync(path.join(existing, ".lode/sessions/current.json")), existingDefault);
+  assert(JSON.stringify(await runCommand(["conversation-enter", existing, "--session", sourceId])).includes("Default source work remains attributable"));
   withSessionRoute(root, sourceId, () =>
     createRecoveryCheckpoint({
       root,
@@ -686,10 +574,7 @@ test("an exact default-format original maps to named without rewriting it; later
   );
   const current = JSON.parse(fs.readFileSync(namedA));
   assert.equal(current.projectId, f.owner.project.projectId);
-  assert.equal(
-    withSessionRoute(root, sourceId, () => inspectProject(root)).state.projectId,
-    f.owner.project.projectId,
-  );
+  assert.equal(withSessionRoute(root, sourceId, () => inspectProject(root)).state.projectId, f.owner.project.projectId);
   delete current.projectId;
   fs.writeFileSync(namedA, JSON.stringify(current));
   assert.throws(() => withSessionRoute(root, sourceId, () => inspectProject(root)), {
@@ -702,16 +587,9 @@ test("active, pending-review and reviewed Run originals remain usable after sele
   for (const phase of ["active", "awaiting_review", "reviewed"]) {
     const f = fixture(t);
     const { compileContext } = await import("../scripts/lib/session/context-compiler.mjs");
-    const { createWholePlanSnapshot, createExecutionContract } = await import(
-      "../scripts/lib/runtime/execution-lineage.mjs"
-    );
-    const { startRun, finishRun, reviewRun, getPendingReviewContext, inspectRunStorageTransition } =
-      await import("../scripts/lib/runtime/run-lineage.mjs");
-    const capsule = (
-      await f.route(() =>
-        compileContext({ root: f.root, task: "Inspect selected Run history", persist: true }),
-      )
-    ).capsule;
+    const { createWholePlanSnapshot, createExecutionContract } = await import("../scripts/lib/runtime/execution-lineage.mjs");
+    const { startRun, finishRun, reviewRun, getPendingReviewContext, inspectRunStorageTransition } = await import("../scripts/lib/runtime/run-lineage.mjs");
+    const capsule = (await f.route(() => compileContext({ root: f.root, task: "Inspect selected Run history", persist: true }))).capsule;
     const run = f.route(() => {
       const plan = createWholePlanSnapshot({
         root: f.root,
@@ -743,30 +621,18 @@ test("active, pending-review and reviewed Run originals remain usable after sele
         });
       return run;
     });
-    const bundle = f.route(() =>
-      exportProjectBundle({ root: f.root, destination: path.join(f.base, "run-bundle") }),
-    );
+    const bundle = f.route(() => exportProjectBundle({ root: f.root, destination: path.join(f.base, "run-bundle") }));
     const root = path.join(f.base, "run-target");
     fs.mkdirSync(root);
     importProjectBundle({ root, bundleRoot: bundle.bundleRoot, pluginRoot });
     const before = snapshot(root);
-    const transition = withSessionRoute(root, f.session.sessionId, () =>
-      inspectRunStorageTransition({ root }),
-    );
+    const transition = withSessionRoute(root, f.session.sessionId, () => inspectRunStorageTransition({ root }));
     assert.equal(transition.runId, run.runId);
     assert.equal(transition.status, "committed");
     if (phase === "awaiting_review")
-      assert.equal(
-        withSessionRoute(root, f.session.sessionId, () => getPendingReviewContext({ root }))
-          .pendingReview.runId,
-        run.runId,
-      );
+      assert.equal(withSessionRoute(root, f.session.sessionId, () => getPendingReviewContext({ root })).pendingReview.runId, run.runId);
     await runCommand(["conversation-enter", root, "--session", f.session.sessionId]);
-    assert.deepEqual(
-      snapshot(root),
-      before,
-      "reading imported Run lineage never repairs or completes execution",
-    );
+    assert.deepEqual(snapshot(root), before, "reading imported Run lineage never repairs or completes execution");
     if (phase === "active") {
       const sourceFile = path.join(f.root, ".lode/sessions/runs", run.runId, "run.json");
       const original = fs.readFileSync(sourceFile),
@@ -777,10 +643,7 @@ test("active, pending-review and reviewed Run originals remain usable after sele
         code: "RUN_START_IDENTITY_CONFLICT",
       });
       const rejected = path.join(f.base, "damaged-run-export");
-      assert.throws(
-        () => f.route(() => exportProjectBundle({ root: f.root, destination: rejected })),
-        { code: "RUN_START_IDENTITY_CONFLICT" },
-      );
+      assert.throws(() => f.route(() => exportProjectBundle({ root: f.root, destination: rejected })), { code: "RUN_START_IDENTITY_CONFLICT" });
       assert(!fs.existsSync(rejected));
       fs.writeFileSync(sourceFile, original);
     }
@@ -791,14 +654,9 @@ test("legacy default-owned Run keeps exact ownership through named import and it
   const f = fixture(t),
     sourceId = f.owner.state.sessionId;
   const { compileContext } = await import("../scripts/lib/session/context-compiler.mjs");
-  const { createWholePlanSnapshot, createExecutionContract } = await import(
-    "../scripts/lib/runtime/execution-lineage.mjs"
-  );
-  const { startRun, finishRun, getPendingReviewContext, inspectRunStorageTransition } =
-    await import("../scripts/lib/runtime/run-lineage.mjs");
-  const capsule = (
-    await compileContext({ root: f.root, task: "Preserve legacy default Run", persist: true })
-  ).capsule;
+  const { createWholePlanSnapshot, createExecutionContract } = await import("../scripts/lib/runtime/execution-lineage.mjs");
+  const { startRun, finishRun, getPendingReviewContext, inspectRunStorageTransition } = await import("../scripts/lib/runtime/run-lineage.mjs");
+  const capsule = (await compileContext({ root: f.root, task: "Preserve legacy default Run", persist: true })).capsule;
   const plan = createWholePlanSnapshot({
     root: f.root,
     objective: "Preserve legacy default Run",
@@ -828,39 +686,22 @@ test("legacy default-owned Run keeps exact ownership through named import and it
   const root = path.join(f.base, "legacy-run-target");
   fs.cpSync(f.root, root, { recursive: true });
   const namedB = path.join(root, ".lode/sessions/by-id", f.session.sessionId);
-  fs.copyFileSync(
-    path.join(namedB, "current.json"),
-    path.join(root, ".lode/sessions/current.json"),
-  );
+  fs.copyFileSync(path.join(namedB, "current.json"), path.join(root, ".lode/sessions/current.json"));
   assert(path.resolve(namedB).startsWith(path.resolve(root) + path.sep));
   fs.rmSync(namedB, { recursive: true });
   await runCommand(["resume", root]);
   const defaultBefore = fs.readFileSync(path.join(root, ".lode/sessions/current.json"));
-  assert.equal(
-    importProjectBundle({ root, bundleRoot: bundle.bundleRoot, pluginRoot }).status,
-    "selected-session-imported",
-  );
-  assert.deepEqual(
-    fs.readFileSync(path.join(root, ".lode/sessions/runs", run.runId, "run.json")),
-    legacyBytes,
-  );
+  assert.equal(importProjectBundle({ root, bundleRoot: bundle.bundleRoot, pluginRoot }).status, "selected-session-imported");
+  assert.deepEqual(fs.readFileSync(path.join(root, ".lode/sessions/runs", run.runId, "run.json")), legacyBytes);
   const before = snapshot(root);
-  assert.equal(
-    withSessionRoute(root, sourceId, () => inspectRunStorageTransition({ root })).status,
-    "stable",
-  );
+  assert.equal(withSessionRoute(root, sourceId, () => inspectRunStorageTransition({ root })).status, "stable");
   assert.deepEqual(snapshot(root), before);
-  const chain = withSessionRoute(root, sourceId, () =>
-    exportProjectBundle({ root, destination: path.join(f.base, "legacy-run-chain") }),
-  );
+  const chain = withSessionRoute(root, sourceId, () => exportProjectBundle({ root, destination: path.join(f.base, "legacy-run-chain") }));
   assert.equal(chain.projectAdmissionReady, true);
   const fresh = path.join(f.base, "legacy-run-fresh");
   fs.mkdirSync(fresh);
   importProjectBundle({ root: fresh, bundleRoot: chain.bundleRoot, pluginRoot });
-  assert.equal(
-    withSessionRoute(fresh, sourceId, () => inspectRunStorageTransition({ root: fresh })).status,
-    "stable",
-  );
+  assert.equal(withSessionRoute(fresh, sourceId, () => inspectRunStorageTransition({ root: fresh })).status, "stable");
   withSessionRoute(root, sourceId, () =>
     finishRun({
       root,
@@ -869,14 +710,7 @@ test("legacy default-owned Run keeps exact ownership through named import and it
       verification: [{ check: "fixture", status: "passed" }],
     }),
   );
-  assert.equal(
-    JSON.parse(fs.readFileSync(path.join(root, ".lode/sessions/runs", run.runId, "run.json")))
-      .sessionId,
-    sourceId,
-  );
-  assert.equal(
-    withSessionRoute(root, sourceId, () => getPendingReviewContext({ root })).pendingReview.runId,
-    run.runId,
-  );
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, ".lode/sessions/runs", run.runId, "run.json"))).sessionId, sourceId);
+  assert.equal(withSessionRoute(root, sourceId, () => getPendingReviewContext({ root })).pendingReview.runId, run.runId);
   assert.deepEqual(fs.readFileSync(path.join(root, ".lode/sessions/current.json")), defaultBefore);
 });
