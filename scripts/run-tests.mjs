@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import os from "node:os";
 import { createProcessSupervisorManifest } from "./lib/runtime/runtime-process-supervisor.mjs";
 import { atomicWriteArtifact } from "./lib/storage/artifact-storage.mjs";
-import { checkSkips, readLedger, readRecords } from "./test-skip-ledger.mjs";
+import { checkSkips, readLedger, readRecords, runsInCi } from "./test-skip-ledger.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const version = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).version;
@@ -225,7 +225,8 @@ const child = spawnSync(
 );
 
 const records = readRecords(report);
-const { problems, summary, observed } = checkSkips({ records, ledger: readLedger(), fullRun, unsupplied: testFixtures.unsupplied });
+const ci = runsInCi();
+const { problems, summary, observed } = checkSkips({ records, ledger: readLedger(), fullRun, unsupplied: testFixtures.unsupplied, ci });
 const timedOut = records.filter((record) => record.kind === "timeout");
 const cancelled = records.filter((record) => record.kind === "cancelled");
 console.log(`# skipped by class: ${summary.join(", ") || "none"}`);
@@ -238,7 +239,7 @@ for (const record of timedOut) {
   }
 }
 if (problems.length) {
-  console.error(`Skip ledger check failed (${fullRun ? "full run, R1-R4 and T" : "selected files, R1-R3 and T"}):`);
+  console.error(`Skip ledger check failed (${fullRun ? "full run, R1-R4" : "selected files, R1-R3"}, T${ci ? " and H, in CI" : ""}):`);
   for (const problem of problems) console.error(problem);
   if (problems.some((problem) => problem.startsWith("R4:"))) {
     console.error(
