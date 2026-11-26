@@ -206,12 +206,13 @@ func (buffer *interactiveBuffer) Bytes() []byte {
 }
 
 type interactiveOwner struct {
-	command *exec.Cmd
-	input   io.WriteCloser
-	stdout  interactiveBuffer
-	stderr  interactiveBuffer
-	done    chan struct{}
-	waitErr error
+	command   *exec.Cmd
+	directory string
+	input     io.WriteCloser
+	stdout    interactiveBuffer
+	stderr    interactiveBuffer
+	done      chan struct{}
+	waitErr   error
 }
 
 func startInteractiveOwner(t *testing.T, directory, mode string) *interactiveOwner {
@@ -222,7 +223,7 @@ func startInteractiveOwner(t *testing.T, directory, mode string) *interactiveOwn
 // Keep all process ownership and cleanup in the existing fixture owner.
 func startInteractiveOwnerInput(t *testing.T, directory, mode string, source *os.File, writer io.WriteCloser) *interactiveOwner {
 	t.Helper()
-	owner := &interactiveOwner{done: make(chan struct{})}
+	owner := &interactiveOwner{done: make(chan struct{}), directory: directory}
 	owner.command = exec.Command(os.Args[0], "-test.run=^TestInteractiveOwnerHelper$")
 	owner.command.Dir = directory
 	owner.command.Env = append(os.Environ(), "HEAD_INTERACTIVE_TEST_OWNER="+mode)
@@ -289,7 +290,10 @@ func (owner *interactiveOwner) wait(t *testing.T, timeout time.Duration) error {
 	case <-owner.done:
 		return owner.waitErr
 	case <-time.After(timeout):
-		t.Fatalf("interactive owner did not exit within %s; stdout=%q stderr=%q", timeout, owner.stdout.Bytes(), owner.stderr.Bytes())
+		// The control events show how far the owner got: provider.exited is
+		// emitted after input shutdown, supervisor.cleanup just before it returns.
+		control, _ := os.ReadFile(filepath.Join(owner.directory, "control.jsonl"))
+		t.Fatalf("interactive owner did not exit within %s; stdout=%q stderr=%q control=%q", timeout, owner.stdout.Bytes(), owner.stderr.Bytes(), control)
 		return nil
 	}
 }
