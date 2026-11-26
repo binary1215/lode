@@ -4,6 +4,7 @@ package fileeffect
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -272,12 +273,16 @@ func TestOwnerCrashRetainsOriginalAndCurrentBytes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+			started := time.Now()
 			if err := cmd.Start(); err != nil {
 				t.Fatal(err)
 			}
 			fmt.Printf("{\"event\":\"started-file-effect-test\",\"pid\":%d,\"parentPid\":%d,\"ports\":[]}\n", cmd.Process.Pid, os.Getpid())
 			scanner := bufio.NewScanner(stdout)
 			ready := scanner.Scan() && scanner.Text() == "phase:"+stage
+			firstLine, contextErr, waited := scanner.Text(), ctx.Err(), time.Since(started)
 			// Windows console-less children cannot receive os.Interrupt. Attempt it
 			// first, then kill only this exact owned PID for the crash experiment.
 			_ = cmd.Process.Signal(os.Interrupt)
@@ -285,7 +290,7 @@ func TestOwnerCrashRetainsOriginalAndCurrentBytes(t *testing.T) {
 			_ = cmd.Wait()
 			fmt.Printf("{\"event\":\"exited-file-effect-test\",\"pid\":%d,\"ports\":[]}\n", cmd.Process.Pid)
 			if !ready {
-				t.Fatal("owner never reached requested crash phase")
+				t.Fatalf("owner never reached requested crash phase: first line %q after %s, context %v, stderr %q", firstLine, waited, contextErr, stderr.String())
 			}
 			files, err := os.ReadDir(journal)
 			if err != nil {

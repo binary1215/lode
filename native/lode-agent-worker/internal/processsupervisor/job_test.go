@@ -18,11 +18,26 @@ func TestJobOwnerHelper(t *testing.T) {
 	if os.Getenv("HEAD_JOB_TEST_HELPER") != "owner" {
 		return
 	}
-	code, err := RunJob(os.Getenv("HEAD_JOB_TEST_REQUEST"))
+	request := os.Getenv("HEAD_JOB_TEST_REQUEST")
+	code, err := RunJob(request)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		// A detached owner's stderr is not kept. Test-only: leave its error next
+		// to the request so a failing assertion can name it.
+		_ = os.WriteFile(filepath.Join(filepath.Dir(request), ownerErrorTestFile), []byte(err.Error()), 0600)
 	}
 	os.Exit(code)
+}
+
+const ownerErrorTestFile = "owner-error.test.txt"
+
+// ownerErrorForTest returns the detached owner's error, when it reported one.
+func ownerErrorForTest(directory string) string {
+	data, err := os.ReadFile(filepath.Join(directory, ownerErrorTestFile))
+	if err != nil {
+		return "<no owner error recorded>"
+	}
+	return string(data)
 }
 
 func TestJobProviderHelper(t *testing.T) {
@@ -130,7 +145,7 @@ func TestJobSurvivesFrontendExitAndDoesNotRelaunch(t *testing.T) {
 	}
 	terminal := readJobTerminal(t, directory)
 	if terminal.ExitCode != 0 || terminal.Reason != "exited" || !terminal.CompleteOutput {
-		t.Fatalf("bad detached terminal: %+v", terminal)
+		t.Fatalf("bad detached terminal: %+v; owner error: %s", terminal, ownerErrorForTest(directory))
 	}
 	// Launch retry must not create a second owner, even after terminal success.
 	if err := launchJob(file, os.Args[0], nil, nil); err == nil {

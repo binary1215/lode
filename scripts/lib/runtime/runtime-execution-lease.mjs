@@ -482,15 +482,34 @@ function removeEmptyOperationalParents(operationalStateRoot, projectId, authoriz
     path.join(operationalStateRoot, "runtime-execution-leases", projectId),
     path.join(operationalStateRoot, "runtime-execution-leases"),
   ];
+  // The project and root parents are shared by every worker of the Project.
+  // Another owner may remove an empty parent, or create a member in it, between
+  // these steps. Losing that race is not an error; a folder that is still there
+  // must pass the safety check before it is read or removed.
   for (const candidate of candidates) {
-    if (!fs.existsSync(candidate)) break;
-    const stat = fs.lstatSync(candidate);
-    const resolved = fs.realpathSync(candidate);
+    let stat;
+    let resolved;
+    try {
+      if (!fs.existsSync(candidate)) break;
+      stat = fs.lstatSync(candidate);
+      resolved = fs.realpathSync(candidate);
+    } catch (error) {
+      if (error.code === "ENOENT") break;
+      throw error;
+    }
     if (!stat.isDirectory() || stat.isSymbolicLink() || !isWithin(operationalStateRoot, resolved) || resolved === operationalStateRoot) {
       fail("Runtime operational cleanup path is unsafe.", "UNSAFE_RUNTIME_OPERATIONAL_STATE");
     }
-    if (fs.readdirSync(candidate).length) break;
-    fs.rmdirSync(candidate);
+    try {
+      if (fs.readdirSync(candidate).length) break;
+      fs.rmdirSync(candidate);
+    } catch (error) {
+      if (error.code === "ENOENT" || error.code === "ENOTEMPTY" || error.code === "EEXIST") break;
+      // Windows reports a folder that another process is deleting as EPERM or
+      // EBUSY. Only a folder that is gone afterwards counts as the lost race.
+      if (process.platform === "win32" && (error.code === "EPERM" || error.code === "EBUSY") && !fs.existsSync(candidate)) break;
+      throw error;
+    }
   }
 }
 
