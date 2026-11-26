@@ -1,5 +1,5 @@
 {
-  "//": "Checked by scripts/run-tests.mjs through scripts/test-skip-ledger.mjs. Every skip reason starts with \"<class>: \" for a class below. A full run fails when the skipped tests of a pinned class differ from the list for its operating system, or when a skip of a bounded class is not on that list (a listed test that runs is fine); the runner prints the tests that moved and the lists it observed. The opt-in lists hold what CI skips plus the tests only a developer machine skips (Git, Go or Python 3.10 missing).",
+  "//": "Checked by scripts/run-tests.mjs through scripts/test-skip-ledger.mjs. Every skip reason starts with \"<class>: \" for a class below. A full run fails when the skipped tests of a pinned class differ from the list for its operating system, or when a skip of a bounded class is not on that list (a listed test that runs is fine; both compare as multisets); the runner prints the tests that moved and the lists it observed. The opt-in lists hold what CI skips plus the tests only a developer machine skips (Git, Go or Python 3.10 missing).",
   "classes": {
     "other-os": { "pinned": true, "meaning": "The test covers another operating system or a measured platform profile." },
     "filesystem": { "pinned": true, "meaning": "The filesystem lacks a property the test needs: case sensitivity or insensitivity, 8.3 aliases, distinct Unicode spellings." },
@@ -7,7 +7,7 @@
     "ci-step": { "pinned": true, "meaning": "The test runs in a dedicated CI step that supplies what it needs; the reason names the step and the variable." },
     "no-source": { "pinned": true, "meaning": "The test needs a fixture or helper that has no source in the repository." },
     "opt-in": { "pinned": false, "bounded": true, "meaning": "The test needs an external program, a real account or an opt-in variable that npm test does not supply; the reason names the variable or program. Bounded, not pinned: every such skip must be on the list for its operating system, and a listed test may run when the caller supplies what it needs." },
-    "host-limit": { "pinned": false, "meaning": "This machine or account refuses something the test needs: link creation rights, nested process creation, an optional helper blocked by policy, a runtime without native zstd. Counted, not listed: which tests skip depends on the caller's rights and policy, and several sites skip from shared helpers and scenario loops; CI shows none." }
+    "host-limit": { "pinned": false, "meaning": "This machine or account refuses something the test needs: link creation rights, nested process creation, an optional helper blocked by policy, a runtime without native zstd. On a developer machine counted, not listed: which tests skip depends on the caller's rights and policy, and several sites skip from shared helpers and scenario loops. In CI (CI=true) every host-limit skip fails the run, full or selected files, because a CI runner must give each test what it needs." }
   },
   "skips": {
     "darwin": {
