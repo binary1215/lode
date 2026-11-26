@@ -120,7 +120,9 @@ function normalize(input, { hostRuntime = null } = {}) {
   if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some((key) => !fields.has(key)))
     fail("Worker preparation accepts task/member/context/source/proposal fields, not Host code, paths, environment or policy assertions.");
   const runtime = resolveWorkerRuntime({ named: input.runtime, hostRuntime, model: input.model });
-  if (typeof input.task !== "string" || !input.task.trim() || typeof input.model !== "string") fail("Lode must supply the task and exact Codex model.");
+  const modelGuidance =
+    runtime === "claude" ? "Lode must supply the task and exact Claude model (claude-...)." : "Lode must supply the task and exact Codex model.";
+  if (typeof input.task !== "string" || !input.task.trim() || typeof input.model !== "string") fail(modelGuidance);
   if (runtime !== "codex" && runtime !== "claude")
     fail("The built-in fresh proposal backend supports Codex and Claude only; no provider substitution was made.", "LOCAL_WORKER_BACKEND_UNAVAILABLE");
   // Each runtime takes only its own exact model ids; a model of the other
@@ -132,7 +134,7 @@ function normalize(input, { hostRuntime = null } = {}) {
         `Model ${input.model} is a ${family === "codex" ? "Codex" : "Claude"} model, but the worker runtime is ${runtime}; name a matching runtime and model.`,
         "LOCAL_WORKER_RUNTIME_MODEL_MISMATCH",
       );
-    fail(runtime === "codex" ? "Lode must supply the task and exact Codex model." : "Lode must supply the task and exact Claude model (claude-...).");
+    fail(modelGuidance);
   }
   if (runtime === "claude" && input.contextMode === "native-prefix")
     fail("Native-prefix preparation is a Codex-only contract; the Claude backend runs fresh proposals only.", "LOCAL_WORKER_BACKEND_UNAVAILABLE");
@@ -454,8 +456,7 @@ async function prepareLocalBoundedWorkerInternal(
       const help = await readRuntimeRootHelp({ runtime: "claude", executablePath: helpTarget.executablePath, environment, spawnImplementation: observeSpawn });
       if (observerFailure) throw observerFailure;
       const evidenced = observation.probeOutcomes.find((item) => item.name === "root-help");
-      if (help.outcome.status !== "verified" || help.outcome.outputDigest !== evidenced?.outputDigest)
-        fail("The Claude Code help changed during preparation.");
+      if (help.outcome.status !== "verified" || help.outcome.outputDigest !== evidenced?.outputDigest) fail("The Claude Code help changed during preparation.");
       const missing = claudeRecipeSurfaceMissing(help.text);
       if (missing.length)
         fail(`The installed Claude Code help does not show every recipe option (missing: ${missing.join(", ")}).`, "LOCAL_WORKER_BACKEND_UNAVAILABLE");

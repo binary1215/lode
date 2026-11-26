@@ -241,6 +241,7 @@
     "runtime-machine-execution.mjs": "runtime",
     "runtime-one-shot-exec.mjs": "runtime",
     "runtime-opencode-run.mjs": "runtime",
+    "runtime-operational-folders.mjs": "runtime",
     "runtime-output-spool.mjs": "runtime",
     "runtime-prepared-input-view.mjs": "runtime",
     "runtime-process-supervisor.mjs": "runtime",

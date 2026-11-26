@@ -42,7 +42,7 @@ const CLAUDE_HELP = [
   "  --no-session-persistence",
   "  -r, --resume [value]",
   "  -c, --continue",
-  "  --permission-mode <mode>  (choices: \"acceptEdits\", \"dontAsk\", \"plan\")",
+  '  --permission-mode <mode>  (choices: "acceptEdits", "dontAsk", "plan")',
   "  --verbose",
   "  --tools <tools...>",
   "  --disable-slash-commands",
@@ -593,7 +593,7 @@ function assertStoppedWithoutPatch(f, member, state, status) {
 for (const [scenario, code] of [
   ["outside-basis", "claude.proposal-result-rejected"],
   ["sensitive-result", null],
-  ["missing-result", null],
+  ["missing-result", "claude.missing-structured-result"],
   ["extra-tool", "claude.recipe-not-in-effect"],
   ["tool-call", "claude.effect-tool-rejected"],
   ["rate-limit", "claude.rate-limit"],

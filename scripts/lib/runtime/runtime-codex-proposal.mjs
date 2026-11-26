@@ -38,6 +38,7 @@ import {
   inspectCodexFreshProposalFixtureCapability,
   startCodexFreshProposalTransport,
 } from "./runtime-codex-app-server-transport.mjs";
+import { createOperationalFolders, removeEmptyOperationalParents } from "./runtime-operational-folders.mjs";
 import { sha256Hex as hash } from "../core/digest.mjs";
 import { failCode as fail } from "../core/errors.mjs";
 export { assertCodexFreshProposalFeatureList } from "./runtime-codex-app-server-transport.mjs";
@@ -131,19 +132,14 @@ export function buildCodexProposalResultSchema(scopeKind) {
   return freeze(buildCodexExecWireResultSchema(scopeKind, CODEX_FRESH_PROPOSAL_RESULT_SCHEMA));
 }
 
-function operationalFiles(operationalRoot, authorization) {
+export function codexProposalOperationalFiles(operationalRoot, authorization) {
   const parents = [path.join(operationalRoot, "runtime-fresh-proposals")];
   parents.push(path.join(parents[0], authorization.projectId));
   const directory = path.join(parents[1], authorization.authorizationId);
-  for (const file of [...parents, directory]) {
-    try {
-      fs.mkdirSync(file, { mode: 0o700 });
-    } catch (error) {
-      if (error.code !== "EEXIST") throw error;
-    }
-    const stat = fs.lstatSync(file);
-    if (!stat.isDirectory() || stat.isSymbolicLink() || fs.realpathSync(file) !== file) fail("CODEX_FRESH_PROPOSAL_UNSAFE_OPERATIONAL_PATH");
-  }
+  // The two shared parents follow the lost-race rule (other workers of the
+  // Project create and remove them too); the worker's own folder stays strict.
+  const unsafe = () => fail("CODEX_FRESH_PROPOSAL_UNSAFE_OPERATIONAL_PATH");
+  createOperationalFolders([...parents, directory], { unsafe });
   const journalFile = path.join(directory, "transport.jsonl");
   const controlFile = path.join(directory, "supervisor-control.jsonl");
   const preflightControlFile = path.join(directory, "preflight-control.jsonl");
@@ -183,11 +179,7 @@ function operationalFiles(operationalRoot, authorization) {
         fs.unlinkSync(file);
       }
       fs.rmdirSync(directory);
-      for (const parent of [...parents].reverse()) {
-        if (fs.readdirSync(parent).length) break;
-        if (fs.realpathSync(parent) !== parent || fs.lstatSync(parent).isSymbolicLink()) fail("CODEX_FRESH_PROPOSAL_UNSAFE_OPERATIONAL_PATH");
-        fs.rmdirSync(parent);
-      }
+      removeEmptyOperationalParents([...parents].reverse(), { unsafe });
     },
   };
 }
@@ -392,7 +384,7 @@ async function executeProposalInvocation(
         return response;
       };
       try {
-        files = operationalFiles(operationalStateRoot, verified);
+        files = codexProposalOperationalFiles(operationalStateRoot, verified);
         spool = openRuntimeOutputSpool({
           operationalRoot: operationalStateRoot,
           authorization: verified,

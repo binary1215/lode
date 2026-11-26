@@ -26,6 +26,7 @@ import {
   claudeFreshProposalEnvironment,
   verifyClaudeFreshProposalPolicyPlan,
 } from "./runtime-claude-proposal-policy.mjs";
+import { createOperationalFolders, removeEmptyOperationalParents } from "./runtime-operational-folders.mjs";
 import { sha256Hex as hash } from "../core/digest.mjs";
 import { failCode as fail } from "../core/errors.mjs";
 
@@ -36,37 +37,28 @@ const pluginRoot = path.resolve(import.meta.dirname, "..", "..", "..");
 const PROPOSAL_FIXTURE = fileURLToPath(new URL("../../../test/helpers/claude-proposal-protocol-fixture.mjs", import.meta.url));
 const json = (value) => JSON.stringify(value);
 
-function operationalDirectory(operationalRoot, authorization) {
-  const parents = [path.join(operationalRoot, "runtime-claude-proposals")];
-  parents.push(path.join(parents[0], authorization.projectId));
-  const directory = path.join(parents[1], authorization.authorizationId);
-  for (const item of [...parents, directory]) {
-    try {
-      fs.mkdirSync(item, { mode: 0o700 });
-    } catch (error) {
-      if (error.code !== "EEXIST") throw error;
-    }
-    const stat = fs.lstatSync(item);
-    if (!stat.isDirectory() || stat.isSymbolicLink() || fs.realpathSync(item) !== item) fail("CLAUDE_FRESH_PROPOSAL_UNSAFE_OPERATIONAL_PATH");
-  }
+// The worker's own folder keeps strict checks; the two shared parents use the
+// lost-race rule, since other workers of the Project create and remove them too.
+export function claudeProposalOperationalDirectory(operationalRoot, authorization) {
+  const unsafe = () => fail("CLAUDE_FRESH_PROPOSAL_UNSAFE_OPERATIONAL_PATH");
+  const root = path.join(operationalRoot, "runtime-claude-proposals");
+  const project = path.join(root, authorization.projectId);
+  const directory = path.join(project, authorization.authorizationId);
+  createOperationalFolders([root, project, directory], { unsafe });
   const controlFile = path.join(directory, "supervisor-control.jsonl");
   return {
     controlFile,
     cleanup() {
-      if (fs.realpathSync(directory) !== directory) fail("CLAUDE_FRESH_PROPOSAL_UNSAFE_OPERATIONAL_PATH");
+      if (fs.realpathSync(directory) !== directory) unsafe();
       const expected = fs.existsSync(controlFile) ? ["supervisor-control.jsonl"] : [];
       if (json(fs.readdirSync(directory).sort()) !== json(expected)) fail("CLAUDE_FRESH_PROPOSAL_UNEXPECTED_OPERATIONAL_FILE");
       if (fs.existsSync(controlFile)) {
         const stat = fs.lstatSync(controlFile);
-        if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) fail("CLAUDE_FRESH_PROPOSAL_UNSAFE_OPERATIONAL_PATH");
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) unsafe();
         fs.unlinkSync(controlFile);
       }
       fs.rmdirSync(directory);
-      for (const parent of [...parents].reverse()) {
-        if (fs.readdirSync(parent).length) break;
-        if (fs.realpathSync(parent) !== parent || fs.lstatSync(parent).isSymbolicLink()) fail("CLAUDE_FRESH_PROPOSAL_UNSAFE_OPERATIONAL_PATH");
-        fs.rmdirSync(parent);
-      }
+      removeEmptyOperationalParents([project, root], { unsafe });
     },
   };
 }
@@ -117,7 +109,11 @@ export function createClaudeProposalStreamReader({ authorization, forbidden }) {
     // A provider refusal retried by the CLI shows only as retry events.
     if (record?.type === "system" && record.subtype === "api_retry" && (record.error_status === 429 || record.error === "rate_limit"))
       found.add("claude.rate-limit");
-    if (!record) for (const code of codes) found.add(code);
+    if (!record) {
+      for (const code of codes) found.add(code);
+      // A run that ended without a structured result names that, whatever its exit code.
+      if (options?.structuredResultObserved === false) found.add("claude.missing-structured-result");
+    }
     return [...found].sort();
   };
   return { extract, classify, codes };
@@ -173,7 +169,19 @@ export async function executeClaudeFreshProposalInvocation({
       const reader = createClaudeProposalStreamReader({ authorization: verified, forbidden });
       let files;
       try {
-        files = operationalDirectory(operationalStateRoot, verified);
+        try {
+          files = claudeProposalOperationalDirectory(operationalStateRoot, verified);
+        } catch (error) {
+          // Inside the consumed lease but before any process: record the outcome.
+          recordRuntimeInvocationStartFailure({
+            projectRoot: prepared.projectRoot,
+            authorization: verified,
+            lease,
+            consumption,
+            errorCode: error.code || "CLAUDE_FRESH_PROPOSAL_NEVER_STARTED",
+          });
+          throw error;
+        }
         // The one-shot process exits by itself after its result. It is stopped
         // only on timeout, cancellation or an output/event limit, exactly as the
         // attached Claude adapter; a stopped provider never yields success.

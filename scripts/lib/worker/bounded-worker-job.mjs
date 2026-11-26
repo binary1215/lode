@@ -218,10 +218,7 @@ export function createBoundedWorkerJobHost({
       // The Claude owner binds exactly the frozen profile folders, by the same
       // names and values; it accepts no loader flag or arbitrary variable.
       const profile = proposalHostEnvironment(policy);
-      if (
-        Object.keys(environment).some((key) => !Object.hasOwn(profile, key)) ||
-        Object.entries(environment).some(([key, value]) => profile[key] !== value)
-      )
+      if (Object.keys(environment).some((key) => !Object.hasOwn(profile, key)) || Object.entries(environment).some(([key, value]) => profile[key] !== value))
         fail("Claude proposal owner accepts only its frozen provider profile environment.", "WORKER_JOB_POLICY_UNAVAILABLE");
       environment = profile;
     } else {

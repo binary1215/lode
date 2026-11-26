@@ -1,9 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { prepareRuntimeInvocationExecution, verifyRuntimeInvocationAuthorization } from "./runtime-invocation-lifecycle.mjs";
-import { sha256Hex as hash } from "../core/digest.mjs";
+import { sha256Hex as hash, createHasher } from "../core/digest.mjs";
 
 // A Claude Code backend for the same fresh read-only patch-proposal mode as the
 // Codex backend. Claude Code is closed source and updates often, so its build is
@@ -94,7 +93,7 @@ function fileIdentity(file, limit) {
   try {
     const opened = fs.fstatSync(fd);
     if (opened.ino !== named.ino || opened.dev !== named.dev) fail("Provider executable changed during open.");
-    const hasher = createHash("sha256"),
+    const hasher = createHasher("sha256"),
       buffer = Buffer.alloc(4 * 1024 * 1024);
     let total = 0;
     for (;;) {
@@ -208,8 +207,7 @@ export function buildClaudeFreshProposalPolicyPlan({
   if (typeof executablePath !== "string" || !path.isAbsolute(executablePath)) fail("Provider executable must be an absolute path.");
   const resolved = path.resolve(executablePath);
   if (evidenceMode === "actual-provider" && !/^claude(?:\.exe)?$/i.test(path.basename(resolved))) fail("Provider executable is not a Claude Code executable.");
-  if (evidenceMode === "protocol-fixture" && resolved !== fs.realpathSync(process.execPath))
-    fail("A protocol fixture runs only the current Node executable.");
+  if (evidenceMode === "protocol-fixture" && resolved !== fs.realpathSync(process.execPath)) fail("A protocol fixture runs only the current Node executable.");
   const identity = fileIdentity(resolved, 1024 * 1024 * 1024);
   if (regularText(instructionFile, 16 * 1024) !== instructionsText) fail("Fixed proposal instructions changed.");
   return freeze(plan({ evidenceMode, executablePath: resolved, identity, providerProfile: claudeProviderProfile(environment), wireModel }));
@@ -235,7 +233,10 @@ export function verifyClaudeFreshProposalPolicyPlan(policy) {
     typeof policy.providerProfile !== "object" ||
     Array.isArray(policy.providerProfile) ||
     Object.keys(policy.providerProfile).some((name) => !CLAUDE_PROVIDER_PROFILE_NAMES.includes(name)) ||
-    !same(Object.keys(policy.providerProfile), CLAUDE_PROVIDER_PROFILE_NAMES.filter((name) => Object.hasOwn(policy.providerProfile, name))) ||
+    !same(
+      Object.keys(policy.providerProfile),
+      CLAUDE_PROVIDER_PROFILE_NAMES.filter((name) => Object.hasOwn(policy.providerProfile, name)),
+    ) ||
     Object.values(policy.providerProfile).some((value) => typeof value !== "string" || !path.isAbsolute(value) || value !== path.resolve(value)) ||
     (!policy.providerProfile.HOME && !policy.providerProfile.USERPROFILE)
   )

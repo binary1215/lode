@@ -587,7 +587,11 @@ claude --print --output-format stream-json --verbose --no-session-persistence
 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `CLAUDE_CODE_MAX_RETRIES=4`)뿐이며
 `PATH`, loader 변수, API key, proxy 변수는 넘기지 않습니다. 인증은 provider의
 것으로 남습니다. Lode는 credential도 profile 안의 어떤 것도 읽거나 복사하거나
-저장하지 않습니다. Job owner는 그 profile 폴더만 동결된 값 그대로 받고, Claude
+저장하지 않습니다. worker는 그 폴더만 받으므로 Claude Code가 자기 profile에 보관하는
+로그인만 쓸 수 있습니다. 환경 변수(API key, Bedrock·Vertex 설정)로 인증하거나 proxy
+변수가 필요한 구성은 그런 변수를 넘기지 않으므로 동작하지 않습니다. 이 목록은 연결형
+어댑터의 provider 환경보다 엄격합니다. 데스크톱 앱만 설치된 환경에서 분리 실행 worker가
+로그인을 찾는지는 확인되지 않았습니다. Job owner는 그 profile 폴더만 동결된 값 그대로 받고, Claude
 계획에는 Claude 실행기만(Codex 계획에는 Codex 실행기만) 받습니다.
 
 실행기는 실행 중에 구성이 적용됐는지 확인합니다. provider의 init 기록에는 구조화
@@ -616,9 +620,13 @@ CLAUDE.md는 입력에 들어가지 않습니다. 이 버전에서 Claude의 `ho
 CLAUDE.md, CLAUDE.local.md, rules, AGENTS.md는 로드되지 않았습니다. 시스템 프롬프트는
 SDK 자체의 정체 문장을 빼고 교체됐고, 세션 기록은 쓰이지 않았고, 자동 갱신은
 건너뛰었고, 대체 실행 한 번은 Messages 요청 한 번이었습니다. 제외하지 못한 것도
-있습니다. 실행 파일에 내장된 plugin 세 개가 native hook 모듈과 함께 로드되고, 실행마다
-provider가 자기 `~/.claude.json`을 다시 쓰며 home에 백업과 plugin 저장 파일을
-남깁니다. 계획은 이를 없다고 하지 않고 `knownUnexcluded`로 밝힙니다.
+있습니다. 실행 파일에 내장된 plugin 세 개가 native hook 모듈과 함께 로드되고, provider가
+자기 home에 씁니다. home에서 처음 시작할 때는 기록용 내용(`~/.claude.json`의 새 key,
+그 파일의 백업 하나, plugin 저장 파일, 빈 sessions 폴더)을 썼고, 같은 home에서 그다음
+실행은 plugin 저장 파일만 다시 쓰고 `~/.claude.json`과 그 백업은 그대로 두었습니다. 새
+home에서 동시에 처음 시작한 두 실행은 `~/.claude.json`의 key를 잃지 않았고 백업을 하나만
+남겼습니다. 매일 쓰는 profile에서 실행이 혼자 또는 다른 실행과 함께 무엇을 하는지는
+확인되지 않았습니다. 계획은 이를 없다고 하지 않고 `knownUnexcluded`로 밝힙니다.
 
 이것은 **모델 없는 fixture로 검증한 backend 후보**입니다. 준비, CLI와 stdio MCP를
 통한 시작, 같은 순간에 실행 중임을 측정한 Claude worker 두 개, Codex와 Claude

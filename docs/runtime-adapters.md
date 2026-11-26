@@ -670,7 +670,12 @@ folders, the frozen provider profile folders (`HOME`, `USERPROFILE`, `APPDATA`,
 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `CLAUDE_CODE_MAX_RETRIES=4`); no
 `PATH`, loader variable, API key or proxy variable is forwarded. Authentication
 stays the provider's own: Lode reads, copies and stores no credential and nothing
-inside the profile. The job owner accepts only those profile folders with their
+inside the profile. Because the worker gets only those folders, only a login that
+Claude Code keeps in its own profile can work. A setup that authenticates through
+an environment variable (an API key, Bedrock or Vertex settings) or needs a proxy
+variable does not work, because no such variable is passed; this list is stricter
+than the attached adapter's provider environment. Whether a detached worker finds
+the login on an install that has only the desktop app is not shown. The job owner accepts only those profile folders with their
 frozen values, and only the Claude runner for a Claude plan (the Codex runner
 only for a Codex plan).
 
@@ -705,9 +710,14 @@ CLAUDE.local.md, rules and AGENTS.md were not loaded; the system prompt was
 replaced except for the SDK's own identity line; no session transcript was
 written; auto-update was skipped; one stand-in run made one Messages request.
 What could not be excluded: three plugins built into the binary load with native
-hook modules, and each run rewrites the provider's own `~/.claude.json` and writes
-a backup and a plugin store file in its home. The plan names both
-(`knownUnexcluded`) instead of claiming them away.
+hook modules, and the provider writes to its own home. The first start on a home
+wrote its bookkeeping there (new keys in `~/.claude.json`, one backup of that file,
+a plugin store file and an empty sessions folder); a later run on the same home
+rewrote the plugin store file but left `~/.claude.json` and its backup as they
+were. Two first starts at the same moment on a fresh home lost no key of
+`~/.claude.json` and left one backup. What a run does on a profile in daily use,
+alone or beside another, is not shown. The
+plan names both (`knownUnexcluded`) instead of claiming them away.
 
 This is a **backend candidate with model-free fixture coverage**: preparation,
 start through the CLI and stdio MCP, two Claude workers measured running at the
