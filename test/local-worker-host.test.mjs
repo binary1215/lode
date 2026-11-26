@@ -136,7 +136,15 @@ function workerJobEvidence(f, member, state) {
     const record = readRuntimeInvocationRecord({ root: f.root, authorizationId: member.authorizationId, storage: f.storage }).receipt;
     // Status and failure fields first, so truncation never hides them.
     const outcome = Object.fromEntries(Object.entries(record).filter(([name]) => name === "status" || /error|failure|reason|outcome|code/i.test(name)));
-    receipt = `${JSON.stringify(outcome)} ${JSON.stringify(record).slice(0, 1500)}`;
+    // The failure code of a failed proposal is not recorded; the process and
+    // provider boundary still show how it ended (terminationRequested true on an
+    // exit-code-0 receipt means the owned close fell back to a stop).
+    const boundary = {
+      process: Object.fromEntries(Object.entries(record.processBoundary || {}).filter(([name]) => !/Digest$/u.test(name))),
+      diagnosticCodes: record.providerBoundary?.diagnosticCodes,
+      structuredResultObserved: record.providerBoundary?.structuredResultObserved,
+    };
+    receipt = `${JSON.stringify(outcome)} ${JSON.stringify(boundary)} ${JSON.stringify(record).slice(0, 1500)}`;
   } catch (error) {
     receipt = `<${error.code || error.message}>`;
   }
