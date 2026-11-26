@@ -176,7 +176,7 @@ jobs:
     needs: prepare
     if: ${{ needs.prepare.outputs.enabled == 'true' }}
     runs-on: ${{ matrix.os }}
-    # About twice the slowest measured job (Windows: 43.4 min on main, 38.5 min without the install steps in run 45652364138).
+    # About twice the slowest measured job: Windows, 47.9 min (its npm test step 45.8 min) in run 45660010513.
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -213,7 +213,7 @@ jobs:
 
       - name: Run Go tests
         working-directory: native/lode-agent-worker
-        run: go test ./...
+        run: go test -v ./...
 
       - name: Prepare current-source supervisor fixture
         shell: bash

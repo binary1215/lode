@@ -71,7 +71,8 @@ test("every workflow job has a time limit and the host jobs run the Go tests bef
     assert.ok(Number(limit[1]) >= 15, `${name} timeout-minutes is at least 15`);
   }
   const host = jobs.get("host_smoke");
-  const goTest = host.indexOf("run: go test ./...");
+  // -v, so the log names every Go test that ran and every one that skipped.
+  const goTest = host.indexOf("run: go test -v ./...");
   assert.ok(host.indexOf("run: go mod verify") > 0 && host.indexOf("run: go vet ./...") > 0 && goTest > 0, "host_smoke runs go mod verify, go vet and go test");
   assert.ok(goTest < host.indexOf("run: npm test"), "Go tests run before the JavaScript suite");
   for (const job of ["javascript", "host_smoke"]) {
@@ -114,13 +115,24 @@ test("the checked-in skip ledger declares its classes and keeps sorted lists per
   assert.deepEqual(Object.keys(ledger.classes).sort(), ["ci-step", "filesystem", "host-limit", "native-fixture", "no-source", "opt-in", "other-os"]);
   for (const [name, declared] of Object.entries(ledger.classes)) {
     assert.equal(typeof declared.pinned, "boolean", name);
+    assert.ok(declared.bounded === undefined || typeof declared.bounded === "boolean", name);
+    assert.ok(!(declared.pinned && declared.bounded), `${name} is pinned or bounded, not both`);
     assert.ok(declared.meaning.length > 20, name);
   }
+  assert.equal(ledger.classes["opt-in"].bounded, true, "opt-in skips are bounded by a list");
   assert.deepEqual(Object.keys(ledger.skips).sort(), ["darwin", "linux", "win32"]);
   for (const [platform, classes] of Object.entries(ledger.skips)) {
     for (const [name, tests] of Object.entries(classes)) {
-      assert.ok(ledger.classes[name]?.pinned, `${platform} lists only pinned classes, not ${name}`);
+      assert.ok(ledger.classes[name]?.pinned || ledger.classes[name]?.bounded, `${platform} lists only pinned or bounded classes, not ${name}`);
       assert.deepEqual(tests, [...tests].sort(), `${platform} ${name} is sorted`);
+    }
+    // A developer machine may lack these programs; CI has them, so CI never shows these skips.
+    for (const test of [
+      "test/head-core.test.mjs > Git CLI history excludes Host-only commits and decorations while retaining product refs",
+      "test/npm-test-entrypoint.test.mjs > automatic fixture rebuilds changed Go sources while explicit CI fixture remains caller-owned",
+      "test/source-context-workflow.test.mjs > modern Python mapping-rest binding cannot resolve to a same-name module function",
+    ]) {
+      assert.ok(classes["opt-in"]?.includes(test), `${platform} opt-in list allows ${test}`);
     }
   }
   assert.deepEqual(ledger.skips.win32["native-fixture"] ?? [], [], "no native-fixture skip is pinned on Windows");
@@ -171,6 +183,18 @@ test("skip checks: R1 reason, R2 declared class, R3 Windows native fixture, R4 p
   assert.match(excused.problems[0], /^R3: test\/a\.test\.mjs > wired:/);
   assert.match(excused.problems[1], /^R4: win32 "native-fixture" skips: 1 now, 0 pinned\.\n {2}now skipped: test\/a\.test\.mjs > wired$/);
   assert.deepEqual(excused.summary, ["native-fixture 1", "native-fixture (not supplied) 1"]);
+
+  const bounded = { ...ledger, classes: { ...ledger.classes, "opt-in": { pinned: false, bounded: true, meaning: "x" } } };
+  bounded.skips = { linux: { "other-os": ["test/a.test.mjs > kept"], "opt-in": ["test/a.test.mjs > listed", "test/a.test.mjs > ran"] } };
+  const optIn = [skip("kept", "other-os: Windows only"), skip("listed", "opt-in: set X")];
+  assert.deepEqual(checkSkips({ records: optIn, ledger: bounded, platform: "linux", fullRun: true }).problems, [], "a listed opt-in test may run or skip");
+  const asleep = checkSkips({ records: [...optIn, skip("woken", "opt-in: set NEVER_SET")], ledger: bounded, platform: "linux", fullRun: true });
+  assert.deepEqual(asleep.problems, ['R4: linux "opt-in" skips not on the ledger\'s list (an upper bound): 1.\n  now skipped: test/a.test.mjs > woken']);
+  assert.deepEqual(asleep.observed["opt-in"], ["test/a.test.mjs > listed", "test/a.test.mjs > woken"]);
+  assert.deepEqual(checkSkips({ records: [skip("woken", "opt-in: set NEVER_SET")], ledger: bounded, platform: "linux", fullRun: false }).problems, []);
+
+  const todo = checkSkips({ records: [{ kind: "todo", file: "test/a.test.mjs", test: "later", passed: true }], ledger, platform: "linux", fullRun: false });
+  assert.match(todo.problems.join("\n"), /^T: test\/a\.test\.mjs > later: todo test/);
 });
 
 function runnerSandbox(t) {
@@ -289,6 +313,24 @@ test("the runner fails a run on a reasonless or unclassified skip and names a ti
   assert.match(slow.stdout, /test timed out after 500ms/);
   assert.match(slow.stderr, /Timed out after 500 ms: test\/slow\.test\.mjs > sleeps past the limit/);
   assert.equal(box.run(["test/slow.test.mjs"], { LODE_AGENT_TEST_TIMEOUT_MS: "soon" }).status, 2);
+
+  box.write(
+    "hung.test.mjs",
+    `import { before, describe, test } from "node:test";
+const sleep = () => new Promise((resolve) => setTimeout(resolve, 5_000));
+describe("suite", () => { before(sleep); test("inner", () => {}); });
+test("parent", async (t) => { await t.test("child", sleep); });
+`,
+  );
+  const hung = box.run(["test/hung.test.mjs"], { LODE_AGENT_TEST_TIMEOUT_MS: "500" });
+  assert.notEqual(hung.status, 0);
+  assert.match(hung.stderr, /Timed out after 500 ms: test\/hung\.test\.mjs > suite \(failed running before hook: test timed out after 500ms\)/);
+  assert.match(hung.stderr, /Timed out after 500 ms: test\/hung\.test\.mjs > parent\n {2}cancelled with it: test\/hung\.test\.mjs > parent > child/);
+
+  box.write("todo.test.mjs", 'import test from "node:test";\ntest("later", { todo: "not yet" }, () => { throw new Error("broken"); });\n');
+  const todo = box.run(["test/todo.test.mjs"]);
+  assert.equal(todo.status, 1, "node passes a failing todo test; the runner does not");
+  assert.match(todo.stderr, /T: test\/todo\.test\.mjs > later: todo test/);
 });
 
 test("without Go on Windows the runner names the test fixtures it cannot supply and excuses only skips that name them", (t) => {
@@ -334,7 +376,7 @@ test("a full run compares pinned skips with the ledger and prints the tests that
   assert.equal(moved.status, 1);
   assert.match(moved.stderr, /now skipped: test\/only\.test\.mjs > sleeper/);
   assert.match(moved.stderr, /no longer skipped: test\/only\.test\.mjs > renamed/);
-  assert.match(moved.stderr, /Pinned skips observed in this run/);
+  assert.match(moved.stderr, /Listed skips observed in this run/);
 });
 
 test("automatic fixture rebuilds changed Go sources while explicit CI fixture remains caller-owned", (t) => {

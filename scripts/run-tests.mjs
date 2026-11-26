@@ -227,13 +227,23 @@ const child = spawnSync(
 const records = readRecords(report);
 const { problems, summary, observed } = checkSkips({ records, ledger: readLedger(), fullRun, unsupplied: testFixtures.unsupplied });
 const timedOut = records.filter((record) => record.kind === "timeout");
+const cancelled = records.filter((record) => record.kind === "cancelled");
 console.log(`# skipped by class: ${summary.join(", ") || "none"}`);
-for (const record of timedOut) console.error(`Timed out after ${timeout} ms: ${record.file} > ${record.test}`);
+for (const record of timedOut) {
+  const detail = /hook/.test(record.message) ? ` (${record.message})` : "";
+  console.error(`Timed out after ${timeout} ms: ${record.file} > ${record.test}${detail}`);
+  // Node cancels the subtests still running under it; name them, since the hang is in one of them.
+  for (const child of cancelled.filter((entry) => entry.file === record.file && entry.test.startsWith(`${record.test} > `))) {
+    console.error(`  cancelled with it: ${child.file} > ${child.test}`);
+  }
+}
 if (problems.length) {
-  console.error(`Skip ledger check failed (${fullRun ? "full run, R1-R4" : "selected files, R1-R3"}):`);
+  console.error(`Skip ledger check failed (${fullRun ? "full run, R1-R4 and T" : "selected files, R1-R3 and T"}):`);
   for (const problem of problems) console.error(problem);
   if (problems.some((problem) => problem.startsWith("R4:"))) {
-    console.error(`Pinned skips observed in this run for "${process.platform}" (test/fixtures/skip-ledger.json, skips.${process.platform}):`);
+    console.error(
+      `Listed skips observed in this run for "${process.platform}" (test/fixtures/skip-ledger.json, skips.${process.platform}; a bounded class's list is an upper bound, so add its new names instead of replacing the list):`,
+    );
     console.error(JSON.stringify(observed, null, 2));
   }
 }

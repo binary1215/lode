@@ -2,8 +2,8 @@
 //
 // The default export is a node:test reporter. The runner adds it next to the
 // TAP reporter, so the TAP stream on stdout is unchanged, and this reporter
-// writes one JSON line per skipped or timed-out test to its own destination
-// file. The runner then checks those records against
+// writes one JSON line per skipped, todo, timed-out or parent-cancelled test
+// to its own destination file. The runner then checks those records against
 // test/fixtures/skip-ledger.json:
 //
 //   R1  every skip carries a reason (no bare t.skip(), test.skip() or { skip: true });
@@ -11,9 +11,11 @@
 //   R3  on Windows a "native-fixture" skip fails, because the runner supplies that fixture
 //       (except a Windows test fixture the runner announced it could not supply without Go);
 //   R4  in a full run, the skipped tests of each pinned class equal the ledger's list for
-//       this operating system; a difference fails and prints the tests that moved.
+//       this operating system, and every skip of a bounded class is on its list (a listed
+//       test that runs is fine); a difference fails and prints the tests that moved;
+//   T   a todo test fails the run: node reports it as passing whatever it does.
 //
-// A run of selected files checks R1-R3 only.
+// A run of selected files checks R1-R3 and T.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,9 +46,18 @@ export default async function* skipLedgerReporter(source) {
     if (data.skip !== undefined && data.skip !== false) {
       yield JSON.stringify({ kind: "skip", file, test, reason: data.skip }) + "\n";
     }
+    if (data.todo !== undefined && data.todo !== false) {
+      yield JSON.stringify({ kind: "todo", file, test, passed: event.type === "test:pass" }) + "\n";
+    }
+    if (event.type !== "test:fail") continue;
     const error = data.details?.error;
-    if (event.type === "test:fail" && (error?.failureType === "testTimeoutFailure" || error?.cause?.failureType === "testTimeoutFailure")) {
+    if (error?.failureType === "testTimeoutFailure" || error?.cause?.failureType === "testTimeoutFailure") {
       yield JSON.stringify({ kind: "timeout", file, test, message: String(error.message ?? error.cause?.message ?? "") }) + "\n";
+    } else if (error?.failureType === "hookFailed" && /timed out after/.test(String(error.cause?.message ?? error.cause ?? ""))) {
+      // A timed-out hook fails its test or suite with the timeout as a plain string cause.
+      yield JSON.stringify({ kind: "timeout", file, test, message: `${error.message}: ${error.cause?.message ?? error.cause}` }) + "\n";
+    } else if (error?.failureType === "cancelledByParent") {
+      yield JSON.stringify({ kind: "cancelled", file, test }) + "\n";
     }
   }
 }
@@ -91,6 +102,10 @@ export function checkSkips({ records, ledger, platform = process.platform, fullR
   const problems = [];
   const observed = {};
   const counted = {};
+  const listed = (skipClass) => ledger.classes[skipClass].pinned || ledger.classes[skipClass].bounded === true;
+  for (const record of records.filter((entry) => entry.kind === "todo")) {
+    problems.push(`T: ${record.file} > ${record.test}: todo test; node reports it as passing whatever it does. Make it pass or skip it with a classed reason.`);
+  }
   for (const record of records.filter((entry) => entry.kind === "skip")) {
     const where = `${record.file} > ${record.test}`;
     const { problem, detail, skipClass } = classify(record.reason, ledger);
@@ -106,7 +121,7 @@ export function checkSkips({ records, ledger, platform = process.platform, fullR
     if (skipClass === "native-fixture" && platform === "win32") {
       problems.push(`R3: ${where}: native-fixture skip on Windows; scripts/run-tests.mjs supplies that fixture, so its wiring broke: ${record.reason}`);
     }
-    if (ledger.classes[skipClass].pinned) (observed[skipClass] ??= []).push(`${record.file} > ${record.test}`);
+    if (listed(skipClass)) (observed[skipClass] ??= []).push(`${record.file} > ${record.test}`);
   }
   for (const list of Object.values(observed)) list.sort();
   if (fullRun) {
@@ -114,6 +129,17 @@ export function checkSkips({ records, ledger, platform = process.platform, fullR
     if (!pinned) {
       problems.push(`R4: test/fixtures/skip-ledger.json has no entry for ${platform}.`);
     } else {
+      for (const skipClass of Object.keys(ledger.classes).filter((name) => ledger.classes[name].bounded === true)) {
+        const allowed = new Set(pinned[skipClass] ?? []);
+        const unlisted = (observed[skipClass] ?? []).filter((name) => !allowed.has(name));
+        if (!unlisted.length) continue;
+        problems.push(
+          [
+            `R4: ${platform} "${skipClass}" skips not on the ledger's list (an upper bound): ${unlisted.length}.`,
+            ...unlisted.map((name) => `  now skipped: ${name}`),
+          ].join("\n"),
+        );
+      }
       for (const skipClass of Object.keys(ledger.classes).filter((name) => ledger.classes[name].pinned)) {
         const expected = pinned[skipClass] ?? [];
         const actual = observed[skipClass] ?? [];
