@@ -16,7 +16,7 @@ import { inspectProject } from "../session/lode-core.mjs";
 import { withProjectMutation } from "../storage/project-mutation-lock.mjs";
 import { buildRuntimeVersionEvidence } from "../runtime/runtime-machine-execution.mjs";
 import { resolveReadOnlyRuntimeExecutableTarget } from "../runtime/runtime-machine-discovery.mjs";
-import { buildRuntimeProtocolEvidence, buildRuntimeProjectBinding } from "../runtime/runtime-protocol-evidence.mjs";
+import { buildRuntimeProtocolEvidence, buildRuntimeProjectBinding, readRuntimeRootHelp } from "../runtime/runtime-protocol-evidence.mjs";
 import { buildRuntimeInvocationAuthorization, readRuntimeInvocationAuthorization, reconcileWorkerMember } from "../runtime/runtime-invocation-lifecycle.mjs";
 import { resolveRuntimeOperationalStateRoot } from "../runtime/runtime-execution-lease.mjs";
 import { captureWorkerSourceBasis } from "./worker-source-basis.mjs";
@@ -30,6 +30,13 @@ import {
 } from "../runtime/runtime-codex-proposal-policy.mjs";
 import { buildCodexNativePrefixPolicyPlan, verifyCodexNativePrefixPolicyPlan, assertCodexNativePrefixPolicy } from "../runtime/runtime-codex-prefix-policy.mjs";
 import { inspectCodexFreshProposalHostInventory } from "../runtime/runtime-codex-app-server-transport.mjs";
+import {
+  buildClaudeFreshProposalPolicyPlan,
+  verifyClaudeFreshProposalPolicyPlan,
+  assertClaudeFreshProposalPolicy,
+  claudeRecipeSurfaceMissing,
+  isClaudeModelId,
+} from "../runtime/runtime-claude-proposal-policy.mjs";
 import { resolveVerifiedProcessSupervisor } from "../runtime/runtime-process-supervisor.mjs";
 import { createBoundedWorkerJobHost, startBoundedWorkerJob } from "./bounded-worker-job.mjs";
 
@@ -79,7 +86,23 @@ function sameBoundedTask(previous, next) {
   const { sourcePaths: nextSelection, ...nextTask } = next;
   return digest(previousTask) === digest(nextTask);
 }
-function normalize(input) {
+const CODEX_MODEL = /^gpt-[A-Za-z0-9._-]+$/;
+const MANAGED_RUNTIMES = ["claude", "codex"];
+const modelRuntime = (model) => (CODEX_MODEL.test(model) ? "codex" : isClaudeModelId(model) ? "claude" : null);
+// The runtime when the caller names none, when the calling Host is unknown (the
+// CLI, an unrecognized MCP client). Pending a user decision (Q5): the model
+// family, or a refusal naming both runtimes. Until then the existing default.
+const UNKNOWN_HOST_RUNTIME = "codex";
+// One pure rule: a named runtime wins; otherwise the calling Host's runtime as
+// the Host names itself; otherwise the table entry above. The model check then
+// refuses a model of the other runtime by name.
+export function resolveWorkerRuntime({ named = undefined, hostRuntime = null, model = undefined } = {}) {
+  void model;
+  if (named !== undefined) return named;
+  if (MANAGED_RUNTIMES.includes(hostRuntime)) return hostRuntime;
+  return UNKNOWN_HOST_RUNTIME;
+}
+function normalize(input, { hostRuntime = null } = {}) {
   const fields = new Set([
     "task",
     "taskKey",
@@ -96,8 +119,23 @@ function normalize(input) {
   ]);
   if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).some((key) => !fields.has(key)))
     fail("Worker preparation accepts task/member/context/source/proposal fields, not Host code, paths, environment or policy assertions.");
-  if (typeof input.task !== "string" || !input.task.trim() || typeof input.model !== "string" || !/^gpt-[A-Za-z0-9._-]+$/.test(input.model))
-    fail("Lode must supply the task and exact Codex model.");
+  const runtime = resolveWorkerRuntime({ named: input.runtime, hostRuntime, model: input.model });
+  if (typeof input.task !== "string" || !input.task.trim() || typeof input.model !== "string") fail("Lode must supply the task and exact Codex model.");
+  if (runtime !== "codex" && runtime !== "claude")
+    fail("The built-in fresh proposal backend supports Codex and Claude only; no provider substitution was made.", "LOCAL_WORKER_BACKEND_UNAVAILABLE");
+  // Each runtime takes only its own exact model ids; a model of the other
+  // runtime is refused by name, never reinterpreted.
+  const family = modelRuntime(input.model);
+  if (family !== runtime) {
+    if (family)
+      fail(
+        `Model ${input.model} is a ${family === "codex" ? "Codex" : "Claude"} model, but the worker runtime is ${runtime}; name a matching runtime and model.`,
+        "LOCAL_WORKER_RUNTIME_MODEL_MISMATCH",
+      );
+    fail(runtime === "codex" ? "Lode must supply the task and exact Codex model." : "Lode must supply the task and exact Claude model (claude-...).");
+  }
+  if (runtime === "claude" && input.contextMode === "native-prefix")
+    fail("Native-prefix preparation is a Codex-only contract; the Claude backend runs fresh proposals only.", "LOCAL_WORKER_BACKEND_UNAVAILABLE");
   if (input.contextMode !== undefined && !["fresh", "native-prefix"].includes(input.contextMode)) fail("Unsupported worker context mode.");
   if (
     input.contextMode === "native-prefix" &&
@@ -114,12 +152,10 @@ function normalize(input) {
     sourcePaths: input.sourcePaths ?? [],
     proposalPaths: input.proposalPaths ?? [],
     model: input.model,
-    runtime: input.runtime ?? "codex",
+    runtime,
     timeoutMs: input.timeoutMs ?? 60000,
     instructionScope: input.instructionScope ?? "selected-only",
   };
-  if (request.runtime !== "codex")
-    fail("The built-in fresh proposal backend currently supports Codex only; no provider substitution was made.", "LOCAL_WORKER_BACKEND_UNAVAILABLE");
   if (
     !/^[a-z][a-z0-9-]{0,95}$/.test(request.taskKey) ||
     !["coder", "developer", "reviewer"].includes(request.role) ||
@@ -185,6 +221,9 @@ function readPreparedUnlocked(file, root, projectId, sessionId, runId, request =
   if (record.request.contextMode === "native-prefix") {
     verifyCodexNativePrefixPolicyPlan(record.policy);
     if (record.policy.seed.text !== record.request.selectedContext) fail("Prepared native prefix differs from the selected input.");
+  } else if (record.policy?.kind === "ClaudeFreshProposalPolicyPlan") {
+    verifyClaudeFreshProposalPolicyPlan(record.policy);
+    if (record.request.runtime !== "claude" || record.policy.wireModel !== record.request.model) fail("Prepared Claude policy differs from its request.");
   } else verifyCodexFreshProposalPolicyPlan(record.policy);
   const destination = location(root, projectId, sessionId, runId, record.request.taskKey, false, originalFormat(record.projectBinding));
   if (file !== destination.file && file !== basisFile(destination, record.sourceBasis, record.proposalBasis))
@@ -219,15 +258,20 @@ function readPreparedUnlocked(file, root, projectId, sessionId, runId, request =
 
 // Fixed synthetic seam for component tests/embedding; never accepted from wire
 // arguments or environment and never produces actual-provider evidence.
-export function createLocalWorkerProtocolFixtureBackend({ codexHome, environment, spawnImplementation } = {}) {
+export function createLocalWorkerProtocolFixtureBackend({ codexHome, claudeHome = null, environment, spawnImplementation } = {}) {
   if (typeof spawnImplementation !== "function") fail("Expected a model-free schema observer.");
   const capability = Object.freeze(Object.create(null));
-  fixtureBackends.set(capability, { codexHome: fs.realpathSync(codexHome), environment, spawnImplementation });
+  fixtureBackends.set(capability, {
+    codexHome: fs.realpathSync(codexHome),
+    claudeHome: claudeHome === null ? null : fs.realpathSync(claudeHome),
+    environment,
+    spawnImplementation,
+  });
   return capability;
 }
 
 export async function prepareLocalBoundedWorker(input, options = {}) {
-  const request = normalize(input);
+  const request = normalize(input, { hostRuntime: options.hostRuntime ?? null });
   try {
     return await prepareLocalBoundedWorkerInternal(request, options);
   } catch (error) {
@@ -272,9 +316,9 @@ export async function prepareLocalBoundedWorker(input, options = {}) {
 
 async function prepareLocalBoundedWorkerInternal(
   input,
-  { root = ".", supervisorSelection = null, signal, onProcess = () => {}, protocolFixtureBackend = null } = {},
+  { root = ".", supervisorSelection = null, signal, onProcess = () => {}, protocolFixtureBackend = null, hostRuntime = null } = {},
 ) {
-  const request = normalize(input),
+  const request = normalize(input, { hostRuntime }),
     inspected = inspectProject(root),
     projectRoot = fs.realpathSync(root);
   if (inspected.status !== "ready") fail("Initialize or resume this Lode Project before preparing its worker.", "PROJECT_NOT_READY");
@@ -298,17 +342,39 @@ async function prepareLocalBoundedWorkerInternal(
     const fixture = protocolFixtureBackend === null ? null : fixtureBackends.get(protocolFixtureBackend);
     if (protocolFixtureBackend !== null && !fixture) fail("Unrecognized synthetic Host capability.");
     const environment = fixture?.environment || process.env;
-    const target = fixture ? { executablePath: fs.realpathSync(process.execPath) } : resolveReadOnlyRuntimeExecutableTarget({ runtime: "codex", environment });
-    if (!target.executablePath) fail("Codex executable was not discovered by the local Host.", "LOCAL_WORKER_BACKEND_UNAVAILABLE");
-    const codexHome = fixture?.codexHome || fs.realpathSync(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"));
-    const initialPolicy = buildCodexFreshProposalPolicyPlan({
-      executablePath: target.executablePath,
-      codexHome,
-      model: `openai/${request.model}`,
-      wireModel: request.model,
-      evidenceMode: fixture ? "protocol-fixture" : "actual-provider",
-      approvedGlobalInstructionDigests: selectedInstructions(codexHome, request.instructionScope),
-    });
+    const claude = request.runtime === "claude";
+    // The Claude recipe turns every instruction source off; including the user's
+    // own instruction file needs a recipe this backend does not have yet.
+    if (claude && request.instructionScope !== "selected-only")
+      fail(
+        "The Claude proposal backend runs with selected-only instruction scope; Host-global instructions are not included.",
+        "LOCAL_WORKER_BACKEND_UNAVAILABLE",
+      );
+    if (claude && fixture && !fixture.claudeHome) fail("This synthetic Host has no Claude provider profile.");
+    const target = fixture
+      ? { executablePath: fs.realpathSync(process.execPath) }
+      : resolveReadOnlyRuntimeExecutableTarget({ runtime: request.runtime, environment });
+    if (!target.executablePath)
+      fail(`${claude ? "Claude Code" : "Codex"} executable was not discovered by the local Host.`, "LOCAL_WORKER_BACKEND_UNAVAILABLE");
+    // A command shim (claude.cmd) or a link is not spawned directly.
+    if (claude && !fixture && (!target.observation.directSpawnSafe || target.observation.symbolicLink))
+      fail("The discovered Claude Code launcher is not safe for direct spawn.", "LOCAL_WORKER_BACKEND_UNAVAILABLE");
+    const codexHome = claude ? null : fixture?.codexHome || fs.realpathSync(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"));
+    const initialPolicy = claude
+      ? buildClaudeFreshProposalPolicyPlan({
+          executablePath: target.executablePath,
+          environment: fixture ? { HOME: fixture.claudeHome, USERPROFILE: fixture.claudeHome } : environment,
+          wireModel: request.model,
+          evidenceMode: fixture ? "protocol-fixture" : "actual-provider",
+        })
+      : buildCodexFreshProposalPolicyPlan({
+          executablePath: target.executablePath,
+          codexHome,
+          model: `openai/${request.model}`,
+          wireModel: request.model,
+          evidenceMode: fixture ? "protocol-fixture" : "actual-provider",
+          approvedGlobalInstructionDigests: selectedInstructions(codexHome, request.instructionScope),
+        });
     const selection = supervisorSelection || resolveVerifiedProcessSupervisor({ pluginRoot });
     const stage = fs.mkdtempSync(path.join(destination.parent, "selected-"));
     const workspaceBinding = prepareWorkerWorkspace({
@@ -319,7 +385,7 @@ async function prepareLocalBoundedWorkerInternal(
       storage: inspected.storage,
     });
     let policy = initialPolicy;
-    if (!fixture) {
+    if (!fixture && !claude) {
       const inventory = await inspectCodexFreshProposalHostInventory({
         policy,
         executionRoot: workspaceBinding.executionRoot,
@@ -364,10 +430,36 @@ async function prepareLocalBoundedWorkerInternal(
         }
         return child;
       });
-    const versionEvidence = await buildRuntimeVersionEvidence({ runtimes: ["codex"], environment, spawnImplementation: observeSpawn });
+    const versionEvidence = await buildRuntimeVersionEvidence({ runtimes: [request.runtime], environment, spawnImplementation: observeSpawn });
     if (observerFailure) throw observerFailure;
-    const protocolEvidence = await buildRuntimeProtocolEvidence({ runtimes: ["codex"], environment, versionEvidence, spawnImplementation: observeSpawn });
+    const protocolEvidence = await buildRuntimeProtocolEvidence({
+      runtimes: [request.runtime],
+      environment,
+      versionEvidence,
+      spawnImplementation: observeSpawn,
+    });
     if (observerFailure) throw observerFailure;
+    if (claude) {
+      // Observed capability is the trust basis: the help surface must show every
+      // option of the recipe, from the same executable the policy binds.
+      const observation = protocolEvidence.observations.find((item) => item.runtime === "claude");
+      const surface = observation?.capabilities.find((item) => item.capability === "one-shot-invocation-surface");
+      if (!observation?.protocolNegotiationObserved || surface?.support !== "observed")
+        fail("The installed Claude Code does not show every option of the proposal recipe.", "LOCAL_WORKER_BACKEND_UNAVAILABLE");
+      if (!fixture && JSON.stringify(canonical(observation.executable)) !== JSON.stringify(canonical(target.observation)))
+        fail("The Claude Code executable changed during preparation.");
+      // The shared signals cover part of the recipe; every option must show in
+      // the same help bytes the observation read.
+      const helpTarget = resolveReadOnlyRuntimeExecutableTarget({ runtime: "claude", environment });
+      const help = await readRuntimeRootHelp({ runtime: "claude", executablePath: helpTarget.executablePath, environment, spawnImplementation: observeSpawn });
+      if (observerFailure) throw observerFailure;
+      const evidenced = observation.probeOutcomes.find((item) => item.name === "root-help");
+      if (help.outcome.status !== "verified" || help.outcome.outputDigest !== evidenced?.outputDigest)
+        fail("The Claude Code help changed during preparation.");
+      const missing = claudeRecipeSurfaceMissing(help.text);
+      if (missing.length)
+        fail(`The installed Claude Code help does not show every recipe option (missing: ${missing.join(", ")}).`, "LOCAL_WORKER_BACKEND_UNAVAILABLE");
+    }
     const projectBinding = buildRuntimeProjectBinding({
       projectId,
       headSessionId: sessionId,
@@ -455,7 +547,7 @@ function authorizationInput(record) {
   const boundary = workerPatchProposalExecutionBoundary({ binding: workspaceBinding, policy, sourceBasis, proposalBasis, storage: current.storage });
   return {
     root,
-    runtime: "codex",
+    runtime: request.runtime,
     runtimeSelection: { model: policy.model },
     workspaceMode: "read-only",
     scope: record.runId ? { kind: "run" } : { kind: "session", request: request.task },
@@ -519,11 +611,16 @@ export async function startLocalBoundedWorker({ root = ".", authorizationId, tas
     authorization.workerInput.executionBoundary?.policyDigest !== hash(JSON.stringify(record.policy))
   )
     fail("Worker authorization does not match its prepared Host.");
-  (record.request.contextMode === "native-prefix" ? assertCodexNativePrefixPolicy : assertCodexFreshProposalPolicy)({
+  (record.request.contextMode === "native-prefix"
+    ? assertCodexNativePrefixPolicy
+    : record.policy.kind === "ClaudeFreshProposalPolicyPlan"
+      ? assertClaudeFreshProposalPolicy
+      : assertCodexFreshProposalPolicy)({
     policy: record.policy,
     authorization,
     workspaceBinding: record.workspaceBinding,
     root: projectRoot,
+    verifyWorkspace: verifyWorkerWorkspace,
   });
   const host = createBoundedWorkerJobHost({ policy: record.policy, workspaceBinding: record.workspaceBinding });
   return startBoundedWorkerJob({ root: projectRoot, authorizationId: authorization.authorizationId, role }, { ...options, host });

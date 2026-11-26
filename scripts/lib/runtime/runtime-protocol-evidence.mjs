@@ -1086,3 +1086,12 @@ export function verifyRuntimeProjectBinding(document) {
 }
 
 export const RUNTIME_PROTOCOL_CONTROL_METHODS = CONTROL_METHODS;
+
+// The exact root help of one runtime, read the way its protocol observation
+// reads it (fixed arguments, neutral folder, minimal environment). A caller can
+// check options beyond the shared signals and bind the text it checked to the
+// observation by comparing output digests.
+export async function readRuntimeRootHelp({ runtime, executablePath, environment = process.env, spawnImplementation = spawn } = {}) {
+  const probe = RUNTIME_PROFILES[normalizeRuntime(runtime)].probes.find((item) => item.name === "root-help");
+  return runExactHelpChild({ executablePath, arguments: probe.arguments, cwd: path.parse(executablePath).root, environment, spawnImplementation });
+}

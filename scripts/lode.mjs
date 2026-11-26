@@ -95,7 +95,7 @@ export function usage({ all = false, surface = "ordinary" } = {}) {
     `${cliDisplay} worker-read <project> --authorization <execution-authorization-id>`,
     `${cliDisplay} worker-wait <project> --authorization <execution-authorization-id> [--wait-timeout-ms <0..600000>]`,
     `${cliDisplay} worker-execute <project> --authorization <execution-authorization-id> --role <developer|coder|reviewer> [--input <session-request.json>]`,
-    `${cliDisplay} worker-prepare <project> --task <text> --model <exact-model> [--task-key <member>] [--source <path,...>] [--propose <path,...>] [--context <text>] [--context-mode fresh|native-prefix]`,
+    `${cliDisplay} worker-prepare <project> --task <text> --model <exact-model> [--runtime codex|claude] [--task-key <member>] [--role developer|coder|reviewer] [--outcome <text>] [--source <path,...>] [--propose <path,...>] [--context <text>] [--context-mode fresh|native-prefix] [--instruction-scope selected-only|host-global] [--timeout-ms <ms>]`,
     `${cliDisplay} worker-start <project> --task-key <member> | --authorization <execution-authorization-id> [--role <developer|coder|reviewer>]`,
     `${cliDisplay} worker-job-status|worker-job-reconcile|worker-job-patch|worker-cancel <project> --authorization <execution-authorization-id>`,
     `${cliDisplay} worker-apply <project> --authorization <execution-authorization-id>`,

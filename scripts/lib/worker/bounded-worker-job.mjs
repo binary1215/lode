@@ -34,12 +34,14 @@ import { verifyWorkerPatchCandidate } from "./worker-patch-basis.mjs";
 import { verifyCodexWorkerPolicyPlan, inspectCodexWorkerPolicyCapability, withCodexWorkerPolicyCapability } from "../runtime/runtime-codex-worker-policy.mjs";
 import { verifyCodexFreshProposalPolicyPlan } from "../runtime/runtime-codex-proposal-policy.mjs";
 import { verifyCodexNativePrefixPolicyPlan } from "../runtime/runtime-codex-prefix-policy.mjs";
+import { verifyClaudeFreshProposalPolicyPlan } from "../runtime/runtime-claude-proposal-policy.mjs";
 import { buildWorkerPatchProposalCandidate, isWorkerPatchProposalMode } from "./worker-patch-proposal.mjs";
 
 const pluginRoot = path.resolve(import.meta.dirname, "../../..");
 const ownerFile = path.join(pluginRoot, "scripts", "worker-job-owner.mjs");
 const codexRunnerFile = path.join(pluginRoot, "scripts", "lib", "runtime", "runtime-codex-worker-runner.mjs");
 const codexProposalRunnerFile = path.join(pluginRoot, "scripts", "lib", "runtime", "runtime-codex-proposal-runner.mjs");
+const claudeProposalRunnerFile = path.join(pluginRoot, "scripts", "lib", "runtime", "runtime-claude-proposal-runner.mjs");
 const hosts = new WeakMap();
 const encode = (value) => Buffer.from(JSON.stringify(value));
 const fail = failWith("WORKER_JOB_CONFLICT");
@@ -47,9 +49,21 @@ const nativeLaunchPath = (file) => (process.platform === "win32" ? path.toNamesp
 const operationalEnvironmentNames = [RUNTIME_OPERATIONAL_STATE_CANONICAL_ENV, RUNTIME_OPERATIONAL_STATE_ENV];
 const operationalEnvironmentName = (key) => operationalEnvironmentNames.find((name) => name.toLowerCase() === key.toLowerCase());
 const proposalMode = (authorization) => isWorkerPatchProposalMode(authorization.workerInput?.executionBoundary?.mode);
-const proposalPolicy = (policy) => ["CodexFreshProposalPolicyPlan", "CodexNativePrefixPolicyPlan"].includes(policy?.kind);
+const proposalPolicy = (policy) => ["CodexFreshProposalPolicyPlan", "CodexNativePrefixPolicyPlan", "ClaudeFreshProposalPolicyPlan"].includes(policy?.kind);
+const claudeProposalPolicy = (policy) => policy?.kind === "ClaudeFreshProposalPolicyPlan";
 const verifyProposalPolicy = (policy) =>
-  policy?.kind === "CodexNativePrefixPolicyPlan" ? verifyCodexNativePrefixPolicyPlan(policy) : verifyCodexFreshProposalPolicyPlan(policy);
+  policy?.kind === "CodexNativePrefixPolicyPlan"
+    ? verifyCodexNativePrefixPolicyPlan(policy)
+    : claudeProposalPolicy(policy)
+      ? verifyClaudeFreshProposalPolicyPlan(policy)
+      : verifyCodexFreshProposalPolicyPlan(policy);
+// Each proposal policy kind has exactly one fixed runner and one runtime; neither
+// runner accepts the other's policy.
+const proposalRunnerFile = (policy) => (claudeProposalPolicy(policy) ? claudeProposalRunnerFile : codexProposalRunnerFile);
+const proposalRuntime = (policy) => (claudeProposalPolicy(policy) ? "claude" : "codex");
+// The environment a proposal owner may bind: Codex its home, Claude its frozen
+// profile folders. Values must equal the policy's; nothing else is accepted.
+const proposalHostEnvironment = (policy) => (claudeProposalPolicy(policy) ? { ...policy.providerProfile } : { CODEX_HOME: policy.codexHome });
 
 function regularBytes(file, limit, publicationAlias = false) {
   const stat = fs.lstatSync(file);
@@ -185,7 +199,11 @@ export function createBoundedWorkerJobHost({
     fail("Host reconnect data requires the fixed native composition.", "WORKER_JOB_POLICY_UNAVAILABLE");
   if (proposalPolicy(policy)) {
     verifyProposalPolicy(policy);
-    if (codexPolicyCapability !== null || hostModuleFile !== null || (runnerFile && fs.realpathSync(runnerFile) !== fs.realpathSync(codexProposalRunnerFile)))
+    if (
+      codexPolicyCapability !== null ||
+      hostModuleFile !== null ||
+      (runnerFile && fs.realpathSync(runnerFile) !== fs.realpathSync(proposalRunnerFile(policy)))
+    )
       fail("Fresh proposal jobs require the fixed backend, not a Host module or alternate runner.", "WORKER_JOB_POLICY_UNAVAILABLE");
     if (
       !workspaceBinding ||
@@ -195,18 +213,30 @@ export function createBoundedWorkerJobHost({
       fail("Fresh proposal jobs require their separate selected workspace.");
     const { bindingDigest, ...payload } = workspaceBinding;
     if (bindingDigest !== hash(encode(payload))) fail("Fresh proposal workspace binding changed.");
-    runnerFile = codexProposalRunnerFile;
-    // Node's loader flags would run before this fixed owner can verify code or
-    // policy. A proposal Host may bind its existing home, not inject startup
-    // modules through NODE_OPTIONS, NODE_PATH, or an arbitrary environment.
-    if (Object.keys(environment).some((key) => key.toLowerCase() !== "codex_home"))
-      fail("Fresh proposal owner accepts only its exact CODEX_HOME environment binding.", "WORKER_JOB_POLICY_UNAVAILABLE");
-    const homes = Object.keys(environment).filter((key) => key.toLowerCase() === "codex_home");
-    if (homes.length > 1 || homes.some((key) => environment[key] !== policy.codexHome))
-      fail("Fresh proposal Host environment differs from its frozen CODEX_HOME.");
-    environment = { ...environment };
-    for (const key of homes) delete environment[key];
-    environment.CODEX_HOME = policy.codexHome;
+    runnerFile = proposalRunnerFile(policy);
+    if (claudeProposalPolicy(policy)) {
+      // The Claude owner binds exactly the frozen profile folders, by the same
+      // names and values; it accepts no loader flag or arbitrary variable.
+      const profile = proposalHostEnvironment(policy);
+      if (
+        Object.keys(environment).some((key) => !Object.hasOwn(profile, key)) ||
+        Object.entries(environment).some(([key, value]) => profile[key] !== value)
+      )
+        fail("Claude proposal owner accepts only its frozen provider profile environment.", "WORKER_JOB_POLICY_UNAVAILABLE");
+      environment = profile;
+    } else {
+      // Node's loader flags would run before this fixed owner can verify code or
+      // policy. A proposal Host may bind its existing home, not inject startup
+      // modules through NODE_OPTIONS, NODE_PATH, or an arbitrary environment.
+      if (Object.keys(environment).some((key) => key.toLowerCase() !== "codex_home"))
+        fail("Fresh proposal owner accepts only its exact CODEX_HOME environment binding.", "WORKER_JOB_POLICY_UNAVAILABLE");
+      const homes = Object.keys(environment).filter((key) => key.toLowerCase() === "codex_home");
+      if (homes.length > 1 || homes.some((key) => environment[key] !== policy.codexHome))
+        fail("Fresh proposal Host environment differs from its frozen CODEX_HOME.");
+      environment = { ...environment };
+      for (const key of homes) delete environment[key];
+      environment.CODEX_HOME = policy.codexHome;
+    }
   } else if (codex) {
     verifyCodexWorkerPolicyPlan(policy);
     const proof = inspectCodexWorkerPolicyCapability(codexPolicyCapability);
@@ -265,7 +295,7 @@ function workspaceBoundary(authorization, projectRoot, policy, workspaceBinding,
       fail("Proposal binding does not retain an explicit authority-free read-only policy.");
     if (
       authorization.protocolVersion !== "0.7.0" ||
-      authorization.runtime !== "codex" ||
+      authorization.runtime !== proposalRuntime(policy) ||
       authorization.workspaceMode !== "read-only" ||
       authorization.workerInput.writeBasis ||
       !authorization.workerInput.proposalBasis ||
@@ -380,20 +410,21 @@ function verifiedBinding(directory, projectRoot, authorization) {
   )
     fail("Worker job execution root or deadline differs.");
   if (proposalMode(authorization)) {
+    const hostEnvironment = proposalHostEnvironment(binding.policy);
     const keys = Object.keys(request.request.environment),
       expected = new Set([
         "systemroot",
         "windir",
         "temp",
         "tmp",
-        "codex_home",
+        ...Object.keys(hostEnvironment).map((key) => key.toLowerCase()),
         RUNTIME_OPERATIONAL_STATE_ENV.toLowerCase(),
         RUNTIME_OPERATIONAL_STATE_CANONICAL_ENV.toLowerCase(),
       ]);
     if (
       keys.some((key) => !expected.has(key.toLowerCase())) ||
       new Set(keys.map((key) => key.toLowerCase())).size !== keys.length ||
-      request.request.environment.CODEX_HOME !== binding.policy.codexHome
+      Object.entries(hostEnvironment).some(([key, value]) => request.request.environment[key] !== value)
     )
       fail("Fresh proposal owner environment differs from its fixed startup boundary.");
   }
@@ -850,7 +881,12 @@ async function runRoutedOwner(bindingFile, { signal, onProcess }, { projectRoot,
   readBoundedWorkerDispatch({ root: projectRoot, authorizationId: authorization.authorizationId });
   if (proposalPolicy(binding.policy)) {
     verifyProposalPolicy(binding.policy);
-    if (!proposalMode(authorization) || binding.runnerFile !== fs.realpathSync(codexProposalRunnerFile) || binding.hostModuleFile || binding.hostModuleDigest)
+    if (
+      !proposalMode(authorization) ||
+      binding.runnerFile !== fs.realpathSync(proposalRunnerFile(binding.policy)) ||
+      binding.hostModuleFile ||
+      binding.hostModuleDigest
+    )
       fail("Fresh proposal worker requires the fixed concrete backend.", "WORKER_JOB_POLICY_UNAVAILABLE");
   } else if (binding.policy.kind === "CodexWorkerPolicyPlan") {
     verifyCodexWorkerPolicyPlan(binding.policy);
@@ -881,6 +917,9 @@ async function runRoutedOwner(bindingFile, { signal, onProcess }, { projectRoot,
     signal,
     onProcess,
     ...(proposalSupervisor ? { supervisorSelection: proposalSupervisor } : {}),
+    // The Claude runner checks its selected workspace again right before the
+    // lease is consumed, with this layer's verifier (the Codex runner ignores it).
+    ...(claudeProposalPolicy(binding.policy) ? { verifyWorkspace: verifyWorkerWorkspace } : {}),
   });
   let workspacePatchDigest;
   if (proposalMode(authorization)) {

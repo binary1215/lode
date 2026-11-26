@@ -2956,7 +2956,7 @@ export const OPERATIONS = Object.freeze([
     tool: {
       name: "lode_bounded_worker_prepare",
       description:
-        "Optional managed path only, not a prerequisite for ordinary Host delegation. Prepare a bounded read-only patch-proposal worker through the built-in local Host without calling a model. Lode supplies task, exact model, selected context and source/proposal paths from the conversation; never ask the user to write a module, JSON or IDs. Reuses current Session or active Run authority and an identical preparation. Does not apply patches, create a Run, approve results, inspect an account or start a worker. Host-global instruction selection is explicit input scope, not an enforcement assertion; selected-only is the default.",
+        "Optional managed path only, not a prerequisite for ordinary Host delegation. Prepare a bounded read-only patch-proposal worker through the built-in local Host without calling a model. Runtimes: codex (exact gpt-... model) and claude (exact claude-... model); a model of the other runtime is refused by name. Without runtime, the calling Host's runtime as the Host names itself is used when known. Lode supplies task, exact model, selected context and source/proposal paths from the conversation; never ask the user to write a module, JSON or IDs. Reuses current Session or active Run authority and an identical preparation. Does not apply patches, create a Run, approve results, inspect an account or start a worker. Host-global instruction selection is explicit input scope, not an enforcement assertion; selected-only is the default and the only scope for claude.",
       inputSchema: {
         type: "object",
         properties: {
@@ -2976,7 +2976,7 @@ export const OPERATIONS = Object.freeze([
             type: "string",
             enum: ["fresh", "native-prefix"],
             description:
-              "Default fresh uses one model turn. Explicit native-prefix uses selected_context in a new durable controlled seed and then a fork child (two turns total); not a fork of the current conversation or a stronger code-worker sandbox. Lode must keep both calls and seed persistence within the existing authorized scope.",
+              "Default fresh uses one model turn. Explicit native-prefix (codex only) uses selected_context in a new durable controlled seed and then a fork child (two turns total); not a fork of the current conversation or a stronger code-worker sandbox. Lode must keep both calls and seed persistence within the existing authorized scope.",
           },
         },
         required: ["project_root", "task", "model"],
@@ -2985,9 +2985,16 @@ export const OPERATIONS = Object.freeze([
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     mcp: {
-      args: (args, { workerJobSupervisor, workerPreparationBackend, signal, onProcess }) => [
+      args: (args, { workerJobSupervisor, workerPreparationBackend, signal, onProcess, hostRuntime }) => [
         localWorkerInput(args),
-        { root: args.project_root, supervisorSelection: workerJobSupervisor, protocolFixtureBackend: workerPreparationBackend, signal, onProcess },
+        {
+          root: args.project_root,
+          supervisorSelection: workerJobSupervisor,
+          protocolFixtureBackend: workerPreparationBackend,
+          signal,
+          onProcess,
+          hostRuntime: hostRuntime ?? null,
+        },
       ],
     },
     cli: {

@@ -42,6 +42,16 @@ durable seed를 만들고 그 child를 fork합니다. 한 번 대신 최대 두 
 더 강한 code-worker backend가 아닙니다. 소스 반영은 설치 캐시 반영과 다릅니다.
 실제 provider E2E 검증과 backend 전체의 수용 판정은 아직 남아 있습니다.
 
+같은 모드에 Claude Code backend도 있습니다. `runtime: "claude"`와 정확한
+`claude-...` 모델을 주면, 복사된 작업 폴더에서 도구 없이 한 번 답하는 새
+`claude --print` worker를 준비하고 Codex job과 같은 방식으로 시작·소유합니다.
+빌드는 관측한 도움말로 신뢰하고 준비 때 결속하며, 빌드가 바뀌면 시작 시 거부합니다.
+Claude에서는 `selected-only` 지시 범위와 fresh 맥락만 쓸 수 있습니다. 상태·대기·
+취소·조정·patch 읽기·통합·wave는 같고, 한 wave에 Codex와 Claude member를 섞을 수
+있습니다. 이 backend가 무엇을 제외하고 무엇을 제외하지 못하는지는
+[runtime 계약](runtime-adapters.md#claude-새-patch-제안-backend)에 있습니다. 모델 없는
+fixture로만 검증했으며 실제 모델 호출 검증은 주장하지 않습니다.
+
 자동 통합 상태는 관측 불가한 읽기 의존성과 쓰기 대상을 구분하고, Lode가 수행할
 범위 한정 복구 행동을 안내합니다. 관측 가능성을 복구하거나 정당한 근거 재선택으로
 새 제안을 준비하며, 새 digest만 제출해 unknown 근거를 우회하지 않습니다. 원래 결과는

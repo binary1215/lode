@@ -43,6 +43,17 @@ an arbitrary Lode-history fork, a cache guarantee, or the stronger code-worker
 backend. Source availability is not installed-cache pickup. Actual-provider E2E
 validation and whole-backend acceptance remain pending.
 
+The same mode has a Claude Code backend: `runtime: "claude"` with an exact
+`claude-...` model prepares a fresh, tool-less `claude --print` worker in its
+copied workspace, started and owned like a Codex job. Its build is trusted by the
+observed help surface and bound at preparation; a changed build is refused at
+start. Only `selected-only` instruction scope and fresh context are available for
+Claude. Status, wait, cancel, reconcile, patch read, integration and waves are the
+same, and a wave may mix Codex and Claude members. What this backend excludes and
+what it cannot exclude is in its
+[runtime contract](runtime-adapters.md#claude-fresh-patch-proposal-backend). It
+has model-free fixture coverage only; live model-call verification is not claimed.
+
 Automatic integration status identifies unobservable read dependencies separately
 from write targets and gives Lode a scoped recovery action. Lode restores
 observability or prepares a newly justified proposal with reselected evidence;

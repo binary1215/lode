@@ -625,6 +625,98 @@ known staging link with verified identical bytes and inode; unknown links are
 preserved and rejected. This is operational recovery, not a user approval gate
 or a source of P2 direction.
 
+## Claude fresh patch-proposal backend
+
+`ClaudeFreshProposalPolicyPlan` `0.1.0` is a second backend for the same
+`fresh-selected-patch-proposal` mode, authorization `0.7.0` and structured result
+`0.2.0`. It changes neither the Codex backend nor the native-prefix mode (Codex
+only), the attached Claude one-shot adapter or write-bound execution.
+`worker-prepare` / `lode_bounded_worker` (`prepare`) takes `runtime: "claude"`
+with an exact `claude-...` model id. A Codex model with the Claude runtime, or the
+reverse, is refused by name (`LOCAL_WORKER_RUNTIME_MODEL_MISMATCH`). When no
+runtime is named, the calling Host's runtime is used when Lode knows it: on MCP
+the Host as it names itself at initialize. That claim chooses only the default
+runtime; it cannot choose the executable, runner, environment or policy. The CLI
+has no calling Host.
+
+Claude Code is closed source and updates often, so the plan is trusted by
+observed capability, not by an audited digest. Preparation requires the
+installed executable's help surface to show every option of the recipe (the
+`one-shot-invocation-surface` capability), and binds the executable's path, size
+and content digest. A different build before start, for example after an update,
+is refused with reason `executable-changed`; the member is then prepared again.
+The check reads the same help bytes as the protocol observation (bound by their
+digest), because the shared observation signals cover only part of the recipe.
+Discovery is the existing read-only PATH discovery; a command shim (`claude.cmd`)
+or a link is not spawned.
+
+One `claude --print` process runs per worker, in the worker's copied workspace,
+owned by the native supervisor:
+
+```text
+claude --print --output-format stream-json --verbose --no-session-persistence
+  --json-schema <proposal schema> --permission-mode dontAsk --tools ""
+  --disable-slash-commands --setting-sources "" --strict-mcp-config
+  --mcp-config {"mcpServers":{}} --system-prompt <fixed proposal instructions>
+  --model <exact id>
+```
+
+It never uses `--dangerously-skip-permissions`. The selected files
+travel in the input. The worker has no tool except the structured output tool the
+CLI adds for `--json-schema`, and answers once. Its environment is the system
+folders, the frozen provider profile folders (`HOME`, `USERPROFILE`, `APPDATA`,
+`LOCALAPPDATA`, and `CLAUDE_CONFIG_DIR` when set) and fixed values (`CI`,
+`NO_COLOR`, `TERM`, `DISABLE_AUTOUPDATER`, `DISABLE_TELEMETRY`,
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `CLAUDE_CODE_MAX_RETRIES=4`); no
+`PATH`, loader variable, API key or proxy variable is forwarded. Authentication
+stays the provider's own: Lode reads, copies and stores no credential and nothing
+inside the profile. The job owner accepts only those profile folders with their
+frozen values, and only the Claude runner for a Claude plan (the Codex runner
+only for a Codex plan).
+
+The runner checks at run time that the recipe is in effect. The provider's init
+record must list only the structured output tool and no MCP server, skill or
+command, and any other tool request stops the run (`claude.recipe-not-in-effect`,
+`claude.effect-tool-rejected`). Only a schema-valid `structured_output` inside the
+proposal basis becomes a result; anything else is `claude.proposal-result-rejected`
+and not success. The provider retries a refusal (HTTP 429) itself, at most four
+times (about 8 s of backoff, inside the 60 s default timeout); a run that was
+retried and then answered stays a success, and a lasting refusal ends as a failed
+receipt with `claude.rate-limit`, not as a lost job.
+
+Shutdown follows the rule of the existing one-shot process type, not the Codex
+App Server transport's stop a third of the grace after end of input. The process
+is expected to exit by itself after its result, and it is stopped only on timeout,
+cancellation or an output limit. A process that lingers after a complete result
+therefore holds its lease and its slot until the job's timeout, ends as timed out,
+and its proposal is not kept, as with the attached adapter today.
+
+Instruction scope is `selected-only`. The recipe turns all memory loading off,
+so the user's own CLAUDE.md does not enter the input. `host-global` is refused
+for Claude in this version (`LOCAL_WORKER_BACKEND_UNAVAILABLE`), never silently
+widened.
+
+What was shown on the installed Claude Code 2.1.330, without a model call (a
+synthetic home, a local stand-in for the Messages API and a proxy that refused
+every other host), each against a control run where the same sources were live:
+user and project hooks did not run; user and project MCP servers did not start;
+skills, commands and agents were not reachable; user and project CLAUDE.md,
+CLAUDE.local.md, rules and AGENTS.md were not loaded; the system prompt was
+replaced except for the SDK's own identity line; no session transcript was
+written; auto-update was skipped; one stand-in run made one Messages request.
+What could not be excluded: three plugins built into the binary load with native
+hook modules, and each run rewrites the provider's own `~/.claude.json` and writes
+a backup and a plugin store file in its home. The plan names both
+(`knownUnexcluded`) instead of claiming them away.
+
+This is a **backend candidate with model-free fixture coverage**: preparation,
+start through the CLI and stdio MCP, two Claude workers measured running at the
+same moment, a wave that mixes a Codex and a Claude worker and integrates both
+proposals, cancellation, timeout, a result outside the proposal basis, recipe
+drift, an executable change between preparation and start, a wrong runner for a
+policy kind and a runtime/model mismatch. Live model-call verification is not
+claimed. Detached start is Windows-only, as for Codex.
+
 ## Ordinary delegation and optional attachment
 
 Use current Host tasks/messages/progress for ordinary bounded delegation.

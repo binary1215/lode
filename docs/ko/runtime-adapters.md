@@ -546,6 +546,87 @@ hardlink 출판이 중단되면 동일 bytes·inode로 검증한 본인 staging 
 알 수 없는 링크는 보존하고 거부합니다. 이는 운영 복구이며 사용자 승인 게이트나
 P2 방향의 출처가 아닙니다.
 
+## Claude 새 patch 제안 backend
+
+`ClaudeFreshProposalPolicyPlan` `0.1.0`은 같은 `fresh-selected-patch-proposal`
+모드, authorization `0.7.0`, structured result `0.2.0`을 쓰는 두 번째 backend입니다.
+Codex backend, Codex 전용 native-prefix 모드, 연결형 Claude 일회성 어댑터, 쓰기
+결속 실행은 바뀌지 않습니다. `worker-prepare` / `lode_bounded_worker` (`prepare`)는
+`runtime: "claude"`와 정확한 `claude-...` 모델 id를 받습니다. Claude runtime에
+Codex 모델을 주거나 그 반대이면 둘을 이름으로 밝혀 거부합니다
+(`LOCAL_WORKER_RUNTIME_MODEL_MISMATCH`). runtime을 지정하지 않으면 Lode가 아는
+경우 호출한 Host의 runtime을 씁니다. MCP에서는 Host가 initialize 때 스스로 밝힌
+이름입니다. 이 주장은 기본 runtime만 정하며 실행 파일·실행기·환경·정책은 정하지
+못합니다. CLI에는 호출한 Host가 없습니다.
+
+Claude Code는 소스가 공개되지 않았고 자주 갱신되므로, 이 계획은 감사한 digest가
+아니라 관측한 기능으로 신뢰합니다. 준비 단계는 설치된 실행 파일의 도움말에 구성의
+모든 옵션이 보여야 하며(`one-shot-invocation-surface` 기능), 실행 파일의 경로·크기·
+내용 digest를 결속합니다. 시작 전에 빌드가 바뀌면(예: 갱신 후) `executable-changed`
+사유로 거부하고, member를 다시 준비해야 합니다. 공유 관측 신호는 구성의 일부만
+다루므로, 이 검사는 protocol 관측이 읽은 것과 같은 도움말 bytes(digest로 결속)를
+읽습니다. 탐색은 기존의 읽기 전용 PATH 탐색이며, 명령 shim(`claude.cmd`)이나
+링크는 직접 실행하지 않습니다.
+
+worker마다 `claude --print` 프로세스 하나가 worker의 복사된 작업 폴더에서
+native supervisor 소유로 실행됩니다.
+
+```text
+claude --print --output-format stream-json --verbose --no-session-persistence
+  --json-schema <proposal schema> --permission-mode dontAsk --tools ""
+  --disable-slash-commands --setting-sources "" --strict-mcp-config
+  --mcp-config {"mcpServers":{}} --system-prompt <fixed proposal instructions>
+  --model <exact id>
+```
+
+`--dangerously-skip-permissions`는 절대 쓰지 않습니다. 선택한 파일은 입력으로
+전달됩니다. worker는 CLI가 `--json-schema`를 위해 추가하는 구조화 출력 도구 외에는
+도구가 없고 한 번만 답합니다. 환경은 시스템 폴더, 동결한 provider profile 폴더
+(`HOME`, `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, 설정된 경우 `CLAUDE_CONFIG_DIR`),
+고정 값(`CI`, `NO_COLOR`, `TERM`, `DISABLE_AUTOUPDATER`, `DISABLE_TELEMETRY`,
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `CLAUDE_CODE_MAX_RETRIES=4`)뿐이며
+`PATH`, loader 변수, API key, proxy 변수는 넘기지 않습니다. 인증은 provider의
+것으로 남습니다. Lode는 credential도 profile 안의 어떤 것도 읽거나 복사하거나
+저장하지 않습니다. Job owner는 그 profile 폴더만 동결된 값 그대로 받고, Claude
+계획에는 Claude 실행기만(Codex 계획에는 Codex 실행기만) 받습니다.
+
+실행기는 실행 중에 구성이 적용됐는지 확인합니다. provider의 init 기록에는 구조화
+출력 도구만 있고 MCP 서버·skill·command는 없어야 하며, 다른 도구 요청은 실행을
+멈춥니다(`claude.recipe-not-in-effect`, `claude.effect-tool-rejected`). 제안
+기준 안에 있는 schema 유효 `structured_output`만 결과가 되고, 그 밖은
+`claude.proposal-result-rejected`이며 성공이 아닙니다. Provider는 거부(HTTP 429)를
+스스로 최대 네 번 다시 시도합니다(대기 합계 약 8초, 기본 제한 60초 안). 다시 시도한
+뒤 답한 실행은 성공으로 남고, 계속되는 거부는 `claude.rate-limit`가 붙은 실패
+receipt로 끝나며 잃어버린 job이 되지 않습니다.
+
+종료는 Codex App Server transport의 "입력 종료 뒤 유예의 3분의 1에 정지" 규칙이
+아니라 기존 일회성 프로세스의 규칙을 따릅니다. 프로세스는 결과 뒤 스스로 종료해야
+하며 시간 초과·취소·출력 한도에서만 멈춥니다. 따라서 완료된 결과 뒤에도 남아 있는
+프로세스는 job의 시간 제한까지 lease와 자리를 차지하고, 시간 초과로 끝나며, 그
+제안은 보존되지 않습니다. 오늘의 연결형 어댑터와 같습니다.
+
+지시 범위는 `selected-only`입니다. 구성이 모든 메모리 로딩을 끄므로 사용자 자신의
+CLAUDE.md는 입력에 들어가지 않습니다. 이 버전에서 Claude의 `host-global`은 몰래
+넓히지 않고 거부합니다(`LOCAL_WORKER_BACKEND_UNAVAILABLE`).
+
+설치된 Claude Code 2.1.330에서 모델 호출 없이(합성 home, Messages API의 로컬 대체,
+다른 모든 host를 거부하는 proxy) 같은 출처가 살아 있는 대조 실행과 비교해 확인한
+것은 다음과 같습니다. 사용자·프로젝트 hook은 실행되지 않았고, 사용자·프로젝트 MCP
+서버는 시작되지 않았고, skill·command·agent는 쓸 수 없었고, 사용자·프로젝트
+CLAUDE.md, CLAUDE.local.md, rules, AGENTS.md는 로드되지 않았습니다. 시스템 프롬프트는
+SDK 자체의 정체 문장을 빼고 교체됐고, 세션 기록은 쓰이지 않았고, 자동 갱신은
+건너뛰었고, 대체 실행 한 번은 Messages 요청 한 번이었습니다. 제외하지 못한 것도
+있습니다. 실행 파일에 내장된 plugin 세 개가 native hook 모듈과 함께 로드되고, 실행마다
+provider가 자기 `~/.claude.json`을 다시 쓰며 home에 백업과 plugin 저장 파일을
+남깁니다. 계획은 이를 없다고 하지 않고 `knownUnexcluded`로 밝힙니다.
+
+이것은 **모델 없는 fixture로 검증한 backend 후보**입니다. 준비, CLI와 stdio MCP를
+통한 시작, 같은 순간에 실행 중임을 측정한 Claude worker 두 개, Codex와 Claude
+worker를 섞은 wave와 두 제안의 통합, 취소, 시간 초과, 제안 기준 밖의 결과, 구성
+이탈, 준비와 시작 사이의 실행 파일 변경, 정책 종류에 맞지 않는 실행기, runtime과
+모델 불일치를 다룹니다. 실제 모델 호출 검증은 주장하지 않습니다. 분리 실행은 Codex와
+같이 Windows에서만 합니다.
+
 ## 일반 위임과 선택적 연결
 
 일반 bounded 위임에는 현재 Host의 task/message/progress를 사용합니다.
