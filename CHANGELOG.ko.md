@@ -40,10 +40,12 @@ GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 �
   필요한 작업자 테스트는 `npm test`도 CI도 설정하지 않는 이름으로 위치를 기다리고
   있었습니다. 이제 테스트 도우미 하나가 모든 픽스처 위치를 `LODE_AGENT_`와
   `HEAD_AGENT_` 두 이름으로 읽고, 실행기가 supervisor, file-effect, owner-crash,
-  terminal-hold 픽스처를 공급합니다. 실행되지 않는 동안 낡은 테스트는 고쳤습니다.
+  terminal-hold 픽스처를 공급합니다(뒤의 둘은 Windows에서). 실행되지 않는 동안
+  낡은 테스트는 고쳤습니다.
 - 변경: CI가 Windows와 macOS에서도 JavaScript 테스트보다 먼저 `go mod verify`,
-  `go vet ./...`, `go test ./...`를 실행합니다. Windows 전용, macOS 전용 Go
-  테스트는 실행된 적이 없었습니다. Linux Go 작업은 테스트를 하나씩 출력합니다.
+  `go vet ./...`, `go test ./...`를 실행합니다. Windows 전용 Go 테스트는 실행된
+  적이 없었고, macOS에서는 Go 테스트가 하나도 실행된 적이 없었습니다. Linux Go
+  작업은 테스트를 하나씩 출력합니다.
 - 변경: 건너뛴 테스트는 이유를 밝혀야 합니다. 모든 건너뜀에는 선언된 분류
   (`other-os`, `filesystem`, `native-fixture`, `ci-step`, `no-source`, `opt-in`,
   `host-limit`)의 이유가 붙고, 이유 없는 건너뜀, `todo` 테스트, Windows의
@@ -53,10 +55,10 @@ GitHub Release는 별도로 지정한 릴리스에만 만들며 과거 중간 �
 - 변경: `npm test`가 테스트를 임시 프로필(`HOME`, `USERPROFILE`, `APPDATA`,
   `LOCALAPPDATA`, `XDG_*` 폴더, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`)에서 실행하고,
   물려받은 운영 상태 루트와 Claude 세션의 메시징 엔드포인트를 넘기지 않습니다.
-  결과가 호출한 셸에 좌우되지 않고, 테스트가 실행 중인 데스크톱 앱에 닿을 수
-  없습니다. 테스트마다 시간 제한이 있고(10분, `LODE_AGENT_TEST_TIMEOUT_MS`로
-  늘림) 시간 초과한 테스트는 이름과 함께 실패합니다. 모든 CI 작업에 시간 제한이
-  있습니다.
+  결과가 호출한 셸에 좌우되지 않고, 호출한 쪽의 실행 중인 Claude 세션이 더 이상
+  테스트에 넘어가지 않습니다. 테스트마다 시간 제한이 있고(10분,
+  `LODE_AGENT_TEST_TIMEOUT_MS`로 정함) 시간 초과한 테스트는 이름과 함께
+  실패합니다. 모든 CI 작업에 시간 제한이 있습니다.
 - 변경: `.gitignore`가 더 이상 `test/`를 예외 목록과 함께 무시하지 않으므로 새
   테스트 파일은 `git add -f` 없이 추적됩니다. 서식 검사를 받은 적이 없던 테스트
   파일 76개는 커밋 하나로 서식을 맞췄고, 그 커밋은 `.git-blame-ignore-revs`에

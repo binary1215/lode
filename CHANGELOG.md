@@ -47,10 +47,12 @@ Host/MCP reload.
   neither `npm test` nor CI set; one test helper now reads every fixture
   location under both the `LODE_AGENT_` and the `HEAD_AGENT_` name, and the
   runner supplies the supervisor, file-effect, owner-crash and terminal-hold
-  fixtures. The tests that had rotted while they never ran were repaired.
+  fixtures (the last two on Windows). The tests that had rotted while they
+  never ran were repaired.
 - Changed: CI runs `go mod verify`, `go vet ./...` and `go test ./...` on
-  Windows and macOS as well, before the JavaScript suite. The Windows-only and
-  macOS-only Go tests had never run. The Linux Go job prints every test.
+  Windows and macOS as well, before the JavaScript suite. The Windows-only Go
+  tests had never run, and no Go test had run on macOS. The Linux Go job prints
+  every test.
 - Changed: a skipped test must say why. Every skip carries a reason of a
   declared class (`other-os`, `filesystem`, `native-fixture`, `ci-step`,
   `no-source`, `opt-in`, `host-limit`), and a run fails on a skip without one,
@@ -61,10 +63,10 @@ Host/MCP reload.
   `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`, the `XDG_*` folders,
   `CLAUDE_CONFIG_DIR`, `CODEX_HOME`) and does not pass on an inherited
   operational state root or a Claude session's messaging endpoint, so the
-  result no longer depends on the caller's shell and the suite cannot reach a
-  running desktop app. Each test has a time limit (10 minutes,
-  `LODE_AGENT_TEST_TIMEOUT_MS` raises it) and a timed-out test fails with its
-  name; every CI job has a time limit.
+  result no longer depends on the caller's shell, and the suite is no longer
+  handed the caller's running Claude session. Each test has a time limit (10
+  minutes, `LODE_AGENT_TEST_TIMEOUT_MS` sets it) and a timed-out test fails
+  with its name; every CI job has a time limit.
 - Changed: `.gitignore` no longer ignores `test/` with a list of exceptions, so
   a new test file is tracked without `git add -f`. The 76 test files that
   formatting had never checked were formatted in one commit, listed in
