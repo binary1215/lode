@@ -53,7 +53,9 @@ process.stdin.on("end", async () => {
   }
   const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
   const tools = scenario === "extra-tool" ? ["Bash", "StructuredOutput"] : ["StructuredOutput"];
-  write({ type: "system", subtype: "init", cwd: process.cwd(), tools, mcp_servers: [], model: value("--model"), skills: [], slash_commands: [] });
+  const plugins = [{ name: "cc-plugin-agents-md", path: "builtin", source: "cc-plugin-agents-md@builtin" }];
+  if (scenario === "user-plugin") plugins.push({ name: "userplug", path: process.cwd(), source: "userplug@usermarket", version: "1.0.0" });
+  write({ type: "system", subtype: "init", cwd: process.cwd(), tools, mcp_servers: [], model: value("--model"), skills: [], slash_commands: [], plugins });
   if (scenario === "hang") {
     setInterval(() => {}, 1000);
     return;

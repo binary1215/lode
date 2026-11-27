@@ -595,7 +595,10 @@ claude --print --output-format stream-json --verbose --no-session-persistence
 계획에는 Claude 실행기만(Codex 계획에는 Codex 실행기만) 받습니다.
 
 실행기는 실행 중에 구성이 적용됐는지 확인합니다. provider의 init 기록에는 구조화
-출력 도구만 있고 MCP 서버·skill·command는 없어야 하며, 다른 도구 요청은 실행을
+출력 도구만 있고 MCP 서버·skill·command는 없어야 하며, 나열된 plugin은 모두 실행
+파일에 내장된 것이어야 합니다(path `builtin`, source가 `@builtin`으로 끝남, 내장
+이름은 고정하지 않음). 확인한 빌드에서 설치형 plugin은 구성 아래에서 로드되지 않았고,
+로드되는 일이 생기면 이 검사가 실행을 거부합니다. 다른 도구 요청은 실행을
 멈춥니다(`claude.recipe-not-in-effect`, `claude.effect-tool-rejected`). 제안
 기준 안에 있는 schema 유효 `structured_output`만 결과가 되고, 그 밖은
 `claude.proposal-result-rejected`이며 성공이 아닙니다. Provider는 거부(HTTP 429)를

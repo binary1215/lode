@@ -357,6 +357,18 @@ test("the Claude stream reader rejects records outside the recipe and classifies
   assert.throws(() => reader.extract({ type: "assistant", message: { content: [{ type: "tool_use", name: "Read", input: {} }] } }), {
     code: "CLAUDE_FRESH_PROPOSAL_RECIPE_NOT_IN_EFFECT",
   });
+  // Built-in plugins pass by their shape, whatever their names; an installed one does not.
+  const builtIn = { name: "cc-plugin-new-in-a-later-build", path: "builtin", source: "cc-plugin-new-in-a-later-build@builtin" };
+  assert.equal(reader.extract({ type: "system", subtype: "init", tools: ["StructuredOutput"], mcp_servers: [], plugins: [builtIn] }), null);
+  for (const plugins of [
+    [builtIn, { name: "userplug", path: "C:/plugins/userplug", source: "userplug@usermarket" }],
+    [{ name: "x", path: "builtin", source: "x@market" }],
+    [{ name: "y", path: "/plugins/y", source: "y@builtin" }],
+    "builtin",
+  ])
+    assert.throws(() => reader.extract({ type: "system", subtype: "init", tools: ["StructuredOutput"], mcp_servers: [], plugins }), {
+      code: "CLAUDE_FRESH_PROPOSAL_RECIPE_NOT_IN_EFFECT",
+    });
   assert.equal(reader.extract({ type: "result", is_error: true, structured_output: {} }), null);
   assert.ok(reader.classify({ record: { type: "system", subtype: "api_retry", error_status: 429, error: "rate_limit" } }).includes("claude.rate-limit"));
   const final = reader.classify({ stderr: "", exitCode: 0, structuredResultObserved: false, eventTypes: [] });
@@ -608,13 +620,14 @@ for (const [scenario, code] of [
   ["sensitive-result", null],
   ["missing-result", "claude.missing-structured-result"],
   ["extra-tool", "claude.recipe-not-in-effect"],
+  ["user-plugin", "claude.recipe-not-in-effect"],
   ["tool-call", "claude.effect-tool-rejected"],
   ["rate-limit", "claude.rate-limit"],
 ]) {
   test(`a Claude worker whose provider run ends as ${scenario} settles as failed without a patch`, { skip }, async (t) => {
     const { f, member } = await failedRun(t, scenario);
     const state = await f.settle(member);
-    const receipt = assertSettledWithoutPatch(f, member, state, ["extra-tool", "tool-call"].includes(scenario) ? "invalid-event" : "failed");
+    const receipt = assertSettledWithoutPatch(f, member, state, ["extra-tool", "user-plugin", "tool-call"].includes(scenario) ? "invalid-event" : "failed");
     if (code) assert.ok(receipt.providerBoundary.diagnosticCodes.includes(code), receipt.providerBoundary.diagnosticCodes.join());
   });
 }

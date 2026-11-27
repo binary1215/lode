@@ -64,6 +64,10 @@ export function claudeProposalOperationalDirectory(operationalRoot, authorizatio
 }
 
 const sameList = (value, expected) => Array.isArray(value) && json(value) === json(expected);
+// A plugin built into the binary is listed with path "builtin" and a source
+// "<name>@builtin"; an installed plugin carries its folder and marketplace. The
+// built-in names are not pinned, so a Claude Code update may add one.
+const builtInPlugin = (entry) => entry?.path === "builtin" && typeof entry.source === "string" && entry.source.endsWith("@builtin");
 
 // Reads one stream-json record. The init record must show the recipe in effect:
 // only the structured output tool, no MCP server, no skill or command. Any
@@ -81,9 +85,10 @@ export function createClaudeProposalStreamReader({ authorization, forbidden }) {
         !sameList(record.tools, ["StructuredOutput"]) ||
         !sameList(record.mcp_servers, []) ||
         (record.skills !== undefined && !sameList(record.skills, [])) ||
-        (record.slash_commands !== undefined && !sameList(record.slash_commands, []))
+        (record.slash_commands !== undefined && !sameList(record.slash_commands, [])) ||
+        (record.plugins !== undefined && (!Array.isArray(record.plugins) || !record.plugins.every(builtInPlugin)))
       )
-        reject("claude.recipe-not-in-effect", "The Claude worker started with tools, servers or skills outside its recipe.");
+        reject("claude.recipe-not-in-effect", "The Claude worker started with tools, servers, skills or plugins outside its recipe.");
       return null;
     }
     if (record?.type === "assistant") {

@@ -681,7 +681,10 @@ only for a Codex plan).
 
 The runner checks at run time that the recipe is in effect. The provider's init
 record must list only the structured output tool and no MCP server, skill or
-command, and any other tool request stops the run (`claude.recipe-not-in-effect`,
+command, and every plugin it lists must be built into the binary (path `builtin`,
+source ending in `@builtin`; the built-in names are not pinned). An installed
+plugin did not load under the recipe on the checked build, and the check refuses
+the run if one ever does. Any other tool request stops the run (`claude.recipe-not-in-effect`,
 `claude.effect-tool-rejected`). Only a schema-valid `structured_output` inside the
 proposal basis becomes a result; anything else is `claude.proposal-result-rejected`
 and not success. The provider retries a refusal (HTTP 429) itself, at most four
