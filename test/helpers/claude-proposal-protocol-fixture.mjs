@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 
+const launched = Date.now();
 const args = process.argv.slice(2);
 const home = process.env.HOME || process.env.USERPROFILE || "";
 let settings = {};
@@ -60,7 +61,10 @@ process.stdin.on("end", async () => {
   const started = Date.now();
   if (settings.stayMs) await new Promise((resolve) => setTimeout(resolve, settings.stayMs));
   if (settings.overlapDirectory)
-    fs.writeFileSync(path.join(settings.overlapDirectory, `${process.pid}.json`), JSON.stringify({ pid: process.pid, started, ended: Date.now() }));
+    fs.writeFileSync(
+      path.join(settings.overlapDirectory, `${process.pid}.json`),
+      JSON.stringify({ pid: process.pid, taskKey: input.boundedWorker?.taskKey ?? null, launched, started, ended: Date.now() }),
+    );
   if (scenario === "rate-limit") {
     for (const attempt of [1, 2])
       write({ type: "system", subtype: "api_retry", attempt, max_retries: 2, retry_delay_ms: 1, error_status: 429, error: "rate_limit" });

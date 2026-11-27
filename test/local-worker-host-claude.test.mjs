@@ -467,7 +467,11 @@ test("two Claude workers started one after the other run at the same moment and 
   f.settings({ stayMs: 2500, overlapDirectory });
   for (const taskKey of ["claude-left", "claude-right"])
     f.prepared.push(await f.host.prepareLocalBoundedWorker({ ...f.input, taskKey }, { root: f.root, protocolFixtureBackend: f.backend }));
-  for (const member of f.prepared) await f.host.startLocalBoundedWorker({ root: f.root, taskKey: member.taskKey });
+  const startReturned = {};
+  for (const member of f.prepared) {
+    await f.host.startLocalBoundedWorker({ root: f.root, taskKey: member.taskKey });
+    startReturned[member.taskKey] = Date.now();
+  }
   const states = [];
   for (const member of f.prepared) states.push(await f.settle(member));
   for (const state of states) assert.equal(state.status, "completed", JSON.stringify(state));
@@ -477,6 +481,15 @@ test("two Claude workers started one after the other run at the same moment and 
   assert.notEqual(a.pid, b.pid);
   // Measured, not assumed: each provider was still running when the other started.
   assert.ok(a.started < b.ended && b.started < a.ended, JSON.stringify(spans));
+  // Measured, reported, not asserted: from each start call returning to its
+  // lease being consumed and to its provider process running.
+  for (const member of f.prepared) {
+    const lease = inspectRuntimeExecutionLease({ projectRoot: f.root, projectId: f.projectId, authorizationId: member.authorizationId, storage: f.storage });
+    const span = spans.find((item) => item.taskKey === member.taskKey);
+    t.diagnostic(
+      `${member.taskKey}: lease consumed ${Date.parse(lease.consumption.consumedAt) - startReturned[member.taskKey]} ms and provider launched ${span.launched - startReturned[member.taskKey]} ms after its start call returned`,
+    );
+  }
   const receipts = f.prepared.map((member) => f.receipt(member));
   assert.notEqual(receipts[0].receiptId, receipts[1].receiptId);
   assert.deepEqual(

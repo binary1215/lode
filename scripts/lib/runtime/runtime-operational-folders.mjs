@@ -16,8 +16,12 @@ export function isLostOperationalFolderRace(error, folder) {
 }
 
 // Creates each folder of `chain` (each one inside the previous one; the last is
-// the worker's own folder) and checks each is a real directory at its canonical
-// path. A parent removed under it by another worker's cleanup is created again.
+// the worker's own folder), one level at a time: a level is checked (a real
+// directory at its canonical path, not a link) before the next one is created,
+// so nothing is ever created through a link or a file. A level that exists and
+// fails the check is refused at once. A parent removed under the worker by
+// another worker's cleanup (a level of the chain missing at that moment) makes
+// the whole chain be created again.
 export function createOperationalFolders(chain, { unsafe }) {
   for (let attempt = 0; ; attempt++) {
     try {
@@ -27,15 +31,13 @@ export function createOperationalFolders(chain, { unsafe }) {
         } catch (error) {
           if (error.code !== "EEXIST") throw error;
         }
-      }
-      for (const folder of chain) {
         const stat = fs.lstatSync(folder);
         if (!stat.isDirectory() || stat.isSymbolicLink() || fs.realpathSync(folder) !== folder) unsafe();
       }
       return;
     } catch (error) {
-      const lost = error?.code === "ENOENT" || (process.platform === "win32" && (error?.code === "EPERM" || error?.code === "EBUSY"));
-      if (attempt < 32 && lost) continue;
+      const raceCode = error?.code === "ENOENT" || (process.platform === "win32" && (error?.code === "EPERM" || error?.code === "EBUSY"));
+      if (attempt < 32 && raceCode && chain.some((folder) => !fs.existsSync(folder))) continue;
       throw error;
     }
   }
