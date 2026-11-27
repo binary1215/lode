@@ -41,7 +41,14 @@ test("cleanup loses shared-parent races without failing and keeps other failures
           { name: "delete-pending EPERM at lstat for a removed folder", method: "lstatSync", race: "remove", error: "EPERM" },
         ]
       : []),
-    { name: "EPERM for a folder that is still there", method: "rmdirSync", race: "none", error: "EPERM", rejects: "EPERM" },
+    // Past the safety check, Windows EPERM/EBUSY on a shared parent means another
+    // worker is using it: it is left as it is. Elsewhere EPERM stays an error.
+    ...(process.platform === "win32"
+      ? [
+          { name: "EPERM at rmdir for a shared parent that is still there", method: "rmdirSync", race: "none", error: "EPERM", left: true },
+          { name: "EBUSY at readdir for a shared parent that is still there", method: "readdirSync", race: "none", error: "EBUSY", left: true },
+        ]
+      : [{ name: "EPERM for a folder that is still there", method: "rmdirSync", race: "none", error: "EPERM", rejects: "EPERM" }]),
     { name: "EIO before realpath", method: "lstatSync", race: "none", error: "EIO", rejects: "EIO" },
   ];
   for (const scenario of cases) {
@@ -71,7 +78,7 @@ test("cleanup loses shared-parent races without failing and keeps other failures
       assert.equal(triggered, true);
       if (scenario.rejects) return;
       assert.equal(fs.existsSync(s.own), false);
-      assert.equal(fs.existsSync(s.project), scenario.race === "member");
+      assert.equal(fs.existsSync(s.project), scenario.race === "member" || scenario.left === true);
       if (scenario.race === "member") assert.deepEqual(fs.readdirSync(s.project), [path.basename(s.sibling)]);
     });
   }

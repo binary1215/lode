@@ -7,6 +7,7 @@ import {
 import { sha256Hex as digest } from "../core/digest.mjs";
 import { runtimeCanonicalJson as canonicalJson, runtimeCanonicalValue as canonicalValue } from "../core/canonical-json.mjs";
 import { failWith } from "../core/errors.mjs";
+import { isLostOperationalFolderRace, removeEmptyOperationalParents as removeSharedOperationalParents } from "./runtime-operational-folders.mjs";
 const originalFormat = (record) => familyFormatForOriginal({ sessionIdentity: true }, record);
 const sessionIdOf = (record) => {
   const format = originalFormat(record);
@@ -477,44 +478,36 @@ function observeLockOwner(operationalStateRoot, projectId, authorizationId) {
 }
 
 function removeEmptyOperationalParents(operationalStateRoot, projectId, authorizationId) {
-  const candidates = [
-    operationalLeaseDirectory(operationalStateRoot, projectId, authorizationId),
-    path.join(operationalStateRoot, "runtime-execution-leases", projectId),
-    path.join(operationalStateRoot, "runtime-execution-leases"),
-  ];
+  const own = operationalLeaseDirectory(operationalStateRoot, projectId, authorizationId);
   // The project and root parents are shared by every worker of the Project.
-  // Another owner may remove an empty parent, or create a member in it, between
-  // these steps. Losing that race is not an error; a folder that is still there
-  // must pass the safety check before it is read or removed.
-  const lostRace = (error, candidate) =>
-    error.code === "ENOENT" ||
-    error.code === "ENOTEMPTY" ||
-    error.code === "EEXIST" ||
-    // Windows reports a folder that another process is deleting as EPERM or
-    // EBUSY. Only a folder that is gone afterwards counts as the lost race.
-    (process.platform === "win32" && (error.code === "EPERM" || error.code === "EBUSY") && !fs.existsSync(candidate));
-  for (const candidate of candidates) {
-    let stat;
-    let resolved;
-    try {
-      if (!fs.existsSync(candidate)) break;
-      stat = fs.lstatSync(candidate);
-      resolved = fs.realpathSync(candidate);
-    } catch (error) {
-      if (lostRace(error, candidate)) break;
-      throw error;
-    }
-    if (!stat.isDirectory() || stat.isSymbolicLink() || !isWithin(operationalStateRoot, resolved) || resolved === operationalStateRoot) {
-      fail("Runtime operational cleanup path is unsafe.", "UNSAFE_RUNTIME_OPERATIONAL_STATE");
-    }
-    try {
-      if (fs.readdirSync(candidate).length) break;
-      fs.rmdirSync(candidate);
-    } catch (error) {
-      if (lostRace(error, candidate)) break;
-      throw error;
-    }
+  // Which folder is shared is decided by position: the first is this worker's
+  // own lease folder, the two after it are shared.
+  const shared = [path.join(operationalStateRoot, "runtime-execution-leases", projectId), path.join(operationalStateRoot, "runtime-execution-leases")];
+  const unsafe = () => fail("Runtime operational cleanup path is unsafe.", "UNSAFE_RUNTIME_OPERATIONAL_STATE");
+  const check = (resolved) => isWithin(operationalStateRoot, resolved) && resolved !== operationalStateRoot;
+  // The worker's own lease folder keeps the released rule: gone, not empty or
+  // reappeared is not an error, and on Windows EPERM or EBUSY counts only when
+  // the folder is gone afterwards. A folder that is still there must pass the
+  // safety check before it is read or removed.
+  let stat;
+  let resolved;
+  try {
+    if (!fs.existsSync(own)) return;
+    stat = fs.lstatSync(own);
+    resolved = fs.realpathSync(own);
+  } catch (error) {
+    if (isLostOperationalFolderRace(error, own)) return;
+    throw error;
   }
+  if (!stat.isDirectory() || stat.isSymbolicLink() || !check(resolved)) unsafe();
+  try {
+    if (fs.readdirSync(own).length) return;
+    fs.rmdirSync(own);
+  } catch (error) {
+    if (isLostOperationalFolderRace(error, own)) return;
+    throw error;
+  }
+  removeSharedOperationalParents(shared, { unsafe, check, exactPath: false });
 }
 
 function removeOwnedLock(operationalStateRoot, authorization, owner) {

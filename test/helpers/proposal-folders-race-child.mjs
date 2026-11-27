@@ -9,20 +9,23 @@ const [moduleFile, exportName, operationalRoot, projectId, authorizationId, roun
 const build = (await import(pathToFileURL(moduleFile).href))[exportName];
 const authorization = { projectId, authorizationId };
 const errors = [];
+// The failing call and path, so a red run explains itself.
+const describe = (phase, error) =>
+  `${phase}:${error.code || error.message}:${error.syscall || "-"}:${error.path ? path.basename(error.path) : "-"}:${error.path ? (fs.existsSync(error.path) ? "exists" : "gone") : "-"}`;
 while (!fs.existsSync(startFile));
 for (let round = 0; round < Number(roundsText); round++) {
   let folders = null;
   try {
     folders = build(operationalRoot, authorization);
   } catch (error) {
-    errors.push(`create:${error.code || error.message}`);
+    errors.push(describe("create", error));
     continue;
   }
   try {
     if (folders.controlFile) fs.writeFileSync(folders.controlFile, "{}\n");
     folders.cleanup();
   } catch (error) {
-    errors.push(`cleanup:${error.code || error.message}`);
+    errors.push(describe("cleanup", error));
     // Leave no own folder behind for the next round.
     fs.rmSync(path.join(path.dirname(path.dirname(folders.controlFile)), authorizationId), { recursive: true, force: true });
   }

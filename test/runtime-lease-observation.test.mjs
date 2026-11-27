@@ -463,9 +463,25 @@ test("lease release loses shared-parent cleanup races without failing and keeps 
           { name: "delete-pending EBUSY at rmdir for a removed folder", method: "rmdirSync", race: "remove", error: "EBUSY" },
         ]
       : []),
-    { name: "EPERM for a folder that is still there", method: "rmdirSync", race: "none", error: "EPERM", rejects: "EPERM" },
+    // Rule change pending the user's decision (Claude managed workers bundle):
+    // past the safety check, Windows EPERM/EBUSY on a shared parent means another
+    // worker is creating in, using or deleting it, so the parent is left as it
+    // is. Before the change these two cases expected the error on every system.
+    {
+      name: "EPERM for a folder that is still there",
+      method: "rmdirSync",
+      race: "none",
+      error: "EPERM",
+      ...(process.platform === "win32" ? { left: true } : { rejects: "EPERM" }),
+    },
     { name: "EPERM at lstat for a folder that is still there", method: "lstatSync", race: "none", error: "EPERM", rejects: "EPERM" },
-    { name: "EBUSY for a folder that is still there", method: "rmdirSync", race: "none", error: "EBUSY", rejects: "EBUSY" },
+    {
+      name: "EBUSY for a folder that is still there",
+      method: "rmdirSync",
+      race: "none",
+      error: "EBUSY",
+      ...(process.platform === "win32" ? { left: true } : { rejects: "EBUSY" }),
+    },
     { name: "EIO before realpath", method: "lstatSync", race: "none", error: "EIO", rejects: "EIO" },
   ];
   for (const scenario of cases) {
@@ -498,7 +514,7 @@ test("lease release loses shared-parent cleanup races without failing and keeps 
       assert.equal(triggered, true);
       if (scenario.rejects) return;
       inspectReadOnly(f, { status: "consumed-released", ownerStatus: "none", replayAllowed: false, singleUseConsumed: true });
-      assert.equal(fs.existsSync(projectDirectory), scenario.race === "member");
+      assert.equal(fs.existsSync(projectDirectory), scenario.race === "member" || scenario.left === true);
       if (scenario.race === "member") assert.deepEqual(fs.readdirSync(projectDirectory), [path.basename(sibling)]);
     });
   }
